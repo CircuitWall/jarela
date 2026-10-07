@@ -153,6 +153,15 @@ describe("file_read", () => {
     expect(out).toMatchObject({
       ok: true,
       path: f,
+      attachment_reference: expect.objectContaining({
+        type: "file_reference",
+        storage: "filesystem",
+        ref: f,
+        filename: "r.txt",
+        media_type: "text/plain",
+        size: Buffer.byteLength("alpha\nbeta\ngamma\n"),
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
       content: "alpha\nbeta\ngamma\n",
       truncated: false,
       total_lines: 4, // trailing newline → 4 split parts

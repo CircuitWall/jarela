@@ -87,7 +87,7 @@ async function writeContentAddressedFile(buf: Buffer, ext: string): Promise<{ na
 export async function spillImageBuffer(
   raw: Buffer,
   media_type: string,
-  opts?: { shrink?: ShrinkOpts },
+  opts?: { shrink?: ShrinkOpts; filename?: string },
 ): Promise<Extract<ContentPart, { type: "image_ref" }>> {
   const shrunk = await shrinkImage(raw, media_type, opts?.shrink);
   const buf = shrunk.buf;
@@ -100,6 +100,7 @@ export async function spillImageBuffer(
     sha256,
     size: buf.length,
   };
+  if (opts?.filename) ref.filename = safeDisplayName(opts.filename);
   if (shrunk.width) ref.width = shrunk.width;
   if (shrunk.height) ref.height = shrunk.height;
   return ref;
@@ -107,7 +108,7 @@ export async function spillImageBuffer(
 
 export async function spillImagePart(
   part: { type: "image"; media_type: string; data: string },
-  opts?: { shrink?: ShrinkOpts },
+  opts?: { shrink?: ShrinkOpts; filename?: string },
 ): Promise<Extract<ContentPart, { type: "image_ref" }>> {
   return spillImageBuffer(Buffer.from(part.data, "base64"), part.media_type, opts);
 }

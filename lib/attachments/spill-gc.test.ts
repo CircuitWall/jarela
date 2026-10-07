@@ -27,6 +27,18 @@ describe("collectFileRefNames", () => {
     ]);
     expect([...names].sort()).toEqual(["generated-image.png", "image.png", "tool.json"]);
   });
+
+  it("collects managed metadata refs but ignores external filesystem paths", () => {
+    const names = collectFileRefNames({
+      attachment_handling: {
+        references: [
+          { type: "file_reference", storage: "jarela", ref: "managed.txt" },
+          { type: "file_reference", storage: "filesystem", ref: "C:\\Users\\me\\outside.txt" },
+        ],
+      },
+    });
+    expect([...names]).toEqual(["managed.txt"]);
+  });
 });
 
 describe("runSpillFileGc", () => {
@@ -53,11 +65,18 @@ describe("runSpillFileGc", () => {
         msgId,
         threadId,
         "assistant",
-        JSON.stringify([{ type: "file_ref", name: oldReferenced, media_type: "text/plain", filename: "kept.txt" }]),
+        "The assistant interpreted the attachment.",
         now,
         null,
         null,
-        null,
+        JSON.stringify({
+          attachment_handling: {
+            references: [
+              { type: "file_reference", storage: "jarela", ref: oldReferenced },
+              { type: "file_reference", storage: "filesystem", ref: oldUnreferenced },
+            ],
+          },
+        }),
       );
 
     const result = await runSpillFileGc({ retentionMs: 60_000, now: Date.now() });

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
 import { mkdtempSync, rmSync, existsSync, statSync, utimesSync, mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,6 +12,7 @@ process.env.JARELA_DB_DIR = tmpRoot;
 // getDataDir() caches its result.
 const {
   saveBridgeAttachment,
+  storeCanonicalBridgeAttachment,
   pruneBridgeAttachments,
   shouldInline,
   bridgeAttachmentsRoot,
@@ -19,6 +20,9 @@ const {
   BRIDGE_ATTACHMENTS_DIRNAME,
   INLINE_MIME_PREFIXES,
 } = await import("./attachment-store");
+const { FILES_DIR } = await import("@/lib/files");
+
+afterAll(() => rmSync(tmpRoot, { recursive: true, force: true }));
 
 beforeEach(() => {
   // Clear any prior attachments between tests.
@@ -317,6 +321,30 @@ describe("saveBridgeAttachment", () => {
     expect(BRIDGE_ATTACHMENTS_DIRNAME).toBe("bridge-attachments");
     expect(DEFAULT_INLINE_LIMIT_BYTES).toBe(1 * 1024 * 1024);
     expect(bridgeAttachmentsRoot().endsWith(BRIDGE_ATTACHMENTS_DIRNAME)).toBe(true);
+  });
+});
+
+describe("storeCanonicalBridgeAttachment", () => {
+  it("stores bridge files as retrievable content-addressed refs", async () => {
+    const bytes = Buffer.from("bridge file content");
+    const ref = await storeCanonicalBridgeAttachment({
+      filename: "report.txt",
+      media_type: "text/plain",
+      buffer: bytes,
+    });
+    expect(ref).toMatchObject({ type: "file_ref", filename: "report.txt", media_type: "text/plain" });
+    expect(existsSync(path.join(FILES_DIR, ref.name))).toBe(true);
+    expect(await readFile(path.join(FILES_DIR, ref.name))).toEqual(bytes);
+  });
+
+  it("stores bridge images as canonical image refs with the source filename", async () => {
+    const ref = await storeCanonicalBridgeAttachment({
+      filename: "picture.png",
+      media_type: "image/png",
+      buffer: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]),
+    });
+    expect(ref).toMatchObject({ type: "image_ref", filename: "picture.png", media_type: "image/png" });
+    expect(existsSync(path.join(FILES_DIR, ref.name))).toBe(true);
   });
 });
 

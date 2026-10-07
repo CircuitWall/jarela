@@ -14,7 +14,7 @@ type CitationStrictness = "off" | "informational" | "standard" | "strict";
 type RouterPolicy = "" | "cheap" | "fast" | "balanced" | "quality";
 // null = inherit global mode, true/false = per-agent force on/off
 type RouterEnabled = boolean | null;
-type UsageStrategyOverride = "" | UsageStrategy;
+type UsageStrategyOverride = "" | Exclude<UsageStrategy, "fast">;
 
 export type AgentEditorForm = ReturnType<typeof useAgentEditorForm>;
 

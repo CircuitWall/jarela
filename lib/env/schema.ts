@@ -138,7 +138,7 @@ export const ENV_DEFAULTS = {
 export const HALLUCINATION_DETECTOR_MODES = ["off", "regex", "model"] as const;
 export const MODEL_ROUTER_MODES = ["off", "heuristic"] as const;
 export const MODEL_ROUTER_POLICIES = ["cheap", "fast", "balanced", "quality"] as const;
-export const USAGE_STRATEGIES = ["cost_saving", "balanced", "high_reasoning"] as const;
+export const USAGE_STRATEGIES = ["cost_saving", "fast", "balanced", "high_reasoning"] as const;
 export const TOOL_SAFETY_VALUES = ["safe", "mostly_safe", "bypass"] as const;
 export const LOG_LEVEL_VALUES = ["debug", "info", "warn", "error"] as const;
 
@@ -713,7 +713,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     name: "JARELA_USAGE_STRATEGY",
     type: "enum",
     default: ENV_DEFAULTS.usageStrategy,
-    description: "Global usage strategy. 'cost_saving' favors cheaper routing, smaller context/output budgets, and concise replies; 'balanced' preserves existing settings; 'high_reasoning' favors quality routing and deeper analysis.",
+    description: "Global usage strategy. 'cost_saving' favors cheaper routing, smaller context/output budgets, and concise replies; 'fast' favors low-latency routing and compact prompts; 'balanced' preserves existing settings; 'high_reasoning' favors quality routing and deeper analysis.",
     category: "agent",
     tier: "B",
     requiresRestart: false,

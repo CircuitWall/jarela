@@ -30,6 +30,7 @@ import { getProvider } from "@/lib/providers";
 import { getKnownContextLength } from "@/lib/providers/known-context-windows";
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
+import { formatAttachmentHandlingContext } from "@/lib/attachments/reference";
 
 export interface ResolvedHistoryWindow {
   history: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>;
@@ -135,9 +136,19 @@ export async function buildHistoryWindow(
   // order channels appear in options.channels.
   const orderedAutomationChannels = AUTOMATION_CHANNEL_ORDER.filter((c) => options.channels?.includes(c));
   const multiChannel = orderedAutomationChannels.length > 0;
-  const allWindowMessages = multiChannel
+  const storedWindowMessages = multiChannel
     ? getRecentMessagesWindow(thread_id, limit, sinceISO, "channels", options.bridgeKey, options.channels)
     : getRecentMessagesWindow(thread_id, limit, sinceISO, scope, options.bridgeKey);
+  const allWindowMessages = storedWindowMessages.map((message) => {
+    if (message.role !== "assistant" || !message.metadata) return message;
+    try {
+      const metadata = JSON.parse(message.metadata) as { attachment_handling?: unknown };
+      const references = formatAttachmentHandlingContext(metadata.attachment_handling);
+      return references ? { ...message, content: `${message.content}${references}` } : message;
+    } catch {
+      return message;
+    }
+  });
 
   // Reuse the persisted warm summary when the boundary it covers still
   // matches the boundary we'd compute for this turn. The cache is keyed on a

@@ -92,7 +92,7 @@ export interface JarelaConfig {
   readonly terminalIdleTtlMs: number;
   readonly modelRouterMode: "off" | "heuristic";
   readonly modelRouterPolicy: "cheap" | "fast" | "balanced" | "quality";
-  readonly usageStrategy: "cost_saving" | "balanced" | "high_reasoning";
+  readonly usageStrategy: "cost_saving" | "fast" | "balanced" | "high_reasoning";
   readonly citationCheckerTailChars: number;
   readonly citationManifestMax: number;
 
@@ -165,7 +165,7 @@ function parseUsageStrategy(
 ): JarelaConfig["usageStrategy"] {
   if (!value) return fallback;
   const v = value.trim().toLowerCase();
-  if (v === "cost_saving" || v === "balanced" || v === "high_reasoning") return v;
+  if (v === "cost_saving" || v === "fast" || v === "balanced" || v === "high_reasoning") return v;
   return fallback;
 }
 

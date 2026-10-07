@@ -1,6 +1,6 @@
-export const USAGE_STRATEGIES = ["cost_saving", "balanced", "high_reasoning"] as const;
+export const USAGE_STRATEGIES = ["cost_saving", "fast", "balanced", "high_reasoning"] as const;
 export type UsageStrategy = typeof USAGE_STRATEGIES[number];
-export type UsageRouterPolicy = "cheap" | "balanced" | "quality";
+export type UsageRouterPolicy = "cheap" | "fast" | "balanced" | "quality";
 
 export interface UsageStrategyProfile {
   routerPolicy: UsageRouterPolicy | null;
@@ -23,6 +23,17 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
     promptInstruction:
       "--- Cost-saving response style ---\n" +
       "Prefer concise, direct answers. Use only the context and tool calls needed to finish the task; avoid repeating work or expanding scope. Preserve accuracy, safety, and requested detail.",
+  },
+  fast: {
+    routerPolicy: "fast",
+    enableRouter: true,
+    contextWindowCapTokens: 32_768,
+    outputTokenCap: 2_048,
+    stallRetries: 0,
+    providerFailureRetries: 1,
+    promptInstruction:
+      "--- Fast response style ---\n" +
+      "Prioritize a direct, low-latency response. Keep the answer focused, avoid unnecessary analysis and tool calls, and preserve accuracy and requested detail.",
   },
   balanced: {
     routerPolicy: null,

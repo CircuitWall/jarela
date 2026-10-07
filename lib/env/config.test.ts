@@ -138,6 +138,10 @@ describe("getConfig", () => {
   });
 
   it("parses valid usage strategies and falls back for invalid values", () => {
+    process.env.JARELA_USAGE_STRATEGY = "fast";
+    resetConfigCache();
+    expect(getConfig().usageStrategy).toBe("fast");
+
     process.env.JARELA_USAGE_STRATEGY = "high_reasoning";
     resetConfigCache();
     expect(getConfig().usageStrategy).toBe("high_reasoning");
