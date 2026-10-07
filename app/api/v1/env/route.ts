@@ -10,14 +10,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { envSchemaList, envSchemaByName } from "@/lib/env/schema";
-import { readOverrides, patchOverride, validateForSchema } from "@/lib/env/overrides";
+import { readOverrides, patchOverrides, validateForSchema } from "@/lib/env/overrides";
 import { resetConfigCache } from "@/lib/env/config";
 import { errorResponse, validateBody } from "@/lib/api/responses";
 
-const PatchBody = z.object({
+const PatchEntry = z.object({
   name: z.string().min(1, "name required"),
   value: z.union([z.string(), z.null()]),
 });
+const PatchBody = z.union([
+  PatchEntry,
+  z.object({
+    updates: z.array(PatchEntry).min(1).max(16)
+      .refine((updates) => new Set(updates.map((update) => update.name)).size === updates.length, "duplicate env names"),
+  }),
+]);
 
 interface EnvRowDTO {
   name: string;
@@ -63,22 +70,28 @@ export async function GET(): Promise<Response> {
 export async function PATCH(req: NextRequest): Promise<Response> {
   const body = await validateBody(req, PatchBody);
   if (body instanceof NextResponse) return body;
-  const { name, value } = body;
-  const def = envSchemaByName().get(name);
-  if (!def) return errorResponse(`unknown env var: ${name}`, 400);
-  if (value !== null) {
-    const verr = validateForSchema(def, value);
-    if (verr) return errorResponse(`${name}: ${verr}`, 400);
+  const updates = "updates" in body ? body.updates : [body];
+  const schema = envSchemaByName();
+  for (const { name, value } of updates) {
+    const def = schema.get(name);
+    if (!def) return errorResponse(`unknown env var: ${name}`, 400);
+    if (value !== null) {
+      const verr = validateForSchema(def, value);
+      if (verr) return errorResponse(`${name}: ${verr}`, 400);
+    }
   }
-  await patchOverride(name, value);
-  // Mutate live process.env so non-restart vars hot-apply on the next read,
-  // then drop the config cache so getConfig() rebuilds on demand.
-  if (value === null) {
-    delete process.env[name];
-  } else {
-    process.env[name] = value;
+  await patchOverrides(updates);
+  for (const { name, value } of updates) {
+    if (value === null) delete process.env[name];
+    else process.env[name] = value;
   }
   resetConfigCache();
+  if ("updates" in body) {
+    return NextResponse.json({ ok: true, updates: updates.map(({ name, value }) => ({ name, value })) });
+  }
+  const [{ name, value }] = updates;
+  const def = schema.get(name);
+  if (!def) return errorResponse(`unknown env var: ${name}`, 400);
   return NextResponse.json({
     ok: true,
     name,
@@ -92,7 +105,7 @@ export async function DELETE(req: NextRequest): Promise<Response> {
   if (!name) return errorResponse("name query param required");
   const def = envSchemaByName().get(name);
   if (!def) return errorResponse(`unknown env var: ${name}`, 400);
-  await patchOverride(name, null);
+  await patchOverrides([{ name, value: null }]);
   delete process.env[name];
   resetConfigCache();
   return NextResponse.json({ ok: true, name, requiresRestart: def.requiresRestart });

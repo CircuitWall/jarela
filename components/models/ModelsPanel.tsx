@@ -152,11 +152,29 @@ export function ModelsPanel() {
     setUsageStrategy(nextUsageStrategy);
     setRouterPolicy(nextRouterPolicy);
     try {
-      await persistRouterSetting("JARELA_USAGE_STRATEGY", nextUsageStrategy, "strategy");
-      await persistRouterSetting("JARELA_MODEL_ROUTER_POLICY", nextRouterPolicy, "policy");
-    } catch {
+      setRouterSaving("strategy");
+      setRouterError(null);
+      const response = await fetch("/api/v1/env", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          updates: [
+            { name: "JARELA_USAGE_STRATEGY", value: nextUsageStrategy },
+            { name: "JARELA_MODEL_ROUTER_POLICY", value: nextRouterPolicy },
+          ],
+        }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `${response.status} ${response.statusText}`);
+      }
+      refreshRuntimeConfig();
+    } catch (error) {
       setUsageStrategy(previousUsageStrategy);
       setRouterPolicy(previousRouterPolicy);
+      setRouterError(errorMessage(error));
+    } finally {
+      setRouterSaving(null);
     }
   }
 

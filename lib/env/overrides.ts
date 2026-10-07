@@ -164,14 +164,28 @@ export async function patchOverride(
   name: string,
   value: string | null,
 ): Promise<OverridesFile> {
+  return patchOverrides([{ name, value }]);
+}
+
+export async function patchOverrides(
+  updates: readonly { name: string; value: string | null }[],
+): Promise<OverridesFile> {
   const known = envSchemaByName();
-  if (!known.has(name)) throw new Error(`unknown env var: ${name}`);
+  if (updates.length === 0) throw new Error("at least one env update is required");
+  for (const { name, value } of updates) {
+    const def = known.get(name);
+    if (!def) throw new Error(`unknown env var: ${name}`);
+    if (value !== null) {
+      const error = validateForSchema(def, value);
+      if (error) throw new Error(`${name}: ${error}`);
+    }
+  }
+
   const current = await readOverrides();
   const next: Record<string, string> = { ...current.entries };
-  if (value === null) {
-    delete next[name];
-  } else {
-    next[name] = value;
+  for (const { name, value } of updates) {
+    if (value === null) delete next[name];
+    else next[name] = value;
   }
   const out: OverridesFile = { version: 1, entries: next };
   await writeOverrides(out);
