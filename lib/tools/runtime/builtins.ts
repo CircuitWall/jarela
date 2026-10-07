@@ -25,6 +25,7 @@ import "../system/propose";
 import "../system/agent-instruction";
 import "../system/integrations";
 import "../general/workflow-progress";
+import "../general/compact-context";
 // Default LangChain packages (Atlassian, GitHub, Jira Align) ship with
 // Jarela but are runtime-toggleable: see ./default-packages.ts.
 import { registerDefaultPackages } from "../packages/default-packages";

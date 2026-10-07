@@ -1057,8 +1057,8 @@ function ensureThreadContextPinColumns(db: DatabaseSync): void {
   // Covers the same range as `warm_summary_before` — not persisted across
   // compactions, so it's overwritten (not appended) on every refresh.
   if (!names.has("warm_summary_topics"))     db.exec("ALTER TABLE threads ADD COLUMN warm_summary_topics TEXT");
-  // Message-count threshold below which the idle+topic-shift auto boundary
-  // detector (lib/agents/run-thread.ts maybeAutoContextBoundary) is
+  // Message-count threshold below which the hot-turn-limit auto compaction
+  // (lib/agents/run-thread.ts) is
   // suppressed for this thread. Set once (to message_count + N*2) whenever
   // the user explicitly moves the boundary (drag, or manual /compact) via
   // moveThreadContextBoundary — see lib/agents/context-boundary.ts. NOT

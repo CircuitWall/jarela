@@ -19,7 +19,7 @@ import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
 import { getAgentConfig, getAgentTierProportions, getAgentTools, getAgentToolCredentials, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
-import { cosine, embedOne, recall, type RecalledMemory } from "@/lib/embeddings";
+import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { getMemoryPolicy } from "@/lib/stores/app-settings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { getDefaultModelConfig, getModelConfig, getModelParams, listModelConfigs } from "@/lib/stores/model-config";
@@ -27,6 +27,7 @@ import {
   buildHistoryWindow,
   buildSystemPrompt,
   buildSurroundingsContext,
+  buildConversationGapContext,
   resolveExperienceMode,
   type ThreadRunRequest,
 } from "@/lib/agents/prepare";
@@ -44,7 +45,6 @@ import {
   mergeDeclaredReferences,
   type SourceManifestEntry,
 } from "@/lib/agents/citation-checker";
-import { parseBridgePrompt } from "@/lib/bridges/message-role";
 import { getEffectiveProviderToolLimit } from "@/lib/providers/tool-limit";
 import {
   allowedToolNamesFromPermissionMap,
@@ -77,18 +77,7 @@ const SELF_CONFIG_TOOLS = [
   "restart_server",
 ] as const;
 
-const AUTO_BOUNDARY_FALLBACK_IDLE_MS = 3 * 60 * 60 * 1000;
-const AUTO_BOUNDARY_HISTORY_SAMPLES = 10;
-const AUTO_BOUNDARY_MIN_TOKENS = 4;
-const AUTO_BOUNDARY_EMBEDDING_SIMILARITY_THRESHOLD = 0.72;
-const AUTO_BOUNDARY_LEXICAL_OVERLAP_THRESHOLD = 0.22;
-
-const SUBJECT_STOP_WORDS = new Set([
-  "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "of", "to", "in",
-  "on", "at", "by", "for", "with", "about", "as", "what", "which", "who", "whose", "why",
-  "how", "do", "does", "did", "i", "me", "my", "you", "your", "it", "its", "this", "that",
-  "and", "or", "but", "if", "then", "than", "so", "have", "has", "had", "can", "will",
-]);
+const CONVERSATION_GAP_HINT_MS = 3 * 60 * 60 * 1000;
 
 function withDefaultTools(tools: string[], defaults: readonly string[]): string[] {
   return Array.from(new Set([...tools, ...defaults, ...SELF_CONFIG_TOOLS]));
@@ -115,58 +104,8 @@ function hotLoadToolNames(
   });
 }
 
-function normalizeInboundForSubjectDetection(raw: string): string {
-  const bridge = parseBridgePrompt(raw);
-  const base = bridge?.body ?? raw;
-  return base
-    .split("\n")
-    .filter((line) => !/^\[[a-z_]+:[\s\S]*\]$/i.test(line.trim()))
-    .join("\n")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function subjectTokens(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9_-]+/)
-    .filter((w) => w.length >= 3 && !SUBJECT_STOP_WORDS.has(w));
-}
-
-function lexicalOverlap(queryTokens: readonly string[], text: string): number {
-  if (queryTokens.length === 0) return 0;
-  const haystack = text.toLowerCase();
-  let hits = 0;
-  for (const token of queryTokens) {
-    if (haystack.includes(token)) hits += 1;
-  }
-  return hits / queryTokens.length;
-}
-
-async function isSubjectShift(incoming: string, baseline: string): Promise<boolean> {
-  const incomingTokens = subjectTokens(incoming);
-  const baselineOverlap = lexicalOverlap(incomingTokens, baseline);
-  if (baselineOverlap >= AUTO_BOUNDARY_LEXICAL_OVERLAP_THRESHOLD) return false;
-
-  const [incomingVec, baselineVec] = await Promise.all([embedOne(incoming), embedOne(baseline)]);
-  if (incomingVec && baselineVec && incomingVec.length === baselineVec.length) {
-    return cosine(incomingVec, baselineVec) < AUTO_BOUNDARY_EMBEDDING_SIMILARITY_THRESHOLD;
-  }
-
-  // Fallback when embeddings are unavailable: lexical overlap only.
-  return baselineOverlap < AUTO_BOUNDARY_LEXICAL_OVERLAP_THRESHOLD;
-}
-
 function isAutoBoundaryEligibleCategory(category: string | null | undefined): boolean {
   return category == null || category === "bridge";
-}
-
-function autoBoundaryIdleMs(historyWindowHours: number | null | undefined): number | null {
-  if (historyWindowHours === 0) return null;
-  if (!Number.isFinite(historyWindowHours) || historyWindowHours === undefined || historyWindowHours === null || historyWindowHours < 0) {
-    return AUTO_BOUNDARY_FALLBACK_IDLE_MS;
-  }
-  return Math.max(1, Math.floor(historyWindowHours * 3600_000));
 }
 
 function estimateRequiredHotContextTokens(
@@ -232,50 +171,14 @@ async function maybeAutoCompactOversizedThread(agentId: string, threadId: string
   }
 }
 
-async function maybeAutoContextBoundary(
+function conversationIdleMs(
   thread_id: string,
-  incomingRaw: string,
-  historyWindowHours: number,
   scope: "foreground" | "bridge" | "all" | "none",
   bridgeKey?: string,
-): Promise<string | null> {
-  const boundaryIdleMs = autoBoundaryIdleMs(historyWindowHours);
-  if (boundaryIdleMs === null) return null;
-
-  const nonError = getRecentMessagesWindow(
-    thread_id,
-    AUTO_BOUNDARY_HISTORY_SAMPLES,
-    undefined,
-    scope,
-    bridgeKey,
-  );
-  const latest = nonError[nonError.length - 1] ?? null;
-  if (!latest) return null;
-
-  const lastMs = Date.parse(latest.created_at);
-  if (!Number.isFinite(lastMs)) return null;
-  const idleMs = Date.now() - lastMs;
-  if (idleMs < boundaryIdleMs) return null;
-
-  const incoming = normalizeInboundForSubjectDetection(incomingRaw);
-  const incomingTokens = subjectTokens(incoming);
-  if (incomingTokens.length < AUTO_BOUNDARY_MIN_TOKENS) return null;
-
-  const baseline = nonError
-    .slice(-AUTO_BOUNDARY_HISTORY_SAMPLES)
-    .map((m) => normalizeInboundForSubjectDetection(transcriptText(m.content)))
-    .filter(Boolean)
-    .join("\n");
-  if (!baseline) return null;
-
-  const shifted = await isSubjectShift(incoming, baseline);
-  if (!shifted) return null;
-
-  const nextBoundary = new Date().toISOString();
-  console.info(
-    `[context-boundary:auto] thread=${thread_id} idle_ms=${idleMs} moved_to=${nextBoundary}`,
-  );
-  return nextBoundary;
+): number | null {
+  const [latest] = getRecentMessagesWindow(thread_id, 1, undefined, scope, bridgeKey);
+  const lastMs = latest ? Date.parse(latest.created_at) : NaN;
+  return Number.isFinite(lastMs) ? Date.now() - lastMs : null;
 }
 
 export class RunThreadError extends Error {
@@ -494,44 +397,12 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     spilledAttachments?.length ? [{ type: "text", text: trimmed }, ...spilledAttachments] : trimmed;
   const stored = typeof content === "string" ? content : JSON.stringify(content);
 
-  let autoHotSince: string | null = null;
-  // Set when this turn proposed a boundary that hasn't been committed yet.
-  // The idle gate that triggers a proposal also means every earlier message
-  // is older than `history_window_hours`, so keeping the time bound here
-  // would hand the model an empty transcript — the exact gap the deferral
-  // exists to close.
-  let compactionPending = false;
   const autoBoundaryScope = req.context_profile?.history_scope
     ?? (req.user_category === "bridge" ? "bridge" : "foreground");
-  if (
-    req.hot_since === undefined
-    && !req._skip_persist_message
-    && isAutoBoundaryEligibleCategory(req.user_category)
-  ) {
-    // A manual move (drag, or /compact) locks auto-detection out until
-    // message_count passes the threshold set at move time, so it doesn't
-    // silently re-move a boundary the user just set on the very next
-    // idle+shift turn. Pure comparison against fields already loaded on
-    // `thread` — no per-turn write, unlike a decrementing counter.
-    const autoBoundaryLocked = thread.message_count < (thread.auto_boundary_locked_until_msg_count ?? 0);
-    if (!autoBoundaryLocked) {
-      autoHotSince = await maybeAutoContextBoundary(
-        req.thread_id,
-        trimmed,
-        agentCfg.history_window_hours,
-        autoBoundaryScope,
-        req.history_bridge_key ?? undefined,
-      );
-      if (autoHotSince && autoBoundaryScope !== "bridge") {
-        // Deferred on purpose: the pin lands only once the recap that replaces
-        // the cut-off messages is stored, so THIS turn still runs on the old
-        // boundary instead of on an empty hot window with no summary.
-        kickBoundaryCompaction(req.thread_id, autoHotSince);
-        compactionPending = true;
-        autoHotSince = null;
-      }
-    }
-  }
+  // Measured before the new user row lands, otherwise the gap is always ~0.
+  const idleMsBeforeTurn = !req._skip_persist_message && isAutoBoundaryEligibleCategory(req.user_category)
+    ? conversationIdleMs(req.thread_id, autoBoundaryScope, req.history_bridge_key ?? undefined)
+    : null;
 
   if (!req._skip_persist_message) {
     addMessage(
@@ -572,7 +443,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     ? null
     : requestedHotSinceDiffers
       ? (thread.hot_since ?? null)
-      : (req.hot_since ?? autoHotSince ?? thread.hot_since ?? null);
+      : (req.hot_since ?? thread.hot_since ?? null);
   const requiredHotContextTokens = req.context_profile?.include_hot === false
     ? null
     : estimateRequiredHotContextTokens(
@@ -747,7 +618,6 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       scope: req.context_profile?.history_scope,
       includeWarm: req.context_profile?.include_warm,
       bridgeKey: req.history_bridge_key ?? undefined,
-      ignoreTimeWindow: compactionPending,
       channels: req.channels,
     },
   );
@@ -847,6 +717,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     systemSignals: signalDelivery.signals,
     runtimeInstanceId: runtimeInstanceId(),
     surroundingsCtx,
+    conversationGapCtx: buildConversationGapContext(idleMsBeforeTurn, CONVERSATION_GAP_HINT_MS),
     experienceMode: resolveExperienceMode(req.options),
     delegateRosterLines,
     sourceManifest,

@@ -89,44 +89,42 @@ describe("prepareThreadRun auto context boundary", () => {
     ));
   });
 
-  it("auto-moves hot_since when idle >= 3h and subject shifts", async () => {
+  async function runAfterIdle(agentId: string, hoursAgo: number, message: string): Promise<string> {
     upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
     upsertAgentConfig({
-      id: "agent-boundary-shift",
-      name: "Boundary Shift Agent",
+      id: agentId,
+      name: agentId,
       identity: "helper",
       instructions: "Be helpful.",
       tools: [],
       model_config_name: null,
-      history_window_hours: 3,
+      history_window_hours: 0,
     });
-    const thread = createThread("agent-boundary-shift");
+    const thread = createThread(agentId);
     addMessage(thread.thread_id, "user", "Let's debug the OAuth callback mismatch error.");
     addMessage(thread.thread_id, "assistant", "Check your redirect URI and PKCE verifier.");
-    ageThreadMessages(thread.thread_id, 4);
+    ageThreadMessages(thread.thread_id, hoursAgo);
 
     await prepareThreadRun({
       thread_id: thread.thread_id,
-      message: "Draft a Q3 hiring and marketing budget plan with milestones.",
-      context_profile: {
-        include_hot: true,
-        include_warm: false,
-        include_facts: false,
-        include_recall: false,
-      },
+      message,
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
     });
 
-    // The pin is deferred: the turn that detects the shift still runs on the
-    // full history, and the boundary only lands with its recap.
+    // The runtime no longer moves the boundary on idle; only the prompt hint differs.
     expect(getThread(thread.thread_id)?.hot_since ?? null).toBeNull();
-    const history = streamWithConfigMock.mock.calls[0][1] as Array<{ content: unknown }>;
-    expect(history.map((m) => String(m.content))).toContain("Let's debug the OAuth callback mismatch error.");
-    await waitForCondition(() => {
-      const refreshed = getThread(thread.thread_id);
-      return !!refreshed?.hot_since
-        && !!refreshed.warm_summary?.includes("AUTO-COMPACT-RECAP")
-        && refreshed.warm_summary_before === refreshed.hot_since;
-    });
+    const options = streamWithConfigMock.mock.calls[0][2] as { agent_run_config: { system_prompt: string } };
+    return options.agent_run_config.system_prompt;
+  }
+
+  it("hints the agent to ask when the thread was idle for 3h or more", async () => {
+    const prompt = await runAfterIdle("agent-gap-long", 4, "hey");
+    expect(prompt).toContain("--- Conversation gap ---");
+  });
+
+  it("omits the gap hint when the thread is warm", async () => {
+    const prompt = await runAfterIdle("agent-gap-short", 1, "hey");
+    expect(prompt).not.toContain("--- Conversation gap ---");
   });
 
   it("starts topic-aware compaction when the hot-turn limit is exceeded", async () => {
@@ -183,185 +181,6 @@ describe("prepareThreadRun auto context boundary", () => {
         && updated.warm_summary_before === updated.hot_since
         && updated.warm_summary_source_messages === 2;
     });
-  });
-
-  it("does not auto-move when idle >= 3h but subject is the same", async () => {
-    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
-    upsertAgentConfig({
-      id: "agent-boundary-same",
-      name: "Boundary Same Agent",
-      identity: "helper",
-      instructions: "Be helpful.",
-      tools: [],
-      model_config_name: null,
-    });
-    const thread = createThread("agent-boundary-same");
-    addMessage(thread.thread_id, "user", "OAuth callback mismatch on localhost redirect.");
-    addMessage(thread.thread_id, "assistant", "Let's verify callback URL and state handling.");
-    ageThreadMessages(thread.thread_id, 4);
-
-    await prepareThreadRun({
-      thread_id: thread.thread_id,
-      message: "OAuth callback mismatch still happens after URL normalization.",
-      context_profile: {
-        include_hot: true,
-        include_warm: false,
-        include_facts: false,
-        include_recall: false,
-      },
-    });
-
-    const updated = getThread(thread.thread_id);
-    expect(updated?.hot_since ?? null).toBeNull();
-  });
-
-  it("ignores automation and bridge rows when detecting a foreground boundary", async () => {
-    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
-    upsertAgentConfig({
-      id: "agent-boundary-foreground-scope",
-      name: "Boundary Foreground Scope Agent",
-      identity: "helper",
-      instructions: "Be helpful.",
-      tools: [],
-      model_config_name: null,
-      history_window_hours: 3,
-    });
-    const thread = createThread("agent-boundary-foreground-scope");
-    addMessage(thread.thread_id, "user", "Let's debug the OAuth callback mismatch error.");
-    addMessage(thread.thread_id, "assistant", "Check your redirect URI and PKCE verifier.");
-    ageThreadMessages(thread.thread_id, 4);
-    addMessage(thread.thread_id, "assistant", "Recent scheduled result", undefined, null, {
-      automation_activity: { source_kind: "scheduled_task" },
-    });
-    addMessage(thread.thread_id, "user", "Recent bridge conversation", undefined, "bridge", {
-      bridge_conversation: { key: "bridge-1:chat-2" },
-    });
-
-    await prepareThreadRun({
-      thread_id: thread.thread_id,
-      message: "Draft a Q3 hiring and marketing budget plan with milestones.",
-      context_profile: {
-        include_hot: true,
-        include_warm: false,
-        include_facts: false,
-        include_recall: false,
-        history_scope: "foreground",
-      },
-    });
-
-    await waitForCondition(() => !!getThread(thread.thread_id)?.hot_since);
-  });
-
-  it("keeps bridge auto-boundaries scoped without moving the foreground pin", async () => {
-    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
-    upsertAgentConfig({
-      id: "agent-boundary-bridge-scope",
-      name: "Boundary Bridge Scope Agent",
-      identity: "helper",
-      instructions: "Be helpful.",
-      tools: [],
-      model_config_name: null,
-      history_window_hours: 3,
-    });
-    const thread = createThread("agent-boundary-bridge-scope");
-    const foregroundPin = new Date(Date.now() - 2 * 3600_000).toISOString();
-    setThreadContextPin(thread.thread_id, foregroundPin);
-    const targetMetadata = {
-      bridge_conversation: { key: "bridge-1:chat-1" },
-    };
-    addMessage(thread.thread_id, "user", "Let's debug the OAuth callback mismatch error.", undefined, "bridge", targetMetadata);
-    addMessage(thread.thread_id, "assistant", "Check your redirect URI and PKCE verifier.", undefined, "bridge", targetMetadata);
-    ageThreadMessages(thread.thread_id, 4);
-    addMessage(thread.thread_id, "assistant", "Recent scheduled result", undefined, null, {
-      automation_activity: { source_kind: "scheduled_task" },
-    });
-    addMessage(thread.thread_id, "user", "Recent unrelated bridge chat", undefined, "bridge", {
-      bridge_conversation: { key: "bridge-1:chat-2" },
-    });
-
-    await prepareThreadRun({
-      thread_id: thread.thread_id,
-      message: "Draft a Q3 hiring and marketing budget plan with milestones.",
-      user_category: "bridge",
-      message_metadata: targetMetadata,
-      history_bridge_key: "bridge-1:chat-1",
-      context_profile: {
-        include_hot: true,
-        include_warm: false,
-        include_facts: false,
-        include_recall: false,
-        history_scope: "bridge",
-      },
-    });
-
-    expect(getThread(thread.thread_id)?.hot_since).toBe(foregroundPin);
-    const modelMessages = streamWithConfigMock.mock.calls.at(-1)?.[1] as Array<{ content: unknown }>;
-    expect(modelMessages.map((message) => message.content)).toEqual(expect.arrayContaining([
-      "Draft a Q3 hiring and marketing budget plan with milestones.",
-    ]));
-    expect(modelMessages.map((message) => message.content)).not.toContain("Recent unrelated bridge chat");
-    expect(modelMessages.map((message) => message.content)).not.toContain("Recent scheduled result");
-  });
-
-  it("uses the agent history window as the idle threshold", async () => {
-    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
-    upsertAgentConfig({
-      id: "agent-boundary-recent",
-      name: "Boundary Recent Agent",
-      identity: "helper",
-      instructions: "Be helpful.",
-      tools: [],
-      model_config_name: null,
-      history_window_hours: 1,
-    });
-    const thread = createThread("agent-boundary-recent");
-    addMessage(thread.thread_id, "user", "OAuth callback mismatch on localhost redirect.");
-    addMessage(thread.thread_id, "assistant", "Let's verify callback URL and state handling.");
-    ageThreadMessages(thread.thread_id, 1);
-
-    await prepareThreadRun({
-      thread_id: thread.thread_id,
-      message: "Draft a Q3 hiring and marketing budget plan with milestones.",
-      context_profile: {
-        include_hot: true,
-        include_warm: false,
-        include_facts: false,
-        include_recall: false,
-      },
-    });
-
-    await waitForCondition(() => !!getThread(thread.thread_id)?.hot_since);
-  });
-
-  it("does not auto-move when the agent disables the history time bound", async () => {
-    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
-    upsertAgentConfig({
-      id: "agent-boundary-unbounded",
-      name: "Boundary Unbounded Agent",
-      identity: "helper",
-      instructions: "Be helpful.",
-      tools: [],
-      model_config_name: null,
-      history_window_hours: 0,
-    });
-    const thread = createThread("agent-boundary-unbounded");
-    addMessage(thread.thread_id, "user", "OAuth callback mismatch on localhost redirect.");
-    addMessage(thread.thread_id, "assistant", "Let's verify callback URL and state handling.");
-    ageThreadMessages(thread.thread_id, 12);
-
-    await prepareThreadRun({
-      thread_id: thread.thread_id,
-      message: "Draft a Q3 hiring and marketing budget plan with milestones.",
-      context_profile: {
-        include_hot: true,
-        include_warm: false,
-        include_facts: false,
-        include_recall: false,
-      },
-    });
-
-    const updated = getThread(thread.thread_id);
-    expect(updated?.hot_since ?? null).toBeNull();
   });
 
   it("auto-compacts only after enough rows accumulate to leave headroom", async () => {

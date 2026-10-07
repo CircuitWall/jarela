@@ -47,6 +47,8 @@ export interface SystemPromptContext {
    *  reporting it (ADR-0082). Built by run-thread so one-shot runners
    *  (scheduler, watcher, extension fill) never inherit it. */
   surroundingsCtx?: string;
+  /** Output of `buildConversationGapContext`; empty when the thread is warm. */
+  conversationGapCtx?: string;
   experienceMode: "essential" | "full";
   delegateRosterLines: string[];
   /** Numbered source manifest the agent may cite via `[N]` markers. Built
@@ -152,6 +154,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     buildSourceLinkContext(agentCfg, sourceManifest ?? []),
     buildTimeContext(),
     surroundingsCtx,
+    ctx.conversationGapCtx,
     buildOutputBudgetContext(budget),
     ctx.usageStrategyInstruction,
     ...tierOrderCtx,
@@ -389,6 +392,23 @@ function buildUserContext(): string {
 
 function buildTimeContext(): string {
   return `Current time: ${new Date().toISOString()} (UTC). Use this when computing scheduled task timestamps.`;
+}
+
+/**
+ * Hint for turns that resume a thread after a long silence. Topic-shift
+ * detection was unreliable (short openers like "hey" carry no signal), so
+ * the agent decides and asks the user instead of the runtime guessing.
+ */
+export function buildConversationGapContext(idleMs: number | null, thresholdMs: number): string {
+  if (idleMs === null || idleMs < thresholdMs) return "";
+  const hours = Math.floor(idleMs / 3600_000);
+  const age = hours >= 48 ? `${Math.round(hours / 24)} days` : `${hours} hours`;
+  return [
+    "--- Conversation gap ---",
+    `The user's previous message in this thread was about ${age} ago. The earlier conversation history may be about an unrelated topic and is not necessarily what they mean now.`,
+    "If this message clearly stands alone or clearly continues the earlier topic, just answer it. If it is a greeting or short or ambiguous, do not assume it continues the earlier conversation: briefly ask whether they want to pick up the previous topic (name it in a few words) or start something new.",
+    "If they say to start fresh or not to continue, call compact_context once, then handle their new request. If they continue the earlier topic, do not call it.",
+  ].join("\n");
 }
 
 /**
