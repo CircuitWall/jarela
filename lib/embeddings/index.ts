@@ -1,6 +1,6 @@
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getDefaultModelConfig, getModelParams, listModelConfigs, type ModelConfigRow } from "@/lib/stores/model-config";
-import { getEmbeddingModelConfigName } from "@/lib/stores/app-settings";
+import { getEmbeddingModelConfigName, isDocumentLocalEmbeddingsEnabled } from "@/lib/stores/app-settings";
 import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
 import type { ProviderParams } from "@/lib/providers/types";
@@ -10,6 +10,8 @@ import { createHash } from "node:crypto";
 import { memoryRecallText } from "@/lib/memory/record";
 import { getMemoryPolicy, type MemoryPolicy } from "@/lib/stores/app-settings";
 import { isStructuredMemoryEligible, parseStructuredMemory } from "@/lib/memory/record";
+import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID } from "./constants";
+import { embedLocally } from "./local";
 
 // Sensitive namespaces (ADR-0005) are never surfaced via recall: their
 // values are encrypted at rest, and credentials should not reach agent
@@ -17,22 +19,19 @@ import { isStructuredMemoryEligible, parseStructuredMemory } from "@/lib/memory/
 const EXCLUDED_NS = [...SENSITIVE_MEMORY_NAMESPACES];
 const EXCLUDED_NS_PLACEHOLDERS = EXCLUDED_NS.map(() => "?").join(",");
 
+interface EmbeddingClient {
+  modelId: string;
+  embed: (texts: string[]) => Promise<number[][]>;
+}
+
 // Embedding model resolution:
 // 1. EMBEDDING_MODEL_CONFIG env var → name of a row in model_configs
 // 2. Else: same provider as the default chat model + a sane default model_id
 //    (text-embedding-3-small for OpenAI-compatible providers).
 // Embedding generation is best-effort: any failure returns null and the caller
 // falls back to substring search.
-async function resolveEmbeddingClient(): Promise<{
-  provider: ReturnType<typeof getProvider>;
-  modelId: string;
-  params: ProviderParams;
-} | null> {
-  function fromConfig(cfg: ModelConfigRow | null): {
-    provider: ReturnType<typeof getProvider>;
-    modelId: string;
-    params: ProviderParams;
-  } | null {
+async function resolveEmbeddingClient(): Promise<EmbeddingClient | null> {
+  function fromConfig(cfg: ModelConfigRow | null): EmbeddingClient | null {
     if (!cfg) return null;
     const params: ProviderParams = getModelParams(cfg);
     const provider = getProvider(cfg.provider);
@@ -46,7 +45,7 @@ async function resolveEmbeddingClient(): Promise<{
       : isChatModelId(cfg.model_id)
         ? "text-embedding-3-small"
         : cfg.model_id;
-    return { provider, modelId, params };
+    return { modelId, embed: (texts) => provider.embed!(modelId, texts, params) };
   }
 
   const explicitName = process.env.EMBEDDING_MODEL_CONFIG;
@@ -79,6 +78,13 @@ async function resolveEmbeddingClient(): Promise<{
   return null;
 }
 
+async function resolveDocumentEmbeddingClient(): Promise<EmbeddingClient | null> {
+  if (isDocumentLocalEmbeddingsEnabled()) {
+    return { modelId: LOCAL_EMBEDDING_MODEL_ID, embed: embedLocally };
+  }
+  return resolveEmbeddingClient();
+}
+
 function isChatModelId(id: string): boolean {
   return /^(gpt-|claude-|deepseek-chat|deepseek-reasoner)/.test(id);
 }
@@ -99,9 +105,11 @@ export function _resetEmbeddingCache(): void {
   embeddingCache.clear();
 }
 
-export async function embed(texts: string[]): Promise<number[][] | null> {
+async function embedWithClient(
+  texts: string[],
+  client: EmbeddingClient | null,
+): Promise<number[][] | null> {
   if (texts.length === 0) return [];
-  const client = await resolveEmbeddingClient();
   if (!client) return null;
 
   const keys = texts.map((t) => embeddingCacheKey(client.modelId, t));
@@ -125,7 +133,7 @@ export async function embed(texts: string[]): Promise<number[][] | null> {
       }
     }
 
-    const fetched = await client.provider.embed!(client.modelId, uniqueMissTexts, client.params);
+    const fetched = await client.embed(uniqueMissTexts);
     if (!fetched) return null;
 
     for (const i of missIndexes) {
@@ -139,6 +147,19 @@ export async function embed(texts: string[]): Promise<number[][] | null> {
     console.warn("[embeddings] failed:", errorMessage(err));
     return null;
   }
+}
+
+export async function embed(texts: string[]): Promise<number[][] | null> {
+  return embedWithClient(texts, await resolveEmbeddingClient());
+}
+
+export async function embedDocument(texts: string[]): Promise<number[][] | null> {
+  return embedWithClient(texts, await resolveDocumentEmbeddingClient());
+}
+
+export async function embedDocumentOne(text: string): Promise<number[] | null> {
+  const out = await embedDocument([text]);
+  return out?.[0] ?? null;
 }
 
 export async function embedOne(text: string): Promise<number[] | null> {
@@ -156,7 +177,7 @@ function isTransient(err: unknown): boolean {
 }
 
 async function callEmbedWithRetry(
-  client: { provider: ReturnType<typeof getProvider>; modelId: string; params: ProviderParams },
+  client: EmbeddingClient,
   texts: string[],
 ): Promise<number[][]> {
   // 250ms → 1s → 4s. Three attempts is enough to ride through a brief
@@ -165,7 +186,7 @@ async function callEmbedWithRetry(
   let lastErr: unknown;
   for (let attempt = 0; attempt <= backoffs.length; attempt++) {
     try {
-      return await client.provider.embed!(client.modelId, texts, client.params);
+      return await client.embed(texts);
     } catch (err) {
       lastErr = err;
       if (attempt >= backoffs.length || !isTransient(err)) break;
@@ -204,7 +225,7 @@ export interface EmbedBestEffortResult {
  */
 export async function embedBestEffort(texts: string[]): Promise<EmbedBestEffortResult> {
   if (texts.length === 0) return { vectors: [], error: null, failed: 0, terminal: [] };
-  const client = await resolveEmbeddingClient();
+  const client = await resolveDocumentEmbeddingClient();
   if (!client) {
     // Missing config, not bad content — fixing the config should let these
     // retry, so this is never a terminal per-item failure.
@@ -219,7 +240,7 @@ export async function embedBestEffort(texts: string[]): Promise<EmbedBestEffortR
 }
 
 async function embedBestEffortInternal(
-  client: { provider: ReturnType<typeof getProvider>; modelId: string; params: ProviderParams },
+  client: EmbeddingClient,
   texts: string[],
 ): Promise<EmbedBestEffortResult> {
   try {

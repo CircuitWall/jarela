@@ -3,6 +3,7 @@
 .github
 node_modules
 .next
+.jarela-assets
 out
 dist
 coverage

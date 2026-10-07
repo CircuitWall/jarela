@@ -62,6 +62,7 @@ try {
     "package/scripts/service-install.mjs",
     "package/scripts/first-run-prompt.mjs",
     "package/scripts/start-prod.mjs",
+    "package/scripts/prepare-local-embedding-model.mjs",
     "package/scripts/run-workspace-script-if-present.mjs",
     // The extension rebranding step (ADR-0077) is only reachable by an
     // overlay if both the script and its source tree are published.
@@ -88,6 +89,9 @@ try {
 
   if (!listing.some((entry) => entry.startsWith("package/.next/standalone/.next/static/"))) {
     throw new Error("npm tarball is missing hydrated .next/static assets inside the standalone bundle");
+  }
+  if (!listing.includes("package/.next/standalone/.jarela-assets/local-embedding/Xenova/all-MiniLM-L6-v2/onnx/model_quantized.onnx")) {
+    throw new Error("npm tarball is missing the bundled local embedding model");
   }
 
   const packedManifest = run("tar", ["-xOf", filename, "package/package.json"]);

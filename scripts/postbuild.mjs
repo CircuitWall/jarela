@@ -26,5 +26,9 @@ cpSync(join(root, ".next", "static"), join(standalone, ".next", "static"), {
   recursive: true,
   force: true,
 });
+cpSync(join(root, ".jarela-assets"), join(standalone, ".jarela-assets"), {
+  recursive: true,
+  force: true,
+});
 
-console.log("[postbuild] hydrated .next/standalone/ with public + .next/static");
+console.log("[postbuild] hydrated .next/standalone/ with public, .next/static, and bundled model assets");

@@ -4,6 +4,7 @@ const now = () => new Date().toISOString();
 
 const NS = "app-settings";
 const EMBEDDING_MODEL_KEY = "embedding_model_config";
+const DOCUMENT_LOCAL_EMBEDDINGS_KEY = "documents_use_bundled_local_embeddings";
 const IDLE_TIMEOUT_KEY = "screen_lock_idle_timeout_ms";
 const REDACTION_ENABLED_KEY = "redaction_enabled";
 const AMBIENT_CONTEXT_KEY = "ambient_context_enabled";
@@ -73,6 +74,14 @@ export function setEmbeddingModelConfigName(name: string | null): string | null 
     )
     .run(NS, EMBEDDING_MODEL_KEY, JSON.stringify(name), created, t);
   return name;
+}
+
+export function isDocumentLocalEmbeddingsEnabled(): boolean {
+  return readJsonSetting<unknown>(DOCUMENT_LOCAL_EMBEDDINGS_KEY) === true;
+}
+
+export function setDocumentLocalEmbeddings(enabled: boolean): void {
+  writeJsonSetting(DOCUMENT_LOCAL_EMBEDDINGS_KEY, Boolean(enabled));
 }
 
 export function getScreenLockIdleTimeoutMs(): number | null {

@@ -10,6 +10,7 @@ node_modules/
 
 # next.js
 .next/
+.jarela-assets/
 out/
 next-env.d.ts
 *.tsbuildinfo

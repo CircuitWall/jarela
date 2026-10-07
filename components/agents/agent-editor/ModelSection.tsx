@@ -63,9 +63,9 @@ export function ModelSection({ form, models, integrations, onClose }: Props) {
 function DocumentsReadinessNotice({ onOpenModels }: { onOpenModels: () => void }) {
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
-      <p>Add a model config that the current installation can use for Documents embeddings if you want semantic document recall.</p>
+      <p>Documents includes a bundled local embedding model. Configure another model if you prefer a different embedding provider.</p>
       <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-        Compatible setup: OpenAI, Gemini, and GitHub Copilot-backed setups are the main built-in paths for embeddings without introducing another billing surface.
+        Jarela Local runs on this machine and does not send document text to a provider.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <button

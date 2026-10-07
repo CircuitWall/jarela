@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getEmbeddingModelConfigName, setEmbeddingModelConfigName } from "@/lib/stores/app-settings";
+import {
+  getEmbeddingModelConfigName,
+  setEmbeddingModelConfigName,
+  setDocumentLocalEmbeddings,
+  isDocumentLocalEmbeddingsEnabled,
+} from "@/lib/stores/app-settings";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
 import { validateBody } from "@/lib/api/responses";
+import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID, LOCAL_EMBEDDING_PROVIDER_NAME } from "@/lib/embeddings/constants";
+import { embedLocally } from "@/lib/embeddings/local";
 
 const PutSchema = z.object({
   embedding_model_config: z.string().min(1).nullable(),
@@ -24,6 +31,24 @@ function resolveProbeModelId(modelId: string, params: ProviderParams): string {
 
 async function probeEmbeddingModelConfig(name: string | null) {
   if (!name) return null;
+  if (name === LOCAL_EMBEDDING_CONFIG_NAME) {
+    try {
+      const [vector] = await embedLocally(["Jarela local embedding capability probe"]);
+      return {
+        ok: true,
+        provider: LOCAL_EMBEDDING_PROVIDER_NAME,
+        model_id: LOCAL_EMBEDDING_MODEL_ID,
+        dimension: vector.length,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        provider: LOCAL_EMBEDDING_PROVIDER_NAME,
+        model_id: LOCAL_EMBEDDING_MODEL_ID,
+        error: errorMessage(err),
+      };
+    }
+  }
   const cfg = getModelConfig(name);
   if (!cfg) {
     return { ok: false, provider: "", model_id: "", error: `unknown model config: ${name}` };
@@ -69,7 +94,9 @@ async function probeEmbeddingModelConfig(name: string | null) {
 }
 
 export async function GET() {
-  const selected = getEmbeddingModelConfigName();
+  const selected = isDocumentLocalEmbeddingsEnabled()
+    ? LOCAL_EMBEDDING_CONFIG_NAME
+    : getEmbeddingModelConfigName();
   return NextResponse.json({
     embedding_model_config: selected,
     embedding_probe: await probeEmbeddingModelConfig(selected),
@@ -80,10 +107,12 @@ export async function PUT(req: NextRequest) {
   const parsed = await validateBody(req, PutSchema);
   if (parsed instanceof NextResponse) return parsed;
   const name = parsed.embedding_model_config;
-  if (name && !getModelConfig(name)) {
+  if (name && name !== LOCAL_EMBEDDING_CONFIG_NAME && !getModelConfig(name)) {
     return NextResponse.json({ error: `unknown model config: ${name}` }, { status: 400 });
   }
-  const selected = setEmbeddingModelConfigName(name);
+  const selected = name === LOCAL_EMBEDDING_CONFIG_NAME
+    ? (setDocumentLocalEmbeddings(true), LOCAL_EMBEDDING_CONFIG_NAME)
+    : (setDocumentLocalEmbeddings(false), setEmbeddingModelConfigName(name));
   return NextResponse.json({
     embedding_model_config: selected,
     embedding_probe: await probeEmbeddingModelConfig(selected),

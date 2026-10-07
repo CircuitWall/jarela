@@ -23,11 +23,13 @@ export function computeFeatureReadiness({
   integrations,
   selectedProvider,
   selectedModelId,
+  hasLocalEmbeddingModel,
 }: {
   models: ModelConfig[];
   integrations?: IntegrationStatus[];
   selectedProvider?: string;
   selectedModelId?: string;
+  hasLocalEmbeddingModel?: boolean;
 }): FeatureReadiness {
   const selectedModelCaps = selectedProvider && selectedModelId
     ? modelCapabilities(selectedProvider, selectedModelId)
@@ -35,7 +37,8 @@ export function computeFeatureReadiness({
 
   const hasGoogleIntegration = isIntegrationConfigured(integrations ?? [], "google");
   const hasGeminiModel = models.some((model) => model.provider === "gemini") || selectedProvider === "gemini";
-  const hasEmbeddingsModel = models.some((model) => providerLikelySupportsEmbeddings(model.provider))
+  const hasEmbeddingsModel = !!hasLocalEmbeddingModel
+    || models.some((model) => providerLikelySupportsEmbeddings(model.provider))
     || !!selectedProvider && providerLikelySupportsEmbeddings(selectedProvider);
 
   return {

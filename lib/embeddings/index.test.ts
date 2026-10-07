@@ -13,6 +13,7 @@ process.on("exit", () => {
 });
 
 const embedSpy = vi.fn();
+const localEmbedSpy = vi.fn();
 let resolveEmbedClient = true;
 
 vi.mock("@/lib/providers", () => ({
@@ -20,6 +21,10 @@ vi.mock("@/lib/providers", () => ({
     embed: (model: string, texts: string[], params: unknown) =>
       embedSpy(model, texts, params),
   }),
+}));
+
+vi.mock("./local", () => ({
+  embedLocally: (texts: string[]) => localEmbedSpy(texts),
 }));
 
 vi.mock("@/lib/stores/model-config", () => ({
@@ -37,15 +42,22 @@ vi.mock("@/lib/stores/model-config", () => ({
   getModelParams: () => ({}),
 }));
 
-const { embedBestEffort } = await import("./index");
+const { embed, embedDocument, embedBestEffort, embedOne } = await import("./index");
+const { setDocumentLocalEmbeddings } = await import("@/lib/stores/app-settings");
+const originalEmbeddingModelConfig = process.env.EMBEDDING_MODEL_CONFIG;
 
 beforeEach(() => {
   embedSpy.mockReset();
+  localEmbedSpy.mockReset();
   resolveEmbedClient = true;
+  delete process.env.EMBEDDING_MODEL_CONFIG;
+  setDocumentLocalEmbeddings(false);
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  if (originalEmbeddingModelConfig === undefined) delete process.env.EMBEDDING_MODEL_CONFIG;
+  else process.env.EMBEDDING_MODEL_CONFIG = originalEmbeddingModelConfig;
 });
 
 describe("embedBestEffort", () => {
@@ -124,5 +136,25 @@ describe("embedBestEffort", () => {
     expect(r.error).toBe("no embedding provider configured");
     expect(r.terminal).toEqual([false, false]);
     expect(embedSpy).not.toHaveBeenCalled();
+  });
+
+  it("uses the bundled model only for document indexing/search, not message or memory embeddings", async () => {
+    setDocumentLocalEmbeddings(true);
+    localEmbedSpy.mockResolvedValue([[0.25, 0.75]]);
+    embedSpy.mockResolvedValue([[0.9, 0.1]]);
+
+    const indexed = await embedBestEffort(["local document chunk"]);
+    const query = await embedDocument(["local search query"]);
+    const memory = await embed(["memory and conversation embedding"]);
+    const message = await embedOne("message embedding");
+
+    expect(indexed.vectors).toEqual([[0.25, 0.75]]);
+    expect(indexed.failed).toBe(0);
+    expect(query).toEqual([[0.25, 0.75]]);
+    expect(memory).toEqual([[0.9, 0.1]]);
+    expect(message).toEqual([0.9, 0.1]);
+    expect(localEmbedSpy).toHaveBeenNthCalledWith(1, ["local document chunk"]);
+    expect(localEmbedSpy).toHaveBeenNthCalledWith(2, ["local search query"]);
+    expect(embedSpy).toHaveBeenCalledTimes(2);
   });
 });

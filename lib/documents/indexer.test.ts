@@ -134,4 +134,25 @@ describe("indexSource — terminal vs transient embedding failures (issue #597)"
     expect(rows[0].embedding).not.toBeNull();
     expect(rows[0].embed_failed_at).toBeNull();
   });
+
+  it("force-reembeds unchanged files during a manual source rescan", async () => {
+    const abs = join(sourceRoot, "stable.txt");
+    writeFileSync(abs, "stable content whose embedding model will change");
+
+    await indexSource(sourceRow);
+    expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.1]);
+
+    embedBestEffortSpy.mockClear();
+    embedImpl = (texts) => ({
+      vectors: texts.map(() => [0.9]),
+      error: null,
+      failed: 0,
+      terminal: texts.map(() => false),
+    });
+    const stats = await indexSource(sourceRow, { maxFiles: Number.MAX_SAFE_INTEGER, forceReembed: true });
+
+    expect(embedBestEffortSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.9]);
+    expect(stats.updated).toBe(1);
+  });
 });

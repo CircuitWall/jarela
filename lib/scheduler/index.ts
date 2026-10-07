@@ -132,8 +132,9 @@ async function tick(): Promise<void> {
     await dispatchSystemSignalWakeups();
     await runTriggerTick();
 
-    // Document-RAG reindex sweep (ADR-0024). Polled here until PR-D wires
-    // an fs watcher. Failures are logged but never block the tick.
+    // Document-RAG reindex sweep (ADR-0024). This backstops fs-watch events
+    // and covers platforms where recursive filesystem watching is unavailable.
+    // Failures are logged but never block the tick.
     state.tickCount = (state.tickCount + 1) % DOC_SWEEP_EVERY_TICKS;
     if (state.tickCount === 0) {
       try {
