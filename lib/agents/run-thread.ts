@@ -31,7 +31,8 @@ import {
 } from "@/lib/agents/prepare";
 import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateCostUsd, CACHE_READ_INPUT_RATE_MULTIPLIER } from "@/lib/stores/pricing";
-import { estimateTokens } from "@/lib/agents/context-budget";
+import { DEFAULT_CONTEXT_WINDOW_TOKENS, estimateTokens } from "@/lib/agents/context-budget";
+import { getUsageStrategyProfile, resolveUsageStrategy } from "@/lib/agents/usage-strategy";
 import { classifyStall, resolveDetector } from "@/lib/agents/hallucination-classifier";
 import { nextPolicyForRetry, routeTurnModel, type ModelRouterPolicy, type RouteDecisionMetadata } from "@/lib/agents/model-router";
 import {
@@ -358,6 +359,12 @@ export function transientRetryDelayMs(attempt: number): number {
   return Math.min(8_000, 500 * (2 ** (clamped - 1)));
 }
 
+export const MAX_RATE_LIMIT_RETRY_AFTER_MS = 60_000;
+
+export function rateLimitRetryDelayMs(attempt: number, retryAfterMs = 0): number {
+  return Math.max(transientRetryDelayMs(attempt), Math.max(0, retryAfterMs));
+}
+
 export function shouldRetryTransientError(code: string | null | undefined, message: string | null | undefined): boolean {
   const normalized = (code ?? "").trim().toLowerCase();
   if (normalized === "rate_limited" || normalized === "empty_response" || normalized === "stream_error" || normalized === "agent_error") {
@@ -603,17 +610,19 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // Per-agent router settings override the global env vars.
   // router_enabled: 1 = force on, 0 = force off, null = follow global JARELA_MODEL_ROUTER_MODE.
   // router_policy: set = use this policy, null = follow global JARELA_MODEL_ROUTER_POLICY.
+  const usageStrategy = resolveUsageStrategy(agentCfg.usage_strategy, getConfig().usageStrategy);
+  const usageProfile = getUsageStrategyProfile(usageStrategy);
   const agentRouterEnabled = agentCfg.router_enabled ?? null;
   const useRouter = agentRouterEnabled === 1
     ? true
     : agentRouterEnabled === 0
     ? false
-    : getConfig().modelRouterMode === "heuristic";
+    : usageProfile.enableRouter ?? getConfig().modelRouterMode === "heuristic";
   const VALID_POLICIES: ReadonlySet<string> = new Set(["cheap", "fast", "balanced", "quality"]);
   const agentPolicy = agentCfg.router_policy && VALID_POLICIES.has(agentCfg.router_policy)
     ? agentCfg.router_policy as ModelRouterPolicy
     : null;
-  const routePolicy = req._router_policy_override ?? agentPolicy ?? getConfig().modelRouterPolicy;
+  const routePolicy = req._router_policy_override ?? agentPolicy ?? usageProfile.routerPolicy ?? getConfig().modelRouterPolicy;
   if (!modelConfigName && useRouter) {
     const pricingTables = getPricingTables();
     const routed = routeTurnModel({
@@ -693,9 +702,29 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // value, when set, replaces the model's default for THIS run only; the
   // stream LLM call below still uses the unmodified params. Splitting them
   // keeps the override scoped to the budget computation.
-  const providerParams = agentTierProportions
+  const tierProviderParams = agentTierProportions
     ? { ...baseProviderParams, context_tier_proportions: agentTierProportions }
     : baseProviderParams;
+  const contextWindowCap = usageProfile.contextWindowCapTokens;
+  const outputTokenCap = usageProfile.outputTokenCap;
+  const configuredContextWindow = typeof tierProviderParams.context_window_tokens === "number"
+    && tierProviderParams.context_window_tokens > 0
+    ? tierProviderParams.context_window_tokens
+    : DEFAULT_CONTEXT_WINDOW_TOKENS;
+  const providerParams = {
+    ...tierProviderParams,
+    ...(contextWindowCap !== null
+      ? {
+          context_window_tokens: Math.min(
+            configuredContextWindow,
+            contextWindowCap,
+          ),
+        }
+      : {}),
+    ...(outputTokenCap !== null
+      ? { max_tokens: Math.min(tierProviderParams.max_tokens ?? outputTokenCap, outputTokenCap) }
+      : {}),
+  };
 
   // New non-null pins are deferred until their warm summary is ready. A clear
   // broadens context, so it can be committed immediately without a recap.
@@ -818,6 +847,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     delegateRosterLines,
     sourceManifest,
     deliveryChannel: req.delivery_channel ?? null,
+    usageStrategyInstruction: usageProfile.promptInstruction,
     allowedTools,
     toolPermissionMap,
   });
@@ -842,6 +872,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       model_config_name: modelConfigName,
       route_decision: routeDecision,
       output_reserve_tokens: historyWindow.budget.outputReserveTokens,
+      max_output_tokens: outputTokenCap ?? undefined,
       tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
       delegation: delegationDepth > 0 || delegationAncestors.length > 0
         ? { depth: delegationDepth, ancestors: delegationAncestors }
@@ -875,9 +906,15 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const retrySeedReq: ThreadRunRequest = req._router_policy_override === undefined
     ? { ...req, _router_policy_override: routePolicy }
     : req;
-  const transientRetriesLeft = req._transient_retries_left ?? maxTransientRetries();
+  const transientRetriesLeft = Math.min(
+    req._transient_retries_left ?? maxTransientRetries(),
+    usageProfile.providerFailureRetries ?? Number.POSITIVE_INFINITY,
+  );
   const transientWrapped = transientRetryStream(rawStream, retrySeedReq, transientRetriesLeft);
-  const retriesLeft = req._stall_retries_left ?? maxStallRetries();
+  const retriesLeft = Math.min(
+    req._stall_retries_left ?? maxStallRetries(),
+    usageProfile.stallRetries ?? Number.POSITIVE_INFINITY,
+  );
   // Overhead = the assembled system prompt + per-message scaffolding, which
   // is more accurate than the budget's static overhead allowance.
   const overheadTokens = estimateTokens(systemPrompt);
@@ -967,16 +1004,24 @@ async function* transientRetryStream(
   }
   if (!errorChunk) return;
 
-  const data = errorChunk.data as { code?: unknown; message?: unknown } | undefined;
+  const data = errorChunk.data as { code?: unknown; message?: unknown; retry_after_ms?: unknown } | undefined;
   const code = typeof data?.code === "string" ? data.code : "";
   const message = typeof data?.message === "string" ? data.message : "";
+  const retryAfterMs = typeof data?.retry_after_ms === "number" && Number.isFinite(data.retry_after_ms)
+    ? Math.max(0, data.retry_after_ms) : 0;
+  if (code === "rate_limited" && retryAfterMs > MAX_RATE_LIMIT_RETRY_AFTER_MS) {
+    yield errorChunk;
+    return;
+  }
   if (sawVisibleOutput || !shouldRetryTransientError(code, message)) {
     yield errorChunk;
     return;
   }
 
   const attempt = Math.max(1, maxTransientRetries() - retriesLeft + 1);
-  const backoffMs = transientRetryDelayMs(attempt);
+  const backoffMs = code === "rate_limited"
+    ? rateLimitRetryDelayMs(attempt, retryAfterMs)
+    : transientRetryDelayMs(attempt);
   const nextPolicy = nextPolicyForRetry(originalReq._router_policy_override ?? getConfig().modelRouterPolicy);
   console.warn(`[transient-retry] attempt=${attempt} thread=${originalReq.thread_id} code=${code || "unknown"} backoff_ms=${backoffMs} policy=${nextPolicy}`);
   await delay(backoffMs);
@@ -1034,14 +1079,6 @@ async function* stallRetryStream(
   retriesLeft: number,
   attemptAbort: AbortController,
 ): AsyncGenerator<StreamChunk> {
-  // If no retry budget, just forward everything unchanged. The downstream
-  // persistAssistantMessage will still tag a stall or fabrication with a
-  // warning footer.
-  if (retriesLeft <= 0) {
-    for await (const chunk of inner) yield chunk;
-    return;
-  }
-
   let textBuf = "";
   const toolNames: string[] = [];
   const toolResultSummaries: string[] = [];
@@ -1090,8 +1127,10 @@ async function* stallRetryStream(
           console.warn(
             `[stall-retry] tool-loop detected: tool=${name} repeats=${count} thread=${originalReq.thread_id}`,
           );
-          yield chunk;
-          break;
+          if (retriesLeft > 0) {
+            yield chunk;
+            break;
+          }
         }
       }
       yield chunk;
@@ -1169,7 +1208,7 @@ async function* stallRetryStream(
   }
   let classifierStalled = false;
   let classifierReason = "";
-  if (!sawError && !looped && detector.mode === "model") {
+  if (retriesLeft > 0 && !sawError && !looped && detector.mode === "model") {
     const verdict = await classifyStall(textBuf, toolNames, detector.modelConfigName, originalReq.signal)
       .catch(() => null);
     if (verdict) {
@@ -1258,6 +1297,17 @@ async function* stallRetryStream(
       data: {
         delta:
           `\n\n*⚠️ Retry guard skipped automatic retry because state-changing tools already ran this turn: ${writeLikeTools.slice(0, 6).join(", ")}. Review the result before continuing to avoid duplicate side effects.*`,
+      },
+    };
+    if (doneChunk) yield doneChunk;
+    return;
+  }
+
+  if (retriesLeft <= 0) {
+    yield {
+      type: "text_delta",
+      data: {
+        delta: "\n\n*⚠️ Automatic quality retry is disabled for this usage strategy. Review the result before continuing.*",
       },
     };
     if (doneChunk) yield doneChunk;

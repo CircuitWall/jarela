@@ -236,10 +236,15 @@ async function* streamWithConfigImpl(
   // over-provisioning (4096 default on simple turns where the output budget
   // is smaller than 4096). The provider still falls back to 4096 when neither
   // is present.
-  const params: ProviderParams =
-    runCfg?.output_reserve_tokens && !baseParams.max_tokens
-      ? { ...baseParams, max_tokens: runCfg.output_reserve_tokens }
-      : baseParams;
+  const strategyOutputCap = runCfg?.max_output_tokens;
+  const outputLimit = strategyOutputCap !== undefined
+    ? Math.min(baseParams.max_tokens ?? strategyOutputCap, strategyOutputCap)
+    : runCfg?.output_reserve_tokens && !baseParams.max_tokens
+      ? runCfg.output_reserve_tokens
+      : undefined;
+  const params: ProviderParams = outputLimit !== undefined
+    ? { ...baseParams, max_tokens: outputLimit }
+    : baseParams;
 
   const provider = getProvider(cfg.provider);
   const includeImages = modelCapabilities(cfg.provider, cfg.model_id).vision;
@@ -531,6 +536,7 @@ async function* streamWithConfigImpl(
     // results in a loop or a genuinely deep multi-step task).
     let friendly = rawMsg;
     let code = "agent_error";
+    let errPayloadRetryAfterMs: number | undefined;
     if (name === "GraphRecursionError" || /recursion limit/i.test(rawMsg)) {
       const limit = getConfig().recursionLimit;
       friendly =
@@ -642,6 +648,8 @@ async function* streamWithConfigImpl(
         `credential is exhausted.${waitHint} Wait and retry, or switch to a different model / credential ` +
         `in Settings → Models.`;
       code = "rate_limited";
+      if (retryAfterSec !== null) errPayloadRetryAfterMs = retryAfterSec * 1000;
+      if (retryAfterSec !== null) errPayloadRetryAfterMs = retryAfterSec * 1000;
     } else if (/max_tokens/i.test(rawMsg) && /no content|before hitting/i.test(rawMsg)) {
       code = "max_tokens_exhausted";
     }
@@ -650,6 +658,8 @@ async function* streamWithConfigImpl(
     const firstAppFrame = stack.split("\n").find((l) => /\(rsc\)\.\/lib\//.test(l));
     const trimmed = firstAppFrame ? `\n${firstAppFrame.trim()}` : "";
     const errPayload: Record<string, unknown> = { message: `${friendly}${trimmed}`, code };
+    if (errPayloadRetryAfterMs !== undefined) errPayload.retry_after_ms = errPayloadRetryAfterMs;
+    if (errPayloadRetryAfterMs !== undefined) errPayload.retry_after_ms = errPayloadRetryAfterMs;
     if (code === "auth_failed" && cfg.credential_id) {
       errPayload.credential_id = cfg.credential_id;
       errPayload.provider = cfg.provider;
@@ -794,12 +804,19 @@ export function parseRetryAfterSeconds(err: unknown, msg: string): number | null
   if (err && typeof err === "object") {
     const headers = (err as { headers?: unknown }).headers;
     if (headers && typeof headers === "object") {
-      const raw = (headers as Record<string, unknown>)["retry-after"]
-        ?? (headers as Record<string, unknown>)["Retry-After"];
+      const record = headers as Record<string, unknown> & { get?: (name: string) => string | null };
+      const rawMs = record["retry-after-ms"] ?? record.get?.("retry-after-ms");
+      if (typeof rawMs === "number" && Number.isFinite(rawMs) && rawMs >= 0) return Math.ceil(rawMs / 1000);
+      if (typeof rawMs === "string" && rawMs.trim() && Number.isFinite(Number(rawMs)) && Number(rawMs) >= 0) {
+        return Math.ceil(Number(rawMs) / 1000);
+      }
+      const raw = record["retry-after"] ?? record["Retry-After"] ?? record.get?.("retry-after");
       if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return Math.ceil(raw);
       if (typeof raw === "string") {
         const n = Number(raw);
-        if (Number.isFinite(n) && n > 0) return Math.ceil(n);
+        if (raw.trim() && Number.isFinite(n) && n >= 0) return Math.ceil(n);
+        const dateMs = Date.parse(raw);
+        if (Number.isFinite(dateMs)) return Math.max(0, Math.ceil((dateMs - Date.now()) / 1000));
       }
     }
   }

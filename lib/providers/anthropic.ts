@@ -333,6 +333,7 @@ export const anthropicProvider: ModelProvider = {
       apiKey: resolveApiKey(params),
       baseURL: params.base_url,
       defaultHeaders: params.extra_headers,
+      maxRetries: 0,
     });
 
     const systemMsg = messages.find((m) => m.role === "system");
@@ -372,6 +373,7 @@ export const anthropicProvider: ModelProvider = {
       apiKey: resolveApiKey(params),
       baseURL: params.base_url,
       defaultHeaders: params.extra_headers,
+      maxRetries: 0,
     });
 
     const systemMsg = messages.find((m) => m.role === "system");
@@ -414,6 +416,7 @@ export const anthropicProvider: ModelProvider = {
         apiKey: resolveApiKey(params),
         baseURL: params.base_url,
         defaultHeaders: params.extra_headers,
+        maxRetries: 0,
       });
 
       const systemMsg = messages.find((m) => m.role === "system");

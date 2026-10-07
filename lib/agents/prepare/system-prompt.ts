@@ -60,6 +60,7 @@ export interface SystemPromptContext {
    *  answering on e.g. WhatsApp via a configured bridge — stops the
    *  "I don't have access to WhatsApp" hallucination. */
   deliveryChannel?: DeliveryChannel | null;
+  usageStrategyInstruction?: string;
   /** Tool names available to this run. Used to derive compact historical
    *  reliability hints from aggregate tool stats only. */
   allowedTools?: readonly string[];
@@ -152,6 +153,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     buildTimeContext(),
     surroundingsCtx,
     buildOutputBudgetContext(budget),
+    ctx.usageStrategyInstruction,
     ...tierOrderCtx,
     recallCtx,
   ];

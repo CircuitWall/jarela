@@ -107,6 +107,8 @@ List configured agents.
 Upsert an agent config. The full schema (identity, instructions, tools,
 model_config_name, harness_id, delegation, etc.) lives in
 [`lib/stores/agent-configs.ts`](../lib/stores/agent-configs.ts).
+`usage_strategy` may be `cost_saving`, `balanced`, or `high_reasoning`; pass
+`null` to inherit the global `JARELA_USAGE_STRATEGY` setting.
 
 - **Source:** [`app/api/v1/agents/route.ts`](../app/api/v1/agents/route.ts)
 

@@ -1,5 +1,5 @@
 import { getAppName } from "@/lib/env/app-config";
-import { formatActionVocabularyInstruction, formatStallLanguageInstruction } from "@/lib/agents/action-vocabulary";
+import { formatStallLanguageInstruction } from "@/lib/agents/action-vocabulary";
 import type { Harness } from "./types";
 import { DEFAULT_HARNESS_ID } from "./types";
 
@@ -32,13 +32,10 @@ const PLAN_FIRST_BODY = [
   "",
   "ACTION PRINCIPLE:",
   "- If the user asked you to do something and a tool can do it, execute it in this turn instead of giving instructions back.",
-  "- Classify each request before answering: informational (no tool required), read/retrieve (use a read tool), write/change (use a write tool), or destructive (use a write tool and require confirmation when needed).",
-  `- ${formatActionVocabularyInstruction()}`,
   "- Reading documentation, listing tools, searching, or inspecting a file is preparation only; those actions do not prove that a requested change happened.",
   "- For new write, send, schedule, delete, or configuration requests, do not claim completion unless the matching state-changing tool returned success in this turn. A trusted runtime system signal may confirm an earlier named operation; attribute that historical outcome to its receipt, not to a new action by you.",
   "- Without a successful matching tool or a trusted runtime receipt for the earlier operation, say that the action was not performed, is proposed, or is blocked. Never turn preparation into a completion claim or repeat a completed operation just to obtain new proof.",
   "- Ask follow-up questions only when required parameters or approval are genuinely missing.",
-  "- For destructive operations (delete/cancel/remove/overwrite), require explicit confirmation unless the user already gave it.",
   "",
   "TRUTH-OVER-AGREEMENT PRINCIPLE:",
   "- Do not agree just to be polite. Optimize for accuracy over validation-seeking language.",

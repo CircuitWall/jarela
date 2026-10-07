@@ -92,6 +92,7 @@ export interface JarelaConfig {
   readonly terminalIdleTtlMs: number;
   readonly modelRouterMode: "off" | "heuristic";
   readonly modelRouterPolicy: "cheap" | "fast" | "balanced" | "quality";
+  readonly usageStrategy: "cost_saving" | "balanced" | "high_reasoning";
   readonly citationCheckerTailChars: number;
   readonly citationManifestMax: number;
 
@@ -155,6 +156,16 @@ function parseModelRouterPolicy(
   if (!value) return fallback;
   const v = value.trim().toLowerCase();
   if (v === "cheap" || v === "fast" || v === "balanced" || v === "quality") return v;
+  return fallback;
+}
+
+function parseUsageStrategy(
+  value: string | undefined,
+  fallback: JarelaConfig["usageStrategy"],
+): JarelaConfig["usageStrategy"] {
+  if (!value) return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === "cost_saving" || v === "balanced" || v === "high_reasoning") return v;
   return fallback;
 }
 
@@ -255,6 +266,7 @@ export function getConfig(): JarelaConfig {
       env.JARELA_MODEL_ROUTER_POLICY,
       ENV_DEFAULTS.modelRouterPolicy,
     ),
+    usageStrategy: parseUsageStrategy(env.JARELA_USAGE_STRATEGY, ENV_DEFAULTS.usageStrategy),
     citationCheckerTailChars: parseNonNegativeInt(env.JARELA_CITATION_CHECKER_TAIL_CHARS, ENV_DEFAULTS.citationCheckerTailChars),
     citationManifestMax: parseNonNegativeInt(env.JARELA_CITATION_MANIFEST_MAX, ENV_DEFAULTS.citationManifestMax),
     terminalMaxSessions: parsePositiveInt(env.JARELA_TERMINAL_MAX_SESSIONS, ENV_DEFAULTS.terminalMaxSessions),

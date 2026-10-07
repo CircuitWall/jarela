@@ -43,6 +43,19 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
         {selectedModel && <SelectedModelDescription model={selectedModel} prefix="Forced" />}
       </div>
       <Divider />
+      <div className="space-y-2">
+        <p className="text-[11px] text-fg-subtle leading-snug font-medium">Usage strategy</p>
+        <Select
+          value={form.usageStrategy}
+          onChange={(e) => form.setUsageStrategy(e.target.value as typeof form.usageStrategy)}
+        >
+          <option value="">Inherit global strategy</option>
+          <option value="cost_saving">Cost saving</option>
+          <option value="balanced">Balanced</option>
+          <option value="high_reasoning">High reasoning</option>
+        </Select>
+      </div>
+      <Divider />
       <TierOverrideField form={form} selectedModel={selectedModel} />
       <Divider />
       <div className="space-y-2">

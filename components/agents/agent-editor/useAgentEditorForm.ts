@@ -3,6 +3,7 @@ import { DEFAULT_HOT_TURN_LIMIT, type AgentConfig, type AgentConfigIn } from "@/
 import { useTools } from "@/hooks/useTools";
 import { isBasicToolCategory } from "@/lib/tools/runtime/categories";
 import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
+import type { UsageStrategy } from "@/lib/agents/usage-strategy";
 import { useAgentExternalData } from "./useAgentExternalData";
 import { useAgentToolHandlers } from "./useAgentToolHandlers";
 
@@ -13,6 +14,7 @@ type CitationStrictness = "off" | "informational" | "standard" | "strict";
 type RouterPolicy = "" | "cheap" | "fast" | "balanced" | "quality";
 // null = inherit global mode, true/false = per-agent force on/off
 type RouterEnabled = boolean | null;
+type UsageStrategyOverride = "" | UsageStrategy;
 
 export type AgentEditorForm = ReturnType<typeof useAgentEditorForm>;
 
@@ -62,6 +64,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [voiceAutoSpeak, setVoiceAutoSpeak] = useState<boolean>(agent?.voice_auto_speak ?? true);
   const [routerPolicy, setRouterPolicy] = useState<RouterPolicy>(agent?.router_policy ?? "");
   const [routerEnabled, setRouterEnabled] = useState<RouterEnabled>(agent?.router_enabled ?? null);
+  const [usageStrategy, setUsageStrategy] = useState<UsageStrategyOverride>(agent?.usage_strategy ?? "");
   const external = useAgentExternalData(agent?.id);
   const handlers = useAgentToolHandlers(tools, setSelectedTools);
   useEffect(() => {
@@ -90,6 +93,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
     voiceName, setVoiceName, voiceSttModel, setVoiceSttModel,
     voiceAutoSpeak, setVoiceAutoSpeak,
     routerPolicy, setRouterPolicy, routerEnabled, setRouterEnabled,
+    usageStrategy, setUsageStrategy,
   };
   return { ...fields, ...external, ...handlers, buildPayload: () => buildAgentPayload(fields) };
 }
@@ -121,6 +125,7 @@ interface PayloadFields {
   voiceEnabled: boolean; voiceModel: string; voiceName: string;
   voiceSttModel: string; voiceAutoSpeak: boolean;
   routerPolicy: RouterPolicy; routerEnabled: RouterEnabled;
+  usageStrategy: UsageStrategyOverride;
 }
 
 function buildAgentPayload(f: PayloadFields): AgentConfigIn {
@@ -153,6 +158,7 @@ function buildAgentPayload(f: PayloadFields): AgentConfigIn {
     tool_credentials: pruneToolCredentials(f.toolCredentials, f.selectedTools),
     router_policy: f.routerPolicy === "" ? null : f.routerPolicy,
     router_enabled: f.routerEnabled,
+    usage_strategy: f.usageStrategy === "" ? null : f.usageStrategy,
   };
 }
 

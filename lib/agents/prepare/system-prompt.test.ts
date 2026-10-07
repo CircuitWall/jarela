@@ -298,6 +298,22 @@ describe("buildToolPermissionContext", () => {
     expect(prompt.indexOf("dynamic recall")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
   });
 
+  it("places usage-strategy instructions in the dynamic prompt suffix", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(),
+      trimmedMessage: "hi",
+      budget,
+      recallCtx: "",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+      usageStrategyInstruction: "--- Cost-saving response style ---",
+    });
+
+    expect(prompt.indexOf("--- Cost-saving response style ---")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+  });
+
   it("keeps the cached prefix stable when provider-cap tool state changes", () => {
     const build = (toolPermissionMap: import("@/lib/tools").ToolCatalogEntry[]) => buildSystemPrompt({
       agentCfg: agentCfg(),

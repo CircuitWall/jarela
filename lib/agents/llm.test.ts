@@ -185,6 +185,12 @@ describe("parseRetryAfterSeconds", () => {
   it("rounds fractional seconds up", () => {
     expect(parseRetryAfterSeconds({ headers: { "retry-after": "1.4" } }, "")).toBe(2);
   });
+  it("reads millisecond retry headers", () => {
+    expect(parseRetryAfterSeconds({ headers: { "retry-after-ms": "1250" } }, "")).toBe(2);
+  });
+  it("reads HTTP-date retry headers", () => {
+    expect(parseRetryAfterSeconds({ headers: { "retry-after": "Thu, 01 Jan 2032 00:00:00 GMT" } }, "")).toBeGreaterThan(0);
+  });
   it("returns null when no hint present", () => {
     expect(parseRetryAfterSeconds({}, "429 status code (no body)")).toBeNull();
     expect(parseRetryAfterSeconds(null, "")).toBeNull();
