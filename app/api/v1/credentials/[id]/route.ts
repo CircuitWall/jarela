@@ -24,6 +24,7 @@ import {
 import { errorResponse } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { probeCredentialAfterSave } from "@/lib/health/credential-probe";
+import { withKeyedMutation } from "@/lib/utils/keyed-mutation";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -52,27 +53,29 @@ function publicView(row: ReturnType<typeof getCredential>) {
 
 export async function PUT(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  const existing = getCredential(id);
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
   const parsed = UpdateBody.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return errorResponse(parsed.error.message);
+  return withKeyedMutation(`credential:${id}`, () => updateCredentialRequest(req, id, parsed.data));
+}
 
+async function updateCredentialRequest(req: NextRequest, id: string, patch: z.infer<typeof UpdateBody>) {
+  const existing = getCredential(id);
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   // Merge body params with the stored params, treating "***" as
   // "keep existing" so a redacted round-trip is safe.
   const stored = getCredentialParams(existing);
   const merged: Record<string, unknown> = { ...stored };
-  if (parsed.data.params) {
-    for (const [k, v] of Object.entries(parsed.data.params)) {
+  if (patch.params) {
+    for (const [k, v] of Object.entries(patch.params)) {
       if (SECRET_PARAM_KEYS.has(k) && v === "***") continue;
       merged[k] = v;
     }
   }
   const next = updateCredential(id, {
-    provider: parsed.data.provider,
-    auth_method: parsed.data.auth_method,
-    label: parsed.data.label,
-    is_default: parsed.data.is_default,
+    provider: patch.provider,
+    auth_method: patch.auth_method,
+    label: patch.label,
+    is_default: patch.is_default,
     params: merged,
   });
   // Refuse-save-on-401 (ADR-0070): probe the updated credential
@@ -81,7 +84,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
   // when `?force=1` (operator has already acknowledged the failure).
   const force = req.nextUrl.searchParams.get("force") === "1";
   if (!force && next) {
-    const provider = parsed.data.provider ?? existing.provider;
+    const provider = patch.provider ?? existing.provider;
     const probe = await probeCredentialAfterSave({ credentialId: id, provider }).catch(() => null);
     if (probe && probe.status === "auth_failed") {
       updateCredential(id, {
@@ -102,13 +105,15 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (isCredentialReferenced(id)) {
-    return NextResponse.json(
-      { error: "Credential is in use; rebind dependent models first.", code: "in_use" },
-      { status: 409 },
-    );
-  }
-  const deleted = deleteCredential(id);
-  if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ deleted: true });
+  return withKeyedMutation(`credential:${id}`, () => {
+    if (isCredentialReferenced(id)) {
+      return NextResponse.json(
+        { error: "Credential is in use; rebind dependent models first.", code: "in_use" },
+        { status: 409 },
+      );
+    }
+    const deleted = deleteCredential(id);
+    if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ deleted: true });
+  });
 }

@@ -98,6 +98,14 @@ export function ModelsPanel() {
   }
 
   async function handleRemove(name: string) {
+    const affectedAgents = assignments
+      .filter((assignment) => assignment.model_config_name === name)
+      .map((assignment) => agents.find((agent) => agent.id === assignment.agent_id)?.name ?? assignment.agent_id);
+    if (affectedAgents.length > 0) {
+      const warning = `${affectedAgents.join(", ")} will use automatic model selection after deletion.`;
+      if (!window.confirm(`Delete model config "${name}"?\n\n${warning}`)) return;
+    }
+
     setDeleteError(null);
     try {
       await remove(name);
@@ -294,9 +302,8 @@ export function ModelsPanel() {
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleRemove(m.name); }}
-                  disabled={inUse}
-                  className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={inUse ? "Unassign from agents first" : "Delete"}
+                  className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  title={inUse ? "Delete; assigned agents will use automatic model selection" : "Delete"}
                 >
                   <Trash2 size={13} />
                 </button>

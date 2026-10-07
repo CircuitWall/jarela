@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { mkdirSync, rmSync } from "node:fs";
 import { getDb } from "@/lib/db";
+import { withDbTransaction } from "@/lib/db/transaction";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -179,11 +180,13 @@ export function updateBridge(
 }
 
 export function deleteBridge(id: string): boolean {
-  const db = getDb();
-  db.prepare("DELETE FROM bridge_routes WHERE bridge_id=?").run(id);
-  db.prepare("DELETE FROM bridge_ignores WHERE bridge_id=?").run(id);
-  const r = db.prepare("DELETE FROM bridges WHERE id=?").run(id);
-  return r.changes > 0;
+  return withDbTransaction(() => {
+    const db = getDb();
+    db.prepare("DELETE FROM bridge_routes WHERE bridge_id=?").run(id);
+    db.prepare("DELETE FROM bridge_ignores WHERE bridge_id=?").run(id);
+    const r = db.prepare("DELETE FROM bridges WHERE id=?").run(id);
+    return r.changes > 0;
+  });
 }
 
 // ---------------------------------------------------------------------------

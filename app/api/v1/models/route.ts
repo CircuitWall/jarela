@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getModelConfig, listModelConfigs, upsertModelConfig } from "@/lib/stores/model-config";
+import { getModelConfig, listModelConfigs, upsertModelConfig, withModelConfigMutation } from "@/lib/stores/model-config";
 import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
@@ -71,19 +71,21 @@ export function GET() {
 export async function POST(req: NextRequest) {
   const body = await validateBody(req, CreateBody);
   if (body instanceof NextResponse) return body;
-  const safeParams = preserveSecrets(body.name, body.params ?? {});
-  const enriched = await enrichParamsWithDiscoveredContext(body.provider, body.model_id, safeParams);
-  const r = upsertModelConfig(
-    body.name,
-    body.provider,
-    body.model_id,
-    enriched,
-    body.is_default ?? false,
-    body.credential_id ?? null,
-  );
-  return createdResponse({
-    ...r,
-    params: redactInlineParams(r.params),
-    is_default: Boolean(r.is_default),
+  return withModelConfigMutation(body.name, async () => {
+    const safeParams = preserveSecrets(body.name, body.params ?? {});
+    const enriched = await enrichParamsWithDiscoveredContext(body.provider, body.model_id, safeParams);
+    const r = upsertModelConfig(
+      body.name,
+      body.provider,
+      body.model_id,
+      enriched,
+      body.is_default ?? false,
+      body.credential_id ?? null,
+    );
+    return createdResponse({
+      ...r,
+      params: redactInlineParams(r.params),
+      is_default: Boolean(r.is_default),
+    });
   });
 }

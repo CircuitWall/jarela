@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { withDbTransaction } from "@/lib/db/transaction";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 
 const now = () => new Date().toISOString();
@@ -121,6 +122,10 @@ export interface CreateCredentialInput {
 }
 
 export function createCredential(input: CreateCredentialInput): CredentialRow {
+  return withDbTransaction(() => createCredentialTransaction(input));
+}
+
+function createCredentialTransaction(input: CreateCredentialInput): CredentialRow {
   const t = now();
   const id = (input.id?.trim() || nextCredentialId(input.type, input.provider)).trim();
   const auth_method: CredentialAuthMethod = input.auth_method ?? "api_key";
@@ -162,6 +167,10 @@ export interface UpdateCredentialInput {
 }
 
 export function updateCredential(id: string, patch: UpdateCredentialInput): CredentialRow | null {
+  return withDbTransaction(() => updateCredentialTransaction(id, patch));
+}
+
+function updateCredentialTransaction(id: string, patch: UpdateCredentialInput): CredentialRow | null {
   const existing = getCredential(id);
   if (!existing) return null;
   const provider = patch.provider ?? existing.provider;
@@ -185,6 +194,10 @@ export function setDefaultCredential(id: string): CredentialRow | null {
 }
 
 export function deleteCredential(id: string): boolean {
+  return withDbTransaction(() => deleteCredentialTransaction(id));
+}
+
+function deleteCredentialTransaction(id: string): boolean {
   const db = getDb();
   const existing = getCredential(id);
   if (!existing) return false;

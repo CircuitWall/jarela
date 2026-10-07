@@ -6,7 +6,14 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-modelconfig-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { getModelParams, upsertModelConfig, deleteModelConfig, getDefaultModelConfig, getModelConfig } = await import("./model-config");
+const {
+  getModelParams,
+  upsertModelConfig,
+  deleteModelConfig,
+  getDefaultModelConfig,
+  getModelConfig,
+  withModelConfigMutation,
+} = await import("./model-config");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -32,6 +39,28 @@ describe("getModelParams", () => {
     expect(getModelParams({ params: JSON.stringify([1, 2, 3]) })).toEqual({});
     expect(getModelParams({ params: JSON.stringify("string") })).toEqual({});
     expect(getModelParams({ params: JSON.stringify(42) })).toEqual({});
+  });
+});
+
+describe("withModelConfigMutation", () => {
+  it("runs same-model mutations in invocation order", async () => {
+    let releaseFirst!: () => void;
+    const firstBarrier = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const started: string[] = [];
+
+    const first = withModelConfigMutation("race-test", async () => {
+      started.push("first");
+      await firstBarrier;
+    });
+    const second = withModelConfigMutation("race-test", async () => {
+      started.push("second");
+    });
+
+    await Promise.resolve();
+    expect(started).toEqual(["first"]);
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(started).toEqual(["first", "second"]);
   });
 });
 

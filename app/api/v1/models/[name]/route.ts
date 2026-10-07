@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { deleteModelConfig, getModelConfig, upsertModelConfig } from "@/lib/stores/model-config";
+import { deleteModelConfig, getModelConfig, upsertModelConfig, withModelConfigMutation } from "@/lib/stores/model-config";
 import { validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
@@ -56,22 +56,26 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const { name } = await params;
   const body = await validateBody(req, PutBody);
   if (body instanceof NextResponse) return body;
-  const safeParams = preserveSecrets(name, body.params ?? {});
-  const enriched = await enrichParamsWithDiscoveredContext(body.provider, body.model_id, safeParams);
-  const r = upsertModelConfig(
-    name,
-    body.provider,
-    body.model_id,
-    enriched,
-    body.is_default ?? false,
-    body.credential_id ?? null,
-  );
-  return NextResponse.json({ ...r, params: redactInlineParams(r.params), is_default: Boolean(r.is_default) });
+  return withModelConfigMutation(name, async () => {
+    const safeParams = preserveSecrets(name, body.params ?? {});
+    const enriched = await enrichParamsWithDiscoveredContext(body.provider, body.model_id, safeParams);
+    const r = upsertModelConfig(
+      name,
+      body.provider,
+      body.model_id,
+      enriched,
+      body.is_default ?? false,
+      body.credential_id ?? null,
+    );
+    return NextResponse.json({ ...r, params: redactInlineParams(r.params), is_default: Boolean(r.is_default) });
+  });
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { name } = await params;
-  const deleted = deleteModelConfig(name);
-  if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ deleted: true });
+  return withModelConfigMutation(name, () => {
+    const deleted = deleteModelConfig(name);
+    if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ deleted: true });
+  });
 }

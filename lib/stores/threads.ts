@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
+import { withDbTransaction } from "@/lib/db/transaction";
 import { embedOne, upsertMessageEmbedCache, resetMessageEmbedCache } from "@/lib/embeddings";
 
 const now = () => new Date().toISOString();
@@ -135,10 +136,13 @@ export function createThread(agent_id: string, title?: string): ThreadRow {
 
 export function deleteThread(thread_id: string): boolean {
   const db = getDb();
-  db.prepare("DELETE FROM messages WHERE thread_id=?").run(thread_id);
+  const deleted = withDbTransaction(() => {
+    db.prepare("DELETE FROM messages WHERE thread_id=?").run(thread_id);
+    const r = db.prepare("DELETE FROM threads WHERE thread_id=?").run(thread_id);
+    return r.changes > 0;
+  });
   resetMessageEmbedCache();
-  const r = db.prepare("DELETE FROM threads WHERE thread_id=?").run(thread_id);
-  return r.changes > 0;
+  return deleted;
 }
 
 export function getMessages(thread_id: string): MessageRow[] {
