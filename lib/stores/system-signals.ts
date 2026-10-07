@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
+import { withDbTransaction } from "@/lib/db/transaction";
 import { interruptBackgroundResults, finishBackgroundResult, BACKGROUND_RESULT_RETENTION_MS } from "./background-results";
 
 export const systemSignalKindSchema = z.enum([
@@ -36,18 +37,7 @@ const MAX_ATTEMPTS = 5;
 const MAX_BACKLOG = 1000;
 
 export function withSystemSignalTransaction<Result>(work: () => Result): Result {
-  const db = getDb();
-  const savepoint = `signals_${randomUUID().replaceAll("-", "")}`;
-  db.exec(`SAVEPOINT ${savepoint}`);
-  try {
-    const result = work();
-    db.exec(`RELEASE ${savepoint}`);
-    return result;
-  } catch (error) {
-    db.exec(`ROLLBACK TO ${savepoint}`);
-    db.exec(`RELEASE ${savepoint}`);
-    throw error;
-  }
+  return withDbTransaction(work);
 }
 
 export function beginSystemOperation(input: OperationInput): string {

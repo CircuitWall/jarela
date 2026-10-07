@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { withDbTransaction } from "@/lib/db/transaction";
 import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 
 const now = () => new Date().toISOString();
@@ -244,6 +245,10 @@ export function getAgentToolCredentials(
 }
 
 export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
+  return withDbTransaction(() => upsertAgentConfigTransaction(input));
+}
+
+function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
   const t = now();
   const db = getDb();
   const existing = getAgentConfig(input.id);

@@ -2,8 +2,17 @@ import { getDb } from "@/lib/db";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
+import { withDbTransaction } from "@/lib/db/transaction";
+import { withKeyedMutation } from "@/lib/utils/keyed-mutation";
 
 const now = () => new Date().toISOString();
+
+export function withModelConfigMutation<T>(
+  name: string,
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  return withKeyedMutation(`model-config:${name}`, operation);
+}
 
 export interface ModelConfigRow {
   name: string; provider: string; model_id: string;
@@ -46,40 +55,44 @@ export function upsertModelConfig(
   params: Record<string, unknown>, is_default: boolean,
   credential_id: string | null = null,
 ): ModelConfigRow {
-  const t = now();
-  const existing = getModelConfig(name);
-  const created_at = existing?.created_at ?? t;
-  const finalCredId = credential_id ?? existing?.credential_id ?? null;
-  // Merge onto the existing inline params rather than replacing them
-  // wholesale: the Models panel form only round-trips the fields it
-  // renders (api_key, base_url, extra_headers, temperature, max_tokens,
-  // context_window_tokens), so a plain overwrite silently deletes any
-  // other field a custom provider relies on (e.g. custom-provider.js's
-  // username/password auth) on every save.
-  const mergedParams = { ...decodeInlineParams(existing), ...params };
-  const db = getDb();
-  if (is_default) db.prepare("UPDATE model_configs SET is_default=0").run();
-  db.prepare(
-    "INSERT OR REPLACE INTO model_configs (name,provider,model_id,params,is_default,credential_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)"
-  ).run(name, provider, model_id, encrypt(JSON.stringify(mergedParams)), is_default ? 1 : 0, finalCredId, created_at, t);
-  return getModelConfig(name)!;
+  return withDbTransaction(() => {
+    const t = now();
+    const existing = getModelConfig(name);
+    const created_at = existing?.created_at ?? t;
+    const finalCredId = credential_id ?? existing?.credential_id ?? null;
+    // Merge onto the existing inline params rather than replacing them
+    // wholesale: the Models panel form only round-trips the fields it
+    // renders (api_key, base_url, extra_headers, temperature, max_tokens,
+    // context_window_tokens), so a plain overwrite silently deletes any
+    // other field a custom provider relies on (e.g. custom-provider.js's
+    // username/password auth) on every save.
+    const mergedParams = { ...decodeInlineParams(existing), ...params };
+    const db = getDb();
+    if (is_default) db.prepare("UPDATE model_configs SET is_default=0").run();
+    db.prepare(
+      "INSERT OR REPLACE INTO model_configs (name,provider,model_id,params,is_default,credential_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)"
+    ).run(name, provider, model_id, encrypt(JSON.stringify(mergedParams)), is_default ? 1 : 0, finalCredId, created_at, t);
+    return getModelConfig(name)!;
+  });
 }
 
 export function deleteModelConfig(name: string): boolean {
-  const db = getDb();
-  const wasDefault = !!(db.prepare("SELECT is_default FROM model_configs WHERE name=?").get(name) as { is_default?: number } | undefined)?.is_default;
-  const deleted = (db.prepare("DELETE FROM model_configs WHERE name=?").run(name) as { changes: number }).changes > 0;
-  if (!deleted) return false;
-  // Automatically reset any agent pointing to this deleted model config to NULL (automatic / default model)
-  db.prepare("UPDATE agent_configs SET model_config_name = NULL WHERE model_config_name = ?").run(name);
-  // Avoid the "no default" state: if the deleted row was the default and any
-  // other rows remain, promote the alphabetically-first remaining row so
-  // agents that fall back to the default keep working.
-  if (wasDefault) {
-    const next = db.prepare("SELECT name FROM model_configs ORDER BY name ASC LIMIT 1").get() as { name?: string } | undefined;
-    if (next?.name) db.prepare("UPDATE model_configs SET is_default=1 WHERE name=?").run(next.name);
-  }
-  return true;
+  return withDbTransaction(() => {
+    const db = getDb();
+    const wasDefault = !!(db.prepare("SELECT is_default FROM model_configs WHERE name=?").get(name) as { is_default?: number } | undefined)?.is_default;
+    const deleted = (db.prepare("DELETE FROM model_configs WHERE name=?").run(name) as { changes: number }).changes > 0;
+    if (!deleted) return false;
+    // Automatically reset any agent pointing to this deleted model config to NULL (automatic / default model)
+    db.prepare("UPDATE agent_configs SET model_config_name = NULL WHERE model_config_name = ?").run(name);
+    // Avoid the "no default" state: if the deleted row was the default and any
+    // other rows remain, promote the alphabetically-first remaining row so
+    // agents that fall back to the default keep working.
+    if (wasDefault) {
+      const next = db.prepare("SELECT name FROM model_configs ORDER BY name ASC LIMIT 1").get() as { name?: string } | undefined;
+      if (next?.name) db.prepare("UPDATE model_configs SET is_default=1 WHERE name=?").run(next.name);
+    }
+    return true;
+  });
 }
 
 /**

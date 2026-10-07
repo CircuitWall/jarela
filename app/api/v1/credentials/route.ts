@@ -16,10 +16,11 @@
 
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { createCredential, deleteCredential, listCredentials, SECRET_PARAM_KEYS, type CredentialAuthMethod, type CredentialRow, type CredentialType } from "@/lib/stores/credentials";
+import { createCredential, deleteCredential, listCredentials, nextCredentialId, SECRET_PARAM_KEYS, type CredentialAuthMethod, type CredentialRow, type CredentialType } from "@/lib/stores/credentials";
 import { errorResponse, cachedJson, createdResponse } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { probeCredentialAfterSave } from "@/lib/health/credential-probe";
+import { withKeyedMutation } from "@/lib/utils/keyed-mutation";
 import { NextResponse } from "next/server";
 const VALID_TYPES = new Set<CredentialType>(["model", "tts", "integration", "bridge"]);
 const VALID_AUTH = new Set<CredentialAuthMethod>(["api_key", "oauth"]);
@@ -70,7 +71,6 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return errorResponse(parsed.error.message);
   const { id, type, provider, auth_method, label, is_default, params } = parsed.data;
   if (auth_method && !VALID_AUTH.has(auth_method)) return errorResponse("invalid auth_method");
-  const row = createCredential({ id, type, provider, auth_method, label, is_default, params });
   // Refuse-save-on-401 (ADR-0070): probe the freshly-written credential
   // synchronously so a bad token surfaces at the Save button instead of
   // silently failing on the next agent turn. Skip when the client passes
@@ -78,15 +78,21 @@ export async function POST(req: NextRequest) {
   // to integration probes — see probeCredentialAfterSave for the scope
   // reasoning.
   const force = req.nextUrl.searchParams.get("force") === "1";
-  if (!force) {
-    const probe = await probeCredentialAfterSave({ credentialId: row.id, provider }).catch(() => null);
-    if (probe && probe.status === "auth_failed") {
-      deleteCredential(row.id);
-      return NextResponse.json(
-        { error: probe.error ?? "credential rejected by provider", code: "auth_failed" },
-        { status: 400 },
-      );
-    }
-  }
-  return createdResponse(publicView(row));
+  return withKeyedMutation(`credential-pair:${type}:${provider}`, async () => {
+    const credentialId = id?.trim() || nextCredentialId(type, provider);
+    return withKeyedMutation(`credential:${credentialId}`, async () => {
+      const row = createCredential({ id: credentialId, type, provider, auth_method, label, is_default, params });
+      if (!force) {
+        const probe = await probeCredentialAfterSave({ credentialId: row.id, provider }).catch(() => null);
+        if (probe && probe.status === "auth_failed") {
+          deleteCredential(row.id);
+          return NextResponse.json(
+            { error: probe.error ?? "credential rejected by provider", code: "auth_failed" },
+            { status: 400 },
+          );
+        }
+      }
+      return createdResponse(publicView(row));
+    });
+  });
 }

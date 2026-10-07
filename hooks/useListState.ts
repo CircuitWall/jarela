@@ -45,6 +45,7 @@ export function useListState<T>({
   const loaderRef = useRef(loader);
   const eventLoaderRef = useRef(eventLoader);
   const onDisabledRef = useRef(onDisabled);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     loaderRef.current = loader;
@@ -60,18 +61,23 @@ export function useListState<T>({
 
   const refresh = useCallback(async () => {
     if (!enabled) {
+      requestIdRef.current += 1;
       onDisabledRef.current?.();
       return;
     }
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      setItems(await loaderRef.current());
+      const nextItems = await loaderRef.current();
+      if (requestId === requestIdRef.current) setItems(nextItems);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load list");
-      setItems([]);
+      if (requestId === requestIdRef.current) {
+        setError(e instanceof Error ? e.message : "Failed to load list");
+        setItems([]);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [enabled]);
 
@@ -81,6 +87,7 @@ export function useListState<T>({
 
   const refreshFromEvent = useCallback(async () => {
     if (!enabled) {
+      requestIdRef.current += 1;
       onDisabledRef.current?.();
       return;
     }
@@ -89,15 +96,19 @@ export function useListState<T>({
       return;
     }
 
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      setItems(await eventLoaderRef.current());
+      const nextItems = await eventLoaderRef.current();
+      if (requestId === requestIdRef.current) setItems(nextItems);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load list");
-      setItems([]);
+      if (requestId === requestIdRef.current) {
+        setError(e instanceof Error ? e.message : "Failed to load list");
+        setItems([]);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [enabled, refresh]);
 

@@ -21,6 +21,38 @@ describe("useListState", () => {
     expect(result.current.items).toEqual(["x"]);
   });
 
+  it("keeps the newest result when refreshes resolve out of order", async () => {
+    let resolveFirst!: (items: string[]) => void;
+    let resolveSecond!: (items: string[]) => void;
+    const firstRequest = new Promise<string[]>((resolve) => { resolveFirst = resolve; });
+    const secondRequest = new Promise<string[]>((resolve) => { resolveSecond = resolve; });
+    const loader = vi.fn<() => Promise<string[]>>()
+      .mockResolvedValueOnce(["initial"])
+      .mockReturnValueOnce(firstRequest)
+      .mockReturnValueOnce(secondRequest);
+
+    const { result } = renderHook(() => useListState({ loader }));
+    await waitFor(() => expect(result.current.items).toEqual(["initial"]));
+
+    let firstRefresh!: Promise<void>;
+    let secondRefresh!: Promise<void>;
+    act(() => {
+      firstRefresh = result.current.refresh();
+      secondRefresh = result.current.refresh();
+    });
+
+    await act(async () => {
+      resolveSecond(["newest"]);
+      await secondRefresh;
+    });
+    await act(async () => {
+      resolveFirst(["stale"]);
+      await firstRefresh;
+    });
+
+    expect(result.current.items).toEqual(["newest"]);
+  });
+
   it("uses eventLoader when event is dispatched", async () => {
     const loader = vi.fn<() => Promise<string[]>>().mockResolvedValue(["normal"]);
     const eventLoader = vi.fn<() => Promise<string[]>>().mockResolvedValue(["forced"]);
