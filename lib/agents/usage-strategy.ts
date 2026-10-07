@@ -7,6 +7,8 @@ export interface UsageStrategyProfile {
   enableRouter: boolean | null;
   contextWindowCapTokens: number | null;
   outputTokenCap: number | null;
+  /** Ask thinking models to reason less (or not at all) when the provider supports it. */
+  reduceThinking: boolean;
   stallRetries: number | null;
   providerFailureRetries: number | null;
   promptInstruction: string;
@@ -16,8 +18,9 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
   cost_saving: {
     routerPolicy: "cheap",
     enableRouter: true,
-    contextWindowCapTokens: 32_768,
-    outputTokenCap: 2_048,
+    contextWindowCapTokens: 65_536,
+    outputTokenCap: 4_096,
+    reduceThinking: true,
     stallRetries: 0,
     providerFailureRetries: 1,
     promptInstruction:
@@ -29,6 +32,7 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
     enableRouter: true,
     contextWindowCapTokens: 32_768,
     outputTokenCap: 2_048,
+    reduceThinking: true,
     stallRetries: 0,
     providerFailureRetries: 1,
     promptInstruction:
@@ -40,6 +44,7 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
     enableRouter: null,
     contextWindowCapTokens: null,
     outputTokenCap: null,
+    reduceThinking: false,
     stallRetries: null,
     providerFailureRetries: null,
     promptInstruction: "",
@@ -49,6 +54,7 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
     enableRouter: true,
     contextWindowCapTokens: null,
     outputTokenCap: null,
+    reduceThinking: false,
     stallRetries: null,
     providerFailureRetries: null,
     promptInstruction:
@@ -69,4 +75,13 @@ export function resolveUsageStrategy(agentOverride: unknown, globalStrategy: unk
 
 export function getUsageStrategyProfile(strategy: UsageStrategy): UsageStrategyProfile {
   return PROFILES[strategy];
+}
+
+// Reasoning tokens share the output budget; below this a thinking model can
+// spend the whole cap on its chain of thought and return nothing.
+export const THINKING_OUTPUT_FLOOR_TOKENS = 32_768;
+
+export function resolveOutputTokenCap(profileCap: number | null, modelThinks: boolean): number | null {
+  if (profileCap === null) return null;
+  return modelThinks ? Math.max(profileCap, THINKING_OUTPUT_FLOOR_TOKENS) : profileCap;
 }

@@ -1,5 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { modelSupportsImages, isProviderClassified } from "./capabilities";
+import { modelSupportsImages, isProviderClassified, modelThinksByDefault, thinkingReductionParams } from "./capabilities";
+
+describe("thinking controls", () => {
+  it("flags default-thinking models per provider", () => {
+    expect(modelThinksByDefault("deepseek", "deepseek-flash")).toBe(true);
+    expect(modelThinksByDefault("deepseek", "deepseek-v4-pro")).toBe(true);
+    expect(modelThinksByDefault("openai", "gpt-5-mini")).toBe(true);
+    expect(modelThinksByDefault("openai", "gpt-4o")).toBe(false);
+    expect(modelThinksByDefault("anthropic", "claude-sonnet-4-6")).toBe(false);
+  });
+
+  it("disables DeepSeek V4 thinking outright and only lowers OpenAI reasoning", () => {
+    expect(thinkingReductionParams("deepseek", "deepseek-flash")).toEqual({ params: { thinking: { type: "disabled" } }, off: true });
+    expect(thinkingReductionParams("openai", "gpt-5")).toEqual({ params: { reasoning_effort: "low" }, off: false });
+    expect(thinkingReductionParams("openai", "o3-mini")).toEqual({ params: { reasoning_effort: "low" }, off: false });
+  });
+
+  it("sends nothing when the model has no known control", () => {
+    expect(thinkingReductionParams("openai", "gpt-4o")).toBeNull();
+    expect(thinkingReductionParams("github-copilot", "gpt-5")).toBeNull();
+    expect(thinkingReductionParams("anthropic", "claude-opus-4-7")).toBeNull();
+  });
+});
 
 describe("modelSupportsImages", () => {
   it("recognizes OpenAI vision-capable families", () => {
@@ -55,10 +77,15 @@ describe("modelSupportsImages", () => {
   });
 
   it("returns false for known text-only providers", () => {
+    expect(modelSupportsImages("deepseek", "deepseek-v4-pro")).toBe(false);
     expect(modelSupportsImages("deepseek", "deepseek-chat")).toBe(false);
-    expect(modelSupportsImages("deepseek", "deepseek-reasoner")).toBe(false);
     expect(modelSupportsImages("cohere", "command-r-plus")).toBe(false);
     expect(modelSupportsImages("cohere", "command-a")).toBe(false);
+  });
+
+  it("treats DeepSeek V4.1 Flash and its legacy alias as vision-capable", () => {
+    expect(modelSupportsImages("deepseek", "deepseek-flash")).toBe(true);
+    expect(modelSupportsImages("deepseek", "deepseek-v4-flash")).toBe(true);
   });
 
   it("returns false for unknown providers (defensive default)", () => {

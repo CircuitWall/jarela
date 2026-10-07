@@ -34,7 +34,9 @@ import {
 import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateCostUsd, CACHE_READ_INPUT_RATE_MULTIPLIER } from "@/lib/stores/pricing";
 import { DEFAULT_CONTEXT_WINDOW_TOKENS, estimateTokens } from "@/lib/agents/context-budget";
-import { getUsageStrategyProfile, resolveUsageStrategy } from "@/lib/agents/usage-strategy";
+import { getUsageStrategyProfile, resolveOutputTokenCap, resolveUsageStrategy } from "@/lib/agents/usage-strategy";
+import { getKnownContextLength } from "@/lib/providers/known-context-windows";
+import { modelThinksByDefault, thinkingReductionParams } from "@/lib/providers/capabilities";
 import { classifyStall, resolveDetector } from "@/lib/agents/hallucination-classifier";
 import { nextPolicyForRetry, routeTurnModel, type ModelRouterPolicy, type RouteDecisionMetadata } from "@/lib/agents/model-router";
 import {
@@ -577,11 +579,27 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const tierProviderParams = agentTierProportions
     ? { ...baseProviderParams, context_tier_proportions: agentTierProportions }
     : baseProviderParams;
-  const outputTokenCap = usageProfile.outputTokenCap;
-  const configuredContextWindow = typeof tierProviderParams.context_window_tokens === "number"
+  // An explicit thinking/reasoning_effort on the model config always wins over the strategy.
+  const thinkingReduction = usageProfile.reduceThinking
+    && modelCfg
+    && baseProviderParams.thinking === undefined
+    && baseProviderParams.reasoning_effort === undefined
+    ? thinkingReductionParams(modelCfg.provider, modelCfg.model_id)
+    : null;
+  const outputTokenCap = resolveOutputTokenCap(
+    usageProfile.outputTokenCap,
+    !!modelCfg && modelThinksByDefault(modelCfg.provider, modelCfg.model_id) && !thinkingReduction?.off,
+  );
+  // Strategy caps must apply to the model's real window, not the 8k fallback,
+  // otherwise a capped strategy shrinks a 1M-token model to 8k.
+  const explicitContextWindow = typeof tierProviderParams.context_window_tokens === "number"
     && tierProviderParams.context_window_tokens > 0
     ? tierProviderParams.context_window_tokens
-    : DEFAULT_CONTEXT_WINDOW_TOKENS;
+    : null;
+  const knownContextWindow = modelCfg ? getKnownContextLength(modelCfg.provider, modelCfg.model_id) : null;
+  const configuredContextWindow = explicitContextWindow && knownContextWindow
+    ? Math.min(explicitContextWindow, knownContextWindow)
+    : explicitContextWindow ?? knownContextWindow ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
   // Attachment turns can consume substantial context, so use the model's configured window.
   const contextWindowCap = req.attachments?.length
     ? null
@@ -748,6 +766,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       route_decision: routeDecision,
       output_reserve_tokens: historyWindow.budget.outputReserveTokens,
       max_output_tokens: outputTokenCap ?? undefined,
+      thinking_params: thinkingReduction?.params,
       tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
       delegation: delegationDepth > 0 || delegationAncestors.length > 0
         ? { depth: delegationDepth, ancestors: delegationAncestors }

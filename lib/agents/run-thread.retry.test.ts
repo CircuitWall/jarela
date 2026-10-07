@@ -365,7 +365,7 @@ describe("prepareThreadRun transient retry", () => {
 
     expect(collected.terminal).toBe("error");
     expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
-    expect(prepared.context_snapshot.context_window_tokens).toBe(32_768);
+    expect(prepared.context_snapshot.context_window_tokens).toBe(65_536);
     const firstOptions = streamWithConfigMock.mock.calls[0][2] as {
       agent_run_config: {
         route_decision: { source: string; policy?: string };
@@ -375,9 +375,69 @@ describe("prepareThreadRun transient retry", () => {
       };
     };
     expect(firstOptions.agent_run_config.route_decision).toMatchObject({ source: "heuristic", policy: "cheap" });
-    expect(firstOptions.agent_run_config.max_output_tokens).toBe(2_048);
-    expect(firstOptions.agent_run_config.output_reserve_tokens).toBe(2_048);
+    expect(firstOptions.agent_run_config.max_output_tokens).toBe(4_096);
+    expect(firstOptions.agent_run_config.output_reserve_tokens).toBe(4_096);
     expect(firstOptions.agent_run_config.system_prompt).toContain("Cost-saving response style");
+  });
+
+  it("applies cost-saving to the model's real window and turns thinking off where the provider allows", async () => {
+    upsertModelConfig("ds-flash", "deepseek", "deepseek-flash", { api_key: "sk-test" }, false);
+    upsertAgentConfig({
+      id: "agent-cost-saving-thinking",
+      name: "Cost Saving Thinking Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: "ds-flash",
+      usage_strategy: "cost_saving",
+    });
+    const thread = createThread("agent-cost-saving-thinking");
+    streamWithConfigMock.mockReturnValue(chunks({ type: "done", data: {} }));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "hey",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    await collectStream(prepared.stream);
+
+    expect(prepared.context_snapshot.context_window_tokens).toBe(65_536);
+    const options = streamWithConfigMock.mock.calls[0][2] as {
+      agent_run_config: { max_output_tokens?: number; thinking_params?: unknown };
+    };
+    expect(options.agent_run_config.thinking_params).toEqual({ thinking: { type: "disabled" } });
+    expect(options.agent_run_config.max_output_tokens).toBe(4_096);
+  });
+
+  it("leaves output headroom when the model config explicitly keeps thinking on", async () => {
+    upsertModelConfig("ds-think", "deepseek", "deepseek-flash", {
+      api_key: "sk-test",
+      thinking: { type: "enabled" },
+    }, false);
+    upsertAgentConfig({
+      id: "agent-cost-saving-explicit-thinking",
+      name: "Cost Saving Explicit Thinking Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: "ds-think",
+      usage_strategy: "cost_saving",
+    });
+    const thread = createThread("agent-cost-saving-explicit-thinking");
+    streamWithConfigMock.mockReturnValue(chunks({ type: "done", data: {} }));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "hey",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    await collectStream(prepared.stream);
+
+    const options = streamWithConfigMock.mock.calls[0][2] as {
+      agent_run_config: { max_output_tokens?: number; thinking_params?: unknown };
+    };
+    expect(options.agent_run_config.thinking_params).toBeUndefined();
+    expect(options.agent_run_config.max_output_tokens).toBe(32_768);
   });
 
   it("lifts the cost-saving context cap for attachment turns without changing other strategy settings", async () => {
@@ -421,7 +481,7 @@ describe("prepareThreadRun transient retry", () => {
       };
     };
     expect(options.agent_run_config.route_decision.policy).toBe("cheap");
-    expect(options.agent_run_config.max_output_tokens).toBe(2_048);
+    expect(options.agent_run_config.max_output_tokens).toBe(4_096);
     expect(options.agent_run_config.system_prompt).toContain("Cost-saving response style");
   });
 

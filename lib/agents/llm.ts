@@ -246,9 +246,11 @@ async function* streamWithConfigImpl(
     : runCfg?.output_reserve_tokens && !baseParams.max_tokens
       ? runCfg.output_reserve_tokens
       : undefined;
-  const params: ProviderParams = outputLimit !== undefined
-    ? { ...baseParams, max_tokens: outputLimit }
-    : baseParams;
+  const params: ProviderParams = {
+    ...baseParams,
+    ...(runCfg?.thinking_params ?? {}),
+    ...(outputLimit !== undefined ? { max_tokens: outputLimit } : {}),
+  };
 
   const provider = getProvider(cfg.provider);
   const includeImages = modelCapabilities(cfg.provider, cfg.model_id).vision;
@@ -573,12 +575,12 @@ async function* streamWithConfigImpl(
         // results we don't yet count add overhead). Only writes when the
         // new value is smaller than what's stored — never grows blindly.
         try {
-          const current = typeof params.context_window_tokens === "number"
-            ? params.context_window_tokens
+          const current = typeof baseParams.context_window_tokens === "number"
+            ? baseParams.context_window_tokens
             : Number.POSITIVE_INFINITY;
           const corrected = Math.max(2048, Math.floor(observed.limit * 0.9));
           if (corrected < current) {
-            const nextParams = { ...params, context_window_tokens: corrected };
+            const nextParams = { ...baseParams, context_window_tokens: corrected };
             upsertModelConfig(cfg.name, cfg.provider, cfg.model_id, nextParams, cfg.is_default === 1);
             console.warn(
               `[llm] context-window self-correct for ${cfg.name} (${cfg.provider}/${cfg.model_id}): ` +
@@ -599,12 +601,12 @@ async function* streamWithConfigImpl(
         // use the smaller value; if it still overflows we halve again.
         // Convergence takes at most log2(assumed / 2048) turns.
         try {
-          const current = typeof params.context_window_tokens === "number" && params.context_window_tokens > 0
-            ? params.context_window_tokens
+          const current = typeof baseParams.context_window_tokens === "number" && baseParams.context_window_tokens > 0
+            ? baseParams.context_window_tokens
             : 128_000; // Assume mid-size window when nothing is pinned.
           const corrected = Math.max(2048, Math.floor(current / 2));
           if (corrected < current) {
-            const nextParams = { ...params, context_window_tokens: corrected };
+            const nextParams = { ...baseParams, context_window_tokens: corrected };
             upsertModelConfig(cfg.name, cfg.provider, cfg.model_id, nextParams, cfg.is_default === 1);
             console.warn(
               `[llm] context-window halve-fallback for ${cfg.name} (${cfg.provider}/${cfg.model_id}): ` +
@@ -677,8 +679,10 @@ async function* streamWithConfigImpl(
       type: "error",
       data: {
         message:
-          "Response truncated — the model hit its max_tokens limit before finishing. " +
-          "Raise max_tokens in the model config (Anthropic defaults to 4096) and ask me to continue.",
+          `Response truncated — ${cfg.model_id} hit its output limit (${params.max_tokens ?? "provider default"} tokens) before finishing. ` +
+          (strategyOutputCap !== undefined
+            ? "The active usage strategy caps output; switch it to balanced or high_reasoning (JARELA_USAGE_STRATEGY), or raise max_tokens in the model config, and ask me to continue."
+            : "Raise max_tokens in the model config and ask me to continue."),
         code: "max_tokens_truncated",
       },
     };

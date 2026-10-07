@@ -39,6 +39,13 @@ describe("known-context-windows", () => {
     expect(getKnownContextLength("github-copilot", "o3")).toBe(200_000);
   });
 
+  it("resolves DeepSeek V4 models to 1M context and 384K output", () => {
+    for (const id of ["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"]) {
+      expect(getKnownModelLimits("deepseek", id)).toEqual({ context_length: 1_000_000, max_output_tokens: 384_000 });
+    }
+    expect(getKnownContextLength("deepseek", "deepseek-chat")).toBeNull();
+  });
+
   it("exposes max_output_tokens too", () => {
     expect(getKnownMaxOutputTokens("openai", "gpt-5")).toBe(128_000);
     expect(getKnownModelLimits("anthropic", "claude-opus-4-7")).toEqual({
