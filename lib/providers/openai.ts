@@ -67,6 +67,7 @@ function makeClient(
     apiKey: resolveProviderApiKey(providerName, params),
     baseURL: params.base_url ?? baseURL,
     defaultHeaders: { ...params.extra_headers, ...extraHeaders },
+    maxRetries: 0,
   });
 }
 

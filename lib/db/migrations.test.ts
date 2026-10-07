@@ -377,11 +377,13 @@ describe("router column migration", () => {
 
     db.exec("ALTER TABLE agent_configs DROP COLUMN router_policy");
     db.exec("ALTER TABLE agent_configs DROP COLUMN router_enabled");
+    db.exec("ALTER TABLE agent_configs DROP COLUMN usage_strategy");
     db.exec("DELETE FROM messages");
 
     const before = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
     expect(before.some((c) => c.name === "router_policy")).toBe(false);
     expect(before.some((c) => c.name === "router_enabled")).toBe(false);
+    expect(before.some((c) => c.name === "usage_strategy")).toBe(false);
 
     const { runMigrations } = await import("@/lib/db/migrations");
     runMigrations(db);
@@ -389,6 +391,7 @@ describe("router column migration", () => {
     const after = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
     expect(after.some((c) => c.name === "router_policy")).toBe(true);
     expect(after.some((c) => c.name === "router_enabled")).toBe(true);
+    expect(after.some((c) => c.name === "usage_strategy")).toBe(true);
   });
 });
 

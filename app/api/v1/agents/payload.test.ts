@@ -35,6 +35,7 @@ const baseRow: AgentConfigRow = {
   tool_credentials: null,
   router_policy: null,
   router_enabled: null,
+  usage_strategy: null,
   created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-01-01T00:00:00.000Z",
 };
@@ -45,21 +46,25 @@ describe("agent payload mapping", () => {
       name: " Agent One ",
       router_policy: "balanced",
       router_enabled: false,
+      usage_strategy: "cost_saving",
     });
 
     expect(out.name).toBe("Agent One");
     expect(out.router_policy).toBe("balanced");
     expect(out.router_enabled).toBe(false);
+    expect(out.usage_strategy).toBe("cost_saving");
   });
 
   it("passes router fields through on update when provided", () => {
     const out = toUpdateAgentInput("agent-1", {
       router_policy: "quality",
       router_enabled: true,
+      usage_strategy: "high_reasoning",
     }, baseRow);
 
     expect(out.router_policy).toBe("quality");
     expect(out.router_enabled).toBe(true);
+    expect(out.usage_strategy).toBe("high_reasoning");
   });
 
   it("leaves router fields undefined on update when omitted", () => {
@@ -67,5 +72,6 @@ describe("agent payload mapping", () => {
 
     expect(out.router_policy).toBeUndefined();
     expect(out.router_enabled).toBeUndefined();
+    expect(out.usage_strategy).toBeUndefined();
   });
 });

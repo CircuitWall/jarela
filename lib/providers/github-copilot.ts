@@ -115,6 +115,7 @@ async function resolvedClient(params: ProviderParams): Promise<OpenAI> {
     apiKey: auth.apiKey,
     baseURL: auth.baseURL,
     defaultHeaders: { ...auth.headers, ...params.extra_headers },
+    maxRetries: 0,
   });
 }
 
@@ -199,6 +200,7 @@ async function resolvedAnthropicClient(params: ProviderParams): Promise<Anthropi
     authToken: auth.apiKey,
     baseURL: auth.baseURL,
     defaultHeaders: { ...auth.headers, ...params.extra_headers },
+    maxRetries: 0,
   });
 }
 

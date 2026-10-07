@@ -334,6 +334,17 @@ describe("assembled agent system prompt", () => {
     }
   });
 
+  it("keeps the action vocabulary and destructive-confirmation rules once in the shared SOP", () => {
+    for (const { id, prompt } of variants) {
+      const sharedBlock = prompt.split(CACHE_SHARED_SPLIT_SENTINEL)[0];
+      expect(sharedBlock, id).toContain("Classify the request. Informational answers may be direct");
+      expect(sharedBlock, id).toContain("Use only these operation labels when describing work");
+      expect(sharedBlock, id).toContain("destructive requests also need the required confirmation");
+      expect(prompt.split("Use only these operation labels").length - 1, id).toBe(1);
+      expect(prompt, id).not.toContain("Classify each request before answering");
+    }
+  });
+
   it("keeps per-turn tool state after the stable sentinel", () => {
     for (const { id, prompt } of variants) {
       const dynamic = prompt.split(CACHE_SPLIT_SENTINEL)[1] ?? "";

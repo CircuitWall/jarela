@@ -49,6 +49,9 @@ export function agentToResponse(a: AgentConfigRow) {
       ? a.router_policy
       : null,
     router_enabled: a.router_enabled === 1 ? true : a.router_enabled === 0 ? false : null,
+    usage_strategy: (a.usage_strategy === "cost_saving" || a.usage_strategy === "balanced" || a.usage_strategy === "high_reasoning")
+      ? a.usage_strategy
+      : null,
     created_at: a.created_at,
     updated_at: a.updated_at,
   };

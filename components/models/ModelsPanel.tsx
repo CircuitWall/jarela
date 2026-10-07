@@ -1,16 +1,19 @@
 "use client";
-import { Cpu, Plus, Star, Trash2 } from "lucide-react";
+import { ArrowUpRight, Cpu, Plus, Star, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ModelConfig } from "@/api/types";
 import { refreshRuntimeConfig } from "@/api/runtime-config";
 import { Select } from "@/components/ui/Select";
 import { useModels } from "@/hooks/useModels";
+import { useAgents } from "@/hooks/useAgents";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { buildHref } from "@/lib/ui/navigate";
 import { ModelEditor } from "./ModelEditor";
 import { ProviderLogo } from "./ProviderLogo";
 import { CapBadges } from "./CapBadges";
 import { CustomProvidersSection } from "./CustomProvidersSection";
 import { errorMessage } from "@/lib/utils/error";
+import type { UsageStrategy } from "@/lib/agents/usage-strategy";
 
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-700",
@@ -28,12 +31,15 @@ interface EnvEntry {
 
 export function ModelsPanel() {
   const { models, assignments, loading, create, update, remove, refresh } = useModels();
+  const { agents, loading: agentsLoading } = useAgents();
+  const strategyOverrides = agents.filter((agent) => agent.usage_strategy != null);
   const [editing, setEditing] = useState<ModelConfig | null | "new">(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [routerMode, setRouterMode] = useState<RouterMode>("off");
   const [routerPolicy, setRouterPolicy] = useState<RouterPolicy>("balanced");
+  const [usageStrategy, setUsageStrategy] = useState<UsageStrategy>("balanced");
   const [routerLoading, setRouterLoading] = useState(true);
-  const [routerSaving, setRouterSaving] = useState<null | "mode" | "policy">(null);
+  const [routerSaving, setRouterSaving] = useState<null | "mode" | "policy" | "strategy">(null);
   const [routerError, setRouterError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("models", "model", containerRef);
@@ -47,10 +53,14 @@ export function ModelsPanel() {
         const body = (await r.json()) as { entries: EnvEntry[] };
         const mode = body.entries.find((e) => e.name === "JARELA_MODEL_ROUTER_MODE")?.current;
         const policy = body.entries.find((e) => e.name === "JARELA_MODEL_ROUTER_POLICY")?.current;
+        const strategy = body.entries.find((e) => e.name === "JARELA_USAGE_STRATEGY")?.current;
         if (!cancelled) {
           setRouterMode(mode === "heuristic" ? "heuristic" : "off");
           setRouterPolicy(
             policy === "cheap" || policy === "fast" || policy === "quality" ? policy : "balanced",
+          );
+          setUsageStrategy(
+            strategy === "cost_saving" || strategy === "high_reasoning" ? strategy : "balanced",
           );
           setRouterError(null);
         }
@@ -82,7 +92,7 @@ export function ModelsPanel() {
     }
   }
 
-  async function persistRouterSetting(name: string, value: string, field: "mode" | "policy") {
+  async function persistRouterSetting(name: string, value: string, field: "mode" | "policy" | "strategy") {
     setRouterSaving(field);
     setRouterError(null);
     try {
@@ -124,6 +134,16 @@ export function ModelsPanel() {
     }
   }
 
+  async function handleUsageStrategyChange(next: UsageStrategy) {
+    const prev = usageStrategy;
+    setUsageStrategy(next);
+    try {
+      await persistRouterSetting("JARELA_USAGE_STRATEGY", next, "strategy");
+    } catch {
+      setUsageStrategy(prev);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
@@ -142,6 +162,46 @@ export function ModelsPanel() {
               <p className="text-[11px] text-fg-subtle mt-1 leading-snug">
                 Control how Jarela chooses the execution model for each turn. Automatic routing uses task complexity, tools, attachments, recent failures, latency, cache affinity, and cost policy.
               </p>
+            </div>
+            <label className="block space-y-1">
+              <span className="text-[11px] text-fg-faint">Global usage strategy</span>
+              <Select
+                value={usageStrategy}
+                disabled={routerLoading || routerSaving !== null}
+                onChange={(e) => { void handleUsageStrategyChange(e.target.value as UsageStrategy); }}
+              >
+                <option value="cost_saving">Cost saving</option>
+                <option value="balanced">Balanced</option>
+                <option value="high_reasoning">High reasoning</option>
+              </Select>
+            </label>
+            <p className="text-[11px] text-fg-faint">
+              Cost saving favors cheaper routes, smaller context/output budgets, and concise replies. Per-agent strategy and router overrides take precedence.
+            </p>
+            <div className="border-t border-border/60 pt-2">
+              <p className="text-[11px] text-fg-subtle font-medium mb-1">
+                Agent strategy overrides ({strategyOverrides.length})
+              </p>
+              {agentsLoading && agents.length === 0 ? (
+                <p className="text-[11px] text-fg-faint">Loading agents…</p>
+              ) : strategyOverrides.length === 0 ? (
+                <p className="text-[11px] text-fg-faint">All agents inherit the global strategy.</p>
+              ) : (
+                <ul className="max-h-28 overflow-y-auto space-y-0.5">
+                  {strategyOverrides.map((agent) => (
+                    <li key={agent.id}>
+                      <a
+                        href={buildHref("agents", agent.id)}
+                        className="flex items-center gap-1.5 py-0.5 text-[11px] text-accent hover:text-accent-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                      >
+                        <span className="truncate">{agent.name}</span>
+                        <span className="text-fg-faint">· {agent.usage_strategy?.replace("_", " ")}</span>
+                        <ArrowUpRight size={11} className="ml-auto shrink-0" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="space-y-1">

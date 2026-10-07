@@ -72,6 +72,7 @@ export interface AgentConfigRow {
   // router_enabled: 1 = always route, 0 = never route, NULL = inherit global mode
   router_policy: string | null;
   router_enabled: number | null;
+  usage_strategy: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -182,6 +183,7 @@ export interface UpsertAgentInput {
   // Per-agent router enable. null = clear override (inherit global mode).
   // undefined = keep existing.
   router_enabled?: boolean | null;
+  usage_strategy?: "cost_saving" | "balanced" | "high_reasoning" | null;
 }
 
 /**
@@ -312,6 +314,13 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       : input.router_enabled === null
         ? null
         : (input.router_enabled ? 1 : 0);
+  const VALID_USAGE_STRATEGIES = new Set(["cost_saving", "balanced", "high_reasoning"]);
+  const usageStrategy =
+    input.usage_strategy === undefined
+      ? (existing?.usage_strategy ?? null)
+      : input.usage_strategy !== null && VALID_USAGE_STRATEGIES.has(input.usage_strategy)
+        ? input.usage_strategy
+        : null;
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
@@ -321,9 +330,9 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
          harness_id, delegate_targets, context_tier_proportions,
          anti_hallucination_mode, anti_hallucination_model_config, citation_strictness,
-         tool_credentials, router_policy, router_enabled,
+        tool_credentials, router_policy, router_enabled, usage_strategy,
          created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -370,6 +379,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       toolCredentials,
       routerPolicy,
       routerEnabled,
+      usageStrategy,
       created_at,
       t,
     );

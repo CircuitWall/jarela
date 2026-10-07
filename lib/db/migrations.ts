@@ -1688,6 +1688,9 @@ function ensureAgentRouterColumns(db: DatabaseSync): void {
   if (!routerCols.some((c) => c.name === "router_enabled")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN router_enabled INTEGER");
   }
+  if (!routerCols.some((c) => c.name === "usage_strategy")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN usage_strategy TEXT");
+  }
 }
 
 function ensureDocumentChunkFailureColumns(db: DatabaseSync): void {

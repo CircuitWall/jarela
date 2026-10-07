@@ -1,6 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import type AnthropicNS from "@anthropic-ai/sdk";
-import { isCopilotClaudeModel } from "./github-copilot";
+import { githubCopilotProvider, isCopilotClaudeModel } from "./github-copilot";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("isCopilotClaudeModel", () => {
   it.each([
@@ -98,5 +100,17 @@ describe("Claude-via-Copilot routing", () => {
     const lastMsg = reqBody.messages[reqBody.messages.length - 1];
     const toolResult = lastMsg.content.find((b) => b.type === "tool_result");
     expect(toolResult?.cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it.each(["gpt-4o", "claude-sonnet-4"])("leaves HTTP 429 retry ownership to Jarela for %s", async (modelId) => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ error: { message: "rate limited" } }), {
+      status: 429,
+      headers: { "Content-Type": "application/json", "Retry-After": "1" },
+    }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(githubCopilotProvider.invoke!(modelId, [{ role: "user", content: "synthetic" }], {
+      copilot_session_token: "synthetic-session-token",
+    }, [])).rejects.toMatchObject({ status: 429 });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

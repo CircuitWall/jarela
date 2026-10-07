@@ -98,6 +98,8 @@ export interface AgentConfig {
    * null = inherit the global JARELA_MODEL_ROUTER_MODE setting.
    */
   router_enabled?: boolean | null;
+  /** Per-agent usage profile; null inherits JARELA_USAGE_STRATEGY. */
+  usage_strategy?: "cost_saving" | "balanced" | "high_reasoning" | null;
   created_at: string;
   updated_at: string;
 }
@@ -146,6 +148,8 @@ export interface AgentConfigIn {
   router_policy?: "cheap" | "fast" | "balanced" | "quality" | null;
   // null = clear override (inherit global); undefined = keep existing.
   router_enabled?: boolean | null;
+  // null = inherit global strategy; undefined = leave as-is.
+  usage_strategy?: "cost_saving" | "balanced" | "high_reasoning" | null;
 }
 
 export interface ThreadSummary {

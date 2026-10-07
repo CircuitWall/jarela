@@ -27,7 +27,7 @@ export interface ContextBudget {
   tierPriority: ContextTierPriority;
 }
 
-const DEFAULT_CONTEXT_WINDOW_TOKENS = 8_192;
+export const DEFAULT_CONTEXT_WINDOW_TOKENS = 8_192;
 const DEFAULT_OVERHEAD_TOKENS = 1_200;
 const DEFAULT_OUTPUT_RESERVE_RATIO = 0.2;
 const DEFAULT_TIER_PRIORITY: ContextTierPriority = ["hot", "warm", "facts"];

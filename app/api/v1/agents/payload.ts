@@ -40,6 +40,7 @@ export function toCreateAgentInput(id: string, body: AgentCreateBody): UpsertAge
     tool_credentials: body.tool_credentials,
     router_policy: body.router_policy,
     router_enabled: body.router_enabled,
+    usage_strategy: body.usage_strategy,
   };
 }
 
@@ -88,5 +89,7 @@ export function toUpdateAgentInput(
       "router_policy" in body ? body.router_policy : undefined,
     router_enabled:
       "router_enabled" in body ? body.router_enabled : undefined,
+    usage_strategy:
+      "usage_strategy" in body ? body.usage_strategy : undefined,
   };
 }

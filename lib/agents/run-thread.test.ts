@@ -12,6 +12,7 @@ import {
   INTERRUPT_MARKER,
   shouldRetryTransientError,
   transientRetryDelayMs,
+  rateLimitRetryDelayMs,
   shouldEmitChunk,
 } from "./run-thread";
 
@@ -310,6 +311,11 @@ describe("transientRetryDelayMs", () => {
     expect(transientRetryDelayMs(2)).toBe(1000);
     expect(transientRetryDelayMs(3)).toBe(2000);
     expect(transientRetryDelayMs(6)).toBe(8000);
+  });
+
+  it("honors longer provider Retry-After values for app-owned retries", () => {
+    expect(rateLimitRetryDelayMs(1, 5000)).toBe(5000);
+    expect(rateLimitRetryDelayMs(3, 1000)).toBe(2000);
   });
 });
 

@@ -154,6 +154,32 @@ describe("prepareThreadRun transient retry", () => {
     expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
   });
 
+  it("does not hold a run for a Retry-After longer than the automatic retry cap", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-long-retry-after",
+      name: "Long Retry-After Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-long-retry-after");
+    streamWithConfigMock.mockImplementationOnce(() => chunks(
+      { type: "error", data: { code: "rate_limited", message: "429", retry_after_ms: 60_001 } },
+    ));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Ping",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+
+    const collected = await collectStream(prepared.stream);
+    expect(collected.terminal).toBe("error");
+    expect(streamWithConfigMock).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps per-agent router policy as retry seed instead of reverting to global", async () => {
     process.env.JARELA_MODEL_ROUTER_MODE = "heuristic";
     process.env.JARELA_MODEL_ROUTER_POLICY = "balanced";
@@ -216,6 +242,94 @@ describe("prepareThreadRun transient retry", () => {
     // Retry should advance from cheap -> balanced. If it reverts to the global
     // seed (balanced), it would incorrectly jump to quality.
     expect(secondOpts.agent_run_config?.route_decision?.policy).toBe("balanced");
+  });
+
+  it("applies cost-saving routing and budget caps while retaining one provider retry", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", {
+      api_key: "sk-test",
+      context_window_tokens: 131_072,
+      max_tokens: 8_192,
+    }, true);
+    upsertModelConfig("m-cheap", "openai", "gpt-4o-mini", {
+      api_key: "sk-test",
+      context_window_tokens: 131_072,
+      max_tokens: 8_192,
+    }, false);
+    upsertModelConfig("m-quality", "openai", "gpt-4.1", {
+      api_key: "sk-test",
+      context_window_tokens: 131_072,
+      max_tokens: 8_192,
+    }, false);
+    upsertAgentConfig({
+      id: "agent-cost-saving",
+      name: "Cost Saving Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      usage_strategy: "cost_saving",
+    });
+    const thread = createThread("agent-cost-saving");
+
+    streamWithConfigMock
+      .mockImplementationOnce(() => chunks(
+        { type: "error", data: { code: "stream_error", message: "connection reset" } },
+      ))
+      .mockImplementationOnce(() => chunks(
+        { type: "error", data: { code: "stream_error", message: "connection reset" } },
+      ));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Summarize briefly",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    const collected = await collectStream(prepared.stream);
+
+    expect(collected.terminal).toBe("error");
+    expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
+    expect(prepared.context_snapshot.context_window_tokens).toBe(32_768);
+    const firstOptions = streamWithConfigMock.mock.calls[0][2] as {
+      agent_run_config: {
+        route_decision: { source: string; policy?: string };
+        max_output_tokens?: number;
+        output_reserve_tokens?: number;
+        system_prompt: string;
+      };
+    };
+    expect(firstOptions.agent_run_config.route_decision).toMatchObject({ source: "heuristic", policy: "cheap" });
+    expect(firstOptions.agent_run_config.max_output_tokens).toBe(2_048);
+    expect(firstOptions.agent_run_config.output_reserve_tokens).toBe(2_048);
+    expect(firstOptions.agent_run_config.system_prompt).toContain("Cost-saving response style");
+  });
+
+  it("flags a local stall without starting a quality retry under cost-saving", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-cost-saving-stall",
+      name: "Cost Saving Stall Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      usage_strategy: "cost_saving",
+    });
+    const thread = createThread("agent-cost-saving-stall");
+    streamWithConfigMock.mockReturnValue(chunks(
+      { type: "text_delta", data: { delta: "Working on it!" } },
+      { type: "done", data: {} },
+    ));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Do the task",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    const collected = await collectStream(prepared.stream);
+
+    expect(collected.terminal).toBe("done");
+    expect(collected.assistantContent).toContain("Automatic quality retry is disabled");
+    expect(streamWithConfigMock).toHaveBeenCalledTimes(1);
   });
 
   it("adds env override and restart tools to the effective self-config surface", async () => {

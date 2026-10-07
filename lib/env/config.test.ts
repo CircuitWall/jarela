@@ -19,6 +19,7 @@ const KEYS = [
   "JARELA_PROVIDER_RATE_LIMITS",
   "JARELA_MODEL_ROUTER_MODE",
   "JARELA_MODEL_ROUTER_POLICY",
+  "JARELA_USAGE_STRATEGY",
   "NEXT_PUBLIC_APP_NAME",
   "NEXT_PUBLIC_APP_DESCRIPTION",
   "NEXT_PUBLIC_APP_ISSUE_URL",
@@ -54,6 +55,7 @@ describe("getConfig", () => {
     expect(c.providerRateLimits).toBe("");
     expect(c.modelRouterMode).toBe("off");
     expect(c.modelRouterPolicy).toBe("balanced");
+    expect(c.usageStrategy).toBe("balanced");
     expect(c.dataDir).toBe("/tmp/jarela-test-data");
     expect(c.appName).toBe("Jarela");
     expect(c.appDescription).toBe("Jarela — local chat interface for LangGraph agents");
@@ -133,6 +135,16 @@ describe("getConfig", () => {
     const c = getConfig();
     expect(c.modelRouterMode).toBe("heuristic");
     expect(c.modelRouterPolicy).toBe("cheap");
+  });
+
+  it("parses valid usage strategies and falls back for invalid values", () => {
+    process.env.JARELA_USAGE_STRATEGY = "high_reasoning";
+    resetConfigCache();
+    expect(getConfig().usageStrategy).toBe("high_reasoning");
+
+    process.env.JARELA_USAGE_STRATEGY = "unknown";
+    resetConfigCache();
+    expect(getConfig().usageStrategy).toBe("balanced");
   });
 
   it("honours JARELA_PROVIDER_TOOL_LIMIT", () => {

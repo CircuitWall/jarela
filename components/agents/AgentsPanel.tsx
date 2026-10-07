@@ -8,6 +8,7 @@ import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { Button } from "@/components/ui/Button";
 import { AgentEditor } from "./AgentEditor";
+import { useAppContext } from "@/contexts/AppContext";
 
 const AVATAR_GRADIENTS = [
   "from-violet-500 to-indigo-600",
@@ -47,10 +48,25 @@ function AgentAvatar({ icon, name, id }: { icon: string | null; name: string; id
 export function AgentsPanel() {
   const { agents, loading, create, update, remove } = useAgents();
   const { models } = useModels();
+  const { state } = useAppContext();
   const [editing, setEditing] = useState<AgentConfig | null | "new">(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastDeepLinkedAgent = useRef<string | null>(null);
   useDeepLinkScroll("agents", "agent", containerRef);
+
+  useEffect(() => {
+    const selectedId = state.selectedItem.agents;
+    if (!selectedId) {
+      lastDeepLinkedAgent.current = null;
+      return;
+    }
+    if (lastDeepLinkedAgent.current === selectedId) return;
+    const selectedAgent = agents.find((agent) => agent.id === selectedId);
+    if (!selectedAgent) return;
+    lastDeepLinkedAgent.current = selectedId;
+    setEditing(selectedAgent);
+  }, [agents, state.selectedItem.agents]);
 
   useEffect(() => {
     void Promise.allSettled([

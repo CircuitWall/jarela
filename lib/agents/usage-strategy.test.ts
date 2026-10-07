@@ -1,0 +1,31 @@
+import { describe, expect, it } from "vitest";
+import { getUsageStrategyProfile, parseUsageStrategy, resolveUsageStrategy } from "./usage-strategy";
+
+describe("usage strategy profiles", () => {
+  it("defaults invalid and missing values to balanced", () => {
+    expect(parseUsageStrategy("unknown")).toBeNull();
+    expect(resolveUsageStrategy(null, "unknown")).toBe("balanced");
+  });
+
+  it("prefers an explicit per-agent override over the global default", () => {
+    expect(resolveUsageStrategy("high_reasoning", "cost_saving")).toBe("high_reasoning");
+    expect(resolveUsageStrategy(null, "cost_saving")).toBe("cost_saving");
+  });
+
+  it("caps context and output, disables stall retries, but permits one provider-failure retry", () => {
+    expect(getUsageStrategyProfile("cost_saving")).toMatchObject({
+      routerPolicy: "cheap",
+      enableRouter: true,
+      contextWindowCapTokens: 32_768,
+      outputTokenCap: 2_048,
+      stallRetries: 0,
+      providerFailureRetries: 1,
+    });
+  });
+
+  it("keeps balanced behavior unchanged and routes high reasoning toward quality", () => {
+    expect(getUsageStrategyProfile("balanced").promptInstruction).toBe("");
+    expect(getUsageStrategyProfile("balanced").providerFailureRetries).toBeNull();
+    expect(getUsageStrategyProfile("high_reasoning")).toMatchObject({ routerPolicy: "quality", enableRouter: true });
+  });
+});
