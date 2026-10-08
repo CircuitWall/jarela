@@ -6,6 +6,8 @@ and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-08
+
 ### Fixed
 
 - `confluence_get_page` now fetches storage and rendered view bodies with
