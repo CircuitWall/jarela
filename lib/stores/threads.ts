@@ -235,6 +235,36 @@ export function getRecentMessagesWindow(
   return rows.reverse();
 }
 
+// Count messages in a [fromISO, toISO) half-open range at the given
+// scope, capped so very long gaps don't scan the whole table. Used by
+// the warm summary cache in `history-window.ts` to decide whether the
+// cached boundary has drifted too far from the current turn's boundary
+// to still be reused.
+export function countMessagesBetween(
+  thread_id: string,
+  fromISO: string,
+  toISO: string,
+  scope: "foreground" | "bridge" | "all",
+  limit: number,
+): number {
+  if (toISO <= fromISO) return 0;
+  const params: (string | number)[] = [thread_id, fromISO, toISO];
+  let sql = "SELECT COUNT(*) AS n FROM (SELECT 1 FROM messages"
+    + " WHERE thread_id=? AND created_at >= ? AND created_at < ?"
+    + " AND (category IS NULL OR category != 'run_error')"
+    + ` AND (metadata IS NULL OR instr(metadata, '"automation_activity"') = 0)`;
+  if (scope === "foreground") {
+    sql += " AND " + foregroundCategoryGuardSql();
+    params.push(...FOREGROUND_EXCLUDED_CATEGORIES);
+  } else if (scope === "bridge") {
+    sql += " AND category='bridge'";
+  }
+  sql += " LIMIT ?)";
+  params.push(limit);
+  const row = getDb().prepare(sql).get(...params) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
 // Forward-fetch — return messages strictly newer than `afterSeq`, oldest
 // first, capped at `limit`. Used by the chat view to pull only the
 // freshly-persisted user+assistant pair after a run completes, instead of

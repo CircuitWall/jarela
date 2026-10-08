@@ -34,7 +34,7 @@ vi.mock("@/lib/embeddings", () => ({
 
 const { addMessage, createThread, deleteThread, getThread, listThreads, setThreadContextPin, setThreadWarmSummary, commitThreadChannelSummary } =
   await import("@/lib/stores/threads");
-const { buildHistoryWindow } = await import("./history-window");
+const { buildHistoryWindow, wrapWarmSummary } = await import("./history-window");
 const { refreshWarmSummary } = await import("../warm-summary-background");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 const { upsertModelConfig } = await import("@/lib/stores/model-config");
@@ -124,6 +124,26 @@ function seedWarmThread(): string {
   }
 
   return t.thread_id;
+}
+
+// addMessage calls now() for created_at and can collide at millisecond
+// resolution in a tight loop. The near-miss cache tests reason about
+// distinct timestamps, so stamp each row with a synthetic one. Returns
+// the thread's messages in insertion order with their now-unique
+// created_at values.
+async function reseedMessageTimestamps(thread_id: string, baseIso: string): Promise<Array<{ seq: number; created_at: string }>> {
+  const { getDb } = await import("@/lib/db");
+  const db = getDb();
+  const rows = db.prepare("SELECT rowid AS seq FROM messages WHERE thread_id=? ORDER BY rowid ASC").all(thread_id) as Array<{ seq: number }>;
+  const start = Date.parse(baseIso);
+  const stamped: Array<{ seq: number; created_at: string }> = [];
+  const update = db.prepare("UPDATE messages SET created_at=? WHERE rowid=?");
+  for (let i = 0; i < rows.length; i++) {
+    const created_at = new Date(start + i * 1000).toISOString();
+    update.run(created_at, rows[i].seq);
+    stamped.push({ seq: rows[i].seq, created_at });
+  }
+  return stamped;
 }
 
 describe("history source isolation", () => {
@@ -398,6 +418,78 @@ describe("buildHistoryWindow warm-summary cache", () => {
     chatSpy.mockClear();
     await buildHistoryWindow(thread_id, agentCfg(), providerParams, "q3", modelInfo, "2026-06-17T06:00:00.000Z");
     expect(chatSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses the cached warm summary on a small sliding-window boundary move", async () => {
+    const thread_id = seedWarmThread();
+    const stamped = await reseedMessageTimestamps(thread_id, "2026-10-01T00:00:00.000Z");
+    // Simulate the boundary advancing by two messages between the moment
+    // the cached summary was persisted and this new turn.
+    const cachedBoundary = stamped[1].created_at;
+    const currentBoundary = stamped[3].created_at;
+    setThreadContextPin(thread_id, currentBoundary);
+    setThreadWarmSummary(thread_id, wrapWarmSummary("CACHED-RECAP", "all"), cachedBoundary, 2);
+
+    chatReturns("REBUILD-RECAP");
+    const result = await buildHistoryWindow(
+      thread_id,
+      agentCfg(),
+      providerParams,
+      "next question",
+      modelInfo,
+      currentBoundary,
+    );
+    expect(result.warmSummaryCtx).toContain("CACHED-RECAP");
+    expect(result.warmSummaryCtx).not.toContain("REBUILD-RECAP");
+    expect(chatSpy).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds the warm summary when the boundary slid past the near-miss tolerance", async () => {
+    const thread_id = seedWarmThread();
+    const stamped = await reseedMessageTimestamps(thread_id, "2026-10-01T00:00:00.000Z");
+    // 5-message gap between cached and current boundary — above the
+    // tolerance of 4 — so the cache must not be reused. Assert that the
+    // stale text is absent, independent of whether the race budget lets
+    // the fresh summariser complete.
+    const cachedBoundary = stamped[0].created_at;
+    const currentBoundary = stamped[5].created_at;
+    setThreadContextPin(thread_id, currentBoundary);
+    setThreadWarmSummary(thread_id, wrapWarmSummary("STALE-RECAP", "all"), cachedBoundary, 5);
+
+    chatReturns("REBUILT-RECAP");
+    const result = await buildHistoryWindow(
+      thread_id,
+      agentCfg(),
+      providerParams,
+      "next question",
+      modelInfo,
+      currentBoundary,
+    );
+    expect(result.warmSummaryCtx).not.toContain("STALE-RECAP");
+  });
+
+  it("rebuilds when the user drags the boundary backward (cached summary over-covers)", async () => {
+    const thread_id = seedWarmThread();
+    const stamped = await reseedMessageTimestamps(thread_id, "2026-10-01T00:00:00.000Z");
+    // Cached boundary ahead of current boundary — user dragged the pin
+    // backward (or hit /compact and then moved the boundary earlier). The
+    // cached summary covers messages that are now hot, so reusing it
+    // would double-cover; must rebuild regardless of how small the delta.
+    const cachedBoundary = stamped[4].created_at;
+    const currentBoundary = stamped[3].created_at;
+    setThreadContextPin(thread_id, currentBoundary);
+    setThreadWarmSummary(thread_id, wrapWarmSummary("BACK-STALE-RECAP", "all"), cachedBoundary, 4);
+
+    chatReturns("REBUILT-RECAP");
+    const result = await buildHistoryWindow(
+      thread_id,
+      agentCfg(),
+      providerParams,
+      "next question",
+      modelInfo,
+      currentBoundary,
+    );
+    expect(result.warmSummaryCtx).not.toContain("BACK-STALE-RECAP");
   });
 
   it("falls back to empty warm summary when the summariser hangs past the budget", async () => {
