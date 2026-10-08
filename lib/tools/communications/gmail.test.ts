@@ -26,7 +26,7 @@ describe("gmail tools", () => {
     );
 
     expect(result).toMatchObject({
-      error: expect.stringContaining("expected a JSON object"),
+      error: expect.stringMatching(/expected a JSON object response \(content-type=application\/octet-stream.*first-bytes=/),
       url: `${baseUrl}/messages`,
     });
     expect(JSON.stringify(result)).not.toContain("[binary data]");

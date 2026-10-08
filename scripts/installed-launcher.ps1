@@ -24,15 +24,18 @@ function Write-Log([string]$msg) {
   Add-Content -Path $LogFile -Value $line
 }
 
-# Roll the log if it grows past ~5 MB; keep the 5 most recent rotations.
-if ((Test-Path $LogFile) -and ((Get-Item $LogFile).Length -gt 5MB)) {
-  $rotated = Join-Path $LogDir ("app-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
-  Move-Item -Force $LogFile $rotated
-  Get-ChildItem $LogDir -Filter 'app-*.log' |
+# Roll a log if it grows past ~5 MB; keep the 5 most recent rotations each.
+function Invoke-LogRotation([string]$path) {
+  if (-not ((Test-Path $path) -and ((Get-Item $path).Length -gt 5MB))) { return }
+  $base = [IO.Path]::GetFileNameWithoutExtension($path)
+  $rotated = Join-Path $LogDir ("{0}-{1}.log" -f $base, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+  Move-Item -Force $path $rotated
+  Get-ChildItem $LogDir -Filter "$base-*.log" |
     Sort-Object LastWriteTime -Descending |
     Select-Object -Skip 5 |
     Remove-Item -Force -ErrorAction SilentlyContinue
 }
+Invoke-LogRotation $LogFile
 
 Set-Location $InstallDir
 Write-Log "=== Jarela launcher starting (install=$InstallDir) ==="
@@ -188,6 +191,8 @@ $restartCount = 0
 $windowStart  = Get-Date
 
 while ($true) {
+  Invoke-LogRotation $ServerOut
+  Invoke-LogRotation $ServerErr
   Write-Log "Starting 'node server.js' on http://127.0.0.1:$Port (out=$ServerOut)"
   $child = Start-NodeChild -nodeExe $node -workDir $InstallDir -outFile $ServerOut -errFile $ServerErr
   if (-not $child -or -not $child.Process) {
