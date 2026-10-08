@@ -1,5 +1,6 @@
 "use client";
 import { Sparkles, User } from "lucide-react";
+import { PanelHeader } from "@/components/ui/PanelHeader";
 import { useRef, useState } from "react";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { useAppContext } from "@/contexts/AppContext";
@@ -42,9 +43,7 @@ export function ProfilePanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <User size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg">User Profile</h2>
+      <PanelHeader icon={<User size={14} />} title="Profile">
         {isEssential && (
           <button
             type="button"
@@ -56,7 +55,7 @@ export function ProfilePanel() {
             Run setup wizard again
           </button>
         )}
-      </div>
+      </PanelHeader>
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar max-w-lg mx-auto w-full">
         <ProfileEditor />
       </div>

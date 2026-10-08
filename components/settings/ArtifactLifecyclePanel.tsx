@@ -1,11 +1,14 @@
 "use client";
 
 import { Archive, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { SettingsCard } from "@/components/ui/SettingsCard";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { ArtifactCleanupResult, ArtifactLifecycleResponse, ArtifactLifecycleSettings } from "@/api/types";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
+
+import { confirmAction } from "@/lib/ui/confirm";
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -74,7 +77,7 @@ export function ArtifactLifecyclePanel() {
   }
 
   async function cleanup() {
-    if (!confirm("Delete lifecycle-managed browser and generated artifacts that match this policy?\n\nThis does not delete chats, agents, credentials, or memory.")) return;
+    if (!(await confirmAction({ message: "Delete lifecycle-managed browser and generated artifacts that match this policy?\n\nThis does not delete chats, agents, credentials, or memory.", destructive: true }))) return;
     setBusy("cleanup");
     try {
       const next = await api.artifacts.cleanup({ dryRun: false });
@@ -108,23 +111,23 @@ export function ArtifactLifecyclePanel() {
   const changed = JSON.stringify(draft) !== JSON.stringify(state.settings);
 
   return (
-    <section className="rounded-xl border border-border bg-surface-2/70 p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <Archive size={14} className="text-accent" />
-        <h3 className="text-sm font-semibold text-fg">Artifact lifecycle</h3>
+    <SettingsCard
+      id="artifacts"
+      icon={<Archive size={14} />}
+      title="Artifact lifecycle"
+      description="Controls local files produced by browser reads, screenshots, generated media, and similar tool artifacts under the Jarela files directory."
+      actions={
         <button
           type="button"
           onClick={() => void refresh()}
           disabled={busy !== null}
-          className="ml-auto p-1 rounded text-fg-faint hover:text-fg hover:bg-surface-3 disabled:opacity-50"
+          className="p-1 rounded text-fg-faint hover:text-fg hover:bg-surface-3 disabled:opacity-50"
           title="Refresh artifact inventory"
         >
           {busy === "load" ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
         </button>
-      </div>
-      <p className="text-xs text-fg-muted mb-3">
-        Controls local files produced by browser reads, screenshots, generated media, and similar tool artifacts under the Jarela files directory.
-      </p>
+      }
+    >
 
       <div className="grid grid-cols-3 gap-2 text-xs mb-3">
         <div className="rounded-lg border border-border/60 bg-surface-3 px-2 py-1.5">
@@ -234,6 +237,6 @@ export function ArtifactLifecyclePanel() {
           </ul>
         </div>
       )}
-    </section>
+    </SettingsCard>
   );
 }

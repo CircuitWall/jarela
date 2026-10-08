@@ -16,7 +16,7 @@ interface Props {
   models: ModelConfig[];
   integrations: IntegrationStatus[];
   isFullMode: boolean;
-  onClose: () => void;
+  onClose: (after?: () => void) => void;
 }
 
 const Divider = () => <hr className="border-border/60 my-2" />;

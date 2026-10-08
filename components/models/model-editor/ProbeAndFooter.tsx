@@ -1,5 +1,6 @@
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { DialogFooter } from "@/components/ui/DialogFooter";
 import type { ModelEditorForm } from "./useModelEditorForm";
 
 export function ProbeBanner({ result }: { result: ModelEditorForm["probeResult"] }) {
@@ -21,31 +22,29 @@ export function ProbeBanner({ result }: { result: ModelEditorForm["probeResult"]
 
 interface FooterProps {
   form: ModelEditorForm;
+  dirty: boolean;
   onTest: () => void;
   onSave: () => void;
-  onClose: () => void;
+  onCancel: () => void;
+  onDiscard: () => void;
 }
 
-export function EditorFooter({ form, onTest, onSave, onClose }: FooterProps) {
+export function EditorFooter({ form, dirty, onTest, onSave, onCancel, onDiscard }: FooterProps) {
   return (
-    <div className="flex flex-wrap justify-end gap-2 px-4 pb-4 pt-1 border-t border-border/60">
-      <button
-        onClick={onTest}
-        disabled={form.probing || !form.modelId.trim()}
-        className="px-3 py-1.5 text-sm text-fg-muted hover:text-fg transition-colors inline-flex items-center gap-1.5 disabled:opacity-40"
-      >
-        {form.probing && <Loader2 size={13} className="animate-spin" />}
-        {form.probing ? "Testing…" : "Test connection"}
-      </button>
-      <div className="flex-1" />
-      <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">Cancel</button>
-      <Button
-        onClick={onSave}
-        disabled={form.saving}
-        size="lg"
-      >
-        {form.saving ? "Saving…" : form.allowSaveAnyway ? "Save anyway" : "Save"}
-      </Button>
-    </div>
+    <DialogFooter
+      onCancel={onCancel}
+      onDiscard={onDiscard}
+      dirty={dirty}
+      onSave={onSave}
+      saving={form.saving}
+      canSave={!form.isEdit || dirty || form.allowSaveAnyway}
+      saveLabel={form.allowSaveAnyway ? "Save anyway" : "Save"}
+      start={(
+        <Button variant="ghost" onClick={onTest} disabled={form.probing || !form.modelId.trim()}>
+          {form.probing && <Loader2 size={13} className="animate-spin" />}
+          {form.probing ? "Testing…" : "Test connection"}
+        </Button>
+      )}
+    />
   );
 }

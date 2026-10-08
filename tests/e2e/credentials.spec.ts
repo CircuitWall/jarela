@@ -82,7 +82,8 @@ test("Built-in tools panel lists categories and toggles persist", async ({ page,
   // Packages is the default sub-tab and lists every built-in category.
   await expect(page.getByRole("heading", { name: "Packages", exact: true })).toBeVisible();
 
-  // At least the Memory category card should render.
+  // Sources are collapsible drawers, so filter to reveal the Memory category.
+  await page.getByPlaceholder("Filter by name, package, or category").fill("Memory");
   const memoryRow = page.locator("li", { hasText: /^Memory/ }).first();
   await expect(memoryRow).toBeVisible();
 

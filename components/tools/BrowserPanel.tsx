@@ -1,10 +1,13 @@
 "use client";
 import { AlertCircle, CheckCircle2, ExternalLink, Globe2, Loader2, MousePointer2, RefreshCw, RotateCcw, ShieldAlert } from "lucide-react";
+import { PanelHeader } from "@/components/ui/PanelHeader";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { BrowserCommandLogEntry, BrowserExtensionStatus, BrowserTabInfo, BrowserTabsResponse } from "@/api/types";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
+
+import { PanelMessage } from "@/components/ui/PanelMessage";
 
 function formatLastSeen(status: BrowserExtensionStatus | null): string {
   if (!status) return "unknown";
@@ -152,9 +155,7 @@ export function BrowserPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Globe2 size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Browser</h2>
+      <PanelHeader icon={<Globe2 size={14} />} title="Browser">
         <BrowserStatusPill status={status} />
         <button
           onClick={() => void load(true)}
@@ -164,7 +165,7 @@ export function BrowserPanel() {
         >
           {refreshing ? <Loader2 size={13} className="animate-spin text-accent" /> : <RefreshCw size={13} />}
         </button>
-      </div>
+      </PanelHeader>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-3">
         <div className="rounded-lg border border-border bg-surface-2 p-3">
@@ -196,10 +197,10 @@ export function BrowserPanel() {
           </div>
         )}
 
-        {loading && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
+        {loading && <PanelMessage>Loading…</PanelMessage>}
 
         {!loading && status?.connected && tabRows.length === 0 && (
-          <p className="text-fg-faint text-sm py-6 text-center">No tabs are visible to the extension.</p>
+          <PanelMessage>No tabs are visible to the extension.</PanelMessage>
         )}
 
         {tabRows.map((tab) => (

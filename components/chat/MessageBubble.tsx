@@ -1692,7 +1692,7 @@ function ImagePreviewDialog({ src, alt, open, onClose }: { src: string; alt: str
       padded={false}
       fitViewport
       footer={(
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border bg-surface-2/90">
+        <div className="flex items-center justify-end gap-2 px-4 pb-3">
           <a
             href={src}
             target="_blank"

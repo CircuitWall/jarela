@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ShieldCheck } from "lucide-react";
+import { SettingsCard } from "@/components/ui/SettingsCard";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 
 // RedactionPanel — settings UI for ADR-0064 outbound redaction.
@@ -100,18 +101,12 @@ export function RedactionPanel() {
   const enabledPatterns = state.active.patterns.filter((p) => p.enabled);
 
   return (
-    <div className="rounded-xl border border-border bg-surface-2/70 p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <ShieldCheck size={14} className="text-emerald-500" />
-        <h3 className="text-sm font-semibold text-fg">Outbound redaction</h3>
-      </div>
-      <p className="text-xs text-fg-muted mb-3">
-        Sensitive values (API keys, JWTs, SSN, Swedish personnummer, IBAN, plus a
-        high-entropy heuristic) are replaced with stable placeholders before being
-        sent to the LLM, then rehydrated on the way back. Real values stay on this
-        device.
-      </p>
-
+    <SettingsCard
+      id="redaction"
+      icon={<ShieldCheck size={14} />}
+      title="Outbound redaction"
+      description="Sensitive values (API keys, JWTs, SSN, Swedish personnummer, IBAN, plus a high-entropy heuristic) are replaced with stable placeholders before being sent to the LLM, then rehydrated on the way back. Real values stay on this device."
+    >
       <label className="flex items-center justify-between gap-2 py-2">
         <div className="flex flex-col">
           <span className="text-xs font-medium text-fg">Enable redaction</span>
@@ -209,6 +204,6 @@ export function RedactionPanel() {
           </div>
         )}
       </div>
-    </div>
+    </SettingsCard>
   );
 }

@@ -3,6 +3,7 @@ import { isProviderClassified, modelSupportsImages } from "@/lib/providers/capab
 import { CapBadges } from "@/components/models/CapBadges";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { Select } from "@/components/ui/Select";
+import { Notice } from "@/components/ui/Notice";
 import { useAppContext } from "@/contexts/AppContext";
 import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 import type { IntegrationStatus } from "@/api/types";
@@ -13,7 +14,7 @@ interface Props {
   form: AgentEditorForm;
   models: ModelConfig[];
   integrations: IntegrationStatus[];
-  onClose: () => void;
+  onClose: (after?: () => void) => void;
 }
 
 export function ModelSection({ form, models, integrations, onClose }: Props) {
@@ -30,7 +31,7 @@ export function ModelSection({ form, models, integrations, onClose }: Props) {
   return (
     <Section step={2} title="Model">
       {!readiness.documentsReady && (
-        <DocumentsReadinessNotice onOpenModels={() => { onClose(); dispatch({ type: "SET_TAB", tab: "models" }); }} />
+        <DocumentsReadinessNotice onOpenModels={() => onClose(() => dispatch({ type: "SET_TAB", tab: "models" }))} />
       )}
       <div className="rounded-lg border border-border bg-surface-2/60 px-3 py-2.5 space-y-2">
         <p className="text-[11px] text-fg-subtle leading-snug">
@@ -62,10 +63,10 @@ export function ModelSection({ form, models, integrations, onClose }: Props) {
 
 function DocumentsReadinessNotice({ onOpenModels }: { onOpenModels: () => void }) {
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
-      <p>Documents includes a bundled local embedding model. Configure another model if you prefer a different embedding provider.</p>
-      <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-        Jarela Local runs on this machine and does not send document text to a provider.
+    <Notice tone="warn">
+      <p>Jarela Local is a bundled on-device embedding model. Configure another model in Settings → Models if you prefer a different embedding provider.</p>
+      <p className="mt-1">
+        Jarela Local runs on this machine and does not send document, memory, or chat text to a provider.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <button
@@ -76,7 +77,7 @@ function DocumentsReadinessNotice({ onOpenModels }: { onOpenModels: () => void }
           Open Models
         </button>
       </div>
-    </div>
+    </Notice>
   );
 }
 

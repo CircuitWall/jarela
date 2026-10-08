@@ -7,6 +7,8 @@ import { AgentEditor } from "@/components/agents/AgentEditor";
 import { errorMessage } from "@/lib/utils/error";
 import { StepShell } from "./StepShell";
 
+import { confirmAction } from "@/lib/ui/confirm";
+
 interface StepAgentProps {
   agents: AgentConfig[];
   models: ModelConfig[];
@@ -29,7 +31,7 @@ export function StepAgent({ agents, models, onChanged }: StepAgentProps) {
   }
 
   async function handleRemove(agent: AgentConfig) {
-    if (!confirm(`Remove agent "${agent.name}"?`)) return;
+    if (!(await confirmAction({ message: `Remove agent "${agent.name}"?`, destructive: true, confirmLabel: "Remove" }))) return;
     setError(null);
     try {
       await api.agents.delete(agent.id);

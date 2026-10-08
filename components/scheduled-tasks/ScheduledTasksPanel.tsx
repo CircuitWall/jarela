@@ -1,5 +1,6 @@
 "use client";
 import { AlertCircle, Calendar, CheckCircle2, Clock, EyeOff, Loader2, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
+import { PanelHeader } from "@/components/ui/PanelHeader";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ModelConfig, ScheduledTask } from "@/api/types";
@@ -13,6 +14,9 @@ import { AgentModelBadge } from "./AgentModelBadge";
 import { WatchersSection } from "./WatchersSection";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
+
+import { PanelMessage } from "@/components/ui/PanelMessage";
+import { confirmAction } from "@/lib/ui/confirm";
 
 export function ScheduledTasksPanel() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
@@ -46,7 +50,7 @@ export function ScheduledTasksPanel() {
   }, []);
 
   async function cancel(task: ScheduledTask) {
-    if (!confirm(`Cancel scheduled task?\n\n${task.prompt.slice(0, 200)}${task.prompt.length > 200 ? "…" : ""}`)) return;
+    if (!(await confirmAction({ message: `Cancel scheduled task?\n\n${task.prompt.slice(0, 200)}${task.prompt.length > 200 ? "…" : ""}`, destructive: true, confirmLabel: "Cancel task", cancelLabel: "Keep" }))) return;
     try {
       await api.scheduledTasks.cancel(task.id);
       pushToast({
@@ -102,17 +106,15 @@ export function ScheduledTasksPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Calendar size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Scheduled Tasks</h2>
+      <PanelHeader icon={<Calendar size={14} />} title="Scheduled tasks">
         {tasks.length > 0 && (
           <span className="text-[11px] text-fg-faint">{tasks.length}</span>
         )}
-      </div>
+      </PanelHeader>
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-3">
         {loading && tasks.length === 0 && (
-          <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
+          <PanelMessage>Loading…</PanelMessage>
         )}
         {!loading && tasks.length === 0 && (
           <div className="text-fg-faint text-sm py-8 text-center space-y-2">

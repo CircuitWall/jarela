@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/Button";
 import { AgentEditor } from "./AgentEditor";
 import { useAppContext } from "@/contexts/AppContext";
 
+import { confirmAction } from "@/lib/ui/confirm";
+
 const AVATAR_GRADIENTS = [
   "from-violet-500 to-indigo-600",
   "from-blue-500 to-cyan-600",
@@ -86,7 +88,7 @@ export function AgentsPanel() {
   }
 
   async function handleDelete(agent: AgentConfig) {
-    if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
+    if (!(await confirmAction({ message: `Delete agent "${agent.name}"? This cannot be undone.`, destructive: true }))) return;
     setDeleting(agent.id);
     try {
       await remove(agent.id);

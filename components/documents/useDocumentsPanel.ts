@@ -1,34 +1,19 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { DocumentHit, DocumentSource, DocumentSourceKind, ModelConfig } from "@/api/types";
-import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
+import type { DocumentHit, DocumentSource, DocumentSourceKind } from "@/api/types";
 import { isMailKind, summarizeRemote } from "./helpers";
 import { errorMessage } from "@/lib/utils/error";
 import { pushToast } from "@/lib/ui/toasts";
-import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID } from "@/lib/embeddings/constants";
 
-export interface EmbeddingProbe {
-  ok: boolean;
-  provider: string;
-  model_id: string;
-  dimension?: number;
-  error?: string;
-}
+import { confirmAction } from "@/lib/ui/confirm";
 
 export interface UseDocumentsPanelResult {
   sources: DocumentSource[];
   loading: boolean;
   error: string | null;
-  models: ModelConfig[];
-  embeddingModel: string;
-  savingEmbeddingModel: boolean;
-  embeddingProbe: EmbeddingProbe | null;
   busy: Record<string, boolean>;
-  readiness: ReturnType<typeof computeFeatureReadiness>;
-  hasWorkingEmbeddingModel: boolean;
   load: () => Promise<void>;
-  saveEmbeddingModel: (value: string) => Promise<void>;
   addSource: (payload: Parameters<typeof api.documents.createSource>[0]) => Promise<void>;
   reindex: (id: string) => Promise<void>;
   removeSource: (id: string, summary: string, kind: DocumentSourceKind) => Promise<void>;
@@ -40,25 +25,13 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
   const [sources, setSources] = useState<DocumentSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [models, setModels] = useState<ModelConfig[]>([]);
-  const [embeddingModel, setEmbeddingModel] = useState<string>("__auto__");
-  const [savingEmbeddingModel, setSavingEmbeddingModel] = useState(false);
-  const [embeddingProbe, setEmbeddingProbe] = useState<EmbeddingProbe | null>(null);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const [sourceRows, modelRows, settings] = await Promise.all([
-        api.documents.listSources(),
-        api.models.list(),
-        api.documents.getSettings(),
-      ]);
-      setSources(sourceRows);
-      setModels(modelRows);
-      setEmbeddingModel(settings.embedding_model_config ?? "__auto__");
-      setEmbeddingProbe(settings.embedding_probe ?? null);
+      setSources(await api.documents.listSources());
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -67,22 +40,6 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
   }
 
   useEffect(() => { void load(); }, []);
-
-  async function saveEmbeddingModel(value: string) {
-    const next = value === "__auto__" ? null : value;
-    setEmbeddingModel(value);
-    setSavingEmbeddingModel(true);
-    setEmbeddingProbe(null);
-    try {
-      const updated = await api.documents.setSettings({ embedding_model_config: next });
-      setEmbeddingModel(updated.embedding_model_config ?? "__auto__");
-      setEmbeddingProbe(updated.embedding_probe ?? null);
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setSavingEmbeddingModel(false);
-    }
-  }
 
   async function addSource(payload: Parameters<typeof api.documents.createSource>[0]) {
     setError(null);
@@ -130,7 +87,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
       : isMailKind(kind)
         ? "The upstream mailbox is untouched."
         : "The upstream content is untouched.";
-    if (!confirm(`Stop indexing ${summary}? This deletes all chunks for this source. ${tail}`)) return;
+    if (!(await confirmAction({ message: `Stop indexing ${summary}? This deletes all chunks for this source. ${tail}`, destructive: true, confirmLabel: "Stop indexing" }))) return;
     setBusy((b) => ({ ...b, [id]: true }));
     try {
       await api.documents.deleteSource(id);
@@ -171,18 +128,9 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
     }
   }
 
-  const readiness = computeFeatureReadiness({
-    models,
-    selectedProvider: embeddingModel === LOCAL_EMBEDDING_CONFIG_NAME ? "jarela-local" : undefined,
-    selectedModelId: embeddingModel === LOCAL_EMBEDDING_CONFIG_NAME ? LOCAL_EMBEDDING_MODEL_ID : undefined,
-    hasLocalEmbeddingModel: true,
-  });
-  const hasWorkingEmbeddingModel = embeddingProbe?.ok ?? false;
-
   return {
-    sources, loading, error, models, embeddingModel, savingEmbeddingModel, embeddingProbe,
-    busy, readiness, hasWorkingEmbeddingModel,
-    load, saveEmbeddingModel, addSource, reindex, removeSource, toggleSource, search,
+    sources, loading, error, busy,
+    load, addSource, reindex, removeSource, toggleSource, search,
   };
 }
 

@@ -16,6 +16,9 @@ import { RedactionPanel } from "@/components/profile/RedactionPanel";
 import { useSettingsAttention } from "@/hooks/useSettingsAttention";
 import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { SettingsCard, SettingsGroup } from "@/components/ui/SettingsCard";
+
+import { confirmAction } from "@/lib/ui/confirm";
 
 // Settings is the consolidated home for everything that used to live as
 // its own top-level tab (credentials, models, harness, logs, defaults)
@@ -117,11 +120,13 @@ export function SettingsPanel() {
 // future change to either panel without touching this file.
 function PrivacySecurityPanel() {
   return (
-    <div className="h-full overflow-y-auto no-scrollbar max-w-lg mx-auto w-full px-4 py-3 space-y-3">
-      <SecurityPanel />
-      <RedactionPanel />
-      <ArtifactLifecyclePanel />
-      <SystemControlCard />
+    <div className="h-full overflow-y-auto no-scrollbar max-w-lg mx-auto w-full px-4 py-3">
+      <SettingsGroup defaultOpenId="pin">
+        <SecurityPanel />
+        <RedactionPanel />
+        <ArtifactLifecyclePanel />
+        <SystemControlCard />
+      </SettingsGroup>
     </div>
   );
 }
@@ -137,7 +142,7 @@ function SystemControlCard() {
 
   const onAbort = async () => {
     if (busy) return;
-    if (!confirm("Abort every ongoing agent run and tool call?\n\nThe process keeps running; bridges, scheduler, and the DB stay up.")) {
+    if (!(await confirmAction({ message: "Abort every ongoing agent run and tool call?\n\nThe process keeps running; bridges, scheduler, and the DB stay up.", destructive: true, confirmLabel: "Abort" }))) {
       return;
     }
     setBusy("abort");
@@ -155,7 +160,7 @@ function SystemControlCard() {
 
   const onRestart = async () => {
     if (busy) return;
-    if (!confirm("Restart the Jarela server?\n\nIn-flight runs will be aborted; the supervisor (Task Scheduler / systemd / launchd) will relaunch the process. If you're running via `npm start`, you will have to relaunch manually.")) {
+    if (!(await confirmAction({ message: "Restart the Jarela server?\n\nIn-flight runs will be aborted; the supervisor (Task Scheduler / systemd / launchd) will relaunch the process. If you're running via `npm start`, you will have to relaunch manually.", destructive: true, confirmLabel: "Restart" }))) {
       return;
     }
     setBusy("restart");
@@ -172,15 +177,12 @@ function SystemControlCard() {
   };
 
   return (
-    <section className="rounded-xl border border-border bg-surface-2/70 p-3">
-      <h3 className="text-sm font-semibold text-fg">System control</h3>
-      <p className="mt-1 text-xs text-fg-muted">
-        Escape hatches when something is stuck. Aborting cancels every ongoing
-        agent run and tool call without restarting the server. Restarting exits
-        the process; a supervisor (Task Scheduler / systemd / launchd) will
-        relaunch it.
-      </p>
-      <div className="mt-3 flex flex-wrap gap-2">
+    <SettingsCard
+      id="system"
+      title="System control"
+      description="Escape hatches when something is stuck. Aborting cancels every ongoing agent run and tool call without restarting the server. Restarting exits the process; a supervisor (Task Scheduler / systemd / launchd) will relaunch it."
+    >
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => { void onAbort(); }}
@@ -204,6 +206,6 @@ function SystemControlCard() {
       {error && (
         <p className="mt-2 text-xs text-red-400">Error: {error}</p>
       )}
-    </section>
+    </SettingsCard>
   );
 }

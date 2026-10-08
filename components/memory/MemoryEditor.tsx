@@ -1,10 +1,11 @@
 "use client";
 import { useState } from "react";
 import type { MemoryItem } from "@/api/types";
-import { pushErrorToast } from "@/lib/ui/error-report";
+import { errorMessage } from "@/lib/utils/error";
 import { Dialog } from "@/components/ui/Dialog";
+import { DialogError, DialogFooter } from "@/components/ui/DialogFooter";
 import { TextInput, TextArea } from "@/components/ui/TextField";
-import { Button } from "@/components/ui/Button";
+import { useDirty, useDismissGuard } from "@/hooks/useDismissGuard";
 
 interface Props {
   item?: MemoryItem;
@@ -19,6 +20,8 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const isEdit = !!item;
+  const dirty = useDirty({ namespace, key, valueStr });
+  const requestClose = useDismissGuard({ dirty, busy: saving, onClose });
 
   async function handleSave() {
     setError(null);
@@ -27,31 +30,18 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
     if (!namespace.trim() || !key.trim()) { setError("Namespace and key are required"); return; }
     setSaving(true);
     try { await onSave(namespace.trim(), key.trim(), parsed); onClose(); }
-    catch (e) {
-      pushErrorToast({
-        title: "Couldn't save memory entry",
-        error: e,
-        context: { panel: "memory", action: "memory.save", namespace: namespace.trim(), key: key.trim() },
-      });
-    }
+    catch (e) { setError(errorMessage(e)); }
     finally { setSaving(false); }
   }
 
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={requestClose}
       title={isEdit ? "Edit memory" : "New memory"}
       size="sm"
       align="center"
-      footer={
-        <div className="flex justify-end gap-2 px-4 pb-4">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">Cancel</button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
-      }
+      footer={<DialogFooter onCancel={requestClose} onDiscard={onClose} dirty={dirty} canSave={!isEdit || dirty} onSave={handleSave} saving={saving} />}
     >
       {(["Namespace", "Key"] as const).map((label) => (
         <label key={label} className="block">
@@ -73,7 +63,7 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
           placeholder='{"key": "value"}'
         />
       </label>
-      {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
+      <DialogError message={error} />
     </Dialog>
   );
 }

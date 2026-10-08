@@ -5,7 +5,7 @@ import { Globe2, Sparkles } from "lucide-react";
 import { useEnvSettings } from "@/hooks/useEnvSettings";
 import { ToolSettingsActionRow } from "./ToolSettingsActionRow";
 import { ToolSettingsStatus } from "./ToolSettingsStatus";
-import { ToolSettingsSection } from "./ToolSettingsSection";
+import { SettingsCard } from "@/components/ui/SettingsCard";
 
 const VAR_NAME = "JARELA_WEB_SEARCH_PROVIDER_ORDER";
 const GOOGLE_ENGINE_VAR = "JARELA_GOOGLE_SEARCH_ENGINE_ID";
@@ -108,7 +108,7 @@ export function WebSearchConfigCard() {
   }
 
   return (
-    <ToolSettingsSection
+    <SettingsCard
       title="Web search fallback"
       description="Configure provider order for the built-in web_search tool. Supported providers: tavily, google, duckduckgo."
       icon={<Globe2 size={14} className="text-accent" />}
@@ -205,6 +205,6 @@ export function WebSearchConfigCard() {
           Env var: {VAR_NAME} {row.requiresRestart ? "(restart required)" : "(hot-applied)"}
         </p>
       )}
-    </ToolSettingsSection>
+    </SettingsCard>
   );
 }

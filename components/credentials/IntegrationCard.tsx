@@ -7,6 +7,8 @@ import { errorMessage } from "@/lib/utils/error";
 import { isMaskedSecret } from "@/lib/utils/secret-mask";
 import { sanitizeOAuthInput } from "@/lib/utils/oauth-input";
 
+import { confirmAction } from "@/lib/ui/confirm";
+
 // Per-integration editor with inline OAuth Connect, Save, Test, Clear, and
 // (for Gmail/Outlook) a collapsible setup guide. Extracted from the old
 // `components/integrations/IntegrationsPanel.tsx` so the unified credentials
@@ -243,7 +245,7 @@ export function IntegrationCard({
   }
 
   async function clear() {
-    if (!confirm(`Remove saved credentials for ${def.label}?`)) return;
+    if (!(await confirmAction({ message: `Remove saved credentials for ${def.label}?`, destructive: true, confirmLabel: "Remove" }))) return;
     await api.integrations.delete(def.name);
     setValues({});
     setTestResult(null);
@@ -252,7 +254,7 @@ export function IntegrationCard({
 
   async function deleteThisCredential() {
     if (!editingId) return;
-    if (!confirm(`Delete credential "${label || editingId}"?`)) return;
+    if (!(await confirmAction({ message: `Delete credential "${label || editingId}"?`, destructive: true }))) return;
     try {
       await api.credentials.delete(editingId);
       onChanged();
@@ -346,7 +348,7 @@ export function IntegrationCard({
           </div>
         )}
 
-        <div className="flex items-center gap-2 pt-1">
+        <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-2 border-t border-border bg-surface-2/95 px-1 py-2 backdrop-blur">
           <button
             onClick={save}
             disabled={saving}

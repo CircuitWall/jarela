@@ -1,5 +1,9 @@
 "use client";
 import { AlertCircle, CheckCircle2, ChevronLeft, ExternalLink, Loader2, Plug, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
+import { Dialog } from "@/components/ui/Dialog";
+import { DialogError, DialogFooter } from "@/components/ui/DialogFooter";
+import { useDirty, useDismissGuard } from "@/hooks/useDismissGuard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { McpRegistryEntry, McpServer } from "@/api/types";
@@ -8,6 +12,10 @@ import { useListState } from "@/hooks/useListState";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
 import { errorMessage } from "@/lib/utils/error";
+
+import { PanelMessage } from "@/components/ui/PanelMessage";
+
+import { confirmAction } from "@/lib/ui/confirm";
 
 // `editing` value when the user clicked New: starts on the picker step;
 // once they pick a registry entry (or click "custom") it transitions to a form.
@@ -45,7 +53,7 @@ export function MCPPanel() {
   }
 
   async function remove(name: string) {
-    if (!confirm(`Remove MCP server "${name}"?`)) return;
+    if (!(await confirmAction({ message: `Remove MCP server "${name}"?`, destructive: true, confirmLabel: "Remove" }))) return;
     try {
       await api.mcp.delete(name);
       pushToast({
@@ -67,21 +75,14 @@ export function MCPPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Plug size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">MCP Servers</h2>
-        <button
-          onClick={() => setEditing({ mode: "picker" })}
-          className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
-        >
-          <Plus size={14} /> New
-        </button>
-      </div>
+      <PanelHeader icon={<Plug size={14} />} title="MCP servers">
+        <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setEditing({ mode: "picker" })} />
+      </PanelHeader>
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
         <div className="px-4 py-2">
           {loading && servers.length === 0 && (
-            <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
+            <PanelMessage>Loading…</PanelMessage>
           )}
           {!loading && servers.length === 0 && (
             <div className="text-fg-faint text-sm py-8 text-center space-y-2">
@@ -192,34 +193,30 @@ function MCPEditor({
       }
       onClose();
     } catch (e) {
-      pushErrorToast({
-        title: server ? "Couldn't update MCP server" : "Couldn't create MCP server",
-        error: e,
-        context: { panel: "mcp", action: server ? "mcp.update" : "mcp.create", name: name.trim(), transport },
-      });
+      setError(errorMessage(e));
     } finally {
       setSaving(false);
     }
   }
 
-  return (
-    <div className="absolute inset-0 bg-black/60 z-30 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-surface-2 border border-border rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="px-4 py-3 border-b border-border flex items-center gap-1">
-          {onBack && (
-            <button onClick={onBack} className="p-1 text-fg-subtle hover:text-fg" title="Back to picker">
-              <ChevronLeft size={14} />
-            </button>
-          )}
-          <h3 className="text-sm font-semibold text-fg mr-auto">
-            {server ? `Edit ${server.name}` : registryEntry ? `Install ${registryEntry.name}` : "New MCP server"}
-          </h3>
-          <button onClick={onClose} className="p-1 text-fg-subtle hover:text-fg">
-            <X size={14} />
-          </button>
-        </div>
+  const dirty = useDirty({ name, transport, specJSON, enabled, varValues });
+  const requestClose = useDismissGuard({ dirty, busy: saving, onClose });
 
-        <div className="p-4 space-y-3 overflow-y-auto no-scrollbar">
+  return (
+    <Dialog
+      open
+      onClose={requestClose}
+      title={server ? `Edit ${server.name}` : registryEntry ? `Install ${registryEntry.name}` : "New MCP server"}
+      titlePrefix={onBack ? (
+        <button onClick={onBack} className="p-1 text-fg-subtle hover:text-fg" title="Back to picker">
+          <ChevronLeft size={14} />
+        </button>
+      ) : undefined}
+      size="md"
+      align="top"
+      footer={<DialogFooter onCancel={requestClose} onDiscard={onClose} dirty={dirty} canSave={!server || dirty} onSave={() => void save()} saving={saving} />}
+    >
+      <div className="space-y-3">
           {registryEntry && (
             <div className="px-3 py-2 rounded bg-surface-3/40 border border-border text-[11px] text-fg-subtle">
               {registryEntry.description}
@@ -299,27 +296,9 @@ function MCPEditor({
             Enabled
           </label>
 
-          {error && (
-            <div className="px-2 py-1.5 rounded bg-rose-950/40 border border-rose-800 text-xs text-rose-700 dark:text-rose-300">
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1.5 text-xs text-fg-subtle hover:text-fg">
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
+          <DialogError message={error} />
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -526,7 +505,7 @@ function RegistryPicker({
         </div>
 
         <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-2">
-          {loading && entries.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
+          {loading && entries.length === 0 && <PanelMessage>Loading…</PanelMessage>}
           {error && (
             <div className="my-3 px-3 py-2 rounded border border-rose-800 bg-rose-950/40 text-xs text-rose-700 dark:text-rose-300">
               <p className="mb-1">Couldn’t reach registry.modelcontextprotocol.io.</p>
@@ -539,7 +518,7 @@ function RegistryPicker({
             </div>
           )}
           {!loading && !error && entries.length === 0 && (
-            <p className="text-fg-faint text-sm py-6 text-center">No matches.</p>
+            <PanelMessage>No matches.</PanelMessage>
           )}
           <div className="space-y-1">
             {entries.map((e) => {

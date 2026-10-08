@@ -14,6 +14,9 @@ import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { Select } from "@/components/ui/Select";
 import { errorMessage } from "@/lib/utils/error";
 
+import { PanelMessage } from "@/components/ui/PanelMessage";
+import { confirmAction } from "@/lib/ui/confirm";
+
 // Event-driven tasks (ADR-0027). Sibling to ScheduledTasksPanel — same
 // card aesthetic, but rows describe a tool poll + diff detector, not a
 // cron firing. Watchers are agent-created via the `schedule_watcher`
@@ -47,7 +50,7 @@ export function WatchersSection({ agents, models }: { agents: Record<string, Age
   }, [refresh]);
 
   async function cancel(w: Watcher) {
-    if (!confirm(`Cancel watcher "${w.label}"?`)) return;
+    if (!(await confirmAction({ message: `Cancel watcher "${w.label}"?`, destructive: true, confirmLabel: "Cancel watcher", cancelLabel: "Keep" }))) return;
     try {
       await api.watchers.cancel(w.id);
       pushToast({
@@ -111,7 +114,7 @@ export function WatchersSection({ agents, models }: { agents: Record<string, Age
       </div>
 
       {loading && watchers.length === 0 && (
-        <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
+        <PanelMessage>Loading…</PanelMessage>
       )}
       {!loading && watchers.length === 0 && (
         <div className="text-fg-faint text-sm py-6 text-center space-y-2">

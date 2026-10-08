@@ -8,6 +8,8 @@ import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { errorMessage } from "@/lib/utils/error";
 import { StepShell } from "./StepShell";
 
+import { confirmAction } from "@/lib/ui/confirm";
+
 interface StepModelProps {
   models: ModelConfig[];
   onChanged: () => void;
@@ -46,7 +48,7 @@ export function StepModel({ models, onChanged }: StepModelProps) {
   }
 
   async function handleRemove(name: string) {
-    if (!confirm(`Remove model "${name}"?`)) return;
+    if (!(await confirmAction({ message: `Remove model "${name}"?`, destructive: true, confirmLabel: "Remove" }))) return;
     setError(null);
     try {
       await api.models.delete(name);

@@ -9,19 +9,21 @@ test.beforeEach(async ({ request, page }) => {
   await page.goto("/?tab=profile");
 });
 
-test("Profile panel renders the User Profile header", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible({ timeout: 15_000 });
+test("Profile panel renders the Profile header", async ({ page }) => {
+  await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible({ timeout: 15_000 });
 });
 
 test("Profile panel mounts the Name + About me form fields", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("textbox", { name: "Name" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "About me" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save profile" })).toBeHidden();
+  await page.getByRole("textbox", { name: "Name" }).fill("E2E User");
   await expect(page.getByRole("button", { name: "Save profile" })).toBeVisible();
 });
 
 test("Profile panel surfaces persona switcher and Tailscale serve recipe", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Tailscale serve" })).toBeVisible();
   // Two buttons match "Everything" (one is the "Developer" persona description).
   // Pick the persona toggle that's pressed by default.
@@ -38,7 +40,7 @@ test("Normal mode keeps Profile editor and opens wizard only on demand", async (
   });
   await page.goto("/?tab=profile");
 
-  await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible({ timeout: 30_000 });
   const rerunBtn = page.getByRole("button", { name: "Run setup wizard again" });
   await expect(rerunBtn).toBeVisible();
 
@@ -48,5 +50,5 @@ test("Normal mode keeps Profile editor and opens wizard only on demand", async (
 
   await backBtn.dispatchEvent("click");
   await expect(backBtn).toBeHidden();
-  await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible({ timeout: 15_000 });
 });

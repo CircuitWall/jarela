@@ -3,8 +3,9 @@ import { ChevronDown, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { Dialog } from "@/components/ui/Dialog";
+import { DialogError, DialogFooter } from "@/components/ui/DialogFooter";
 import { TextInput } from "@/components/ui/TextField";
-import { Button } from "@/components/ui/Button";
+import { useDirty, useDismissGuard } from "@/hooks/useDismissGuard";
 import {
   DEFAULT_HARNESS_ID,
   HARNESS_SECTION_KEYS,
@@ -54,7 +55,8 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
   const [openSection, setOpenSection] = useState<HarnessSectionKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
+  const dirty = useDirty({ name, description, sections });
+  const requestClose = useDismissGuard({ dirty, busy: saving, onClose });
   const builtinDefault = useMemo(
     () => builtins.find((b) => b.id === DEFAULT_HARNESS_ID),
     [builtins],
@@ -91,20 +93,11 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={requestClose}
       title={isEdit ? `Edit harness — ${harness?.name}` : "New harness"}
       size="xl"
       align="top"
-      footer={
-        <div className="flex justify-end gap-2 px-4 pb-4">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">
-            Cancel
-          </button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
-      }
+      footer={<DialogFooter onCancel={requestClose} onDiscard={onClose} dirty={dirty} canSave={!isEdit || dirty} onSave={handleSave} saving={saving} />}
     >
       <div className="grid grid-cols-1 gap-3">
         <label className="block">
@@ -185,7 +178,7 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
         })}
       </div>
 
-      {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
+      <DialogError message={error} />
     </Dialog>
   );
 }

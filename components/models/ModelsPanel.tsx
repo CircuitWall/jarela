@@ -1,5 +1,6 @@
 "use client";
 import { ArrowUpRight, Cpu, Plus, Star, Trash2 } from "lucide-react";
+import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { useEffect, useRef, useState } from "react";
 import type { ModelConfig } from "@/api/types";
 import { refreshRuntimeConfig } from "@/api/runtime-config";
@@ -12,8 +13,13 @@ import { ModelEditor } from "./ModelEditor";
 import { ProviderLogo } from "./ProviderLogo";
 import { CapBadges } from "./CapBadges";
 import { CustomProvidersSection } from "./CustomProvidersSection";
+import { EmbeddingModelSection } from "./EmbeddingModelSection";
+import { SettingsCard, SettingsGroup } from "@/components/ui/SettingsCard";
 import { errorMessage } from "@/lib/utils/error";
 import type { UsageStrategy } from "@/lib/agents/usage-strategy";
+
+import { PanelMessage } from "@/components/ui/PanelMessage";
+import { confirmAction } from "@/lib/ui/confirm";
 
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-700",
@@ -103,7 +109,7 @@ export function ModelsPanel() {
       .map((assignment) => agents.find((agent) => agent.id === assignment.agent_id)?.name ?? assignment.agent_id);
     if (affectedAgents.length > 0) {
       const warning = `${affectedAgents.join(", ")} will use automatic model selection after deletion.`;
-      if (!window.confirm(`Delete model config "${name}"?\n\n${warning}`)) return;
+      if (!(await confirmAction({ message: `Delete model config "${name}"?\n\n${warning}`, destructive: true }))) return;
     }
 
     setDeleteError(null);
@@ -188,23 +194,18 @@ export function ModelsPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Cpu size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Model Configs</h2>
-        <button onClick={() => setEditing("new")} className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors">
-          <Plus size={14} /> New
-        </button>
-      </div>
+      <PanelHeader icon={<Cpu size={14} />} title="Models">
+        <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setEditing("new")} />
+      </PanelHeader>
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
         <div className="px-4 pt-3">
-          <div className="rounded-lg border border-border bg-surface-2/60 px-3 py-3 space-y-3">
-            <div>
-              <h3 className="text-xs font-semibold text-fg">Routing</h3>
-              <p className="text-[11px] text-fg-subtle mt-1 leading-snug">
-                Control how Jarela chooses the execution model for each turn. Automatic routing uses task complexity, tools, attachments, recent failures, latency, cache affinity, and cost policy.
-              </p>
-            </div>
+          <SettingsGroup>
+          <SettingsCard
+            id="routing"
+            title="Routing"
+            description="Control how Jarela chooses the execution model for each turn. Automatic routing uses task complexity, tools, attachments, recent failures, latency, cache affinity, and cost policy."
+          >
             <label className="block space-y-1">
               <span className="text-[11px] text-fg-faint">Global model strategy</span>
               <Select
@@ -264,13 +265,15 @@ export function ModelsPanel() {
             </p>
             {routerSaving && <p className="text-[11px] text-fg-faint">Saving router settings…</p>}
             {routerError && <p className="text-[11px] text-red-700 dark:text-red-400">{routerError}</p>}
-          </div>
+          </SettingsCard>
+          <EmbeddingModelSection models={models} />
+          </SettingsGroup>
         </div>
 
         {/* Model list */}
         <div className="px-4 py-2">
-          {loading && models.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
-          {!loading && models.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">No model configs yet</p>}
+          {loading && models.length === 0 && <PanelMessage>Loading…</PanelMessage>}
+          {!loading && models.length === 0 && <PanelMessage>No model configs yet</PanelMessage>}
           {deleteError && (
             <p className="text-red-700 dark:text-red-400 text-xs mb-2 px-1">{deleteError}</p>
           )}

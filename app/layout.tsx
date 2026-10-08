@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { AppProvider } from "@/contexts/AppContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ServiceWorkerRegistration } from "@/components/ui/ServiceWorkerRegistration";
+import { ConfirmHost } from "@/components/ui/ConfirmHost";
 import { getAppName, getAppDescription, getAppIcons, getAppAccentColor, getAppAccentHoverColor } from "@/lib/env/app-config";
 import "./globals.css";
 
@@ -233,6 +234,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeProvider>
           <AppProvider>{children}</AppProvider>
+          <ConfirmHost />
         </ThemeProvider>
         <ServiceWorkerRegistration />
       </body>

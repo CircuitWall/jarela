@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { pushErrorToast } from "@/lib/ui/error-report";
+import { errorMessage } from "@/lib/utils/error";
 import type { AgentConfigIn } from "@/api/types";
 
 interface Args {
@@ -22,11 +22,7 @@ export function useAgentSaveHandler({ buildPayload, getName, onSave, onClose }: 
       await onSave(buildPayload());
       onClose();
     } catch (e) {
-      pushErrorToast({
-        title: "Couldn't save agent",
-        error: e,
-        context: { panel: "agents", action: "agent.save", agent_name: trimmed },
-      });
+      setError(errorMessage(e));
     } finally {
       setSaving(false);
     }

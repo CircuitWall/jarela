@@ -10,7 +10,7 @@ interface Props {
   models: ModelConfig[];
   integrations: IntegrationStatus[];
   selectedModel: ModelConfig | undefined;
-  onClose: () => void;
+  onClose: (after?: () => void) => void;
 }
 
 export function VoiceFields({ form, models, integrations, selectedModel, onClose }: Props) {
@@ -39,12 +39,11 @@ export function VoiceFields({ form, models, integrations, selectedModel, onClose
       {!readiness.voiceReady && (
         <VoiceReadinessNotice
           hasGoogleIntegration={readiness.hasGoogleIntegration}
-          onOpenModels={() => { onClose(); dispatch({ type: "SET_TAB", tab: "models" }); }}
-          onOpenCredentials={() => {
-            onClose();
+          onOpenModels={() => onClose(() => dispatch({ type: "SET_TAB", tab: "models" }))}
+          onOpenCredentials={() => onClose(() => {
             dispatch({ type: "SET_TAB", tab: "credentials" });
             dispatch({ type: "SET_SELECTION", tab: "credentials", itemId: "list" });
-          }}
+          })}
         />
       )}
       <VoicePickers form={form} />
