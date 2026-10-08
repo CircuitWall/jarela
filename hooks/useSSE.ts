@@ -30,47 +30,53 @@ type UseSSECommands = {
   stop: () => void;
   attach: (threadId: string) => Promise<void>;
   clearStreamingContent: () => void;
+  clearToolEvents: () => void;
   splitStreamingContent: () => string;
   restoreStreamingContent: (content: string) => void;
   expectSteeredContinuation: (expected: boolean) => void;
 };
 
+// Tool names with a `call` event but no later `result` for that id, in call
+// order. The single source of truth for "which tools are still running" —
+// ToolList groups the same `tool_call`/`tool_result` pairs to render its
+// own per-call status badges, so deriving the header label from the same
+// events (instead of a second, separately-maintained id->name map) means
+// the two can't drift apart as event handling evolves.
+function activeToolNames(events: ToolEvent[]): string[] {
+  const active = new Map<string, string>();
+  for (const ev of events) {
+    if (ev.phase === "call") active.set(ev.id, ev.name);
+    else if (ev.phase === "result") active.delete(ev.id);
+  }
+  return [...active.values()];
+}
+
 function useRunActivity() {
   const activityRef = useRef<ReturnType<typeof pushActivity> | null>(null);
-  const activeToolsRef = useRef<Map<string, string>>(new Map());
 
   const open = useCallback((initial: string) => {
     activityRef.current?.clear();
-    activeToolsRef.current.clear();
     activityRef.current = pushActivity(initial);
   }, []);
 
   const close = useCallback(() => {
     activityRef.current?.clear();
     activityRef.current = null;
-    activeToolsRef.current.clear();
   }, []);
 
   const setStatus = useCallback((label: string) => {
     activityRef.current?.set(label);
   }, []);
 
-  const onToolCall = useCallback((id: string, name: string) => {
-    activeToolsRef.current.set(id, name);
-    activityRef.current?.set(`Using ${name}…`);
-    activityRef.current?.setInflightTools(activeToolsRef.current.size);
-  }, []);
-
-  const onToolResult = useCallback((id: string) => {
-    activeToolsRef.current.delete(id);
-    const remaining = activeToolsRef.current.values().next().value as string | undefined;
-    activityRef.current?.set(remaining ? `Using ${remaining}…` : "Thinking…");
-    activityRef.current?.setInflightTools(activeToolsRef.current.size);
+  const reportToolActivity = useCallback((events: ToolEvent[]) => {
+    const active = activeToolNames(events);
+    activityRef.current?.set(active[0] ? `Using ${active[0]}…` : "Thinking…");
+    activityRef.current?.setInflightTools(active.length);
   }, []);
 
   useEffect(() => close, [close]);
 
-  return { open, close, setStatus, onToolCall, onToolResult, activeToolsRef };
+  return { open, close, setStatus, reportToolActivity };
 }
 
 function useStreamingBuffer() {
@@ -178,6 +184,11 @@ function useStreamingBuffer() {
 export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseSSECommands> {
   const [streaming, setStreaming] = useState(false);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
+  // Mirrors `toolEvents` for synchronous reads inside `consume()` (the
+  // thinking_delta branch) without putting toolEvents into consume's
+  // dependency array, which would recreate it on every tool event.
+  const toolEventsRef = useRef<ToolEvent[]>([]);
+  toolEventsRef.current = toolEvents;
   const [error, setError] = useState<string | null>(null);
   // Structured auth-failure surface: when set, ChatView renders a banner
   // that deep-links to /settings/credentials for the offending row.
@@ -190,9 +201,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     open: openActivity,
     close: closeActivity,
     setStatus: setActivityStatus,
-    onToolCall,
-    onToolResult,
-    activeToolsRef,
+    reportToolActivity,
   } = useRunActivity();
   const {
     streamingContent,
@@ -234,23 +243,23 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
         setActivityStatus(label);
       } else if (event.type === "thinking_delta") {
         appendThinking(event.delta);
-        if (activeToolsRef.current.size === 0) setActivityStatus("Thinking…");
+        if (activeToolNames(toolEventsRef.current).length === 0) setActivityStatus("Thinking…");
       } else if (event.type === "tool_call") {
         // Flush any buffered text before the tool event so the order on
         // screen matches the order on the wire.
         flushPending();
-        setToolEvents((prev) => [
-          ...prev,
-          { id: event.id, phase: "call", name: event.name, payload: event.arguments },
-        ]);
-        onToolCall(event.id, event.name);
+        setToolEvents((prev) => {
+          const next = [...prev, { id: event.id, phase: "call" as const, name: event.name, payload: event.arguments }];
+          reportToolActivity(next);
+          return next;
+        });
       } else if (event.type === "tool_result") {
         flushPending();
-        setToolEvents((prev) => [
-          ...prev,
-          { id: event.id, phase: "result", name: event.name, payload: event.result },
-        ]);
-        onToolResult(event.id);
+        setToolEvents((prev) => {
+          const next = [...prev, { id: event.id, phase: "result" as const, name: event.name, payload: event.result }];
+          reportToolActivity(next);
+          return next;
+        });
       } else if (event.type === "tool_progress") {
         // Doesn't flush pending text — a progress chunk from a still-running
         // tool call doesn't mark a text/tool ordering boundary the way a
@@ -298,7 +307,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       }
     }
     return false;
-  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, onToolCall, onToolResult, resetStreamingText, setActivityStatus, activeToolsRef]);
+  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, reportToolActivity, resetStreamingText, setActivityStatus]);
 
   const start = useCallback(async (
     threadId: string,
@@ -426,6 +435,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
   const expectSteeredContinuation = useCallback((expected: boolean) => {
     steeredContinuationRef.current = expected;
   }, []);
+  const clearToolEvents = useCallback(() => { setToolEvents([]); }, []);
 
   const state: UseSSEState = {
     streaming,
@@ -441,6 +451,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     stop,
     attach,
     clearStreamingContent,
+    clearToolEvents,
     splitStreamingContent,
     restoreStreamingContent,
     expectSteeredContinuation,
@@ -460,6 +471,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     stop,
     attach,
     clearStreamingContent,
+    clearToolEvents,
     splitStreamingContent,
     restoreStreamingContent,
     expectSteeredContinuation,

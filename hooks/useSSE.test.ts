@@ -120,4 +120,28 @@ describe("useSSE contract", () => {
       { id: "c1", phase: "result", name: "claude_delegate", payload: { ok: true } },
     ]);
   });
+
+  // The tool trail must survive the gap between the stream's `done`/`error`
+  // event and the consumer's refetch-driven clearToolEvents() call — same
+  // protection streamingContent/thinkingContent already get (see the `done`
+  // branch comment in useSSE.ts) — otherwise it flashes away before the
+  // persisted message's own tool_events render.
+  it("keeps toolEvents past streaming=false until clearToolEvents is called", async () => {
+    submitRunMock.mockResolvedValue({ accepted: true });
+    subscribeRunMock.mockReturnValue(streamWithProgress());
+
+    const { result } = renderHook(() => useSSE());
+
+    await act(async () => {
+      await result.current.commands.start("thread-1", "delegate this");
+    });
+
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+    expect(result.current.toolEvents.length).toBeGreaterThan(0);
+
+    act(() => {
+      result.current.commands.clearToolEvents();
+    });
+    expect(result.current.toolEvents).toEqual([]);
+  });
 });
