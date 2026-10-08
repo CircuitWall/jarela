@@ -15,8 +15,6 @@ import { spawnSync } from "node:child_process";
 type AtlassianAuth = { url: string; email: string; apiToken: string };
 type GitHubAuth = { token: string };
 type JiraAlignAuth = { url: string; apiToken: string };
-type LinkedInPersonalAuth = { accessToken: string };
-type LinkedInEnterpriseAuth = { accessToken: string; version?: string };
 // Trigger registration of the default LangChain package auth resolvers
 // before the first probe runs. Health probes can be invoked from the
 // scheduler before any agent tool call has caused builtins.ts to load.
@@ -531,57 +529,6 @@ export async function probeOpenAICodex(): Promise<HealthResult> {
   }
 }
 
-export async function probeLinkedInPersonal(): Promise<HealthResult> {
-  const auth = resolvePackageAuth<LinkedInPersonalAuth>("linkedin_personal");
-  if ("error" in auth) return unconfigured(auth.error);
-  const saved = getIntegrationRaw("linkedin_personal");
-  const grantedScopes = (saved?.granted_scopes || saved?.scopes)?.split(/[\s,]+/).filter(Boolean) ?? [];
-  if (grantedScopes.length > 0 && !grantedScopes.includes("openid") && !grantedScopes.includes("profile")) {
-    return ok({
-      auth: "oauth",
-      warning: "Access token is saved, but this token has no OpenID Connect profile scope. Reconnect with openid profile to enable member identity and posting.",
-      granted_scopes: grantedScopes.join(" "),
-    });
-  }
-  try {
-    const res = await fetch("https://api.linkedin.com/v2/userinfo", {
-      headers: { Authorization: `Bearer ${auth.accessToken}` },
-      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
-    });
-    if (res.status === 401) return authFailed("LinkedIn Personal rejected the access token (401). Reconnect the integration.");
-    if (res.status === 403) return ok({ auth: "oauth", warning: "OAuth succeeded, but LinkedIn denied profile lookup. Reconnect with the OpenID Connect profile scope (openid profile)." });
-    if (res.status === 429) return transient("LinkedIn rate-limited the personal probe (429).");
-    if (!res.ok) return probeError(`LinkedIn Personal returned ${res.status}`);
-    const body = await readJsonResponse<{ name?: string; email?: string }>(res)
-      .catch((): { name?: string; email?: string } => ({}));
-    return ok({ displayName: body.name, email: body.email, auth: "oauth" });
-  } catch (err) {
-    return transient(describeError(err));
-  }
-}
-
-export async function probeLinkedInEnterprise(): Promise<HealthResult> {
-  const auth = resolvePackageAuth<LinkedInEnterpriseAuth>("linkedin_enterprise");
-  if ("error" in auth) return unconfigured(auth.error);
-  try {
-    const query = new URLSearchParams({ q: "roleAssignee", role: "ADMINISTRATOR", state: "APPROVED", count: "1" });
-    const res = await fetch(`https://api.linkedin.com/rest/organizationAcls?${query}`, {
-      headers: {
-        Authorization: `Bearer ${auth.accessToken}`,
-        "Linkedin-Version": auth.version?.trim() || "202608",
-        "X-Restli-Protocol-Version": "2.0.0",
-      },
-      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
-    });
-    if (res.status === 401 || res.status === 403) return authFailed(`LinkedIn Enterprise rejected the token or organization access (${res.status}). Reconnect or verify the member's page role.`);
-    if (res.status === 429) return transient("LinkedIn rate-limited the enterprise probe (429).");
-    if (!res.ok) return probeError(`LinkedIn Enterprise returned ${res.status}`);
-    return ok({ auth: "oauth" });
-  } catch (err) {
-    return transient(describeError(err));
-  }
-}
-
 // ────────────────────────────────────────────────────────────────────
 // Routing helpers
 // ────────────────────────────────────────────────────────────────────
@@ -589,8 +536,7 @@ export async function probeLinkedInEnterprise(): Promise<HealthResult> {
 export type ProbeName =
   | "atlassian" | "jira_align" | "github" | "google" | "gmail" | "outlook" | "icloud"
   | "anthropic" | "openai" | "deepseek" | "cohere" | "github-copilot" | "claude-code"
-  | "openai-codex"
-  | "linkedin_personal" | "linkedin_enterprise";
+  | "openai-codex";
 
 const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
   atlassian: probeAtlassian,
@@ -607,8 +553,6 @@ const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
   "github-copilot": probeGithubCopilot,
   "claude-code": probeClaudeCode,
   "openai-codex": probeOpenAICodex,
-  linkedin_personal: probeLinkedInPersonal,
-  linkedin_enterprise: probeLinkedInEnterprise,
 };
 
 const PROBE_LABELS: Record<ProbeName, string> = {
@@ -626,8 +570,6 @@ const PROBE_LABELS: Record<ProbeName, string> = {
   "github-copilot": "GitHub Copilot",
   "claude-code": "Claude Code",
   "openai-codex": "OpenAI Codex (ChatGPT)",
-  linkedin_personal: "LinkedIn Personal",
-  linkedin_enterprise: "LinkedIn Enterprise",
 };
 
 const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
@@ -645,8 +587,6 @@ const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
   "github-copilot": "llm",
   "claude-code": "integration",
   "openai-codex": "integration",
-  linkedin_personal: "integration",
-  linkedin_enterprise: "integration",
 };
 
 export function listProbes(): ProbeName[] {

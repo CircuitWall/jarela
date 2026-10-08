@@ -106,8 +106,6 @@ if [[ $SKIP_OPTIONAL_PACKAGES -eq 0 ]]; then
     "$REPO_ROOT/packages/github-langchain" \
     "$REPO_ROOT/packages/icloud-langchain" \
     "$REPO_ROOT/packages/jira-align-langchain" \
-    "$REPO_ROOT/packages/linkedin-enterprise-langchain" \
-    "$REPO_ROOT/packages/linkedin-personal-langchain" \
     "$REPO_ROOT/packages/ms-todo-langchain"
 fi
 

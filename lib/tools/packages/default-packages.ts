@@ -35,16 +35,6 @@ const icloudWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/ic
 const icloudExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/icloud-langchain", "icloudExecuteTools");
 const setICloudAuthResolver = optionalFunction("@circuitwall/icloud-langchain", "setAuthResolver", () => undefined);
 const resolveICloudAuthFromEnv = optionalFunction("@circuitwall/icloud-langchain", "resolveICloudAuthFromEnv", () => ({ error: "iCloud package is not installed." }));
-const linkedinPersonalReadTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-personal-langchain", "linkedinPersonalReadTools");
-const linkedinPersonalWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-personal-langchain", "linkedinPersonalWriteTools");
-const linkedinPersonalExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-personal-langchain", "linkedinPersonalExecuteTools");
-const setLinkedInPersonalAuthResolver = optionalFunction("@circuitwall/linkedin-personal-langchain", "setAuthResolver", () => undefined);
-const resolveLinkedInPersonalAuthFromEnv = optionalFunction("@circuitwall/linkedin-personal-langchain", "resolveLinkedInPersonalAuthFromEnv", () => ({ error: "LinkedIn Personal package is not installed." }));
-const linkedinEnterpriseReadTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-enterprise-langchain", "linkedinEnterpriseReadTools");
-const linkedinEnterpriseWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-enterprise-langchain", "linkedinEnterpriseWriteTools");
-const linkedinEnterpriseExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-enterprise-langchain", "linkedinEnterpriseExecuteTools");
-const setLinkedInEnterpriseAuthResolver = optionalFunction("@circuitwall/linkedin-enterprise-langchain", "setAuthResolver", () => undefined);
-const resolveLinkedInEnterpriseAuthFromEnv = optionalFunction("@circuitwall/linkedin-enterprise-langchain", "resolveLinkedInEnterpriseAuthFromEnv", () => ({ error: "LinkedIn Enterprise package is not installed." }));
 
 import {
   registerLangChainPackage,
@@ -186,46 +176,6 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
       }),
   },
   ...buildICloudDescriptors(),
-  {
-    id: "linkedin_personal",
-    label: "LinkedIn Personal",
-    category: "Other",
-    integrationId: "linkedin_personal",
-    npmPackage: "@circuitwall/linkedin-personal-langchain",
-    toolCounts: { read: linkedinPersonalReadTools.length, write: linkedinPersonalWriteTools.length, execute: linkedinPersonalExecuteTools.length },
-    description: "Authenticated member profile and text publishing.",
-    register: () => registerLangChainPackage({
-      category: "Other",
-      tools: { read: linkedinPersonalReadTools, write: linkedinPersonalWriteTools, execute: linkedinPersonalExecuteTools },
-      auth: {
-        integrationId: "linkedin_personal",
-        setAuthResolver: setLinkedInPersonalAuthResolver,
-        resolveAuthFromEnv: resolveLinkedInPersonalAuthFromEnv,
-        mapStoreFields: (raw) => raw.access_token ? { accessToken: raw.access_token, version: raw.version } : null,
-        notConfiguredError: "LinkedIn Personal is not configured. Connect the personal LinkedIn integration.",
-      },
-    }),
-  },
-  {
-    id: "linkedin_enterprise",
-    label: "LinkedIn Enterprise",
-    category: "Other",
-    integrationId: "linkedin_enterprise",
-    npmPackage: "@circuitwall/linkedin-enterprise-langchain",
-    toolCounts: { read: linkedinEnterpriseReadTools.length, write: linkedinEnterpriseWriteTools.length, execute: linkedinEnterpriseExecuteTools.length },
-    description: "Organization discovery, page posts, and text publishing.",
-    register: () => registerLangChainPackage({
-      category: "Other",
-      tools: { read: linkedinEnterpriseReadTools, write: linkedinEnterpriseWriteTools, execute: linkedinEnterpriseExecuteTools },
-      auth: {
-        integrationId: "linkedin_enterprise",
-        setAuthResolver: setLinkedInEnterpriseAuthResolver,
-        resolveAuthFromEnv: resolveLinkedInEnterpriseAuthFromEnv,
-        mapStoreFields: (raw) => raw.access_token ? { accessToken: raw.access_token, version: raw.version } : null,
-        notConfiguredError: "LinkedIn Enterprise is not configured. Connect the enterprise LinkedIn integration.",
-      },
-    }),
-  },
 ];
 
 // iCloud ships one npm package that spans three domains (Mail / Calendar

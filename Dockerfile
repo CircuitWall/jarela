@@ -57,8 +57,6 @@ COPY packages/atlassian-langchain/package.json            ./packages/atlassian-l
 COPY packages/github-langchain/package.json               ./packages/github-langchain/
 COPY packages/icloud-langchain/package.json               ./packages/icloud-langchain/
 COPY packages/jira-align-langchain/package.json           ./packages/jira-align-langchain/
-COPY packages/linkedin-enterprise-langchain/package.json  ./packages/linkedin-enterprise-langchain/
-COPY packages/linkedin-personal-langchain/package.json    ./packages/linkedin-personal-langchain/
 COPY packages/ms-todo-langchain/package.json              ./packages/ms-todo-langchain/
 RUN npm ci --no-audit --no-fund --ignore-scripts --registry=https://registry.npmjs.org/
 
