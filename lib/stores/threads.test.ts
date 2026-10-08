@@ -337,6 +337,56 @@ describe("pruneThreadMessages", () => {
       expect(getMessages(t.thread_id).map((r) => r.content)).toContain(`${category} row`);
     }
   });
+
+  it("archives pruned chat messages to memory_store under chat_archive namespace", () => {
+    const t = createThread("agent-archive");
+    for (let i = 0; i < 6; i++) addMessage(t.thread_id, i % 2 === 0 ? "user" : "assistant", `m${i}`);
+    // addMessage's async embedding path isn't configured in this test
+    // environment, so simulate the end state (embeddings landed) via a
+    // direct UPDATE. The oldest two (m0, m1) are about to be pruned —
+    // those are the ones we assert archival for.
+    const db = getDb();
+    const fakeVec = JSON.stringify(new Array(8).fill(0.1));
+    db.prepare("UPDATE messages SET embedding=? WHERE thread_id=?").run(fakeVec, t.thread_id);
+
+    const removed = pruneThreadMessages(t.thread_id, 4);
+    expect(removed).toBe(2);
+
+    const archived = db.prepare(
+      "SELECT namespace, key, value, embedding FROM memory_store WHERE namespace='chat_archive' AND key LIKE ?",
+    ).all(`%::${t.thread_id}::%`) as Array<{ namespace: string; key: string; value: string; embedding: string }>;
+    expect(archived).toHaveLength(2);
+    // Keys encode role::thread_id::msg_id so recall() can parse the role
+    // and thread_id back and emit a message-source hit.
+    expect(archived[0].key.split("::")[0]).toMatch(/^(user|assistant)$/);
+    expect(archived[0].key.split("::")[1]).toBe(t.thread_id);
+    expect(archived.map((r) => r.value).sort()).toEqual(["m0", "m1"]);
+    // The embedding is copied over verbatim so recall() can use it
+    // without a fresh round-trip to the embedding provider.
+    expect(archived[0].embedding).toBe(fakeVec);
+  });
+
+  it("skips archiving non-chat roles and messages without an embedding", () => {
+    const t = createThread("agent-archive-skip");
+    for (let i = 0; i < 6; i++) addMessage(t.thread_id, "user", `nope-${i}`);
+    const db = getDb();
+    // Only the oldest row gets an embedding; the next one should be
+    // skipped silently (we still delete it from messages).
+    const victim = db.prepare(
+      "SELECT msg_id FROM messages WHERE thread_id=? ORDER BY rowid ASC LIMIT 1",
+    ).get(t.thread_id) as { msg_id: string };
+    const fakeVec = JSON.stringify(new Array(8).fill(0.2));
+    db.prepare("UPDATE messages SET embedding=? WHERE msg_id=?").run(fakeVec, victim.msg_id);
+
+    const removed = pruneThreadMessages(t.thread_id, 4);
+    expect(removed).toBe(2);
+    const archived = db.prepare(
+      "SELECT value FROM memory_store WHERE namespace='chat_archive' AND key LIKE ?",
+    ).all(`%::${t.thread_id}::%`) as Array<{ value: string }>;
+    // Exactly one archived — the row that had an embedding.
+    expect(archived).toHaveLength(1);
+    expect(archived[0].value).toBe("nope-0");
+  });
 });
 
 describe("pagination cursors are seq-based, not timestamp-based", () => {

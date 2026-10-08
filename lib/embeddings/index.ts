@@ -3,6 +3,7 @@ import { getModelConfig, getDefaultModelConfig, getModelParams, listModelConfigs
 import { getEmbeddingModelConfigName, isDocumentLocalEmbeddingsEnabled } from "@/lib/stores/app-settings";
 import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
+import { CHAT_ARCHIVE_NAMESPACE, parseChatArchiveKey } from "@/lib/stores/chat-archive-key";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
 import { createContentCache } from "@/lib/cache/keyed-cache";
@@ -375,6 +376,14 @@ export function resetMessageEmbedCache(): void {
   msgEmbedCache = null;
 }
 
+// Same pattern for bulk memory_store writes — pruneThreadMessages inserts
+// a batch of chat_archive rows at /compact time, so dropping the memory
+// cache lets the next recall() pick them up from SQLite in one scan
+// rather than threading a parsed-vector upsert through two modules.
+export function resetMemoryEmbedCache(): void {
+  memEmbedCache = null;
+}
+
 /** @internal — test-only: force both caches to rebuild from SQLite. */
 export function _resetEmbedCaches(): void {
   memEmbedCache = null;
@@ -406,6 +415,22 @@ export async function recall(query: string, limit = 5, policy: MemoryPolicy = ge
   // re-querying + re-JSON.parse-ing every embedded row on every turn.
   if (qVec) {
     for (const r of loadMemEmbedCache().values()) {
+      // chat_archive rows are pruned chat messages copied into
+      // memory_store by pruneThreadMessages so they stay recall-able
+      // after compaction. Surface them as `source: "message"` so
+      // buildRecallContext renders them exactly like a live message hit
+      // (role + thread tag + date), not as a generic memory entry.
+      // Malformed keys fall through to the memory-source rendering path.
+      if (r.namespace === CHAT_ARCHIVE_NAMESPACE) {
+        const parsed = parseChatArchiveKey(r.key);
+        if (parsed) {
+          scored.push({
+            source: "message", thread_id: parsed.thread_id, role: parsed.role,
+            content: r.value, score: cosine(qVec, r.embedding), created_at: r.created_at,
+          });
+          continue;
+        }
+      }
       const structured = parseStructuredMemory(r.value);
       if (structured && !isStructuredMemoryEligible(structured, policy)) continue;
       if (!structured && policy === "important") continue;
