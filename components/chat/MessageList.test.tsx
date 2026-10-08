@@ -333,6 +333,45 @@ describe("MessageList conversation focus", () => {
     expect(screen.getByText("recent 0 · warm 2")).toBeTruthy();
   });
 
+  it("keeps the anchor message on screen when hot_since relocates the boundary line", () => {
+    const messages = [
+      mkMessage("m1", "user", "one", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "two", "2026-08-09T10:00:01.000Z"),
+      mkMessage("m3", "user", "three", "2026-08-09T10:00:02.000Z"),
+      mkMessage("m4", "assistant", "four", "2026-08-09T10:00:03.000Z"),
+    ];
+    const { container, rerender } = render(
+      <MessageList threadId="thread-1" messages={messages} hotSince="2026-08-09T10:00:02.000Z" />,
+    );
+
+    const scroller = container.querySelector(".panel-scrollbar") as HTMLDivElement;
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(scroller, "scrollTop", { configurable: true, writable: true, value: 300 });
+
+    setRect(container.querySelector('[data-message-id="m1"]')!, -200);
+    setRect(container.querySelector('[data-message-id="m2"]')!, -50);
+    setRect(container.querySelector('[data-message-id="m3"]')!, 150);
+    setRect(container.querySelector('[data-message-id="m4"]')!, 400);
+
+    // Scrolled away from the bottom with m3 the topmost visible message —
+    // captures it as the anchor.
+    fireEvent.scroll(scroller);
+    expect(scroller.scrollTop).toBe(300);
+
+    // Boundary relocates: in a real browser this shifts m3 (and
+    // everything after it) up or down by the divider's own height; stand
+    // in for that by nudging m3's rect by -50.
+    setRect(container.querySelector('[data-message-id="m3"]')!, 100);
+    rerender(
+      <MessageList threadId="thread-1" messages={messages} hotSince="2026-08-09T10:00:03.000Z" />,
+    );
+
+    // scrollTop drops by exactly the amount m3 moved up, so the anchor
+    // message stays at the same on-screen position.
+    expect(scroller.scrollTop).toBe(250);
+  });
+
   it("disables Locate boundary line until a focus pin is set, then scrolls to it", () => {
     const messages = [
       mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
