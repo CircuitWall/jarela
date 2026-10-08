@@ -42,8 +42,9 @@ vi.mock("@/lib/stores/model-config", () => ({
   getModelParams: () => ({}),
 }));
 
-const { _resetEmbeddingCache, embed, embedDocument, embedBestEffort, embedOne } = await import("./index");
+const { _resetEmbeddingCache, _resetEmbedCaches, embed, embedDocument, embedBestEffort, embedOne, recall } = await import("./index");
 const { setDocumentLocalEmbeddings } = await import("@/lib/stores/app-settings");
+const { getDb } = await import("@/lib/db");
 const originalEmbeddingModelConfig = process.env.EMBEDDING_MODEL_CONFIG;
 
 beforeEach(() => {
@@ -172,5 +173,89 @@ describe("embedBestEffort", () => {
     expect(query).toEqual([[0.75, 0.25]]);
     expect(localEmbedSpy).toHaveBeenNthCalledWith(1, ["shared text"], "passage");
     expect(localEmbedSpy).toHaveBeenNthCalledWith(2, ["shared text"], "query");
+  });
+});
+
+describe("recall chat_archive", () => {
+  beforeEach(() => {
+    const db = getDb();
+    db.prepare("DELETE FROM memory_store").run();
+    db.prepare("DELETE FROM messages").run();
+    db.prepare("DELETE FROM threads").run();
+    _resetEmbedCaches();
+    embedSpy.mockReset();
+    resolveEmbedClient = true;
+  });
+
+  // Pruned chat messages are copied to memory_store under the
+  // chat_archive namespace (see pruneThreadMessages). recall() must
+  // surface those rows as `source: "message"` so buildRecallContext
+  // formats them as "past chat"/"earlier this thread" rather than
+  // "[memory chat_archive/…]" — same user-facing shape as a live
+  // message hit, so the model can't tell the row is archived.
+  it("emits a chat_archive row as a message-source recall hit", async () => {
+    const db = getDb();
+    const vec = JSON.stringify([1, 0, 0, 0]);
+    db.prepare(
+      "INSERT INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,?)",
+    ).run(
+      "chat_archive",
+      "user::thread-xyz::msg-abc",
+      "archived user turn",
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-02T00:00:00.000Z",
+      vec,
+    );
+
+    // Query embedding = same vector so cosine ≈ 1 and the row ranks top.
+    embedSpy.mockResolvedValueOnce([[1, 0, 0, 0]]);
+    const hits = await recall("whatever query", 5);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      source: "message",
+      thread_id: "thread-xyz",
+      role: "user",
+      content: "archived user turn",
+    });
+  });
+
+  it("still emits a non-chat_archive memory row as a memory-source hit", async () => {
+    const db = getDb();
+    const vec = JSON.stringify([1, 0, 0, 0]);
+    db.prepare(
+      "INSERT INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,?)",
+    ).run(
+      "facts",
+      "fav_color",
+      "orange",
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+      vec,
+    );
+    embedSpy.mockResolvedValueOnce([[1, 0, 0, 0]]);
+    const hits = await recall("whatever query", 5);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ source: "memory", namespace: "facts", key: "fav_color", content: "orange" });
+  });
+
+  it("falls back to a memory-source hit when a chat_archive key is malformed", async () => {
+    const db = getDb();
+    const vec = JSON.stringify([1, 0, 0, 0]);
+    // Key missing the role::thread_id::msg_id triple separators — should
+    // not break recall; the row surfaces as a plain memory hit.
+    db.prepare(
+      "INSERT INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,?)",
+    ).run(
+      "chat_archive",
+      "legacy-garbage-key",
+      "legacy content",
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+      vec,
+    );
+    embedSpy.mockResolvedValueOnce([[1, 0, 0, 0]]);
+    const hits = await recall("whatever query", 5);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].source).toBe("memory");
   });
 });

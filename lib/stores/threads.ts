@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { withDbTransaction } from "@/lib/db/transaction";
-import { embedOne, upsertMessageEmbedCache, resetMessageEmbedCache } from "@/lib/embeddings";
+import { embedOne, upsertMessageEmbedCache, resetMessageEmbedCache, resetMemoryEmbedCache } from "@/lib/embeddings";
+import { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey } from "./chat-archive-key";
+export { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey, parseChatArchiveKey } from "./chat-archive-key";
 
 const now = () => new Date().toISOString();
 
@@ -380,6 +382,10 @@ export function getOrCreateAgentThread(agentId: string): ThreadRow {
 // scope, which excludes exactly those categories (ADR-0044's channel
 // isolation). Deleting them here would destroy automation-channel history
 // nothing else has folded into a summary.
+//
+// Before deleting, each pruned chat row (role in user/assistant, with an
+// existing embedding) is copied into memory_store at the chat_archive
+// namespace so semantic recall can still surface it after compaction.
 export function pruneThreadMessages(threadId: string, keepLast: number, preserveFromSeq?: number): number {
   if (!Number.isFinite(keepLast) || keepLast <= 0) return 0;
   const db = getDb();
@@ -399,6 +405,41 @@ export function pruneThreadMessages(threadId: string, keepLast: number, preserve
     : "DELETE FROM messages WHERE msg_id IN (" +
       "  SELECT msg_id FROM messages WHERE thread_id=? ORDER BY rowid ASC LIMIT ?" +
       ")";
+  // Fetch the rows we're about to delete so we can archive the embedded
+  // chat ones first. Automation rows and non-chat roles are skipped —
+  // they are not transcript content the user would want surfaced via
+  // recall. The SELECT mirrors the DELETE's filter exactly so archive and
+  // delete operate on the same set of victims.
+  const victimSelectSql = preserveFromSeq !== undefined
+    ? "SELECT msg_id, role, content, embedding, created_at FROM messages WHERE thread_id=? AND rowid < ?" + categoryGuard + " ORDER BY rowid ASC LIMIT ?"
+    : "SELECT msg_id, role, content, embedding, created_at FROM messages WHERE thread_id=? ORDER BY rowid ASC LIMIT ?";
+  const victims = db.prepare(victimSelectSql).all(
+    ...(preserveFromSeq !== undefined
+      ? [threadId, preserveFromSeq, ...FOREGROUND_EXCLUDED_CATEGORIES, removeCount]
+      : [threadId, removeCount]),
+  ) as Array<{ msg_id: string; role: string; content: string; embedding: string | null; created_at: string }>;
+  const nowIso = new Date().toISOString();
+  const archiveInsert = db.prepare(
+    "INSERT OR REPLACE INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,?)",
+  );
+  let archivedCount = 0;
+  for (const row of victims) {
+    if (row.role !== "user" && row.role !== "assistant") continue;
+    if (!row.embedding) continue;
+    archiveInsert.run(
+      CHAT_ARCHIVE_NAMESPACE,
+      makeChatArchiveKey(row.role, threadId, row.msg_id),
+      row.content,
+      row.created_at,
+      nowIso,
+      row.embedding,
+    );
+    archivedCount += 1;
+  }
+  // Drop the in-memory recall cache so the next recall() picks up the
+  // batch — matches the resetMessageEmbedCache pattern below for the
+  // delete side of the same operation.
+  if (archivedCount > 0) resetMemoryEmbedCache();
   const r = db
     .prepare(deleteSql)
     .run(...(preserveFromSeq !== undefined
