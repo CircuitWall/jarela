@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.43.1] - 2026-10-08
+
+### Added
+
+- **One embedding model for documents, memory, and chat.** Choosing the bundled
+  on-device model (Jarela Local, multilingual, no provider key needed) now
+  applies to document chunks, memory entries, and chat messages, so none of that
+  text reaches an embedding provider. Vectors from a previous model are rebuilt
+  in the background, including swaps between models of the same dimension, with
+  progress shown in Settings, Models. See ADR-0095.
+- **One hybrid memory search.** Proactive recall, `memory_search`, `memory_list`
+  with a search term, and the Memory panel share one search that combines
+  similarity with exact text matches, so keys, ids, and error codes are found
+  even when similarity misses them. `memory_search` accepts `include_chats` to
+  also search past conversations, including archived turns, and results label
+  their source. Rows that never received an embedding are now embedded in the
+  background.
+- **Global and per-agent usage strategies** pick cost-saving, balanced, or
+  reasoning-oriented defaults, with provider retry ownership and durable
+  completion signals.
+- **Attachments carry canonical file references and interpretations**, so file
+  context stays retrievable across turns.
+- **Tool definitions can be deferred under a bind budget**, keeping prompts small
+  when many tools are enabled.
+- **Pruned chat messages stay recall-able** through a chat archive, and a
+  context compaction tool with an idle-gap hint keeps long threads usable.
+- **Shared configuration UI.** Panels, setting cards with drawers, dialogs, and
+  the pinned save bar are now built from one set of components. Editors ask
+  before discarding unsaved edits, Save and Discard stay visible while a form
+  scrolls, tabs scroll without a scrollbar, and native confirm prompts are
+  replaced by one in-app confirmation.
+
+### Changed
+
+- **The embedding model setting moved to Settings, Models** and now covers all
+  recall, not only documents.
+- **The Packages page groups sources into collapsible drawers** and keeps the
+  runtime settings and tool catalog collapsed until opened.
+
+### Fixed
+
+- **Gmail search no longer crashes on binary responses.**
+- **File references stay retrievable, and usage strategy saves are atomic.**
+- **Stale reads and writes in CRUD stores are prevented.**
+- **Cost saving stays usable, and DeepSeek limits are refreshed.**
+- **Context compaction stays within the tool budget.**
+- **The warm summary cache tolerates near-miss matches.**
+- **The focus boundary keeps its anchor message on screen**, and the tool trail
+  stays visible until the stream refetches.
+
+### Security
+
+- **Next.js and KaTeX are updated past published advisories**, and vulnerable
+  transitive packages and undici are bumped.
+
 ## [1.42.3] - 2026-10-01
 
 ### Fixed
