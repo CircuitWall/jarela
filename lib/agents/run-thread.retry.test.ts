@@ -73,7 +73,7 @@ describe("prepareThreadRun transient retry", () => {
       const options = streamWithConfigMock.mock.calls[0][2] as { agent_run_config: { allowed_tools: string[]; tool_permission_map: Array<{ name: string; permission: string; permission_reason: string }> } };
       const bound = options.agent_run_config.allowed_tools;
       expect(bound.length).toBeLessThanOrEqual(20);
-      expect(bound).toEqual(expect.arrayContaining(["invoke_tool", "list_tools", "memory_write", "file_write"]));
+      expect(bound).toEqual(expect.arrayContaining(["invoke_tool", "list_tools", "compact_context", "memory_write", "file_write"]));
       const trimmed = options.agent_run_config.tool_permission_map.filter((entry) => entry.permission_reason === "proxy_only");
       expect(trimmed.length).toBeGreaterThan(0);
       expect(trimmed.every((entry) => !bound.includes(entry.name))).toBe(true);

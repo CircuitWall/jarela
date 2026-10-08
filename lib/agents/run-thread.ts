@@ -554,7 +554,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       hotLoadToolNames(baseToolPermissionMap, requestedAllowedTools, getAgentTools(agentCfg)),
       {
         budget: getConfig().toolBindBudget,
-        alwaysKeep: [...SELF_CONFIG_TOOLS, "tool_result_get", "tool_result_list"],
+        alwaysKeep: [...SELF_CONFIG_TOOLS, "tool_result_get", "tool_result_list", "compact_context"],
         recentlyUsed: getRecentlyUsedToolNames(req.thread_id),
         pinned: getAgentTools(agentCfg),
       },
