@@ -1,6 +1,9 @@
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getDefaultModelConfig, getModelParams, listModelConfigs, type ModelConfigRow } from "@/lib/stores/model-config";
-import { getEmbeddingModelConfigName, isDocumentLocalEmbeddingsEnabled } from "@/lib/stores/app-settings";
+import {
+  getEmbeddingModelConfigName, getEmbeddingVectorsSignature, getMemoryPolicy, isLocalEmbeddingsEnabled,
+  setEmbeddingVectorsSignature, type MemoryPolicy,
+} from "@/lib/stores/app-settings";
 import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
 import { CHAT_ARCHIVE_NAMESPACE, parseChatArchiveKey } from "@/lib/stores/chat-archive-key";
@@ -8,9 +11,9 @@ import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
 import { createContentCache } from "@/lib/cache/keyed-cache";
 import { createHash } from "node:crypto";
-import { memoryRecallText } from "@/lib/memory/record";
-import { getMemoryPolicy, type MemoryPolicy } from "@/lib/stores/app-settings";
-import { isStructuredMemoryEligible, parseStructuredMemory } from "@/lib/memory/record";
+import {
+  extractEmbeddableText, isStructuredMemoryEligible, memoryRecallText, memorySearchText, parseStructuredMemory,
+} from "@/lib/memory/record";
 import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID } from "./constants";
 import { embedLocally, type LocalEmbeddingTask } from "./local";
 
@@ -22,6 +25,8 @@ const EXCLUDED_NS_PLACEHOLDERS = EXCLUDED_NS.map(() => "?").join(",");
 
 interface EmbeddingClient {
   modelId: string;
+  /** Identifies the model that produced a vector; changes when the model does. */
+  signature: string;
   cacheScope?: string;
   embed: (texts: string[]) => Promise<number[][]>;
 }
@@ -32,7 +37,7 @@ interface EmbeddingClient {
 //    (text-embedding-3-small for OpenAI-compatible providers).
 // Embedding generation is best-effort: any failure returns null and the caller
 // falls back to substring search.
-async function resolveEmbeddingClient(): Promise<EmbeddingClient | null> {
+async function resolveConfiguredEmbeddingClient(): Promise<EmbeddingClient | null> {
   function fromConfig(cfg: ModelConfigRow | null): EmbeddingClient | null {
     if (!cfg) return null;
     const params: ProviderParams = getModelParams(cfg);
@@ -47,7 +52,7 @@ async function resolveEmbeddingClient(): Promise<EmbeddingClient | null> {
       : isChatModelId(cfg.model_id)
         ? "text-embedding-3-small"
         : cfg.model_id;
-    return { modelId, embed: (texts) => provider.embed!(modelId, texts, params) };
+    return { modelId, signature: `${cfg.provider}:${modelId}`, embed: (texts) => provider.embed!(modelId, texts, params) };
   }
 
   const explicitName = process.env.EMBEDDING_MODEL_CONFIG;
@@ -80,15 +85,16 @@ async function resolveEmbeddingClient(): Promise<EmbeddingClient | null> {
   return null;
 }
 
-async function resolveDocumentEmbeddingClient(task: LocalEmbeddingTask = "query"): Promise<EmbeddingClient | null> {
-  if (isDocumentLocalEmbeddingsEnabled()) {
+async function resolveEmbeddingClient(task: LocalEmbeddingTask = "query"): Promise<EmbeddingClient | null> {
+  if (isLocalEmbeddingsEnabled()) {
     return {
       modelId: LOCAL_EMBEDDING_MODEL_ID,
+      signature: LOCAL_EMBEDDING_MODEL_ID,
       cacheScope: `${LOCAL_EMBEDDING_MODEL_ID}:${task}`,
       embed: (texts) => embedLocally(texts, task),
     };
   }
-  return resolveEmbeddingClient();
+  return resolveConfiguredEmbeddingClient();
 }
 
 function isChatModelId(id: string): boolean {
@@ -155,16 +161,18 @@ async function embedWithClient(
   }
 }
 
+// Stored content (memory entries, chat messages): "passage" side of the
+// bundled model when enabled, otherwise the configured provider.
 export async function embed(texts: string[]): Promise<number[][] | null> {
-  return embedWithClient(texts, await resolveEmbeddingClient());
+  return embedWithClient(texts, await resolveEmbeddingClient("passage"));
 }
 
-export async function embedDocument(texts: string[]): Promise<number[][] | null> {
-  return embedWithClient(texts, await resolveDocumentEmbeddingClient("query"));
+export async function embedQuery(texts: string[]): Promise<number[][] | null> {
+  return embedWithClient(texts, await resolveEmbeddingClient("query"));
 }
 
-export async function embedDocumentOne(text: string): Promise<number[] | null> {
-  const out = await embedDocument([text]);
+export async function embedQueryOne(text: string): Promise<number[] | null> {
+  const out = await embedQuery([text]);
   return out?.[0] ?? null;
 }
 
@@ -231,7 +239,7 @@ export interface EmbedBestEffortResult {
  */
 export async function embedBestEffort(texts: string[]): Promise<EmbedBestEffortResult> {
   if (texts.length === 0) return { vectors: [], error: null, failed: 0, terminal: [] };
-  const client = await resolveDocumentEmbeddingClient("passage");
+  const client = await resolveEmbeddingClient("passage");
   if (!client) {
     // Missing config, not bad content — fixing the config should let these
     // retry, so this is never a terminal per-item failure.
@@ -406,9 +414,10 @@ export interface RecalledMemory {
 // to a recent-rows substring scan for entries that don't have an embedding yet
 // (write-then-immediate-query case where the async embed hasn't landed).
 export async function recall(query: string, limit = 5, policy: MemoryPolicy = getMemoryPolicy()): Promise<RecalledMemory[]> {
-  const qVec = await embedOne(query);
+  const qVec = await embedQueryOne(query);
   const db = getDb();
   const scored: RecalledMemory[] = [];
+  if (qVec) void reembedStaleVectors(qVec.length);
 
   // ── semantic pass ─────────────────────────────────────────────────────────
   // Reads pre-parsed vectors from the in-memory cache (see above) instead of
@@ -503,6 +512,113 @@ export async function recall(query: string, limit = 5, policy: MemoryPolicy = ge
   return Array.from(groups.values())
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+}
+
+// Stored vectors from a previous embedding model silently vanish from recall:
+// a different dimension scores 0 in cosine(), and a different model with the
+// same dimension scores meaninglessly. Two signals mark them stale — a model
+// signature persisted with the settings, and a dimension mismatch against the
+// live query vector — and a background pass re-embeds them.
+const REEMBED_BATCH = 32;
+const REEMBED_COOLDOWN_MS = 60_000;
+
+export interface ReembedStatus {
+  running: boolean;
+  total: number;
+  done: number;
+  error: string | null;
+}
+
+const reembedStatus: ReembedStatus = { running: false, total: 0, done: 0, error: null };
+let reembedBlockedUntil = 0;
+// Rows already rewritten under `reembedDoneSignature`, so a retry after a
+// failure resumes instead of starting over.
+const reembedDone = new Set<string>();
+let reembedDoneSignature: string | null = null;
+
+export function getReembedStatus(): ReembedStatus {
+  return { ...reembedStatus };
+}
+
+/** @internal — test-only. */
+export function _resetReembedState(): void {
+  reembedStatus.running = false;
+  reembedStatus.total = 0;
+  reembedStatus.done = 0;
+  reembedStatus.error = null;
+  reembedBlockedUntil = 0;
+  reembedDone.clear();
+  reembedDoneSignature = null;
+}
+
+function memoryEmbedText(r: { namespace: string; key: string; value: string }): string {
+  // Archived chat turns were embedded from the message text, not as a memory entry.
+  if (r.namespace === CHAT_ARCHIVE_NAMESPACE) return extractEmbeddableText(r.value);
+  let parsed: unknown = r.value;
+  try { parsed = JSON.parse(r.value); } catch { /* legacy plain text */ }
+  return `${r.namespace}/${r.key}: ${memorySearchText(r.namespace, r.key, parsed)}`;
+}
+
+/**
+ * Re-embeds memory and message vectors that don't belong to the active model.
+ * Pass `dim` (the live query vector length) to also catch dimension mismatches.
+ * Safe to call often: it no-ops when nothing is stale, while one is running,
+ * and for a minute after a failure.
+ */
+export async function reembedStaleVectors(dim?: number): Promise<void> {
+  if (reembedStatus.running || Date.now() < reembedBlockedUntil) return;
+  reembedStatus.running = true;
+  try {
+    const signature = (await resolveEmbeddingClient("passage"))?.signature ?? null;
+    if (!signature) return;
+    const stored = getEmbeddingVectorsSignature();
+    // First run after upgrade: adopt the current model rather than rewriting everything.
+    if (stored === null) setEmbeddingVectorsSignature(signature);
+    const changed = stored !== null && stored !== signature;
+    if (reembedDoneSignature !== signature) {
+      reembedDone.clear();
+      reembedDoneSignature = signature;
+    }
+    const stale = (key: string, vec: number[]) =>
+      !reembedDone.has(key) && (changed || (dim !== undefined && vec.length !== dim));
+    const staleMem = [...loadMemEmbedCache().values()].filter((r) => stale(`m\0${r.namespace}\0${r.key}`, r.embedding));
+    const staleMsg = [...loadMsgEmbedCache().values()].filter((r) => stale(`g\0${r.msg_id}`, r.embedding));
+    reembedStatus.total = staleMem.length + staleMsg.length;
+    reembedStatus.done = 0;
+    reembedStatus.error = null;
+
+    const db = getDb();
+    for (let i = 0; i < staleMem.length; i += REEMBED_BATCH) {
+      const batch = staleMem.slice(i, i + REEMBED_BATCH);
+      const vecs = await embed(batch.map(memoryEmbedText));
+      if (!vecs) throw new Error("embedding provider unavailable");
+      batch.forEach((r, j) => {
+        const rows = db.prepare("UPDATE memory_store SET embedding=? WHERE namespace=? AND key=? AND value=?")
+          .run(JSON.stringify(vecs[j]), r.namespace, r.key, r.value).changes;
+        if (rows > 0) upsertMemoryEmbedCache(r.namespace, r.key, r.value, vecs[j], r.created_at);
+        reembedDone.add(`m\0${r.namespace}\0${r.key}`);
+      });
+      reembedStatus.done += batch.length;
+    }
+    for (let i = 0; i < staleMsg.length; i += REEMBED_BATCH) {
+      const batch = staleMsg.slice(i, i + REEMBED_BATCH);
+      const vecs = await embed(batch.map((r) => extractEmbeddableText(r.content)));
+      if (!vecs) throw new Error("embedding provider unavailable");
+      batch.forEach((r, j) => {
+        db.prepare("UPDATE messages SET embedding=? WHERE msg_id=?").run(JSON.stringify(vecs[j]), r.msg_id);
+        upsertMessageEmbedCache(r.msg_id, r.thread_id, r.role, r.content, vecs[j], r.created_at);
+        reembedDone.add(`g\0${r.msg_id}`);
+      });
+      reembedStatus.done += batch.length;
+    }
+    if (changed) setEmbeddingVectorsSignature(signature);
+  } catch (err) {
+    reembedStatus.error = errorMessage(err);
+    reembedBlockedUntil = Date.now() + REEMBED_COOLDOWN_MS;
+    console.warn("[embeddings] re-embed failed:", reembedStatus.error);
+  } finally {
+    reembedStatus.running = false;
+  }
 }
 
 function normalizeForDedup(text: string): string {

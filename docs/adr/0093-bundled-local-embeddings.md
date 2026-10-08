@@ -19,6 +19,8 @@ Expose the bundled model as an explicit Documents embedding selection. Keep `Aut
 
 Store this Documents-only choice separately from the existing app-wide embedding model setting. Selecting Jarela Local must not change the embedding backend used for memory or conversation-message vectors.
 
+> **Amended 2026-10-08 by [ADR-0095](0095-unified-embedding-model.md)** — the selection is now shared by documents, memory, and conversation messages.
+
 Changing the selected embedding model does not trigger an automatic full-corpus rescan. The user can run Reindex on each source; that action force-rebuilds vectors even when content is unchanged. Remote-source Reindex refreshes the source and backfills unchanged chunks after clearing their previous vectors. Filesystem watchers remain content-change triggers, not model-change triggers. Background sweeps continue to backfill chunks whose embeddings are null.
 
 ## Consequences

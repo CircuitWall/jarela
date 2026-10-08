@@ -2,32 +2,11 @@ import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { withDbTransaction } from "@/lib/db/transaction";
 import { embedOne, upsertMessageEmbedCache, resetMessageEmbedCache, resetMemoryEmbedCache } from "@/lib/embeddings";
+import { extractEmbeddableText } from "@/lib/memory/record";
 import { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey } from "./chat-archive-key";
 export { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey, parseChatArchiveKey } from "./chat-archive-key";
 
 const now = () => new Date().toISOString();
-
-// Attachment-bearing user turns persist `content` as a JSON-serialized
-// ContentPart[] (text + image/image_ref parts — see run-thread.ts and
-// page-capture.ts). Embedding models without vision support reject image
-// parts outright, so pull out just the text parts for embedding while the
-// DB row and embed cache keep storing the full multimodal payload.
-function extractEmbeddableText(content: string): string {
-  if (!content.startsWith("[")) return content;
-  try {
-    const parsed = JSON.parse(content) as unknown;
-    if (!Array.isArray(parsed)) return content;
-    return parsed
-      .filter((p): p is { type: "text"; text: string } => (
-        p && typeof p === "object" && (p as { type?: unknown }).type === "text"
-        && typeof (p as { text?: unknown }).text === "string"
-      ))
-      .map((p) => p.text)
-      .join(" ");
-  } catch {
-    return content;
-  }
-}
 
 // Explicit column list for message reads — omits `embedding` (~20KB of
 // JSON-encoded float[] per row) which only the embeddings module reads.

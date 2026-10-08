@@ -101,6 +101,26 @@ export function isStructuredMemoryActive(record: StructuredMemoryRecord, now = D
   return record.expires_at === null || Date.parse(record.expires_at) > now;
 }
 
+// Attachment-bearing user turns persist `content` as a JSON-serialized
+// ContentPart[]; embedding models without vision reject image parts, so embed
+// only the text parts.
+export function extractEmbeddableText(content: string): string {
+  if (!content.startsWith("[")) return content;
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    if (!Array.isArray(parsed)) return content;
+    return parsed
+      .filter((p): p is { type: "text"; text: string } => (
+        p && typeof p === "object" && (p as { type?: unknown }).type === "text"
+        && typeof (p as { text?: unknown }).text === "string"
+      ))
+      .map((p) => p.text)
+      .join(" ");
+  } catch {
+    return content;
+  }
+}
+
 export function memorySearchText(namespace: string, key: string, value: unknown): string {
   const record = parseStructuredMemory(value);
   if (!record) return `${namespace}/${key}: ${stringifyMemoryValue(value)}`;

@@ -24,7 +24,7 @@ vi.mock("@/lib/stores/model-config", () => ({
   getModelParams: () => ({}),
 }));
 
-vi.mock("@/lib/stores/app-settings", () => ({ getEmbeddingModelConfigName: () => null }));
+vi.mock("@/lib/stores/app-settings", () => ({ getEmbeddingModelConfigName: () => null, isLocalEmbeddingsEnabled: () => false }));
 
 const { embed, embedOne, _resetEmbeddingCache } = await import("./index");
 
