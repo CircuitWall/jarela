@@ -75,8 +75,6 @@ $OptionalPackages = @(
   (Join-Path $RepoRoot 'packages\github-langchain'),
   (Join-Path $RepoRoot 'packages\icloud-langchain'),
   (Join-Path $RepoRoot 'packages\jira-align-langchain'),
-  (Join-Path $RepoRoot 'packages\linkedin-enterprise-langchain'),
-  (Join-Path $RepoRoot 'packages\linkedin-personal-langchain'),
   (Join-Path $RepoRoot 'packages\ms-todo-langchain')
 )
 

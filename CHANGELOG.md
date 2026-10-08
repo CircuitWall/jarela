@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **LinkedIn integrations** The LinkedIn Personal and LinkedIn Enterprise integrations, their OAuth routes, health probes, and the two never-published `@circuitwall/linkedin-*-langchain` packages are removed. Previously stored LinkedIn credentials are ignored.
+
 ## [1.43.1] - 2026-10-08
 
 ### Added

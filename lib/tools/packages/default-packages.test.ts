@@ -39,8 +39,6 @@ describe("default LangChain packages", () => {
       "icloud_mail",
       "icloud_tasks",
       "jira_align",
-      "linkedin_enterprise",
-      "linkedin_personal",
     ]);
   });
 
