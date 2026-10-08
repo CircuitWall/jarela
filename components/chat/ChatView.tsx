@@ -53,9 +53,10 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   // so handleDone can fire a `jarela:speak-message` event at the new
   // assistant message id and the bubble auto-plays the TTS reply once.
   const pendingAutoSpeakRef = useRef(false);
-  // Need clearStreamingContent before useSSE returns it. Use a ref so
-  // handleDone isn't dependent on the hook's return value.
+  // Need clearStreamingContent/clearToolEvents before useSSE returns them.
+  // Use refs so handleDone isn't dependent on the hook's return value.
   const clearStreamingRef = useRef<() => void>(() => {});
+  const clearToolEventsRef = useRef<() => void>(() => {});
   const drainQueueRef = useRef<() => void>(() => {});
   const queueApiRef = useRef<ChatQueueApi | null>(null);
 
@@ -69,6 +70,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       applyMeta: thread.metaApplier,
       clearStreaming: () => {
         clearStreamingRef.current();
+        clearToolEventsRef.current();
         setSteeredSegments([]);
       },
       pendingAutoSpeakRef,
@@ -81,6 +83,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   const sse = useSSE(handleDone);
   attachRef.current = sse.attach;
   clearStreamingRef.current = sse.clearStreamingContent;
+  clearToolEventsRef.current = sse.clearToolEvents;
 
   useChatErrorReporting({ sessionError, streamError: sse.error, authError: sse.authError, agentId, threadId });
 
@@ -242,7 +245,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         // Keep the live thinking line visible past `streaming=false` so a
         // user who's still reading isn't yanked out mid-sentence.
         thinkingContent={sse.thinkingContent || undefined}
-        toolEvents={sse.streaming ? sse.toolEvents : undefined}
+        // Same reasoning as streamingContent/thinkingContent above: keep the
+        // tool trail visible past `streaming=false` so it doesn't flash away
+        // before the refetch swaps in the persisted message's tool_events.
+        // Cleared atomically alongside clearStreamingRef via handleDone.
+        toolEvents={sse.toolEvents.length ? sse.toolEvents : undefined}
         hasMore={thread.hasMore}
         loadingMore={thread.loadingMore}
         onLoadMore={thread.loadOlder}
