@@ -313,7 +313,9 @@ export async function googleFetch(
       // Google REST endpoints used here return JSON objects. Do not pass raw
       // text or binary payloads to callers that expect an object response.
     }
-    return { error: `${service} ${res.status}: expected a JSON object response`, url };
+    const magic = Buffer.from(text.slice(0, 4), "latin1").toString("hex");
+    const detail = `content-type=${res.headers.get("content-type")}, content-encoding=${res.headers.get("content-encoding")}, length=${text.length}, first-bytes=${magic}`;
+    return { error: `${service} ${res.status}: expected a JSON object response (${detail})`, url };
   } catch (err) {
     return { error: `${service} fetch threw: ${errorMessage(err)}` };
   }

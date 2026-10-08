@@ -154,6 +154,10 @@ export function recordToolUsage(
     }
     pruneToolFailureSamples(stamp);
     db.exec("COMMIT");
+    // Installed builds only keep stdout/stderr, so failures must reach them.
+    for (const s of failureSamples) {
+      console.warn(`[tool-failure] ${s.name} (${s.reason}): ${String(s.sampleError ?? "").slice(0, 300)}`);
+    }
   } catch (err) {
     try { db.exec("ROLLBACK"); } catch { /* ignore rollback failure */ }
     throw err;
