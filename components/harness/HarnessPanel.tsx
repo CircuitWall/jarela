@@ -1,5 +1,6 @@
 "use client";
 import { Lock, Plus, Star, Trash2, Wrench } from "lucide-react";
+import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import {
@@ -11,6 +12,9 @@ import {
 } from "@/api/types";
 import { HarnessEditor } from "./HarnessEditor";
 import { errorMessage } from "@/lib/utils/error";
+
+import { PanelMessage } from "@/components/ui/PanelMessage";
+import { confirmAction } from "@/lib/ui/confirm";
 
 export function HarnessPanel() {
   const [harnesses, setHarnesses] = useState<Harness[]>([]);
@@ -47,7 +51,7 @@ export function HarnessPanel() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this harness? Agents pointing at it will fall back to the global default.")) return;
+    if (!(await confirmAction({ message: "Delete this harness? Agents pointing at it will fall back to the global default.", destructive: true }))) return;
     try {
       await api.harnesses.delete(id);
       await load();
@@ -84,16 +88,9 @@ export function HarnessPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Wrench size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Harnesses</h2>
-        <button
-          onClick={() => setEditing("new")}
-          className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
-        >
-          <Plus size={14} /> New
-        </button>
-      </div>
+      <PanelHeader icon={<Wrench size={14} />} title="Harnesses">
+        <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setEditing("new")} />
+      </PanelHeader>
 
       <div className="px-4 py-2 border-b border-border bg-surface-2/50 text-xs text-fg-muted">
         Harnesses control the behavioral scaffolding (formatting rules, anti-fabrication, citation,
@@ -103,11 +100,11 @@ export function HarnessPanel() {
 
       <div className="flex-1 overflow-y-auto px-4 py-2">
         {loading && harnesses.length === 0 && (
-          <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
+          <PanelMessage>Loading…</PanelMessage>
         )}
         {error && <p className="text-red-700 dark:text-red-400 text-xs mb-2 px-1">{error}</p>}
         {!loading && harnesses.length === 0 && (
-          <p className="text-fg-faint text-sm py-6 text-center">No harnesses yet</p>
+          <PanelMessage>No harnesses yet</PanelMessage>
         )}
         {harnesses.map((h) => {
           const isBuiltin = isBuiltinHarnessId(h.id);

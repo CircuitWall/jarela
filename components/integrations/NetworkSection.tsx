@@ -1,9 +1,13 @@
 "use client";
-import { Globe, Loader2, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { Globe, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ProxyApplyResult, ProxyConfigEnvelope, ProxyMode, ProxyScheme } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
+
+import { confirmAction } from "@/lib/ui/confirm";
+import { StickyActionBar } from "@/components/ui/StickyActionBar";
+import { useDirty } from "@/hooks/useDismissGuard";
 
 const SECRET_MASK = "********";
 
@@ -85,7 +89,7 @@ export function NetworkSection() {
   }
 
   async function clear() {
-    if (!confirm("Clear saved proxy configuration?")) return;
+    if (!(await confirmAction({ message: "Clear saved proxy configuration?", destructive: true, confirmLabel: "Clear" }))) return;
     setError(null);
     try {
       const r = await api.proxy.clear();
@@ -124,6 +128,11 @@ export function NetworkSection() {
   }
 
   const envOverride = env?.env_override ?? false;
+  const dirty = useDirty(
+    { mode, scheme, host, port, username, password, noProxy, caBundle },
+    !loading && env !== null,
+    env,
+  );
   const configured = env?.config.mode !== "off" && env?.config.updated_at != null;
 
   return (
@@ -308,14 +317,6 @@ export function NetworkSection() {
             )}
 
             <div className="flex items-center gap-2 pt-1">
-              <button
-                onClick={save}
-                disabled={saving}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
-              >
-                {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
-                {saving ? "Saving…" : "Save & apply"}
-              </button>
               {mode === "system" && (
                 <button
                   onClick={save}
@@ -336,6 +337,13 @@ export function NetworkSection() {
                 </button>
               )}
             </div>
+            <StickyActionBar
+              dirty={dirty}
+              saving={saving}
+              onSave={() => void save()}
+              onDiscard={() => { if (env) seed(env); }}
+              saveLabel="Save & apply"
+            />
           </>
         )}
       </div>

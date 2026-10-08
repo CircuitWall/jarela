@@ -1,5 +1,6 @@
 "use client";
 import { BookOpen, RefreshCw } from "lucide-react";
+import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { Skill, SkillRepo } from "@/api/types";
@@ -35,17 +36,9 @@ export function SkillsPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <BookOpen size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Skills</h2>
-        <button
-          onClick={() => void load()}
-          className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
-          title="Refresh"
-        >
-          <RefreshCw size={13} /> Refresh
-        </button>
-      </div>
+      <PanelHeader icon={<BookOpen size={14} />} title="Skills">
+        <HeaderAction icon={<RefreshCw size={13} />} label="Refresh" title="Refresh" onClick={() => void load()} />
+      </PanelHeader>
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-5">
         <p className="text-xs text-fg-faint leading-relaxed">

@@ -7,6 +7,8 @@ import { FolderPickerDialog } from "@/components/documents/FolderPickerDialog";
 import { errorMessage } from "@/lib/utils/error";
 import { pushToast } from "@/lib/ui/toasts";
 
+import { confirmAction } from "@/lib/ui/confirm";
+
 interface Props {
   repos: SkillRepo[];
   onChanged: () => void;
@@ -57,7 +59,7 @@ export function SkillRepoSection({ repos, onChanged }: Props) {
   }
 
   async function remove(repo: SkillRepo) {
-    if (!confirm(`Remove skill repo "${repo.label ?? repo.path}"? Files on disk are left untouched.`)) return;
+    if (!(await confirmAction({ message: `Remove skill repo "${repo.label ?? repo.path}"? Files on disk are left untouched.`, destructive: true, confirmLabel: "Remove" }))) return;
     await withBusy(repo.id, async () => {
       await api.skills.repos.delete(repo.id);
       pushToast({

@@ -28,7 +28,6 @@ test("built-in skills list with a Clone affordance", async ({ page }) => {
 });
 
 test("add a repo, write a skill, edit it, then delete it", async ({ page }) => {
-  page.on("dialog", (d) => void d.accept());
   const repoDir = mkdtempSync(join(tmpdir(), "jarela-e2e-skill-repo-"));
   try {
     await page.getByPlaceholder("Pick or paste an absolute path").fill(repoDir);
@@ -57,11 +56,13 @@ test("add a repo, write a skill, edit it, then delete it", async ({ page }) => {
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     await expect(page.getByRole("textbox", { name: /Content/ })).toHaveValue(/Edited by the panel-skills e2e test/);
     await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await page.getByRole("dialog").last().getByRole("button", { name: "Delete", exact: true }).click();
     await expect(page.getByText("E2E Smoke Skill")).toHaveCount(0);
 
     // Clean up the repo row too, so it doesn't linger (pointing at a
     // now-removed directory) for other tests sharing this E2E database.
     await repoRow.locator("..").getByRole("button", { name: "Remove repo" }).click();
+    await page.getByRole("dialog").last().getByRole("button", { name: "Remove", exact: true }).click();
     await expect(repoRow).toHaveCount(0);
   } finally {
     rmSync(repoDir, { recursive: true, force: true });

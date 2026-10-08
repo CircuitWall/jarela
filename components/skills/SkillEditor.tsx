@@ -2,10 +2,15 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { Dialog } from "@/components/ui/Dialog";
+import { DialogError, DialogFooter } from "@/components/ui/DialogFooter";
 import { TextInput } from "@/components/ui/TextField";
 import { Button } from "@/components/ui/Button";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
+import { confirmAction } from "@/lib/ui/confirm";
+import { useDirty, useDismissGuard } from "@/hooks/useDismissGuard";
 import { errorMessage } from "@/lib/utils/error";
+
+import { PanelMessage } from "@/components/ui/PanelMessage";
 
 const ID_RE = /^[\w-]+$/;
 
@@ -42,6 +47,8 @@ export function SkillEditor({ state, onClose, onSaved }: Props) {
 
   const idValid = ID_RE.test(id.trim());
   const canSave = idValid && content.trim().length > 0 && !loading && !saving;
+  const dirty = useDirty({ id, content }, !loading);
+  const requestClose = useDismissGuard({ dirty, busy: saving, onClose });
 
   async function handleSave() {
     if (!canSave) return;
@@ -64,7 +71,10 @@ export function SkillEditor({ state, onClose, onSaved }: Props) {
 
   async function handleDelete() {
     if (!isEdit) return;
-    if (!confirm(`Delete skill "${id}"? This removes the file from the writable repo.`)) return;
+    if (!(await confirmAction({
+      message: `Delete skill "${id}"? This removes the file from the writable repo.`,
+      destructive: true,
+    }))) return;
     setSaving(true);
     try {
       await api.skills.delete(id);
@@ -79,30 +89,24 @@ export function SkillEditor({ state, onClose, onSaved }: Props) {
   return (
     <Dialog
       open
-      onClose={onClose}
+      onClose={requestClose}
       title={isEdit ? `Edit skill — ${id}` : state.mode === "clone" ? `Clone skill — ${state.sourceId}` : "New skill"}
       size="xl"
       align="top"
       footer={
-        <div className="flex justify-between gap-2 px-4 pb-4">
-          {isEdit ? (
-            <button
-              onClick={() => void handleDelete()}
-              disabled={saving}
-              className="px-3 py-1.5 text-sm text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors disabled:opacity-50"
-            >
+        <DialogFooter
+          onCancel={requestClose}
+          onDiscard={onClose}
+          dirty={dirty}
+          onSave={() => void handleSave()}
+          saving={saving}
+          canSave={canSave && (!isEdit || dirty)}
+          start={isEdit ? (
+            <Button variant="ghost" onClick={() => void handleDelete()} disabled={saving} className="text-red-700 dark:text-red-400">
               Delete
-            </button>
-          ) : <span />}
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">
-              Cancel
-            </button>
-            <Button onClick={() => void handleSave()} disabled={!canSave}>
-              {saving ? "Saving…" : "Save"}
             </Button>
-          </div>
-        </div>
+          ) : undefined}
+        />
       }
     >
       <div className="grid grid-cols-1 gap-3">
@@ -128,7 +132,7 @@ export function SkillEditor({ state, onClose, onSaved }: Props) {
         <label className="block">
           <span className="text-xs text-fg-subtle mb-1 block">Content</span>
           {loading ? (
-            <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
+            <PanelMessage>Loading…</PanelMessage>
           ) : (
             <MarkdownTextarea
               className="w-full bg-surface text-fg text-xs rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent resize-y"
@@ -142,7 +146,7 @@ export function SkillEditor({ state, onClose, onSaved }: Props) {
         </label>
       </div>
 
-      {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
+      <DialogError message={error} />
     </Dialog>
   );
 }

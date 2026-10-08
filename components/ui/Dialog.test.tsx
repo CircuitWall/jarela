@@ -60,7 +60,7 @@ describe("Dialog", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("closes on backdrop mousedown by default and respects dismissOnBackdrop=false", () => {
+  it("closes on a backdrop click by default and respects dismissOnBackdrop=false", () => {
     const onClose = vi.fn();
     const { rerender } = render(
       <Dialog open onClose={onClose}>
@@ -69,6 +69,7 @@ describe("Dialog", () => {
     );
     const backdrop = screen.getByRole("presentation");
     fireEvent.mouseDown(backdrop);
+    fireEvent.click(backdrop);
     expect(onClose).toHaveBeenCalledTimes(1);
     rerender(
       <Dialog open onClose={onClose} dismissOnBackdrop={false}>
@@ -76,10 +77,11 @@ describe("Dialog", () => {
       </Dialog>,
     );
     fireEvent.mouseDown(screen.getByRole("presentation"));
+    fireEvent.click(screen.getByRole("presentation"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("does not close when the dialog card itself receives mousedown", () => {
+  it("does not close when a press starts inside the card and ends on the backdrop", () => {
     const onClose = vi.fn();
     render(
       <Dialog open onClose={onClose}>
@@ -87,6 +89,33 @@ describe("Dialog", () => {
       </Dialog>,
     );
     fireEvent.mouseDown(screen.getByRole("dialog"));
+    fireEvent.click(screen.getByRole("presentation"));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("only the topmost dialog reacts to Escape", () => {
+    const lower = vi.fn();
+    const upper = vi.fn();
+    render(
+      <>
+        <Dialog open onClose={lower}>lower</Dialog>
+        <Dialog open onClose={upper}>upper</Dialog>
+      </>,
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(upper).toHaveBeenCalledTimes(1);
+    expect(lower).not.toHaveBeenCalled();
+  });
+
+  it("does not close when the dialog card itself is clicked", () => {
+    const onClose = vi.fn();
+    render(
+      <Dialog open onClose={onClose}>
+        body
+      </Dialog>,
+    );
+    fireEvent.mouseDown(screen.getByRole("dialog"));
+    fireEvent.click(screen.getByRole("dialog"));
     expect(onClose).not.toHaveBeenCalled();
   });
 

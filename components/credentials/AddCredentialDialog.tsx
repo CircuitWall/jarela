@@ -166,7 +166,7 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
       }
     >
       {step === "pick" && (
-        <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+        <div className="p-4 space-y-4">
           {loading && <p className="text-fg-faint text-sm text-center py-6">Loading…</p>}
           {!loading && defs.length === 0 && (
             <p className="text-fg-faint text-sm text-center py-6">No credential providers available.</p>
@@ -211,7 +211,7 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
       )}
 
       {step === "form" && activeDef && (
-        <div className="p-4 max-h-[70vh] overflow-y-auto">
+        <div className="p-4">
           <IntegrationCard
             definition={activeDef}
             status={activeStatus ?? undefined}

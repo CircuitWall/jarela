@@ -1,5 +1,7 @@
 "use client";
-import { CheckCircle2, ChevronRight, Filter, Key, Loader2, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronRight, Filter, Key, Loader2, Plus, Trash2, XCircle } from "lucide-react";
+import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
+import { EnvSyncButton, EnvSyncNotice, useEnvSync } from "@/components/integrations/EnvSync";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Credential, CredentialType, IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
@@ -14,6 +16,8 @@ import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { errorMessage } from "@/lib/utils/error";
 import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 import { StatusDot } from "@/components/ui/StatusDot";
+
+import { PanelMessage } from "@/components/ui/PanelMessage";
 
 // "Credentials" is the single home for every auth surface. The default
 // sub-tab is the unified list: model API keys, integration keys, and
@@ -112,8 +116,7 @@ export function CredentialsListPanel() {
   const [addAnotherProvider, setAddAnotherProvider] = useState<string | null>(null);
   const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const envSync = useEnvSync();
   const [collapsedByType, setCollapsedByType] = useState<Record<SectionKey, boolean>>({
     modelProviders: true,
     tools: true,
@@ -157,38 +160,6 @@ export function CredentialsListPanel() {
     for (const d of defs) m.set(d.name, d);
     return m;
   }, [defs]);
-
-  async function syncFromEnv() {
-    setSyncing(true);
-    setSyncMsg(null);
-    try {
-      const r = await api.envSync.apply();
-      const sourceLabel = r.discovered.source === "shell-rc"
-        ? `your ${r.discovered.shell ?? "shell"} rc`
-        : r.discovered.source === "windows-registry"
-          ? "your Windows User env"
-          : "the process env";
-      if (r.applied_count > 0) {
-        setSyncMsg(`Synced ${r.applied_count} field(s) from ${sourceLabel}.`);
-      } else {
-        const userSkipped = r.candidates.filter((c) => c.action === "skipped-user").length;
-        const equal = r.candidates.filter((c) => c.action === "skipped-equal").length;
-        const absent = r.candidates.filter((c) => c.action === "absent").length;
-        if (userSkipped > 0) {
-          setSyncMsg(`Nothing to write \u2014 ${userSkipped} field(s) were edited here and won't be overwritten.`);
-        } else if (equal > 0 && absent === r.candidates.length - equal) {
-          setSyncMsg(`Already up to date with ${sourceLabel}.`);
-        } else {
-          setSyncMsg(`No matching env vars set in ${sourceLabel}.`);
-        }
-      }
-      await refresh();
-    } catch (e) {
-      setSyncMsg(errorMessage(e));
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   async function handleDelete(c: Credential) {
     setDeleteError(null);
@@ -268,9 +239,7 @@ export function CredentialsListPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Key size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Credentials</h2>
+      <PanelHeader icon={<Key size={14} />} title="Credentials">
         {preset && preset !== "custom" && (
           <button
             type="button"
@@ -285,37 +254,20 @@ export function CredentialsListPanel() {
             )}
           </button>
         )}
-        <button
-          onClick={syncFromEnv}
-          disabled={syncing}
-          title="Pull standard credential env vars (GITHUB_TOKEN, ATLASSIAN_API_TOKEN, …) from your shell rc / Windows User env into the Credentials list. Fields you've edited here are never overwritten."
-          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-50"
-        >
-          {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-          Sync from environment
-        </button>
-        <button
-          onClick={() => setAddOpen(true)}
-          className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
+        <EnvSyncButton env={envSync} />
+        <HeaderAction
+          icon={<Plus size={14} />}
+          label="Add credential"
           title="Pick a provider and connect it. Same editors are available inline below."
-        >
-          <Plus size={14} /> Add credential
-        </button>
-      </div>
+          onClick={() => setAddOpen(true)}
+        />
+      </PanelHeader>
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
         <div className="px-4 py-2 space-y-4">
-          {syncMsg && (
-            <div className="px-3 py-2 rounded border border-border bg-surface-2 text-[11px] text-fg-muted flex items-start gap-2">
-              <RefreshCw size={12} className="mt-0.5 text-fg-subtle shrink-0" />
-              <span className="flex-1">{syncMsg}</span>
-              <button onClick={() => setSyncMsg(null)} className="text-fg-faint hover:text-fg" aria-label="Dismiss">
-                <XCircle size={12} />
-              </button>
-            </div>
-          )}
+          <EnvSyncNotice env={envSync} />
           {loading && credentials.length === 0 && (
-            <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
+            <PanelMessage>Loading…</PanelMessage>
           )}
           {!loading && groupedByType.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">

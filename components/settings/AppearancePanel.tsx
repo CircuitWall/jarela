@@ -1,5 +1,6 @@
 "use client";
 import { Monitor, Moon, Palette, Sun } from "lucide-react";
+import { PanelHeader } from "@/components/ui/PanelHeader";
 import { useTheme, type Theme } from "@/contexts/ThemeContext";
 import { useAppContext, type ExperienceMode } from "@/contexts/AppContext";
 
@@ -31,10 +32,7 @@ export function AppearancePanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Palette size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Appearance</h2>
-      </div>
+      <PanelHeader icon={<Palette size={14} />} title="Appearance" />
 
       <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-4 space-y-6">
         <section>

@@ -1,5 +1,6 @@
 "use client";
-import { Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { Brain, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { MemoryItem, MemoryPolicy } from "@/api/types";
@@ -45,12 +46,9 @@ export function MemoryPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <h2 className="text-sm font-semibold text-fg mr-auto">Memory Store</h2>
-        <button onClick={() => setEditing("new")} className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors">
-          <Plus size={14} /> New
-        </button>
-      </div>
+      <PanelHeader icon={<Brain size={14} />} title="Memory">
+        <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setEditing("new")} />
+      </PanelHeader>
       <div className="px-4 py-2 space-y-2 border-b border-border">
         <label className="flex items-center gap-2 text-[11px] text-fg-subtle">
           <span className="shrink-0">Proactive memory</span>

@@ -1,5 +1,6 @@
 "use client";
 import { AlertCircle, CheckCircle2, Loader2, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Bridge, BridgeLiveStatus } from "@/api/types";
@@ -9,6 +10,9 @@ import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { BridgeEditor } from "./BridgeEditor";
+
+import { PanelMessage } from "@/components/ui/PanelMessage";
+import { confirmAction } from "@/lib/ui/confirm";
 
 /**
  * Bridges panel.
@@ -46,7 +50,7 @@ export function BridgesPanel() {
   }
 
   async function onDelete(b: Bridge) {
-    if (!confirm(`Delete bridge "${b.name}"? This also removes its WhatsApp auth and all routes.`)) return;
+    if (!(await confirmAction({ message: `Delete bridge "${b.name}"? This also removes its WhatsApp auth and all routes.`, destructive: true }))) return;
     if (selectedId === b.id) setSelectedId(null);
     try {
       await remove(b.id);
@@ -99,16 +103,9 @@ export function BridgesPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Smartphone size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Bridges</h2>
-        <button
-          onClick={() => setCreating(true)}
-          className="px-2 py-1 text-xs rounded bg-accent/15 hover:bg-accent/25 text-accent flex items-center gap-1"
-        >
-          <Plus size={12} /> New
-        </button>
-      </div>
+      <PanelHeader icon={<Smartphone size={14} />} title="Bridges">
+        <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setCreating(true)} />
+      </PanelHeader>
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-3">
         {creating && (
@@ -136,7 +133,7 @@ export function BridgesPanel() {
         )}
 
         {loading && bridges.length === 0 && (
-          <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
+          <PanelMessage>Loading…</PanelMessage>
         )}
         {!loading && bridges.length === 0 && !creating && (
           <div className="text-fg-faint text-sm py-8 text-center space-y-2">

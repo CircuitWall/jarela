@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Edit3, Network, RotateCcw, Save, ServerCog } from "lucide-react";
 import { refreshRuntimeConfig } from "@/api/runtime-config";
 
+import { confirmAction } from "@/lib/ui/confirm";
+
 interface EnvRow {
   name: string;
   type: "int" | "string" | "bool" | "enum";
@@ -87,7 +89,7 @@ export function NetworkEnvEditor() {
   }, [persist]);
 
   const onRestart = useCallback(async () => {
-    if (!confirm("Restart the server? In-flight runs will be aborted; the supervisor (launchd / systemd / Task Scheduler) will relaunch the process.")) {
+    if (!(await confirmAction({ message: "Restart the server? In-flight runs will be aborted; the supervisor (launchd / systemd / Task Scheduler) will relaunch the process.", destructive: true, confirmLabel: "Restart" }))) {
       return;
     }
     setRestarting(true);

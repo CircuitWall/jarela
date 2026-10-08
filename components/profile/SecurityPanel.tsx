@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Lock, Shield } from "lucide-react";
+import { SettingsCard } from "@/components/ui/SettingsCard";
 import { errorMessage } from "@/lib/utils/error";
 
 // SecurityPanel — UI for enabling, changing, or disabling the at-rest
@@ -107,17 +108,14 @@ export function SecurityPanel() {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-surface-2/70 p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <Shield size={14} className="text-accent" />
-        <h3 className="text-sm font-semibold text-fg">At-rest PIN</h3>
-      </div>
-      <p className="text-xs text-fg-muted mb-3">
-        {state.pin_enabled
-          ? "A 6-digit PIN is required to unlock encrypted data on every launch."
-          : "Your data is encrypted at rest with a key from the OS keychain or a local keyfile. Add a 6-digit PIN to require unlock on every launch."}
-      </p>
-
+    <SettingsCard
+      id="pin"
+      icon={<Shield size={14} />}
+      title="At-rest PIN"
+      description={state.pin_enabled
+        ? "A 6-digit PIN is required to unlock encrypted data on every launch."
+        : "Your data is encrypted at rest with a key from the OS keychain or a local keyfile. Add a 6-digit PIN to require unlock on every launch."}
+    >
       {okMsg && (
         <p className="text-xs text-emerald-500 mb-2" role="status">{okMsg}</p>
       )}
@@ -186,7 +184,7 @@ export function SecurityPanel() {
           </div>
         </div>
       )}
-    </div>
+    </SettingsCard>
   );
 }
 

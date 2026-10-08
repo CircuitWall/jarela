@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 
@@ -9,6 +9,13 @@ import { useEscapeKey } from "@/hooks/useEscapeKey";
 // backdrop opacity (was 60/70 across sites), and the z-index ladder
 // (was 50/60/70). Hand-rolled overlays kept getting at least one of
 // these wrong; the bug fix lives here once.
+//
+// Dismissal contract (every editor follows it, see hooks/useDismissGuard):
+// backdrop click, Escape, the X button and Cancel are one action — "request
+// close". Editors pass a guarded onClose that asks before discarding edits.
+// Only the topmost open dialog reacts to Escape, and a backdrop click needs
+// both press and release on the backdrop so a text-selection drag that ends
+// outside the card never closes it.
 //
 // Layout contract:
 //   align="top"    — overlay scrolls; card grows with content. Use for
@@ -55,6 +62,8 @@ export interface DialogProps {
   fitViewport?: boolean;
 }
 
+const openStack: symbol[] = [];
+
 export function Dialog({
   open,
   onClose,
@@ -71,7 +80,22 @@ export function Dialog({
   padded = true,
   fitViewport = false,
 }: DialogProps) {
-  useEscapeKey(onClose, open && dismissOnEscape);
+  const idRef = useRef(Symbol("dialog"));
+  const pressedBackdrop = useRef(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const id = idRef.current;
+    openStack.push(id);
+    return () => {
+      const i = openStack.indexOf(id);
+      if (i >= 0) openStack.splice(i, 1);
+    };
+  }, [open]);
+
+  useEscapeKey(() => {
+    if (openStack[openStack.length - 1] === idRef.current) onClose();
+  }, open && dismissOnEscape);
 
   useEffect(() => {
     if (!open) return;
@@ -92,15 +116,15 @@ export function Dialog({
     (fitViewport ? "p-0 " : "p-2 sm:p-4 ") +
     LEVEL[level] +
     " " +
-    (fitViewport ? "items-stretch" : (align === "top" ? "items-start overflow-y-auto" : "items-center"));
+    (fitViewport ? "items-stretch" : (align === "top" ? "items-start" : "items-center"));
 
+  // Header and footer stay pinned and only the body scrolls, so Save/Cancel
+  // are always reachable regardless of how long the form is.
   const cardCls =
     (fitViewport
       ? "bg-surface-2 w-full h-full max-w-full max-h-full shadow-xl flex flex-col rounded-none border-0"
-      : "bg-surface-2 border border-border rounded-2xl w-full shadow-xl flex flex-col " +
-        SIZE[size] +
-        " " +
-        (align === "top" ? "my-2 sm:my-4" : "max-h-full"));
+      : "bg-surface-2 border border-border rounded-2xl w-full shadow-xl flex flex-col max-h-full " +
+        SIZE[size]);
 
   return createPortal(
     <div
@@ -112,13 +136,17 @@ export function Dialog({
         paddingLeft: fitViewport ? "env(safe-area-inset-left)" : "max(0.5rem, env(safe-area-inset-left))",
       }}
       role="presentation"
-      onMouseDown={dismissOnBackdrop ? onClose : undefined}
+      onMouseDown={(e) => { pressedBackdrop.current = e.target === e.currentTarget; }}
+      onClick={(e) => {
+        const intended = pressedBackdrop.current && e.target === e.currentTarget;
+        pressedBackdrop.current = false;
+        if (dismissOnBackdrop && intended) onClose();
+      }}
     >
       <div
         className={cardCls}
         role="dialog"
         aria-modal="true"
-        onMouseDown={(e) => e.stopPropagation()}
       >
         {(showHeader || renderClose) && (
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
@@ -144,7 +172,9 @@ export function Dialog({
         <div className={`flex-1 min-h-0 overflow-y-auto ${padded ? "p-4 space-y-3" : ""}`}>
           {children}
         </div>
-        {footer}
+        {footer && (
+          <div className="shrink-0 border-t border-border pt-3 bg-surface-2 rounded-b-2xl">{footer}</div>
+        )}
       </div>
     </div>,
     document.body,

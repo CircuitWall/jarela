@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Edit3, RotateCcw, Save, ServerCog, Search, X } from "lucide-react";
 import { refreshRuntimeConfig } from "@/api/runtime-config";
 
+import { confirmAction } from "@/lib/ui/confirm";
+
 interface EnvRow {
   name: string;
   type: "int" | "string" | "bool" | "enum";
@@ -151,7 +153,7 @@ export function EnvVarsPanel() {
   }, [persist]);
 
   const onRestart = useCallback(async () => {
-    if (!confirm("Restart the server? In-flight runs will be aborted; the supervisor (launchd / systemd / Task Scheduler) will relaunch the process.")) {
+    if (!(await confirmAction({ message: "Restart the server? In-flight runs will be aborted; the supervisor (launchd / systemd / Task Scheduler) will relaunch the process.", destructive: true, confirmLabel: "Restart" }))) {
       return;
     }
     setRestarting(true);

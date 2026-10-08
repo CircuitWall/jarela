@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import {
   AlertTriangle,
   Boxes,
@@ -29,6 +30,8 @@ import type {
   LangChainPackageManifestRecord,
 } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
+
+import { confirmAction } from "@/lib/ui/confirm";
 
 // One unified row covering every "package-like" surface: built-in
 // category, bundled @circuitwall LangChain package, npm-installed
@@ -103,6 +106,15 @@ const CATEGORY_BLURB: Record<string, string> = {
 const ALWAYS_ON_BUILTIN_CATEGORY = "Skills";
 
 const SECRET_MASK = "********";
+
+const GROUP_PREVIEW = 8;
+const KIND_ORDER: Kind[] = ["builtin", "default", "npm", "dropin"];
+const KIND_LABEL: Record<Kind, string> = {
+  builtin: "Built-in",
+  default: "Default packages",
+  npm: "npm packages",
+  dropin: "Drop-in tools",
+};
 
 function buildRows(
   builtins: BuiltinToolCategoryInfo[],
@@ -199,6 +211,8 @@ export function UnifiedPackageList() {
   const [ext, setExt] = useState<ExtensionsListResponse | null>(null);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [openGroups, setOpenGroups] = useState<Partial<Record<Kind, boolean>>>({});
+  const [showAll, setShowAll] = useState<Partial<Record<Kind, boolean>>>({});
   const [query, setQuery] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | Kind>("all");
   const [loadingExtras, setLoadingExtras] = useState(true);
@@ -242,6 +256,15 @@ export function UnifiedPackageList() {
     });
   }, [rows, query, kindFilter]);
 
+  // Searching or filtering shows every match; otherwise sources are
+  // collapsible drawers and long ones preview the first few rows.
+  const searching = query.trim() !== "" || kindFilter !== "all";
+  const groups = useMemo(
+    () => KIND_ORDER
+      .map((kind) => ({ kind, rows: filtered.filter((r) => r.kind === kind) }))
+      .filter((g) => g.rows.length > 0),
+    [filtered],
+  );
   async function toggleBuiltin(row: UnifiedRow) {
     if (!row.category) return;
     const next = !row.enabled;
@@ -323,7 +346,7 @@ export function UnifiedPackageList() {
   async function removeManifest(row: UnifiedRow) {
     const name = row.id.slice("npm:".length);
     if (typeof window !== "undefined") {
-      if (!window.confirm(`Delete manifest "${name}"?`)) return;
+      if (!(await confirmAction({ message: `Delete manifest "${name}"?`, destructive: true }))) return;
     }
     setBusy((b) => ({ ...b, [row.id]: true }));
     try {
@@ -404,8 +427,26 @@ export function UnifiedPackageList() {
           No packages match the current filters.
         </p>
       ) : (
-        <ul className="space-y-2">
-          {filtered.map((row) => (
+        <div className="space-y-3">
+          {groups.map((g) => {
+            const isOpen = searching || (openGroups[g.kind] ?? g.kind !== "builtin");
+            const limit = searching || showAll[g.kind] ? g.rows.length : GROUP_PREVIEW;
+            return (
+              <div key={g.kind}>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  disabled={searching}
+                  onClick={() => setOpenGroups((m) => ({ ...m, [g.kind]: !isOpen }))}
+                  className="control-tap touch-manipulation flex w-full items-center gap-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-fg-faint hover:text-fg-muted"
+                >
+                  <CollapseChevron open={isOpen} />
+                  {KIND_LABEL[g.kind]}
+                  <span className="normal-case tracking-normal">({g.rows.length})</span>
+                </button>
+                {isOpen && (
+                  <ul className="mt-1 space-y-2">
+          {g.rows.slice(0, limit).map((row) => (
             <PackageListRow
               key={row.id}
               row={row}
@@ -433,7 +474,21 @@ export function UnifiedPackageList() {
               onSecretsSaved={loadExtras}
             />
           ))}
-        </ul>
+                  </ul>
+                )}
+                {isOpen && g.rows.length > limit && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAll((m) => ({ ...m, [g.kind]: true }))}
+                    className="control-tap touch-manipulation mt-1 text-[11px] text-accent hover:text-accent-hover"
+                  >
+                    Show all {g.rows.length}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {(manifestErrors.length > 0 || extErrors.length > 0) && (

@@ -53,7 +53,6 @@ export function ToolCatalog() {
     <section className="space-y-3">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-fg">Tool catalog</h3>
           <p className="text-xs text-fg-faint">
             Per-tool drill-down. Success rate tracks completed calls without
             errors. Usefulness tracks results whose content appears in the

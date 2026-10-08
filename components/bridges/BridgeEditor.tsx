@@ -11,6 +11,8 @@ import { pushErrorToast } from "@/lib/ui/error-report";
 import { StatusPill } from "./BridgesPanel";
 import { errorMessage } from "@/lib/utils/error";
 
+import { confirmAction } from "@/lib/ui/confirm";
+
 /**
  * Single-bridge editor: shows live status (QR while pairing, paired ID once
  * connected), exposes the re-pair button, and embeds the routing table that
@@ -64,7 +66,7 @@ export function BridgeEditor({
   }
 
   async function rePair() {
-    if (!confirm("Re-pair this bridge? This wipes the current WhatsApp session and shows a new QR code.")) return;
+    if (!(await confirmAction({ message: "Re-pair this bridge? This wipes the current WhatsApp session and shows a new QR code.", destructive: true, confirmLabel: "Re-pair" }))) return;
     setRepairing(true);
     try {
       await api.bridges.pair(bridge.id);
@@ -674,7 +676,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
             agents={agents.filter((x) => x.id === r.agent_id || !usedAgents.has(x.id))}
             visionForAgent={(x) => agentVisionState(x)}
             onDelete={async () => {
-              if (!confirm("Delete this route? Incoming messages from this chat will be ignored.")) return;
+              if (!(await confirmAction({ message: "Delete this route? Incoming messages from this chat will be ignored.", destructive: true }))) return;
               await remove(r.id);
             }}
           />

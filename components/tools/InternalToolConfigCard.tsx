@@ -6,7 +6,7 @@ import { useEnvSettings, type EnvSettingRow } from "@/hooks/useEnvSettings";
 import { ToolSettingInput } from "./ToolSettingInput";
 import { ToolSettingsActionRow } from "./ToolSettingsActionRow";
 import { ToolSettingsStatus } from "./ToolSettingsStatus";
-import { ToolSettingsSection } from "./ToolSettingsSection";
+import { SettingsCard } from "@/components/ui/SettingsCard";
 
 const TOOL_GROUPS: Array<{ title: string; vars: string[]; description: string }> = [
   {
@@ -140,7 +140,7 @@ export function InternalToolConfigCard() {
   }
 
   return (
-    <ToolSettingsSection
+    <SettingsCard
       title="Internal tool runtime controls"
       description="These are built-in tool controls with schema defaults from Jarela. Changes apply immediately unless marked restart."
       icon={<Settings2 size={14} className="text-accent" />}
@@ -189,6 +189,6 @@ export function InternalToolConfigCard() {
       ))}
 
       <ToolSettingsStatus status={status} error={error} />
-    </ToolSettingsSection>
+    </SettingsCard>
   );
 }

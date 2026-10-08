@@ -113,7 +113,7 @@ test("Profile preset picker round-trips through the API", async ({ page, request
 
   // Save and verify the API persisted it.
   await page.getByRole("button", { name: /^Save profile$/ }).click();
-  await expect(page.getByRole("button", { name: /^Saved$/ })).toBeVisible();
+  await expect(page.getByText("Profile saved")).toBeVisible();
 
   const r = await request.get("/api/v1/profile");
   expect(r.ok()).toBeTruthy();

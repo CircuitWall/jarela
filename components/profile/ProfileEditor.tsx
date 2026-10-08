@@ -9,6 +9,7 @@ import { formatRelative } from "@/lib/utils/time";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { TextInput, FIELD_CLASS } from "@/components/ui/TextField";
 import { Button } from "@/components/ui/Button";
+import { StickyActionBar } from "@/components/ui/StickyActionBar";
 import { errorMessage } from "@/lib/utils/error";
 
 export function ProfileEditor() {
@@ -63,6 +64,13 @@ export function ProfileEditor() {
       || (preset ?? null) !== (profile.preset ?? null)
     : false;
 
+  function discardChanges() {
+    if (!profile) return;
+    setName(profile.name);
+    setIcon(profile.icon);
+    setAbout(profile.about);
+    setPreset(profile.preset ?? null);
+  }
   return (
     <div className="p-4 space-y-4">
       {/* Icon + name row */}
@@ -159,14 +167,14 @@ export function ProfileEditor() {
         </div>
       </div>
 
-      <Button
-        onClick={handleSave}
-        disabled={saving || !isDirty}
-        size="lg"
-        className="w-full"
-      >
-        {saving ? "Saving…" : saved ? "Saved" : "Save profile"}
-      </Button>
+      <StickyActionBar
+        dirty={isDirty}
+        saving={saving}
+        onSave={handleSave}
+        onDiscard={discardChanges}
+        saveLabel="Save profile"
+      />
+      {saved && !isDirty && <p role="status" className="text-xs text-emerald-500">Profile saved</p>}
 
       <LocationSharing profile={profile} onChange={setProfile} />
 

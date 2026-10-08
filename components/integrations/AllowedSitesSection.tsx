@@ -6,6 +6,8 @@ import type { AllowedSiteStatus } from "@/api/types";
 import { useListState } from "@/hooks/useListState";
 import { errorMessage } from "@/lib/utils/error";
 
+import { confirmAction } from "@/lib/ui/confirm";
+
 // Settings card for the allowed-sites list. A host on this list grants
 // the agent two paired capabilities: (1) the browser extension may drive
 // a tab on this host on the agent's behalf (browser RPC), and (2) cookies
@@ -57,7 +59,7 @@ export function AllowedSitesSection() {
   }
 
   async function remove(s: AllowedSiteStatus) {
-    if (!confirm(`Remove ${s.hostname}? The agent will lose browser-RPC and cookie access for this host.`)) return;
+    if (!(await confirmAction({ message: `Remove ${s.hostname}? The agent will lose browser-RPC and cookie access for this host.`, destructive: true, confirmLabel: "Remove" }))) return;
     setActionError(null);
     try {
       await api.allowedSites.remove(s.hostname);

@@ -1,10 +1,12 @@
 "use client";
-import { ArrowUp, Check, Folder, FolderOpen, Home } from "lucide-react";
+import { ArrowUp, Folder, FolderOpen, Home } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { errorMessage } from "@/lib/utils/error";
 import { Dialog } from "@/components/ui/Dialog";
-import { Button } from "@/components/ui/Button";
+import { DialogFooter } from "@/components/ui/DialogFooter";
+
+import { PanelMessage } from "@/components/ui/PanelMessage";
 
 interface Props {
   initialPath?: string;
@@ -60,22 +62,13 @@ export function FolderPickerDialog({ initialPath, onSelect, onClose }: Props) {
       align="center"
       padded={false}
       footer={
-        <div className="flex justify-between items-center gap-2 px-4 py-3 border-t border-border">
-          <span className="text-[11px] text-fg-faint font-mono truncate flex-1" title={cwd}>{cwd}</span>
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors"
-          >
-            Cancel
-          </button>
-          <Button
-            onClick={() => onSelect(cwd)}
-            disabled={!cwd || loading}
-            icon={<Check size={13} />}
-          >
-            Use this folder
-          </Button>
-        </div>
+        <DialogFooter
+          onCancel={onClose}
+          onSave={() => onSelect(cwd)}
+          canSave={!!cwd && !loading}
+          saveLabel="Use this folder"
+          start={<span className="block text-[11px] text-fg-faint font-mono truncate max-w-[16rem]" title={cwd}>{cwd}</span>}
+        />
       }
     >
       <div className="flex flex-col h-full min-h-0">
@@ -109,7 +102,7 @@ export function FolderPickerDialog({ initialPath, onSelect, onClose }: Props) {
 
         <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1.5">
           {loading && (
-            <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
+            <PanelMessage>Loading…</PanelMessage>
           )}
           {!loading && error && (
             <p className="text-red-600 dark:text-red-400 text-xs px-2 py-3">{error}</p>
