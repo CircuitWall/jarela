@@ -568,6 +568,30 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   const [showScrollButton, setShowScrollButton] = useState(false);
   const hasScrollTarget = messages.length > 0 || !!streamingContent;
 
+  // Anchor for the warm/hot boundary line relocating. When `hotSince`
+  // moves (manual drag, /compact, or an automatic re-anchor), the inline
+  // `ContextBoundaryDivider` jumps to a different message index — but
+  // total `scrollHeight` doesn't change (it's the same divider, just
+  // relocated), so neither the bottom-follow effect above nor the
+  // pagination anchor below catches it, and a user scrolled up watches
+  // the view appear to shift without touching their scroll. Captured on
+  // every real scroll (handleScroll), consumed by the hotSince-keyed
+  // layout effect further down.
+  const boundaryAnchorRef = useRef<{ id: string; top: number } | null>(null);
+  const captureBoundaryAnchor = useCallback((el: HTMLDivElement) => {
+    if (atBottomRef.current) { boundaryAnchorRef.current = null; return; }
+    const containerTop = el.getBoundingClientRect().top;
+    const nodes = el.querySelectorAll<HTMLElement>("[data-message-id]");
+    for (const node of nodes) {
+      const top = node.getBoundingClientRect().top - containerTop;
+      if (top >= -4) {
+        boundaryAnchorRef.current = { id: node.dataset.messageId ?? "", top };
+        return;
+      }
+    }
+    boundaryAnchorRef.current = null;
+  }, []);
+
   const syncScrollButton = useCallback((el: HTMLDivElement) => {
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     atBottomRef.current = isAtBottom;
@@ -647,7 +671,30 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     }
     syncScrollButton(el);
     updateBoundaryMask();
+    captureBoundaryAnchor(el);
   }
+
+  // Correct for the boundary line relocating when `hotSince` changes
+  // (see boundaryAnchorRef above). Re-anchor on the message the user
+  // was last scrolled to, rather than on raw scrollHeight — relocating
+  // the divider doesn't change total height, so the existing
+  // height-delta effects can't catch it.
+  const prevHotSinceRef = useRef<string | null>(hotSince ?? null);
+  useLayoutEffect(() => {
+    const next = hotSince ?? null;
+    const prev = prevHotSinceRef.current;
+    prevHotSinceRef.current = next;
+    if (prev === next) return;
+    const el = scrollRef.current;
+    const anchor = boundaryAnchorRef.current;
+    if (!el || !anchor || atBottomRef.current || prependAnchorRef.current) return;
+    const safeId = anchor.id.replace(/"/g, '\\"');
+    const node = el.querySelector(`[data-message-id="${safeId}"]`) as HTMLElement | null;
+    if (!node) return;
+    const containerTop = el.getBoundingClientRect().top;
+    const newTop = node.getBoundingClientRect().top - containerTop;
+    el.scrollTop += newTop - anchor.top;
+  }, [hotSince]);
 
   // Resolve `#msg-<id>` deep links: scroll the matching bubble into view and
   // flash the same highlight ring used by settings deep links. Re-runs when
