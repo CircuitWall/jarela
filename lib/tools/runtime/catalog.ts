@@ -233,6 +233,39 @@ export function allowedToolNamesFromPermissionMap(catalog: readonly ToolCatalogE
     .map((entry) => entry.name);
 }
 
+export interface ToolBindBudgetInput {
+  /** Max tools bound with full definitions; 0 or less disables the budget. */
+  budget: number;
+  /** Always bound first, in order. */
+  alwaysKeep: readonly string[];
+  /** Tools the agent called recently, most recent first. */
+  recentlyUsed: readonly string[];
+  /** The agent's own configured tools, in configured order; kept ahead of the basic defaults. */
+  pinned: readonly string[];
+}
+
+/**
+ * Trim the tools bound with full definitions to a budget. Trimmed tools stay
+ * permitted and fall back to list_tools + invoke_tool. Keeps the input order so
+ * the tool list stays byte-stable between turns and the provider prompt cache holds.
+ */
+export function applyToolBindBudget(names: readonly string[], input: ToolBindBudgetInput): string[] {
+  if (input.budget <= 0 || names.length <= input.budget) return [...names];
+  const candidates = new Set(names);
+  const picked = new Set<string>();
+  const take = (list: readonly string[]) => {
+    for (const name of list) {
+      if (picked.size >= input.budget) return;
+      if (candidates.has(name)) picked.add(name);
+    }
+  };
+  take(input.alwaysKeep);
+  take(input.recentlyUsed);
+  take(input.pinned);
+  take(names);
+  return names.filter((name) => picked.has(name));
+}
+
 export function applyProviderToolLimitToCatalog(
   catalog: readonly ToolCatalogEntry[],
   allowedToolNames: readonly string[],

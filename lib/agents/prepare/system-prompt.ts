@@ -222,6 +222,8 @@ export function buildToolReliabilityContext(allowedTools: readonly string[]): st
   return lines.join("\n");
 }
 
+const UNBOUND_TOOL_NAME_LIMIT = 150;
+
 export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCatalogEntry>): string {
   if (permissionMap.length === 0) return "";
   const ordered = [...permissionMap].sort(compareToolPermissionEntries);
@@ -251,6 +253,14 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
     );
   }
   for (const tool of enabled) lines.push(formatToolPermissionLine(tool));
+  const unboundNames = [...proxyOnly, ...capped].map((tool) => tool.name);
+  if (unboundNames.length > 0) {
+    const shown = unboundNames.slice(0, UNBOUND_TOOL_NAME_LIMIT);
+    const more = unboundNames.length - shown.length;
+    lines.push(
+      `Permitted but unbound tool names (describe one with list_tools names=["name"] include_schema=true, then call it through invoke_tool): ${shown.join(", ")}${more > 0 ? `, and ${more} more \u2014 search with list_tools` : ""}`,
+    );
+  }
   return lines.join("\n");
 }
 
@@ -260,7 +270,7 @@ export function buildSharedToolCatalogContext(): string {
     "Static cross-agent procedure. The per-turn bound list and counts appear later under \"Enabled tools\".",
     `0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. ${formatActionVocabularyInstruction()}`,
     "1. Bound first. If a tool listed under \"Enabled tools\" fits the task, call it directly.",
-    "2. Otherwise search. No tool index is embedded in this prompt, so never conclude a capability does not exist from the bound list alone. Call list_tools with service/object/action keywords: scope=\"enabled\" searches executable tools, scope=\"all\" also returns disabled, unavailable and cap-omitted tools with flags.",
+    "2. Otherwise look it up. Names of permitted tools that are not bound this turn are listed after the bound tools under \"Enabled tools\", capped, with no definitions. A name that is not listed there may still exist, so never conclude a capability does not exist from the bound list alone. Call list_tools with service/object/action keywords: scope=\"enabled\" searches executable tools, scope=\"all\" also returns disabled, unavailable and cap-omitted tools with flags.",
     "3. Named target. When a skill, harness or instruction names an exact tool, call list_tools names=[\"exact_name\"] include_schema=true instead of a keyword query. Exact lookup ignores every other filter, so it also describes tools you cannot currently execute.",
     "4. Read the schema. Set include_schema=true before invoking anything that is not bound this turn, and match the returned JSON schema exactly.",
     "5. Invoke through the proxy. For permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\", call invoke_tool with the exact name and args_json \u2014 a JSON object encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}'. Send args_json='{}' when the target takes no arguments. Never proxy invoke_tool through itself, and never wrap a tool that is already bound.",

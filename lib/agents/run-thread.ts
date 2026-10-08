@@ -13,7 +13,7 @@ import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-
 import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
-import { addMessage, getMessagesPage, getRecentMessagesWindow, getThread, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, getMessagesPage, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -52,6 +52,7 @@ import {
   allowedToolNamesFromPermissionMap,
   applyAgentPermissionsToCatalog,
   applyProviderToolLimitToCatalog,
+  applyToolBindBudget,
   getAllToolCatalogAsync,
   getDefaultAgentToolNames,
   isHotLoadTool,
@@ -549,7 +550,15 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const modelCfg = modelConfigName ? getModelConfig(modelConfigName) : null;
   const limitedTools = applyProviderToolLimitToCatalog(
     baseToolPermissionMap,
-    hotLoadToolNames(baseToolPermissionMap, requestedAllowedTools, getAgentTools(agentCfg)),
+    applyToolBindBudget(
+      hotLoadToolNames(baseToolPermissionMap, requestedAllowedTools, getAgentTools(agentCfg)),
+      {
+        budget: getConfig().toolBindBudget,
+        alwaysKeep: [...SELF_CONFIG_TOOLS, "tool_result_get", "tool_result_list"],
+        recentlyUsed: getRecentlyUsedToolNames(req.thread_id),
+        pinned: getAgentTools(agentCfg),
+      },
+    ),
     getEffectiveProviderToolLimit(modelCfg?.provider),
     SELF_CONFIG_TOOLS,
     {

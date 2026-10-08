@@ -104,6 +104,32 @@ export interface PersistedToolEvent {
   payload: unknown;
 }
 
+// Tool names the agent called in this thread, most recent first. Includes
+// targets reached through invoke_tool so proxied tools count as used.
+export function getRecentlyUsedToolNames(thread_id: string, maxRows = 25): string[] {
+  const rows = getDb()
+    .prepare("SELECT tool_events FROM messages WHERE thread_id=? AND tool_events IS NOT NULL ORDER BY rowid DESC LIMIT ?")
+    .all(thread_id, maxRows) as Array<{ tool_events: string }>;
+  const seen = new Set<string>();
+  for (const row of rows) {
+    let events: PersistedToolEvent[];
+    try {
+      events = JSON.parse(row.tool_events) as PersistedToolEvent[];
+    } catch {
+      continue;
+    }
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = events[i];
+      if (event?.phase !== "call" || typeof event.name !== "string") continue;
+      const proxied = event.name === "invoke_tool" && event.payload && typeof event.payload === "object"
+        ? (event.payload as { name?: unknown }).name
+        : undefined;
+      seen.add(typeof proxied === "string" && proxied ? proxied : event.name);
+    }
+  }
+  return [...seen];
+}
+
 export function listThreads(limit = 50, offset = 0): ThreadRow[] {
   return getDb()
     .prepare("SELECT * FROM threads ORDER BY updated_at DESC LIMIT ? OFFSET ?")

@@ -21,6 +21,7 @@ const { prepareThreadRun, persistAssistantMessage } = await import("./run-thread
 const { collectStream } = await import("./stream-collector");
 const { deleteModelConfig, upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
+const { resetConfigCache } = await import("@/lib/env/config");
 const { createThread, getMessagesPage } = await import("@/lib/stores/threads");
 const { spillFileBuffer } = await import("@/lib/attachments/spill");
 
@@ -54,6 +55,32 @@ describe("prepareThreadRun transient retry", () => {
       .toMatchObject({ permission: "disabled", permission_reason: "signal_continuation_read_only" });
     expect(options.agent_run_config.tool_permission_map.find((entry) => entry.name === "invoke_tool")?.permission_reason)
       .not.toBe("signal_continuation_read_only");
+  });
+
+  it("trims bound tools to the bind budget, keeps pinned tools, and leaves the rest reachable through invoke_tool", async () => {
+    process.env.JARELA_TOOL_BIND_BUDGET = "20";
+    resetConfigCache();
+    try {
+      upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+      upsertAgentConfig({ id: "bind-budget", name: "Bind Budget", identity: "helper", instructions: "Be helpful.", tools: ["memory_write", "file_write"], model_config_name: null });
+      const thread = createThread("bind-budget");
+      streamWithConfigMock.mockReturnValue(chunks({ type: "done", data: {} }));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id, message: "hello",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      await collectStream(prepared.stream);
+      const options = streamWithConfigMock.mock.calls[0][2] as { agent_run_config: { allowed_tools: string[]; tool_permission_map: Array<{ name: string; permission: string; permission_reason: string }> } };
+      const bound = options.agent_run_config.allowed_tools;
+      expect(bound.length).toBeLessThanOrEqual(20);
+      expect(bound).toEqual(expect.arrayContaining(["invoke_tool", "list_tools", "memory_write", "file_write"]));
+      const trimmed = options.agent_run_config.tool_permission_map.filter((entry) => entry.permission_reason === "proxy_only");
+      expect(trimmed.length).toBeGreaterThan(0);
+      expect(trimmed.every((entry) => !bound.includes(entry.name))).toBe(true);
+    } finally {
+      delete process.env.JARELA_TOOL_BIND_BUDGET;
+      resetConfigCache();
+    }
   });
 
   beforeEach(() => {
