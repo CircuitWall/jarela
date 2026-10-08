@@ -15,6 +15,7 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-threads-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
 const { embedOne } = await import("@/lib/embeddings");
+const { getDb } = await import("@/lib/db");
 
 const {
   addMessage,
@@ -31,6 +32,7 @@ const {
   deleteThread,
   listThreads,
   getRecentMessagesWindow,
+  getRecentlyUsedToolNames,
   FOREGROUND_EXCLUDED_CATEGORIES,
   getMessagesByAutomationCategory,
   getThreadChannelSummary,
@@ -488,3 +490,25 @@ describe("thread channel summaries (ADR-0044)", () => {
   });
 });
 
+describe("getRecentlyUsedToolNames", () => {
+  it("returns called tools most recent first, resolving invoke_tool targets", () => {
+    const t = createThread("agent-recent-tools");
+    addMessage(t.thread_id, "assistant", "older", [
+      { id: "1", phase: "call", name: "gmail_search", payload: {} },
+      { id: "1", phase: "result", name: "gmail_search", payload: {} },
+    ]);
+    addMessage(t.thread_id, "assistant", "newer", [
+      { id: "2", phase: "call", name: "invoke_tool", payload: { name: "outlook_search", args_json: "{}" } },
+      { id: "3", phase: "call", name: "memory_read", payload: {} },
+    ]);
+
+    expect(getRecentlyUsedToolNames(t.thread_id)).toEqual(["memory_read", "outlook_search", "gmail_search"]);
+  });
+
+  it("ignores malformed tool events", () => {
+    const t = createThread("agent-recent-tools-bad");
+    getDb().prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events) VALUES (?,?,?,?,?,?)")
+      .run("bad-1", t.thread_id, "assistant", "x", new Date().toISOString(), "not json");
+    expect(getRecentlyUsedToolNames(t.thread_id)).toEqual([]);
+  });
+});

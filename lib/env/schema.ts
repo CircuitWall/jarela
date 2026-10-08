@@ -97,6 +97,7 @@ export const ENV_DEFAULTS = {
   filesMaxReadBytes: 64_000,
   filesMaxWriteBytes: 2_000_000,
   providerToolLimit: 512,
+  toolBindBudget: 40,
   // lifecycle
   updateCheckTimeoutMs: 3_000,
   shutdownDrainMs: 10_000,
@@ -418,6 +419,18 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     agentWritable: true,
     min: 1,
     max: 2048,
+  },
+  {
+    name: "JARELA_TOOL_BIND_BUDGET",
+    type: "int",
+    default: ENV_DEFAULTS.toolBindBudget,
+    description: "Maximum number of tools bound with full definitions on each agent step. Tools beyond it stay permitted and are reached through list_tools and invoke_tool, with their names listed in the prompt. Self-configuration tools and tools the agent recently called are kept first. 0 binds every pinned tool.",
+    category: "tools",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 0,
+    max: 512,
   },
   {
     name: "JARELA_PROVIDER_RATE_LIMITS",

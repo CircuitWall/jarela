@@ -56,6 +56,7 @@ export interface JarelaConfig {
   readonly filesMaxReadBytes: number;
   readonly filesMaxWriteBytes: number;
   readonly providerToolLimit: number;
+  readonly toolBindBudget: number;
 
   // lifecycle
   readonly updateCheckTimeoutMs: number;
@@ -223,6 +224,7 @@ export function getConfig(): JarelaConfig {
     filesMaxReadBytes: parsePositiveInt(env.JARELA_FILES_MAX_READ_BYTES, ENV_DEFAULTS.filesMaxReadBytes),
     filesMaxWriteBytes: parsePositiveInt(env.JARELA_FILES_MAX_WRITE_BYTES, ENV_DEFAULTS.filesMaxWriteBytes),
     providerToolLimit: parsePositiveInt(env.JARELA_PROVIDER_TOOL_LIMIT, ENV_DEFAULTS.providerToolLimit),
+    toolBindBudget: parseNonNegativeInt(env.JARELA_TOOL_BIND_BUDGET, ENV_DEFAULTS.toolBindBudget),
 
     // lifecycle
     updateCheckTimeoutMs: parsePositiveInt(env.JARELA_UPDATE_CHECK_TIMEOUT_MS, ENV_DEFAULTS.updateCheckTimeoutMs),

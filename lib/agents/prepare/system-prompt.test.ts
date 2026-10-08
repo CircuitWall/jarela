@@ -234,12 +234,32 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).not.toContain("scope=\"enabled\" searches executable tools");
   });
 
+  it("lists unbound permitted tool names without definitions, capped, and never lists bound tools", () => {
+    const entry = (name: string, reason: "proxy_only" | null) => ({
+      ...permissionMapFixture[0],
+      name,
+      permission: reason ? "disabled" as const : "enabled" as const,
+      permission_reason: reason ?? "agent_allowed",
+    });
+    const unbound = Array.from({ length: 160 }, (_, i) => entry(`unbound_tool_${String(i).padStart(3, "0")}`, "proxy_only"));
+    const ctx = buildToolPermissionContext([entry("bound_tool", null), ...unbound]);
+
+    const line = ctx.split("\n").find((l) => l.startsWith("Permitted but unbound tool names"));
+    expect(line).toBeDefined();
+    expect(line).toContain("unbound_tool_000");
+    expect(line).not.toContain("unbound_tool_159");
+    expect(line).toContain("and 10 more");
+    expect(line).not.toContain("bound_tool,");
+    // The count sentence and the name list describe the same set.
+    expect(ctx).toContain("plus 160 further permitted tool(s) through invoke_tool");
+  });
+
   it("renders the tool usage SOP as an ordered, tool-free static block", () => {
     const ctx = buildSharedToolCatalogContext();
 
     expect(ctx).toContain("--- Tool usage SOP ---");
     expect(ctx).toContain("1. Bound first.");
-    expect(ctx).toContain("2. Otherwise search.");
+    expect(ctx).toContain("2. Otherwise look it up.");
     expect(ctx).toContain("3. Named target.");
     expect(ctx).toContain("4. Read the schema.");
     expect(ctx).toContain("5. Invoke through the proxy.");
