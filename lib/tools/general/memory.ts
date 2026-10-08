@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { getMemory, putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
-import { recall } from "@/lib/embeddings";
+import { getMemory, putMemory, listMemory, deleteMemory, searchMemoryRows } from "@/lib/stores/memory";
+import { searchMemory } from "@/lib/embeddings";
 import { CURRENT_STRUCTURED_MEMORY_VERSION, StructuredMemoryInputSchema } from "@/lib/memory/record";
 import { registerLangChainPackage } from "../packages/langchain-package";
 
@@ -57,7 +57,8 @@ export const memoryUpsertTool = tool(
 
 export const memoryListTool = tool(
   async ({ namespace, search, limit }) => {
-    const rows = listMemory(namespace, search, limit ?? 20);
+    const take = limit ?? 20;
+    const rows = search ? await searchMemoryRows(namespace, search, take) : listMemory(namespace, undefined, take);
     const result = rows.map((r) => ({
       namespace: r.namespace,
       key: r.key,
@@ -74,10 +75,10 @@ export const memoryListTool = tool(
   },
   {
     name: "memory_list",
-    description: "List memory entries, optionally filtered by namespace or search term.",
+    description: "List memory entries, optionally filtered by namespace. With a search term, matches by meaning and by exact text in keys and values; without one, lists newest first.",
     schema: z.object({
       namespace: z.string().optional().describe("Filter by namespace (optional)"),
-      search: z.string().optional().describe("Search term to filter keys/values (optional)"),
+      search: z.string().optional().describe("Search term matched by meaning and by exact text in keys and values (optional)"),
       limit: z.number().optional().describe("Max results (default 20)"),
     }),
   },
@@ -100,26 +101,26 @@ export const memoryDeleteTool = tool(
 );
 
 export const memorySearchTool = tool(
-  async ({ query, namespace, limit }) => {
-    const take = limit ?? 10;
-    // recall() ranks across all namespaces + chat messages together; when the
-    // caller wants one namespace, over-fetch first so the post-filter still
-    // has enough candidates to reach `take`.
-    const hits = await recall(query, namespace ? take * 4 : take);
-    const filtered = hits
-      .filter((h) => h.source === "memory" && (!namespace || h.namespace === namespace))
-      .slice(0, take)
-      .map((h) => ({ namespace: h.namespace, key: h.key, content: h.content, score: h.score, updated_at: h.created_at }));
-    return JSON.stringify(filtered);
+  async ({ query, namespace, limit, include_chats }) => {
+    const hits = await searchMemory(query, {
+      limit: limit ?? 10,
+      namespace,
+      sources: include_chats ? "all" : "memory",
+      literal: true,
+    });
+    return JSON.stringify(hits.map((h) => h.source === "memory"
+      ? { source: "memory", namespace: h.namespace, key: h.key, content: h.content, score: h.score, updated_at: h.created_at }
+      : { source: "chat", thread_id: h.thread_id, role: h.role, content: h.content, score: h.score, created_at: h.created_at }));
   },
   {
     name: "memory_search",
     description:
-      "Semantically search long-term memory by meaning, not exact text (embeddings-based cosine similarity; falls back to keyword overlap when no embedding provider is configured). Prefer this over memory_list when your query is a paraphrase or concept rather than a literal substring you expect to find verbatim.",
+      "Search long-term memory by meaning and by exact text (embedding similarity plus literal key/value matches; falls back to keyword overlap when no embedding model is configured). Prefer this over memory_list for paraphrases or concepts. Set include_chats to also search past conversations, including archived turns.",
     schema: z.object({
       query: z.string().describe("Natural-language query to search memory for"),
-      namespace: z.string().optional().describe("Restrict results to this namespace (optional)"),
+      namespace: z.string().optional().describe("Restrict results to this namespace (optional; excludes chat history)"),
       limit: z.number().optional().describe("Max results (default 10)"),
+      include_chats: z.boolean().optional().describe("Also search past conversations (default false)"),
     }),
   },
 );

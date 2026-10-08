@@ -17,6 +17,10 @@ The persisted keys are unchanged (`embedding_model_config` and `documents_use_bu
 
 Memory and message vectors produced by a different model cannot be compared with new ones. They are rewritten in the background in small batches when either signal fires: the stored signature differs from the active model (this also catches two models with the same dimension), or a stored vector's length differs from the live query vector. On first run after upgrade the current signature is adopted without rewriting. A failed pass pauses for a minute and resumes where it stopped; progress and failures are shown in Settings → Models. Documents keep their explicit per-source Reindex flow from ADR-0093.
 
+The same background pass embeds memory and message rows that never received a vector (for example, written while no embedding model worked), scanning at most every ten minutes and skipping sensitive namespaces, raw-SQL settings rows, short messages, and automation messages.
+
+One search function, `searchMemory`, backs proactive recall, `memory_search`, `memory_list` with a search term, and the Memory panel. It combines similarity with keyword overlap for unembedded rows and, for tools and the panel, exact text matches ranked first. `memory_search` searches memory only unless `include_chats` is set, in which case live and archived chat turns are included. `memory_list` without a search term remains a plain newest-first listing and still shows entries that similarity search hides, such as sensitive or archived ones.
+
 ## Consequences
 
 * Good, because choosing Jarela Local keeps documents, memory, and chat text on the device.

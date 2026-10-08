@@ -12,9 +12,10 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
-const { memoryReadTool, memoryWriteTool, memoryUpsertTool, memoryDeleteTool, memoryListTool } =
+const { memoryReadTool, memoryWriteTool, memoryUpsertTool, memoryDeleteTool, memoryListTool, memorySearchTool } =
   await import("./memory");
 const { putMemory, getMemory, listMemory, deleteMemory } = await import("@/lib/stores/memory");
+const { getDb } = await import("@/lib/db");
 
 beforeEach(() => {
   // Clear rows between tests via the store API. We deliberately do NOT
@@ -158,5 +159,44 @@ describe("memoryUpsertTool", () => {
       key: "bad",
       record: { content: "missing required structure" },
     } as never)).rejects.toThrow();
+  });
+});
+
+describe("memory_search and memory_list share one search", () => {
+  function archiveTurn(key: string, content: string) {
+    const t = new Date().toISOString();
+    getDb().prepare("INSERT OR REPLACE INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,NULL)")
+      .run("chat_archive", key, content, t, t);
+  }
+
+  it("memory_search matches exact text and labels each hit's source", async () => {
+    putMemory("facts", "billing-ticket", JSON.stringify("Invoice ERR-4711 failed on retry"));
+
+    const out = JSON.parse(await memorySearchTool.invoke({ query: "ERR-4711" }) as string);
+
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ source: "memory", namespace: "facts", key: "billing-ticket" });
+  });
+
+  it("memory_search includes archived chat turns only when asked", async () => {
+    archiveTurn("user::thread-1::msg-1", "we discussed ERR-4711 yesterday");
+
+    const without = JSON.parse(await memorySearchTool.invoke({ query: "ERR-4711" }) as string);
+    const withChats = JSON.parse(await memorySearchTool.invoke({ query: "ERR-4711", include_chats: true }) as string);
+
+    expect(without).toEqual([]);
+    expect(withChats).toHaveLength(1);
+    expect(withChats[0]).toMatchObject({ source: "chat", thread_id: "thread-1", role: "user" });
+  });
+
+  it("memory_list with a search term finds exact text and still lists without one", async () => {
+    putMemory("facts", "alpha", JSON.stringify("the deploy key rotates monthly"));
+    putMemory("facts", "beta", JSON.stringify("unrelated note"));
+
+    const found = JSON.parse(await memoryListTool.invoke({ search: "deploy key" }) as string);
+    const all = JSON.parse(await memoryListTool.invoke({ namespace: "facts" }) as string);
+
+    expect(found.map((r: { key: string }) => r.key)).toEqual(["alpha"]);
+    expect(all).toHaveLength(2);
   });
 });
