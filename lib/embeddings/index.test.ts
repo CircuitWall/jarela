@@ -319,3 +319,77 @@ describe("recall re-embeds vectors from a previous model", () => {
     expect(localEmbedSpy.mock.calls.length).toBe(calls);
   });
 });
+
+describe("searchMemory", () => {
+  function seed(namespace: string, key: string, value: string, vector: number[] | null) {
+    const t = new Date().toISOString();
+    getDb().prepare("INSERT OR REPLACE INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,?)")
+      .run(namespace, key, value, t, t, vector ? JSON.stringify(vector) : null);
+  }
+  const storedVector = (namespace: string, key: string) => {
+    const row = getDb().prepare("SELECT embedding FROM memory_store WHERE namespace=? AND key=?").get(namespace, key) as { embedding: string | null };
+    return row.embedding ? (JSON.parse(row.embedding) as number[]) : null;
+  };
+
+  beforeEach(async () => {
+    const { _resetEmbedCaches, _resetReembedState } = await import("./index");
+    getDb().prepare("DELETE FROM memory_store").run();
+    getDb().prepare("DELETE FROM messages").run();
+    _resetEmbedCaches();
+    _resetReembedState();
+  });
+
+  it("restricts hits by source and namespace", async () => {
+    const { searchMemory } = await import("./index");
+    seed("facts", "color", "orange", [1, 0, 0, 0]);
+    seed("chat_archive", "user::thread-1::msg-1", "archived turn", [1, 0, 0, 0]);
+    embedSpy.mockResolvedValue([[1, 0, 0, 0]]);
+
+    expect((await searchMemory("q", { sources: "memory" })).map((h) => h.source)).toEqual(["memory"]);
+    expect((await searchMemory("q", { sources: "messages" })).map((h) => h.source)).toEqual(["message"]);
+    const inNamespace = await searchMemory("q", { namespace: "facts" });
+    expect(inNamespace.map((h) => h.key)).toEqual(["color"]);
+  });
+
+  it("finds exact text that similarity misses, only when asked", async () => {
+    const { searchMemory } = await import("./index");
+    seed("facts", "ticket", "Invoice ERR-4711 failed", [0, 1, 0, 0]);
+    embedSpy.mockResolvedValue([[1, 0, 0, 0]]);
+
+    expect(await searchMemory("ERR-4711", { sources: "memory" })).toEqual([]);
+    const hits = await searchMemory("ERR-4711", { sources: "memory", literal: true });
+    expect(hits.map((h) => h.key)).toEqual(["ticket"]);
+    expect(hits[0].score).toBeCloseTo(0.9);
+  });
+
+  it("embeds rows that never had a vector but leaves internal settings alone", async () => {
+    const { reembedStaleVectors } = await import("./index");
+    seed("facts", "never", "remember the milk", null);
+    seed("app-settings", "some_setting", "\"x\"", null);
+    setLocalEmbeddingsEnabled(true);
+    localEmbedSpy.mockImplementation(async (texts: string[]) => texts.map(() => [0.5, 0.5, 0.5]));
+
+    await reembedStaleVectors();
+
+    expect(storedVector("facts", "never")).toEqual([0.5, 0.5, 0.5]);
+    expect(storedVector("app-settings", "some_setting")).toBeNull();
+  });
+
+  it("embeds chat messages that never had a vector, skipping short and automation rows", async () => {
+    const { reembedStaleVectors } = await import("./index");
+    const t = new Date().toISOString();
+    const insert = getDb().prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,metadata) VALUES (?,?,?,?,?,?)");
+    insert.run("m-long", "thread-1", "user", "what did we decide about billing retries", t, null);
+    insert.run("m-short", "thread-1", "user", "ok", t, null);
+    insert.run("m-auto", "thread-1", "assistant", "scheduled run output that is long enough", t, JSON.stringify({ automation_activity: true }));
+    setLocalEmbeddingsEnabled(true);
+    localEmbedSpy.mockImplementation(async (texts: string[]) => texts.map(() => [0.5, 0.5, 0.5]));
+
+    await reembedStaleVectors();
+
+    const state = (id: string) => (getDb().prepare("SELECT embedding FROM messages WHERE msg_id=?").get(id) as { embedding: string | null }).embedding;
+    expect(state("m-long")).not.toBeNull();
+    expect(state("m-short")).toBeNull();
+    expect(state("m-auto")).toBeNull();
+  });
+});

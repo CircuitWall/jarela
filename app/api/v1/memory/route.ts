@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { listMemory, putMemory } from "@/lib/stores/memory";
+import { listMemory, putMemory, searchMemoryRows } from "@/lib/stores/memory";
 import { createdResponse, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 
@@ -10,9 +10,12 @@ const PutBody = z.object({
   value: z.unknown(),
 });
 
-export function GET(req: NextRequest) {
+export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
-  const items = listMemory(p.get("namespace") ?? undefined, p.get("search") ?? undefined, Number(p.get("limit") ?? 50));
+  const namespace = p.get("namespace") ?? undefined;
+  const search = p.get("search") ?? undefined;
+  const limit = Number(p.get("limit") ?? 50);
+  const items = search ? await searchMemoryRows(namespace, search, limit) : listMemory(namespace, undefined, limit);
   return NextResponse.json(items.map((r) => ({ ...r, value: parseJsonSafe<unknown>(r.value, null) })));
 }
 

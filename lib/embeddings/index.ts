@@ -409,85 +409,125 @@ export interface RecalledMemory {
   created_at: string;
 }
 
-// Cross-source recall: compares the query embedding against every memory entry
-// and chat message that has an embedding. Returns top-k by cosine. Falls back
-// to a recent-rows substring scan for entries that don't have an embedding yet
-// (write-then-immediate-query case where the async embed hasn't landed).
-export async function recall(query: string, limit = 5, policy: MemoryPolicy = getMemoryPolicy()): Promise<RecalledMemory[]> {
+export interface MemorySearchOptions {
+  limit?: number;
+  policy?: MemoryPolicy;
+  /** Which stores to search. Chat includes archived turns. Default "all". */
+  sources?: "all" | "memory" | "messages";
+  /** Restrict to one memory namespace; chat hits are excluded. */
+  namespace?: string;
+  /** Also match the query as literal text and rank those hits first. */
+  literal?: boolean;
+}
+
+const LITERAL_SCORE = 0.9;
+const LITERAL_ROW_LIMIT = 50;
+
+type MemoryRowLike = { namespace: string; key: string; value: string; created_at: string };
+
+// Archived chat turns live in memory_store but are surfaced as chat hits so
+// buildRecallContext renders them exactly like a live message (role, thread
+// tag, date). A malformed archive key falls through to a plain memory hit.
+function toRecalled(r: MemoryRowLike, score: number, policy: MemoryPolicy, wantMem: boolean, wantMsg: boolean): RecalledMemory | null {
+  if (r.namespace === CHAT_ARCHIVE_NAMESPACE) {
+    const parsed = parseChatArchiveKey(r.key);
+    if (parsed) {
+      return wantMsg
+        ? { source: "message", thread_id: parsed.thread_id, role: parsed.role, content: r.value, score, created_at: r.created_at }
+        : null;
+    }
+  }
+  if (!wantMem) return null;
+  const structured = parseStructuredMemory(r.value);
+  if (structured && !isStructuredMemoryEligible(structured, policy)) return null;
+  if (!structured && policy === "important") return null;
+  const content = memoryRecallText(r.namespace, r.key, r.value);
+  if (content === null) return null;
+  return { source: "memory", namespace: r.namespace, key: r.key, content, score, created_at: r.created_at };
+}
+
+// The one search behind proactive recall, memory_search, memory_list with a
+// search term, and the Memory panel. Compares the query embedding against
+// every embedded memory entry and chat message, adds keyword overlap for rows
+// still pending embedding, and (when `literal`) exact text matches.
+export async function searchMemory(query: string, opts: MemorySearchOptions = {}): Promise<RecalledMemory[]> {
+  const { limit = 5, policy = getMemoryPolicy(), sources = "all", namespace, literal = false } = opts;
+  const wantMem = sources !== "messages";
+  const wantMsg = sources !== "memory" && !namespace;
   const qVec = await embedQueryOne(query);
   const db = getDb();
   const scored: RecalledMemory[] = [];
   if (qVec) void reembedStaleVectors(qVec.length);
 
-  // ── semantic pass ─────────────────────────────────────────────────────────
-  // Reads pre-parsed vectors from the in-memory cache (see above) instead of
-  // re-querying + re-JSON.parse-ing every embedded row on every turn.
+  // Reads pre-parsed vectors from the in-memory cache instead of re-querying
+  // and re-parsing every embedded row on each call.
   if (qVec) {
     for (const r of loadMemEmbedCache().values()) {
-      // chat_archive rows are pruned chat messages copied into
-      // memory_store by pruneThreadMessages so they stay recall-able
-      // after compaction. Surface them as `source: "message"` so
-      // buildRecallContext renders them exactly like a live message hit
-      // (role + thread tag + date), not as a generic memory entry.
-      // Malformed keys fall through to the memory-source rendering path.
-      if (r.namespace === CHAT_ARCHIVE_NAMESPACE) {
-        const parsed = parseChatArchiveKey(r.key);
-        if (parsed) {
-          scored.push({
-            source: "message", thread_id: parsed.thread_id, role: parsed.role,
-            content: r.value, score: cosine(qVec, r.embedding), created_at: r.created_at,
-          });
-          continue;
-        }
-      }
-      const structured = parseStructuredMemory(r.value);
-      if (structured && !isStructuredMemoryEligible(structured, policy)) continue;
-      if (!structured && policy === "important") continue;
-      const content = memoryRecallText(r.namespace, r.key, r.value);
-      if (content === null) continue;
-      scored.push({
-        source: "memory", namespace: r.namespace, key: r.key,
-        content, score: cosine(qVec, r.embedding), created_at: r.created_at,
-      });
+      if (namespace && r.namespace !== namespace) continue;
+      const hit = toRecalled(r, cosine(qVec, r.embedding), policy, wantMem, wantMsg);
+      if (hit) scored.push(hit);
     }
-    for (const r of loadMsgEmbedCache().values()) {
-      scored.push({
-        source: "message", thread_id: r.thread_id, role: r.role,
-        content: r.content, score: cosine(qVec, r.embedding), created_at: r.created_at,
-      });
+    if (wantMsg) {
+      for (const r of loadMsgEmbedCache().values()) {
+        scored.push({
+          source: "message", thread_id: r.thread_id, role: r.role,
+          content: r.content, score: cosine(qVec, r.embedding), created_at: r.created_at,
+        });
+      }
     }
   }
 
-  // ── unembedded fallback: keyword overlap on rows still pending embedding ─
-  // This catches the write-then-immediately-query case where async embed
-  // hasn't completed. Score is capped below the embedding floor so a real
-  // semantic match always wins.
+  // Keyword overlap on rows still pending embedding (write-then-query case).
+  // Capped below the embedding floor so a real semantic match always wins.
   const tokens = tokenize(query);
   if (tokens.length > 0) {
+    const nsClause = namespace ? " AND namespace=?" : "";
     const recentMem = db.prepare(
       `SELECT namespace, key, value, created_at FROM memory_store
-        WHERE embedding IS NULL AND namespace NOT IN (${EXCLUDED_NS_PLACEHOLDERS})
+        WHERE embedding IS NULL AND namespace NOT IN (${EXCLUDED_NS_PLACEHOLDERS})${nsClause}
         ORDER BY updated_at DESC LIMIT 50`,
-    ).all(...EXCLUDED_NS) as Array<{ namespace: string; key: string; value: string; created_at: string }>;
-    const recentMsg = db.prepare(
-      "SELECT thread_id, role, content, created_at FROM messages WHERE embedding IS NULL ORDER BY created_at DESC LIMIT 50",
-    ).all() as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
-
+    ).all(...EXCLUDED_NS, ...(namespace ? [namespace] : [])) as MemoryRowLike[];
     for (const r of recentMem) {
-      const structured = parseStructuredMemory(r.value);
-      if (structured && !isStructuredMemoryEligible(structured, policy)) continue;
-      if (!structured && policy === "important") continue;
-      const content = memoryRecallText(r.namespace, r.key, r.value);
-      if (content === null) continue;
-      const score = keywordOverlap(tokens, content);
-      if (score > 0) {
-        scored.push({ source: "memory", namespace: r.namespace, key: r.key, content, score: 0.26 + score * 0.1, created_at: r.created_at });
+      const probe = toRecalled(r, 0, policy, wantMem, wantMsg);
+      if (!probe) continue;
+      const overlap = keywordOverlap(tokens, probe.content);
+      if (overlap > 0) scored.push({ ...probe, score: 0.26 + overlap * 0.1 });
+    }
+    if (wantMsg) {
+      const recentMsg = db.prepare(
+        "SELECT thread_id, role, content, created_at FROM messages WHERE embedding IS NULL ORDER BY created_at DESC LIMIT 50",
+      ).all() as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
+      for (const r of recentMsg) {
+        const overlap = keywordOverlap(tokens, r.content);
+        if (overlap > 0) {
+          scored.push({ source: "message", thread_id: r.thread_id, role: r.role, content: r.content, score: 0.26 + overlap * 0.1, created_at: r.created_at });
+        }
       }
     }
-    for (const r of recentMsg) {
-      const score = keywordOverlap(tokens, r.content);
-      if (score > 0) {
-        scored.push({ source: "message", thread_id: r.thread_id, role: r.role, content: r.content, score: 0.26 + score * 0.1, created_at: r.created_at });
+  }
+
+  // Exact text matches (keys, ids, error codes) that similarity can miss.
+  const needle = query.trim();
+  if (literal && needle.length >= 2) {
+    const like = `%${needle.replace(/[\\%_]/g, "\\$&")}%`;
+    if (wantMem || wantMsg) {
+      const rows = db.prepare(
+        `SELECT namespace, key, value, created_at FROM memory_store
+          WHERE (key LIKE ? ESCAPE '\\' OR value LIKE ? ESCAPE '\\')
+            AND namespace NOT IN (${EXCLUDED_NS_PLACEHOLDERS})${namespace ? " AND namespace=?" : ""}
+          ORDER BY updated_at DESC LIMIT ?`,
+      ).all(like, like, ...EXCLUDED_NS, ...(namespace ? [namespace] : []), LITERAL_ROW_LIMIT) as MemoryRowLike[];
+      for (const r of rows) {
+        const hit = toRecalled(r, LITERAL_SCORE, policy, wantMem, wantMsg);
+        if (hit) scored.push(hit);
+      }
+    }
+    if (wantMsg) {
+      const rows = db.prepare(
+        "SELECT thread_id, role, content, created_at FROM messages WHERE content LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
+      ).all(like, LITERAL_ROW_LIMIT) as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
+      for (const r of rows) {
+        scored.push({ source: "message", thread_id: r.thread_id, role: r.role, content: r.content, score: LITERAL_SCORE, created_at: r.created_at });
       }
     }
   }
@@ -507,6 +547,9 @@ export async function recall(query: string, limit = 5, policy: MemoryPolicy = ge
       // Keep the newer one but propagate the highest score we've seen for the group
       // so it doesn't lose ranking against stale duplicates.
       groups.set(key, { ...s, score: Math.max(s.score, existing.score) });
+    } else if (s.score > existing.score) {
+      // Same row found by more than one pass (semantic and literal).
+      groups.set(key, { ...existing, score: s.score });
     }
   }
   return Array.from(groups.values())
@@ -514,13 +557,23 @@ export async function recall(query: string, limit = 5, policy: MemoryPolicy = ge
     .slice(0, limit);
 }
 
+/** Proactive recall: every store, memory-policy filtered, no literal pass. */
+export function recall(query: string, limit = 5, policy: MemoryPolicy = getMemoryPolicy()): Promise<RecalledMemory[]> {
+  return searchMemory(query, { limit, policy });
+}
+
 // Stored vectors from a previous embedding model silently vanish from recall:
 // a different dimension scores 0 in cosine(), and a different model with the
 // same dimension scores meaninglessly. Two signals mark them stale — a model
 // signature persisted with the settings, and a dimension mismatch against the
-// live query vector — and a background pass re-embeds them.
+// live query vector — and a background pass re-embeds them. The same pass
+// embeds rows that never got a vector (written while no model worked).
 const REEMBED_BATCH = 32;
 const REEMBED_COOLDOWN_MS = 60_000;
+const NULL_SCAN_INTERVAL_MS = 10 * 60_000;
+const NULL_BACKFILL_LIMIT = 500;
+// Raw-SQL settings rows are intentionally stored without a vector.
+const NULL_BACKFILL_SKIP_NS = [...EXCLUDED_NS, "app-settings"];
 
 export interface ReembedStatus {
   running: boolean;
@@ -531,6 +584,7 @@ export interface ReembedStatus {
 
 const reembedStatus: ReembedStatus = { running: false, total: 0, done: 0, error: null };
 let reembedBlockedUntil = 0;
+let nullScanAt = 0;
 // Rows already rewritten under `reembedDoneSignature`, so a retry after a
 // failure resumes instead of starting over.
 const reembedDone = new Set<string>();
@@ -547,6 +601,7 @@ export function _resetReembedState(): void {
   reembedStatus.done = 0;
   reembedStatus.error = null;
   reembedBlockedUntil = 0;
+  nullScanAt = 0;
   reembedDone.clear();
   reembedDoneSignature = null;
 }
@@ -559,11 +614,14 @@ function memoryEmbedText(r: { namespace: string; key: string; value: string }): 
   return `${r.namespace}/${r.key}: ${memorySearchText(r.namespace, r.key, parsed)}`;
 }
 
+type MessageRowLike = { msg_id: string; thread_id: string; role: string; content: string; created_at: string };
+
 /**
- * Re-embeds memory and message vectors that don't belong to the active model.
- * Pass `dim` (the live query vector length) to also catch dimension mismatches.
- * Safe to call often: it no-ops when nothing is stale, while one is running,
- * and for a minute after a failure.
+ * Re-embeds memory and message vectors that don't belong to the active model
+ * and backfills rows that never had one. Pass `dim` (the live query vector
+ * length) to also catch dimension mismatches. Safe to call often: it no-ops
+ * when nothing is pending, while one is running, and for a minute after a
+ * failure; the never-embedded scan runs at most every ten minutes.
  */
 export async function reembedStaleVectors(dim?: number): Promise<void> {
   if (reembedStatus.running || Date.now() < reembedBlockedUntil) return;
@@ -581,15 +639,37 @@ export async function reembedStaleVectors(dim?: number): Promise<void> {
     }
     const stale = (key: string, vec: number[]) =>
       !reembedDone.has(key) && (changed || (dim !== undefined && vec.length !== dim));
-    const staleMem = [...loadMemEmbedCache().values()].filter((r) => stale(`m\0${r.namespace}\0${r.key}`, r.embedding));
-    const staleMsg = [...loadMsgEmbedCache().values()].filter((r) => stale(`g\0${r.msg_id}`, r.embedding));
-    reembedStatus.total = staleMem.length + staleMsg.length;
+    const memTargets: MemoryRowLike[] = [...loadMemEmbedCache().values()]
+      .filter((r) => stale(`m\0${r.namespace}\0${r.key}`, r.embedding));
+    const msgTargets: MessageRowLike[] = [...loadMsgEmbedCache().values()]
+      .filter((r) => stale(`g\0${r.msg_id}`, r.embedding));
+
+    const db = getDb();
+    if (Date.now() - nullScanAt >= NULL_SCAN_INTERVAL_MS) {
+      nullScanAt = Date.now();
+      const skip = NULL_BACKFILL_SKIP_NS.map(() => "?").join(",");
+      const nullMem = db.prepare(
+        `SELECT namespace, key, value, created_at FROM memory_store
+          WHERE embedding IS NULL AND namespace NOT IN (${skip}) ORDER BY updated_at DESC LIMIT ?`,
+      ).all(...NULL_BACKFILL_SKIP_NS, NULL_BACKFILL_LIMIT) as MemoryRowLike[];
+      const nullMsg = db.prepare(
+        `SELECT msg_id, thread_id, role, content, created_at FROM messages
+          WHERE embedding IS NULL AND length(content) >= 12
+            AND (metadata IS NULL OR metadata NOT LIKE '%automation_activity%')
+          ORDER BY created_at DESC LIMIT ?`,
+      ).all(NULL_BACKFILL_LIMIT) as MessageRowLike[];
+      memTargets.push(...nullMem.filter((r) => !reembedDone.has(`m\0${r.namespace}\0${r.key}`)));
+      msgTargets.push(...nullMsg.filter((r) => extractEmbeddableText(r.content).trim().length >= 12 && !reembedDone.has(`g\0${r.msg_id}`)));
+      // A full page means more may be waiting; scan again on the next call.
+      if (nullMem.length === NULL_BACKFILL_LIMIT || nullMsg.length === NULL_BACKFILL_LIMIT) nullScanAt = 0;
+    }
+
+    reembedStatus.total = memTargets.length + msgTargets.length;
     reembedStatus.done = 0;
     reembedStatus.error = null;
 
-    const db = getDb();
-    for (let i = 0; i < staleMem.length; i += REEMBED_BATCH) {
-      const batch = staleMem.slice(i, i + REEMBED_BATCH);
+    for (let i = 0; i < memTargets.length; i += REEMBED_BATCH) {
+      const batch = memTargets.slice(i, i + REEMBED_BATCH);
       const vecs = await embed(batch.map(memoryEmbedText));
       if (!vecs) throw new Error("embedding provider unavailable");
       batch.forEach((r, j) => {
@@ -600,8 +680,8 @@ export async function reembedStaleVectors(dim?: number): Promise<void> {
       });
       reembedStatus.done += batch.length;
     }
-    for (let i = 0; i < staleMsg.length; i += REEMBED_BATCH) {
-      const batch = staleMsg.slice(i, i + REEMBED_BATCH);
+    for (let i = 0; i < msgTargets.length; i += REEMBED_BATCH) {
+      const batch = msgTargets.slice(i, i + REEMBED_BATCH);
       const vecs = await embed(batch.map((r) => extractEmbeddableText(r.content)));
       if (!vecs) throw new Error("embedding provider unavailable");
       batch.forEach((r, j) => {

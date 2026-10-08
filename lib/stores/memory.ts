@@ -1,5 +1,5 @@
 import { getDb } from "@/lib/db";
-import { embedOne, upsertMemoryEmbedCache, evictMemoryEmbedCache } from "@/lib/embeddings";
+import { embedOne, searchMemory, upsertMemoryEmbedCache, evictMemoryEmbedCache } from "@/lib/embeddings";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 import { isSensitiveMemoryNamespace } from "@/lib/crypto/sensitive";
 import { isLegacyStructuredMemoryRaw, memorySearchText, parseStructuredMemory, type StructuredMemoryRecord } from "@/lib/memory/record";
@@ -49,6 +49,24 @@ export function listMemory(namespace?: string, search?: string, limit = 50): Mem
   // check each row since namespaces vary.
   const decrypted = namespace && !isSensitiveMemoryNamespace(namespace) ? rows : rows.map(decryptRow);
   return decrypted.map(migrateRowIfNeeded);
+}
+
+// Hybrid search for the memory tools and the Memory panel: similarity and
+// exact-text hits first, then plain LIKE rows so entries that similarity
+// deliberately hides (sensitive, archived, expired) can still be found by name.
+export async function searchMemoryRows(namespace: string | undefined, search: string, limit = 20): Promise<MemoryRow[]> {
+  const out = new Map<string, MemoryRow>();
+  const add = (r: MemoryRow | null) => {
+    if (r && out.size < limit) out.set(`${r.namespace}\0${r.key}`, r);
+  };
+  try {
+    const hits = await searchMemory(search, { limit: limit * 2, sources: "memory", namespace, literal: true, policy: "detailed" });
+    for (const h of hits) if (h.namespace && h.key) add(getMemory(h.namespace, h.key));
+  } catch {
+    // No usable embedding model: the LIKE rows below still answer.
+  }
+  for (const r of listMemory(namespace, search, limit)) add(r);
+  return [...out.values()];
 }
 
 export function getMemory(namespace: string, key: string): MemoryRow | null {
