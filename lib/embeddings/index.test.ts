@@ -42,8 +42,8 @@ vi.mock("@/lib/stores/model-config", () => ({
   getModelParams: () => ({}),
 }));
 
-const { _resetEmbeddingCache, _resetEmbedCaches, embed, embedDocument, embedBestEffort, embedOne, recall } = await import("./index");
-const { setDocumentLocalEmbeddings } = await import("@/lib/stores/app-settings");
+const { _resetEmbeddingCache, _resetEmbedCaches, embed, embedQuery, embedBestEffort, embedOne, recall } = await import("./index");
+const { setLocalEmbeddingsEnabled } = await import("@/lib/stores/app-settings");
 const { getDb } = await import("@/lib/db");
 const originalEmbeddingModelConfig = process.env.EMBEDDING_MODEL_CONFIG;
 
@@ -53,7 +53,7 @@ beforeEach(() => {
   _resetEmbeddingCache();
   resolveEmbedClient = true;
   delete process.env.EMBEDDING_MODEL_CONFIG;
-  setDocumentLocalEmbeddings(false);
+  setLocalEmbeddingsEnabled(false);
 });
 
 afterEach(() => {
@@ -140,34 +140,34 @@ describe("embedBestEffort", () => {
     expect(embedSpy).not.toHaveBeenCalled();
   });
 
-  it("uses the bundled model only for document indexing/search, not message or memory embeddings", async () => {
-    setDocumentLocalEmbeddings(true);
+  it("uses the bundled model for documents, memory, and messages when enabled", async () => {
+    setLocalEmbeddingsEnabled(true);
     localEmbedSpy.mockResolvedValue([[0.25, 0.75]]);
-    embedSpy.mockResolvedValue([[0.9, 0.1]]);
 
     const indexed = await embedBestEffort(["local document chunk"]);
-    const query = await embedDocument(["local search query"]);
-    const memory = await embed(["memory and conversation embedding"]);
+    const query = await embedQuery(["local search query"]);
+    const memory = await embed(["memory entry"]);
     const message = await embedOne("message embedding");
 
     expect(indexed.vectors).toEqual([[0.25, 0.75]]);
-    expect(indexed.failed).toBe(0);
     expect(query).toEqual([[0.25, 0.75]]);
-    expect(memory).toEqual([[0.9, 0.1]]);
-    expect(message).toEqual([0.9, 0.1]);
+    expect(memory).toEqual([[0.25, 0.75]]);
+    expect(message).toEqual([0.25, 0.75]);
     expect(localEmbedSpy).toHaveBeenNthCalledWith(1, ["local document chunk"], "passage");
     expect(localEmbedSpy).toHaveBeenNthCalledWith(2, ["local search query"], "query");
-    expect(embedSpy).toHaveBeenCalledTimes(2);
+    expect(localEmbedSpy).toHaveBeenNthCalledWith(3, ["memory entry"], "passage");
+    expect(localEmbedSpy).toHaveBeenNthCalledWith(4, ["message embedding"], "passage");
+    expect(embedSpy).not.toHaveBeenCalled();
   });
 
   it("does not reuse cached passage vectors for queries", async () => {
-    setDocumentLocalEmbeddings(true);
+    setLocalEmbeddingsEnabled(true);
     localEmbedSpy
       .mockResolvedValueOnce([[0.25, 0.75]])
       .mockResolvedValueOnce([[0.75, 0.25]]);
 
     const passage = await embedBestEffort(["shared text"]);
-    const query = await embedDocument(["shared text"]);
+    const query = await embedQuery(["shared text"]);
 
     expect(passage.vectors).toEqual([[0.25, 0.75]]);
     expect(query).toEqual([[0.75, 0.25]]);
@@ -257,5 +257,65 @@ describe("recall chat_archive", () => {
     const hits = await recall("whatever query", 5);
     expect(hits).toHaveLength(1);
     expect(hits[0].source).toBe("memory");
+  });
+});
+
+describe("recall re-embeds vectors from a previous model", () => {
+  async function seedMemory(key: string, vector: number[]) {
+    const { getDb } = await import("@/lib/db");
+    const t = new Date().toISOString();
+    getDb().prepare("INSERT OR REPLACE INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,?)")
+      .run("facts", key, JSON.stringify("the capital of France is Paris"), t, t, JSON.stringify(vector));
+    return () => {
+      const row = getDb().prepare("SELECT embedding FROM memory_store WHERE namespace=? AND key=?").get("facts", key) as { embedding: string };
+      return JSON.parse(row.embedding) as number[];
+    };
+  }
+
+  beforeEach(async () => {
+    const { _resetEmbedCaches, _resetReembedState } = await import("./index");
+    _resetEmbedCaches();
+    _resetReembedState();
+  });
+
+  it("rewrites a stale-dimension memory vector with the active model", async () => {
+    const { recall } = await import("./index");
+    const read = await seedMemory("stale-dim", [1, 0]);
+    setLocalEmbeddingsEnabled(true);
+    localEmbedSpy.mockImplementation(async (texts: string[]) => texts.map(() => [0.5, 0.5, 0.5]));
+
+    await recall("capital of France");
+
+    await vi.waitFor(() => expect(read()).toHaveLength(3), { timeout: 5_000 });
+  });
+
+  it("detects a model swap even when the vector dimension is unchanged", async () => {
+    const { reembedStaleVectors } = await import("./index");
+    const { getEmbeddingVectorsSignature, setEmbeddingVectorsSignature } = await import("@/lib/stores/app-settings");
+    const read = await seedMemory("same-dim", [1, 0, 0]);
+    setEmbeddingVectorsSignature("openai:text-embedding-3-small");
+    setLocalEmbeddingsEnabled(true);
+    localEmbedSpy.mockImplementation(async (texts: string[]) => texts.map(() => [0.5, 0.5, 0.5]));
+
+    await reembedStaleVectors();
+
+    expect(read()).toEqual([0.5, 0.5, 0.5]);
+    expect(getEmbeddingVectorsSignature()).toBe("Xenova/multilingual-e5-small");
+  });
+
+  it("pauses after a failure instead of retrying on every recall", async () => {
+    const { reembedStaleVectors, getReembedStatus } = await import("./index");
+    const { setEmbeddingVectorsSignature } = await import("@/lib/stores/app-settings");
+    await seedMemory("fails", [1, 0, 0]);
+    setEmbeddingVectorsSignature("openai:text-embedding-3-small");
+    setLocalEmbeddingsEnabled(true);
+    localEmbedSpy.mockRejectedValue(new Error("model offline"));
+
+    await reembedStaleVectors();
+    expect(getReembedStatus().error).toContain("unavailable");
+    const calls = localEmbedSpy.mock.calls.length;
+
+    await reembedStaleVectors();
+    expect(localEmbedSpy.mock.calls.length).toBe(calls);
   });
 });

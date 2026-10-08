@@ -5,6 +5,7 @@ const now = () => new Date().toISOString();
 const NS = "app-settings";
 const EMBEDDING_MODEL_KEY = "embedding_model_config";
 const DOCUMENT_LOCAL_EMBEDDINGS_KEY = "documents_use_bundled_local_embeddings";
+const EMBEDDING_VECTORS_SIGNATURE_KEY = "embedding_vectors_signature";
 const IDLE_TIMEOUT_KEY = "screen_lock_idle_timeout_ms";
 const REDACTION_ENABLED_KEY = "redaction_enabled";
 const AMBIENT_CONTEXT_KEY = "ambient_context_enabled";
@@ -76,11 +77,21 @@ export function setEmbeddingModelConfigName(name: string | null): string | null 
   return name;
 }
 
-export function isDocumentLocalEmbeddingsEnabled(): boolean {
+export function isLocalEmbeddingsEnabled(): boolean {
   return readJsonSetting<unknown>(DOCUMENT_LOCAL_EMBEDDINGS_KEY) === true;
 }
 
-export function setDocumentLocalEmbeddings(enabled: boolean): void {
+/** Model signature that stored memory/message vectors were last aligned to. */
+export function getEmbeddingVectorsSignature(): string | null {
+  const v = readJsonSetting<unknown>(EMBEDDING_VECTORS_SIGNATURE_KEY);
+  return typeof v === "string" && v ? v : null;
+}
+
+export function setEmbeddingVectorsSignature(signature: string): void {
+  writeJsonSetting(EMBEDDING_VECTORS_SIGNATURE_KEY, signature);
+}
+
+export function setLocalEmbeddingsEnabled(enabled: boolean): void {
   writeJsonSetting(DOCUMENT_LOCAL_EMBEDDINGS_KEY, Boolean(enabled));
 }
 

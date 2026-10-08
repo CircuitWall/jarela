@@ -16,8 +16,8 @@ const { GET, PUT } = await import("./route");
 const {
   getEmbeddingModelConfigName,
   setEmbeddingModelConfigName,
-  setDocumentLocalEmbeddings,
-  isDocumentLocalEmbeddingsEnabled,
+  setLocalEmbeddingsEnabled,
+  isLocalEmbeddingsEnabled,
 } = await import("@/lib/stores/app-settings");
 
 function putRequest(name: string) {
@@ -34,7 +34,7 @@ afterAll(() => {
 
 beforeEach(() => {
   setEmbeddingModelConfigName(null);
-  setDocumentLocalEmbeddings(false);
+  setLocalEmbeddingsEnabled(false);
   localEmbedSpy.mockReset().mockResolvedValue([new Array(LOCAL_EMBEDDING_DIMENSIONS).fill(0.01)]);
 });
 
@@ -45,7 +45,7 @@ describe("document embedding settings", () => {
 
     expect(response.status).toBe(200);
     expect(getEmbeddingModelConfigName()).toBeNull();
-    expect(isDocumentLocalEmbeddingsEnabled()).toBe(true);
+    expect(isLocalEmbeddingsEnabled()).toBe(true);
     expect(body.embedding_probe).toEqual({
       ok: true,
       provider: LOCAL_EMBEDDING_PROVIDER_NAME,
@@ -69,7 +69,7 @@ describe("document embedding settings", () => {
 
     expect(body.embedding_model_config).toBe(LOCAL_EMBEDDING_CONFIG_NAME);
     expect(getEmbeddingModelConfigName()).toBeNull();
-    expect(isDocumentLocalEmbeddingsEnabled()).toBe(true);
+    expect(isLocalEmbeddingsEnabled()).toBe(true);
     expect(body.embedding_probe).toMatchObject({ ok: true, provider: LOCAL_EMBEDDING_PROVIDER_NAME });
     expect(localEmbedSpy).toHaveBeenCalledTimes(1);
   });

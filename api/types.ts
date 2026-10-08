@@ -1063,6 +1063,8 @@ export interface DocumentReindexResult {
 
 export interface DocumentSettings {
   embedding_model_config: string | null;
+  /** Background rewrite of memory/chat vectors after a model change. */
+  reembed?: { running: boolean; total: number; done: number; error: string | null };
   embedding_probe?: {
     ok: boolean;
     provider: string;

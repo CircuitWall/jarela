@@ -3,8 +3,8 @@ import { z } from "zod";
 import {
   getEmbeddingModelConfigName,
   setEmbeddingModelConfigName,
-  setDocumentLocalEmbeddings,
-  isDocumentLocalEmbeddingsEnabled,
+  setLocalEmbeddingsEnabled,
+  isLocalEmbeddingsEnabled,
 } from "@/lib/stores/app-settings";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
@@ -13,6 +13,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { validateBody } from "@/lib/api/responses";
 import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID, LOCAL_EMBEDDING_PROVIDER_NAME } from "@/lib/embeddings/constants";
 import { embedLocally } from "@/lib/embeddings/local";
+import { getReembedStatus, reembedStaleVectors } from "@/lib/embeddings";
 
 const PutSchema = z.object({
   embedding_model_config: z.string().min(1).nullable(),
@@ -94,12 +95,13 @@ async function probeEmbeddingModelConfig(name: string | null) {
 }
 
 export async function GET() {
-  const selected = isDocumentLocalEmbeddingsEnabled()
+  const selected = isLocalEmbeddingsEnabled()
     ? LOCAL_EMBEDDING_CONFIG_NAME
     : getEmbeddingModelConfigName();
   return NextResponse.json({
     embedding_model_config: selected,
     embedding_probe: await probeEmbeddingModelConfig(selected),
+    reembed: getReembedStatus(),
   });
 }
 
@@ -111,10 +113,13 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: `unknown model config: ${name}` }, { status: 400 });
   }
   const selected = name === LOCAL_EMBEDDING_CONFIG_NAME
-    ? (setDocumentLocalEmbeddings(true), LOCAL_EMBEDDING_CONFIG_NAME)
-    : (setDocumentLocalEmbeddings(false), setEmbeddingModelConfigName(name));
+    ? (setLocalEmbeddingsEnabled(true), LOCAL_EMBEDDING_CONFIG_NAME)
+    : (setLocalEmbeddingsEnabled(false), setEmbeddingModelConfigName(name));
+  // Memory and chat vectors from the previous model are rewritten in the background.
+  void reembedStaleVectors();
   return NextResponse.json({
     embedding_model_config: selected,
     embedding_probe: await probeEmbeddingModelConfig(selected),
+    reembed: getReembedStatus(),
   });
 }
