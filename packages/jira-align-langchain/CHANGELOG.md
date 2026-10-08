@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.1] - 2026-10-08
+
+### Fixed
+
+- `jira_align_search_items` filters features by `additionalProgramIds` when
+  `program_id` is given, instead of the `programId` field that features do not
+  expose.
+- `jira_align_list_entities` filters releases by `title` when `name_filter` is
+  given, instead of `name`.
+
 ## [1.0.0] - 2026-06-13
 
 ### Changed

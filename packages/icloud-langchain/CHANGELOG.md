@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-08
+
+The 0.2.0 tag never reached npm because its publish failed, so this release
+carries everything listed under 0.2.0 as well.
+
+### Fixed
+
+- Mail listing and retrieval accept IMAP envelope dates that arrive as a `Date`
+  or as a string, so message dates no longer fail with newer `imapflow`.
+
+### Changed
+
+- Updated runtime dependencies: `imapflow` to 2.x and `tsdav` to 2.3.
+
 ## [0.2.0] - 2026-09-01
 
 ### Added
