@@ -8,7 +8,7 @@
 //
 // See ADR-0039 for the decomposition rationale.
 
-import { getRecentMessagesWindow, getThread, getThreadChannelSummary } from "@/lib/stores/threads";
+import { countMessagesBetween, getRecentMessagesWindow, getThread, getThreadChannelSummary } from "@/lib/stores/threads";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
@@ -77,6 +77,78 @@ export function unwrapWarmSummary(summary: string): {
     scope: match[1] as "foreground" | "bridge" | "all" | "none",
     content: summary.slice(match[0].length),
   };
+}
+
+// How many messages are allowed to slip from hot into warm between the
+// cached warm summary and the current turn before the summary is treated
+// as too stale to reuse. hot_since can slide forward over time as the
+// server trims old context, so a tolerance of 0 (strict equality on an
+// ISO timestamp key) means the summary never caches on an active thread
+// and we pay the LLM summariser (bounded by `warmSummaryBudgetMs`) every
+// turn. A small positive tolerance lets the cache absorb that routine
+// slide while the background compactor refreshes it async; messages in
+// the tolerance gap sit at the hot/warm edge and were already visible in
+// the hot window the model saw a turn or two ago.
+const WARM_CACHE_STALE_MESSAGE_TOLERANCE = 4;
+
+// Returns the cached warm summary content when it is safe to reuse this
+// turn, else null (summariser must rebuild). The hot path for threads
+// with no cached summary is a single property check — no scope/boundary
+// comparison at all — so the raceWithBudget wrapper on buildWarmSummary
+// still has effectively its full wall-clock budget to call the LLM.
+function resolveWarmCacheHit(
+  thread_id: string,
+  cachedWarm: { scope: "foreground" | "bridge" | "all" | "none" | null; content: string } | null,
+  cachedBoundary: string | null,
+  cachedSourceMessages: number | null,
+  currentBoundary: string | null,
+  scope: "foreground" | "bridge" | "all" | "none",
+): string | null {
+  if (!cachedWarm) return null;
+  if (cachedWarm.scope !== scope) return null;
+  if (currentBoundary === null) return null;
+  if (cachedBoundary === null) return null;
+  if (cachedBoundary === currentBoundary) return cachedWarm.content;
+  if (isWarmCacheStaleBeyondTolerance(thread_id, cachedBoundary, currentBoundary, scope, cachedSourceMessages)) {
+    return null;
+  }
+  return cachedWarm.content;
+}
+
+function isWarmCacheStaleBeyondTolerance(
+  thread_id: string,
+  cachedBoundary: string,
+  currentBoundary: string,
+  scope: "foreground" | "bridge" | "all" | "none",
+  cachedSourceMessages: number | null,
+): boolean {
+  // Boundary moved back (user drag / /compact): don't tolerate — the cached
+  // summary covers messages that are now hot, so reusing it would double
+  // up on content and misrepresent "warm" to the model. Rebuild.
+  if (currentBoundary < cachedBoundary) return true;
+  if (currentBoundary === cachedBoundary) return false;
+  // Boundary moved forward: count how many messages fell between the old
+  // and new boundary at the matching scope. One bounded DB count (cap at
+  // tolerance+1 — we only care "more than tolerance" vs "within"),
+  // cheaper than paying the LLM summariser's wall-clock budget on every
+  // turn.
+  const windowScope: "foreground" | "bridge" | "all" =
+    scope === "all" || scope === "none" ? "all" : scope;
+  const delta = countMessagesBetween(
+    thread_id,
+    cachedBoundary,
+    currentBoundary,
+    windowScope,
+    WARM_CACHE_STALE_MESSAGE_TOLERANCE + 1,
+  );
+  if (delta > WARM_CACHE_STALE_MESSAGE_TOLERANCE) return true;
+  // Sanity floor: if the cached summary was built from very few source
+  // messages, don't let a near-miss count mask a proportionally large
+  // drift (e.g. tolerance=4 against a 3-source summary is a 100%+ growth).
+  if (cachedSourceMessages !== null && cachedSourceMessages > 0 && delta > cachedSourceMessages) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -218,14 +290,26 @@ export async function buildHistoryWindow(
       const cachedWarm = cached?.warm_summary
         ? unwrapWarmSummary(cached.warm_summary)
         : null;
-      const cachedSummaryFresh =
-        !!cachedWarm
-        && cachedWarm.scope === scope
-        && boundaryKey !== null
-        && cached?.warm_summary_before === boundaryKey;
-      if (cachedSummaryFresh && cachedWarm) {
-        // Boundary-stable turn: don't pay the summariser tax again.
-        warmSummaryCtx = cachedWarm.content;
+      // Strict ISO-timestamp equality on the boundary key meant the cache
+      // almost never hit when `hot_since` advanced incrementally between
+      // turns, so the summariser paid its wall-clock-bounded LLM round-trip
+      // every turn — reported by users as "preparing context takes a
+      // really long time". Tolerate a small near-miss (boundary moved
+      // forward by only a few messages at the matching scope): reuse the
+      // cached summary and let the background compactor catch up. A
+      // backward-moved boundary (user drag / /compact) must still rebuild,
+      // because the cached summary would over-cover the now-hot range.
+      const cacheResult = resolveWarmCacheHit(
+        thread_id,
+        cachedWarm,
+        cached?.warm_summary_before ?? null,
+        cached?.warm_summary_source_messages ?? null,
+        boundaryKey,
+        scope,
+      );
+      if (cacheResult !== null) {
+        // Boundary-stable or small-slide turn: don't pay the summariser tax again.
+        warmSummaryCtx = cacheResult;
       } else {
         // In multi-channel mode allWindowMessages is channel-mixed (that's
         // the whole point — automation rows enter the HOT tier when their
