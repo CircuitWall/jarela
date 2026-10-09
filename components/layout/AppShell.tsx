@@ -9,10 +9,9 @@ import { useUrlSync } from "@/hooks/useUrlSync";
 import { useConfigurationIssues } from "@/hooks/useConfigurationIssues";
 import type { AgentConfig } from "@/api/types";
 import { ChatView } from "@/components/chat/ChatView";
-import { MemoryPanel } from "@/components/memory/MemoryPanel";
 import { ModelsPanel } from "@/components/models/ModelsPanel";
 import { CredentialsPanel } from "@/components/credentials/CredentialsPanel";
-import { DocumentsPanel } from "@/components/documents/DocumentsPanel";import { AgentsPanel } from "@/components/agents/AgentsPanel";
+import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { ToolsPanel } from "@/components/tools/ToolsPanel";
@@ -36,7 +35,7 @@ import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 
-const ADVANCED_TABS = new Set(["memory", "bridges", "logs", "env"]);
+const ADVANCED_TABS = new Set(["bridges", "logs", "env"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
@@ -503,16 +502,6 @@ export function AppShell() {
         {mountedTabs.has("agents") && (
           <Activity mode={state.activeTab === "agents" ? "visible" : "hidden"}>
             <AgentsPanel />
-          </Activity>
-        )}
-        {isFullMode && mountedTabs.has("memory") && (
-          <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
-            <MemoryPanel />
-          </Activity>
-        )}
-        {mountedTabs.has("documents") && (
-          <Activity mode={state.activeTab === "documents" ? "visible" : "hidden"}>
-            <DocumentsPanel />
           </Activity>
         )}
         {mountedTabs.has("models") && (

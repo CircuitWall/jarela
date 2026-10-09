@@ -87,7 +87,7 @@ describe("documents_add_local_source", () => {
       hits: Array<{ path: string; passages: Array<{ chunk_index: number; text: string }> }>;
     };
 
-    expect(searchMocks.searchDocuments).toHaveBeenCalledWith("term", { limit: 10, sourceId: undefined });
+    expect(searchMocks.searchDocuments).toHaveBeenCalledWith("term", { limit: 10, sourceId: undefined, minSimilarity: undefined });
     expect(out.hits).toHaveLength(2);
     expect(out.hits[0].path).toBe("guide.md");
     expect(out.hits[0].passages.map((passage) => passage.chunk_index)).toEqual([0, 1]);

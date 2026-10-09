@@ -18,11 +18,14 @@ function useDebounce<T>(value: T, ms: number): T {
   return d;
 }
 
-export function MemoryPanel() {
+export function MemoryPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const [nsFilter, setNsFilter] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const search = useDebounce(searchInput, 300);
-  const { items, loading, create, update, remove, refresh } = useMemory(nsFilter || undefined, search || undefined);
+  const { items, loading, create, update, remove, refresh } = useMemory(
+    nsFilter || undefined,
+    !embedded && search ? search : undefined,
+  );
   const [editing, setEditing] = useState<MemoryItem | null | "new">(null);
   const [policy, setPolicy] = useState<MemoryPolicy>("balanced");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,10 +48,17 @@ export function MemoryPanel() {
   const namespaces = [...new Set(items.map((i) => i.namespace))].sort();
 
   return (
-    <div className="flex flex-col h-full">
-      <PanelHeader icon={<Brain size={14} />} title="Memory">
-        <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setEditing("new")} />
-      </PanelHeader>
+    <div className={embedded ? "flex flex-col min-h-0" : "flex flex-col h-full"}>
+      {!embedded && (
+        <PanelHeader icon={<Brain size={14} />} title="Memory">
+          <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setEditing("new")} />
+        </PanelHeader>
+      )}
+      {embedded && (
+        <div className="flex justify-end px-4 pt-3">
+          <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setEditing("new")} />
+        </div>
+      )}
       <div className="px-4 py-2 space-y-2 border-b border-border">
         <label className="flex items-center gap-2 text-[11px] text-fg-subtle">
           <span className="shrink-0">Proactive memory</span>
@@ -59,18 +69,20 @@ export function MemoryPanel() {
           </Select>
         </label>
         <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-faint pointer-events-none" />
-            <TextInput className="pl-7"
-              placeholder="Search…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
-          </div>
+          {!embedded && (
+            <div className="relative flex-1">
+              <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-faint pointer-events-none" />
+              <TextInput className="pl-7"
+                placeholder="Search…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+            </div>
+          )}
           <Select aria-label="Memory namespace" full={false} value={nsFilter} onChange={(e) => setNsFilter(e.target.value)}>
             <option value="">All namespaces</option>
             {namespaces.map((ns) => <option key={ns} value={ns}>{ns}</option>)}
           </Select>
         </div>
       </div>
-      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-2">
+      <div ref={containerRef} className={embedded ? "max-h-72 overflow-y-auto no-scrollbar px-4 py-2" : "flex-1 overflow-y-auto no-scrollbar px-4 py-2"}>
         {loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">Loading…</p>}
         {!loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">No memory items yet</p>}
         {items.map((item) => (

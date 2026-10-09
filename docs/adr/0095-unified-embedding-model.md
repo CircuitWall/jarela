@@ -21,6 +21,15 @@ The same background pass embeds memory and message rows that never received a ve
 
 One search function, `searchMemory`, backs proactive recall, `memory_search`, `memory_list` with a search term, and the Memory panel. It combines similarity with keyword overlap for unembedded rows and, for tools and the panel, exact text matches ranked first. `memory_search` searches memory only unless `include_chats` is set, in which case live and archived chat turns are included. `memory_list` without a search term remains a plain newest-first listing and still shows entries that similarity search hides, such as sensitive or archived ones.
 
+The Memory workspace combines Documents and chat-history search while keeping
+saved-fact management in its own section. The bundled local model uses a
+provisional `0.84` cosine floor for chat results; other providers retain the
+existing `0.25` floor. `memory_search` can override `min_chat_similarity` to
+widen chat retrieval. Documents use a separate provisional local floor of
+`0.86`, exposed as `min_similarity` on `documents_search`. Both local values
+come from a small, unlabeled sample and should be revisited with judged
+relevance data.
+
 ## Consequences
 
 * Good, because choosing Jarela Local keeps documents, memory, and chat text on the device.

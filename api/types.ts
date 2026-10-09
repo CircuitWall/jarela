@@ -442,6 +442,18 @@ export interface MemoryItem {
   updated_at: string;
 }
 
+export interface MemorySearchHit {
+  source: "memory" | "message";
+  namespace?: string;
+  key?: string;
+  thread_id?: string;
+  role?: string;
+  content: string;
+  score: number;
+  created_at: string;
+  match?: "semantic" | "keyword" | "literal";
+}
+
 export interface ModelConfig {
   name: string;
   provider: "openai" | "anthropic" | "github-copilot" | string;

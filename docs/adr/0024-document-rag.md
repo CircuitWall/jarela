@@ -75,13 +75,18 @@ cap to 5 000 so an explicit user click is bounded but exhaustive.
 
 `searchDocuments(query, { limit, sourceId? })`:
 
-- Embed the query (`embedOne`), pull all chunks from enabled sources
+- Embed the query (`embedQueryOne`), pull all chunks from enabled sources
   (capped at 20 000 rows per call as a defensive ceiling), score each
-  with cosine, return top-k.
+   with cosine, and return top-k hits above the configured similarity floor.
 - For chunks without embeddings (no provider configured, or new
   chunks still waiting on the embed batch), fall back to substring
   / token-overlap scoring with a known-lower ceiling so embedded hits
   always sort first when both exist.
+- The bundled local model uses a provisional cosine floor of `0.86`,
+   calibrated against a small local query sample. Other providers retain
+   `0.25` until their score distributions are measured. `documents_search`
+   accepts `min_similarity` so agents can lower the floor to widen results;
+   substring fallback is unaffected.
 
 Exposed via the `documents_search` tool (category `Documents`) and the
 `GET /api/v1/documents/search` endpoint (used by the panel's preview
@@ -95,15 +100,23 @@ eight chunk hits into up to five files with at most two excerpts each.
 
 ### UI
 
-A new top-level `documents` tab under the Common section of the menu.
-The panel lets the user:
+Documents search and chat-history search share the **Tools → Memory**
+workspace. One query searches either or both channels; results are grouped by
+file or conversation and ranked by similarity relative to each channel's
+active floor. Exact, keyword, and substring fallbacks remain visible below
+semantic results. The locally calibrated chat floor is provisionally `0.84`
+(`0.25` for other providers); `memory_search` accepts `min_chat_similarity`
+to widen chat results.
+
+Saved facts and document-source controls live in collapsed sections below the
+results. The workspace lets the user:
 
 - Add a folder by absolute path with an optional label.
 - Toggle each source `enabled` / `disabled`.
 - Reindex on demand.
 - See per-source stats (`files`, `chunks`, `embedded`, `last scan`,
   last error).
-- Run a quick preview search.
+- Run a combined Documents/Chats search.
 
 Deletes only remove the index entries — files on disk are untouched.
 

@@ -38,6 +38,10 @@ export function useUrlSync(): UnifiedHookResult<
       tab = "tools";
       item = "packages";
     }
+    if (tab === "documents" || tab === "memory") {
+      tab = "tools";
+      item = "memory";
+    }
     // Browser-extension "Open Jarela" passes ?agent=<id> (and optionally
     // ?thread=<id>) so the app lands on the user's currently-picked
     // target agent instead of whichever chat was last open. The agent
