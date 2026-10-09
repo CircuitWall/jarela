@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useSSE } from "@/hooks/useSSE";
 
 const submitRunMock = vi.fn();
@@ -24,6 +24,13 @@ vi.mock("@/api/client", () => ({
 vi.mock("@/lib/ui/loading", () => ({
   pushActivity: () => ({ set: setActivityMock, setInflightTools: () => {}, clear: clearActivityMock }),
 }));
+
+// Every test sets up its own mock behavior; without this, call counts and
+// queued mockReturnValueOnce()s leak across tests sharing these module-level
+// mocks, which silently corrupts assertions like toHaveBeenCalledTimes.
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function streamDone(): AsyncIterable<string> {
   return {
@@ -143,5 +150,157 @@ describe("useSSE contract", () => {
       result.current.commands.clearToolEvents();
     });
     expect(result.current.toolEvents).toEqual([]);
+  });
+});
+
+// ADR-0080 steering: the model keeps streaming into the SAME connection
+// after a mid-run message (preModelHook drains it before the next model
+// call) — a true stream break only happens in the rare edge case where
+// steering lands during the final model call. Arming must not disrupt the
+// live bubble on the mainline path, and must only freeze/reconnect at an
+// actual `done` boundary.
+describe("useSSE steering continuation (ADR-0080)", () => {
+  it("armSteeredContinuation alone is a non-destructive ref update", () => {
+    const { result } = renderHook(() => useSSE());
+
+    act(() => {
+      result.current.commands.armSteeredContinuation("steer-1");
+    });
+
+    expect(result.current.streamingContent).toBe("");
+    expect(result.current.steeredSegments).toEqual([]);
+  });
+
+  // A stream that yields nothing until `release()` is called, so the test
+  // can deterministically arm the ref — synchronously, between two plain
+  // `act()` calls — before the mocked stream is allowed to produce its
+  // first event. This sidesteps any ambiguity about microtask ordering
+  // between `start()`'s internal awaits and the test's own statements.
+  function gatedStream(events: Record<string, unknown>[]) {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    return {
+      iterable: {
+        async *[Symbol.asyncIterator]() {
+          await gate;
+          for (const ev of events) yield JSON.stringify(ev);
+        },
+      },
+      release: () => release(),
+    };
+  }
+
+  it("keeps multiple deltas in one continuous buffer while armed, until the done boundary", async () => {
+    submitRunMock.mockResolvedValue({ accepted: true });
+    const first = gatedStream([
+      { type: "text_delta", delta: "hello " },
+      { type: "text_delta", delta: "world" },
+      { type: "done" },
+    ]);
+    subscribeRunMock.mockReturnValueOnce(first.iterable);
+
+    const { result } = renderHook(() => useSSE());
+
+    let startPromise!: Promise<{ accepted: boolean }>;
+    act(() => {
+      startPromise = result.current.commands.start("thread-1", "hi");
+    });
+    act(() => {
+      result.current.commands.armSteeredContinuation("steer-1");
+    });
+
+    await act(async () => {
+      first.release();
+      await startPromise;
+    });
+
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+
+    // The model kept writing into the same bubble across the steer — this
+    // is the mainline (non-edge) case ADR-0080 describes. Both deltas landed
+    // in one place; nothing was frozen/split until `done` actually fired.
+    expect(result.current.steeredSegments).toEqual([{ id: "steer-1", content: "hello world" }]);
+  });
+
+  it("freezes the live content into a steeredSegment only at the done boundary, then reconnects", async () => {
+    submitRunMock.mockResolvedValue({ accepted: true });
+    const first = gatedStream([
+      { type: "text_delta", delta: "prior live answer" },
+      { type: "done" },
+    ]);
+    subscribeRunMock
+      .mockReturnValueOnce(first.iterable)
+      // Reconnect after the armed `done` — simulates the rare edge case
+      // where undelivered steering triggers a genuine continuation turn.
+      .mockReturnValueOnce({
+        async *[Symbol.asyncIterator]() {
+          yield JSON.stringify({ type: "text_delta", delta: "steered live answer" });
+          yield JSON.stringify({ type: "done" });
+        },
+      });
+
+    const { result } = renderHook(() => useSSE());
+
+    let startPromise!: Promise<{ accepted: boolean }>;
+    act(() => {
+      startPromise = result.current.commands.start("thread-1", "hi");
+    });
+    act(() => {
+      result.current.commands.armSteeredContinuation("steer-1");
+    });
+
+    await act(async () => {
+      first.release();
+      await startPromise;
+    });
+
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+    expect(subscribeRunMock).toHaveBeenCalledTimes(2);
+    expect(result.current.steeredSegments).toEqual([{ id: "steer-1", content: "prior live answer" }]);
+    expect(result.current.streamingContent).toBe("steered live answer");
+  });
+
+  it("rollbackSteeredSegment undoes a reactive split when the steer PATCH is rejected", async () => {
+    submitRunMock.mockResolvedValue({ accepted: true });
+    const first = gatedStream([
+      { type: "text_delta", delta: "prior live answer" },
+      { type: "done" },
+    ]);
+    subscribeRunMock
+      .mockReturnValueOnce(first.iterable)
+      // No real continuation was ever queued, so the reconnect this test
+      // triggers resolves to the server's immediate synthetic `done`.
+      .mockReturnValueOnce({
+        async *[Symbol.asyncIterator]() {
+          yield JSON.stringify({ type: "done" });
+        },
+      });
+
+    const { result } = renderHook(() => useSSE());
+
+    let startPromise!: Promise<{ accepted: boolean }>;
+    act(() => {
+      startPromise = result.current.commands.start("thread-1", "hi");
+    });
+    act(() => {
+      result.current.commands.armSteeredContinuation("steer-1");
+    });
+
+    await act(async () => {
+      first.release();
+      await startPromise;
+    });
+
+    await waitFor(() => expect(result.current.steeredSegments.length).toBe(1));
+
+    act(() => {
+      result.current.commands.rollbackSteeredSegment("steer-1");
+    });
+
+    // The server never actually got this steer, so there is no continuation
+    // to wait for — the frozen fragment is restored into the live bubble
+    // exactly as it would have rendered without the steer attempt.
+    expect(result.current.steeredSegments).toEqual([]);
+    expect(result.current.streamingContent).toBe("prior live answer");
   });
 });

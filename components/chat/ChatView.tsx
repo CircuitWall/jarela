@@ -31,7 +31,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   const { state } = useAppContext();
   const [attachments, setAttachments] = useState<ContentPart[]>([]);
   const [compacting, setCompacting] = useState(false);
-  const [steeredSegments, setSteeredSegments] = useState<Array<{ id: string; content: string }>>([]);
   const { userProfile, profileLoading, agentConfig, agentConfigLoading } =
     useUserProfileAndAgent(agentId);
   // Lifted here (not called again inside MessageList) so the channel chips'
@@ -69,9 +68,10 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       setHasMore: thread.setHasMore,
       applyMeta: thread.metaApplier,
       clearStreaming: () => {
+        // Clears streamingContent and steeredSegments together — see
+        // useSSE's clearStreamingContent.
         clearStreamingRef.current();
         clearToolEventsRef.current();
-        setSteeredSegments([]);
       },
       pendingAutoSpeakRef,
     }).finally(() => drainQueueRef.current());
@@ -154,12 +154,20 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   // Hand a mid-run message to the agent that is already streaming (ADR-0080).
   // Mirrors launchRun's optimistic bubble so the composer doesn't silently
   // swallow the message while the run continues.
+  //
+  // Arm BEFORE the PATCH (not after) so a `done` that races in during that
+  // round trip still gets caught by useSSE's consume() loop — but arming
+  // alone never touches the live bubble. In the mainline case (preModelHook
+  // drains the steer into this same ongoing stream — ADR-0080) the bubble
+  // just keeps growing untouched; a visible split only happens reactively,
+  // at the point a `done` actually arrives while armed. Steering used to
+  // split the bubble here, eagerly, on every attempt — which froze the live
+  // answer and blanked it mid-generation even though nothing had actually
+  // broken the stream, i.e. almost always.
   const steerRun = useCallback(async (text: string): Promise<boolean> => {
     if (!threadId) return false;
     const optId = `opt-${makeQueuedId("")}`;
-    const priorContent = sse.splitStreamingContent();
-    if (priorContent) setSteeredSegments((segments) => [...segments, { id: optId, content: priorContent }]);
-    sse.expectSteeredContinuation(true);
+    sse.armSteeredContinuation(optId);
     thread.setMessages((p) => [
       ...p,
       { id: optId, role: "user", content: text, created_at: new Date().toISOString(), status: 'steering' },
@@ -167,9 +175,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     const { steered } = await api.threads.steerRun(threadId, text);
     if (!steered) {
       thread.setMessages((p) => p.filter((m) => m.id !== optId));
-      setSteeredSegments((segments) => segments.filter((segment) => segment.id !== optId));
-      sse.restoreStreamingContent(priorContent);
-      sse.expectSteeredContinuation(false);
+      sse.rollbackSteeredSegment(optId);
     }
     return steered;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -234,7 +240,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       <MessageList
         threadId={threadId}
         messages={thread.messages}
-        steeredSegments={steeredSegments}
+        steeredSegments={sse.steeredSegments}
         notices={thread.notices}
         agentConfig={agentConfig}
         userProfile={userProfile}
