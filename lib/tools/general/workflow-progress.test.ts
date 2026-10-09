@@ -79,14 +79,52 @@ describe("workflow_progress tool", () => {
     expect(state.checklist.map((item) => item.id)).toEqual(["instructions", "tools", "scheduled-work"]);
   });
 
-  it("rejects unsupported workflow ids", async () => {
+  it("accepts agent-created checklist snapshots", async () => {
     const out = parse(await workflowProgressTool.invoke({
       workflow_id: "integration_setup",
-      phase: "impact_radius",
+      phase: "verification",
+      summary: "Connect and verify the provider",
+      items: [
+        { id: "check-prerequisites", label: "Check prerequisites", status: "done" },
+        { id: "configure-provider", label: "Configure provider", status: "checking" },
+        { id: "verify-connection", label: "Verify connection" },
+      ],
     }));
 
-    expect(out.ok).toBe(false);
-    expect(String(out.error)).toContain("unsupported workflow_id");
+    expect(out.ok).toBe(true);
+    expect(out.workflow_id).toBe("integration_setup");
+    expect(out.state).toMatchObject({
+      phase: "verification",
+      summary: "Connect and verify the provider",
+      checklist: [
+        { id: "check-prerequisites", status: "done" },
+        { id: "configure-provider", status: "checking" },
+        { id: "verify-connection", status: "pending" },
+      ],
+    });
+  });
+
+  it("requires full snapshots and refuses completion while items are open", async () => {
+    const missingItems = parse(await workflowProgressTool.invoke({ workflow_id: "migration" }));
+    expect(missingItems.ok).toBe(false);
+    expect(String(missingItems.error)).toContain("complete current items checklist");
+
+    const openItems = parse(await workflowProgressTool.invoke({
+      workflow_id: "migration",
+      phase: "complete",
+      items: [{ id: "verify", label: "Verify migration", status: "checking" }],
+    }));
+    expect(openItems.ok).toBe(false);
+    expect(String(openItems.error)).toContain("items remain open");
+
+    const partialItemUpdate = parse(await workflowProgressTool.invoke({
+      workflow_id: "migration",
+      item_id: "verify",
+      status: "done",
+      items: [{ id: "verify", label: "Verify migration", status: "checking" }],
+    }));
+    expect(partialItemUpdate.ok).toBe(false);
+    expect(String(partialItemUpdate.error)).toContain("complete items checklist");
   });
 
   it("returns a structured error for unknown item ids", async () => {

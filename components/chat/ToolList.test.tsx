@@ -336,6 +336,32 @@ describe("ToolList — live progress (ADR-0073)", () => {
     expect(screen.getByLabelText("checking")).toBeTruthy();
   });
 
+  it("previews agent-created workflow items while the tool call is running", () => {
+    const events: ToolEvent[] = [{
+      id: "w2",
+      phase: "call",
+      name: "workflow_progress",
+      payload: {
+        workflow_id: "release_review",
+        phase: "verification",
+        items: [
+          { id: "check-changes", label: "Review changes", status: "done" },
+          { id: "run-tests", label: "Run tests", status: "checking" },
+          { id: "report-result", label: "Report result" },
+        ],
+      },
+    }];
+
+    render(<ToolList events={events} />);
+    fireEvent.click(screen.getByText("workflow_progress"));
+
+    expect(screen.getAllByText("Review changes").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Run tests").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Report result").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("done")).toBeTruthy();
+    expect(screen.getByLabelText("checking")).toBeTruthy();
+  });
+
   it("renders an invoke_tool dispatch under the target tool's name, args and result", () => {
     const events: ToolEvent[] = [
       {

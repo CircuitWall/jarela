@@ -267,6 +267,10 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("6. Read large results by reference.");
     expect(ctx).toContain("7. Verify before reporting.");
     expect(ctx).toContain("8. Stop and ask.");
+    expect(ctx).toContain("For substantial tasks with several dependent phases, likely cross-turn progress, or explicit verification, use workflow_progress");
+    expect(ctx).toContain("send the complete current item list on each update");
+    expect(ctx).toContain("keep secrets or private data out of checklist fields");
+    expect(ctx).toContain("Mark items done only after verifying the action");
     expect(ctx).toContain("read, write, execute, send, schedule, delete, propose");
     expect(ctx).toContain("performed, proposed, blocked, failed, not_performed");
 
