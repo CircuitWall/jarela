@@ -174,6 +174,7 @@ export async function buildHistoryWindow(
   options: {
     scope?: "foreground" | "bridge" | "all" | "none";
     includeWarm?: boolean;
+    includeFacts?: boolean;
     bridgeKey?: string;
     /**
      * ADR-0044 — active channel set for this turn. "chat" plus zero or more
@@ -366,7 +367,9 @@ export async function buildHistoryWindow(
       ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, used));
     } else {
       const factsCap = budget.tierBudgets.facts + spill;
-      factsCtx = await buildFactsContext(trimmedMessage, factsCap);
+      factsCtx = options.includeFacts === false
+        ? ""
+        : await buildFactsContext(trimmedMessage, factsCap);
       const used = estimateTokens(factsCtx);
       ({ spill } = applyTierSpill(budget.tierBudgets.facts, spill, used));
     }

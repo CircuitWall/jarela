@@ -222,6 +222,9 @@ export function ModelsPanel() {
             <p className="text-[11px] text-fg-faint">
               Each strategy sets both model routing and usage behavior. Cost saving favors cheaper routes, smaller context/output budgets, and concise replies. Per-agent overrides take precedence.
             </p>
+            <p className="text-[11px] text-fg-faint">
+              High reasoning automatically recalls saved facts and prior chats. Other strategies rely on explicit agent searches when that context is needed.
+            </p>
             <div className="border-t border-border/60 pt-2">
               <p className="text-[11px] text-fg-subtle font-medium mb-1">
                 Agent strategy overrides ({strategyOverrides.length})

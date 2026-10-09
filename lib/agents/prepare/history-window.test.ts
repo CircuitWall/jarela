@@ -34,6 +34,7 @@ vi.mock("@/lib/embeddings", () => ({
 
 const { addMessage, createThread, deleteThread, getThread, listThreads, setThreadContextPin, setThreadWarmSummary, commitThreadChannelSummary } =
   await import("@/lib/stores/threads");
+const { putMemory, deleteMemory } = await import("@/lib/stores/memory");
 const { buildHistoryWindow, wrapWarmSummary } = await import("./history-window");
 const { refreshWarmSummary } = await import("../warm-summary-background");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
@@ -536,6 +537,29 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(result.factsCtx).toBe("");
     // 100ms recall + 100ms warm summary budgets, with margin.
     expect(elapsed).toBeLessThan(2000);
+  });
+
+  it("skips automatic facts recall when disabled and permits an explicit override", async () => {
+    const thread = createThread("test-agent", "strategy-recall");
+    addMessage(thread.thread_id, "user", "where is the deployment plan?");
+    putMemory("facts", "strategy-recall", "deployment plan is in the release guide");
+    recallSpy.mockReset().mockResolvedValue([]);
+
+    try {
+      await buildHistoryWindow(thread.thread_id, agentCfg(), providerParams, "deployment plan", modelInfo, undefined, {
+        includeWarm: false,
+        includeFacts: false,
+      });
+      expect(recallSpy).not.toHaveBeenCalled();
+
+      await buildHistoryWindow(thread.thread_id, agentCfg(), providerParams, "deployment plan", modelInfo, undefined, {
+        includeWarm: false,
+        includeFacts: true,
+      });
+      expect(recallSpy).toHaveBeenCalledWith("deployment plan", 30);
+    } finally {
+      deleteMemory("facts", "strategy-recall");
+    }
   });
 });
 

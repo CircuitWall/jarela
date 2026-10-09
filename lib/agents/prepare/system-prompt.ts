@@ -63,6 +63,9 @@ export interface SystemPromptContext {
    *  "I don't have access to WhatsApp" hallucination. */
   deliveryChannel?: DeliveryChannel | null;
   usageStrategyInstruction?: string;
+  /** Whether chat-history and saved-fact recall are automatically injected this turn. */
+  autoRecallEnabled?: boolean;
+  autoFactsEnabled?: boolean;
   /** Tool names available to this run. Used to derive compact historical
    *  reliability hints from aggregate tool stats only. */
   allowedTools?: readonly string[];
@@ -157,6 +160,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     ctx.conversationGapCtx,
     buildOutputBudgetContext(budget),
     ctx.usageStrategyInstruction,
+    buildAutomaticRecallGuidance(ctx.autoRecallEnabled === true, ctx.autoFactsEnabled === true),
     ...tierOrderCtx,
     recallCtx,
   ];
@@ -599,12 +603,36 @@ function buildMemoryContext(budget: ContextBudget): string {
       : "Store explicit preferences, verified facts, durable decisions, constraints, and project context. Store task details only when they will matter across sessions.";
   return [
     "--- Memory & recall ---",
-    "You have long-term memory across sessions and a fresh recall pass on every turn.",
+    "You have long-term memory across sessions.",
     `- Hot conversation history is budgeted by model context size: ${formatContextBudgetSummary(budget)}.`,
-    '- A semantic search over all stored memory entries + past chat messages was run against the user\'s turn; matching items appear under "Relevant context" below.',
     `- Active memory policy: ${policy}. ${writeGuidance}`,
-    "- Use memory_upsert proactively for structured records. Use namespace='facts', concise tags, confidence='explicit' for user-stated information, observed_at when the information was true, and expires_at for temporary facts. Keep memory_write only for legacy/free-form notes. Use memory_read / memory_list to recall stored facts on demand.",
-    "- If you want detail from outside the recent window, the user can scroll up — but for facts you've stored explicitly, prefer recall over guessing.",
+    "- Use memory_upsert proactively for structured records. Use namespace='facts', concise tags, confidence='explicit' for user-stated information, observed_at when the information was true, and expires_at for temporary facts. Keep memory_write only for legacy/free-form notes.",
+    "- Use memory_search proactively when relevant saved facts or prior conversations could help. Use memory_read / memory_list to inspect known entries.",
+  ].join("\n");
+}
+
+function buildAutomaticRecallGuidance(autoRecallEnabled: boolean, autoFactsEnabled: boolean): string {
+  if (autoRecallEnabled && autoFactsEnabled) {
+    return [
+      "--- Automatic recall ---",
+      "Automatic semantic recall of saved facts and prior chat messages is enabled for this turn. Matching results, when any, appear below.",
+    ].join("\n");
+  }
+  if (autoRecallEnabled) {
+    return [
+      "--- Automatic recall ---",
+      "Automatic semantic recall of prior chat messages is enabled for this turn. Saved-fact injection is off; call memory_search if a stored fact may help.",
+    ].join("\n");
+  }
+  if (autoFactsEnabled) {
+    return [
+      "--- Automatic recall ---",
+      "Automatic saved-fact recall is enabled for this turn. Chat-history recall is off; call memory_search with include_chats=true if a prior conversation may help.",
+    ].join("\n");
+  }
+  return [
+    "--- Automatic recall ---",
+    "Automatic saved-fact and chat-history recall is off for this turn. Proactively call memory_search when prior facts or conversations could help; use documents_search for relevant indexed project content.",
   ].join("\n");
 }
 

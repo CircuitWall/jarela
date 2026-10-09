@@ -34,7 +34,7 @@ import {
 import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateCostUsd, CACHE_READ_INPUT_RATE_MULTIPLIER } from "@/lib/stores/pricing";
 import { DEFAULT_CONTEXT_WINDOW_TOKENS, estimateTokens } from "@/lib/agents/context-budget";
-import { getUsageStrategyProfile, resolveOutputTokenCap, resolveUsageStrategy } from "@/lib/agents/usage-strategy";
+import { getUsageStrategyProfile, resolveOutputTokenCap, resolveUsageStrategy, shouldAutoRecall } from "@/lib/agents/usage-strategy";
 import { getKnownContextLength } from "@/lib/providers/known-context-windows";
 import { modelThinksByDefault, thinkingReductionParams } from "@/lib/providers/capabilities";
 import { classifyStall, resolveDetector } from "@/lib/agents/hallucination-classifier";
@@ -487,6 +487,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // router_policy: set = use this policy, null = follow global JARELA_MODEL_ROUTER_POLICY.
   const usageStrategy = resolveUsageStrategy(agentCfg.usage_strategy, getConfig().usageStrategy);
   const usageProfile = getUsageStrategyProfile(usageStrategy);
+  const autoRecallEnabled = shouldAutoRecall(usageStrategy, req.context_profile?.include_recall !== false);
+  const autoFactsEnabled = shouldAutoRecall(usageStrategy, req.context_profile?.include_facts !== false);
   const agentRouterEnabled = agentCfg.router_enabled ?? null;
   const useRouter = agentRouterEnabled === 1
     ? true
@@ -644,6 +646,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     {
       scope: req.context_profile?.history_scope,
       includeWarm: req.context_profile?.include_warm,
+      includeFacts: autoFactsEnabled,
       bridgeKey: req.history_bridge_key ?? undefined,
       channels: req.channels,
     },
@@ -677,7 +680,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const oldestInWindow = historyWindow.history.length > 0
     ? contentText(historyWindow.history[0].content)
     : null;
-  const rawRecallCtx = req.context_profile && req.context_profile.include_recall === false
+  const rawRecallCtx = !autoRecallEnabled
     ? { text: "", memoryHits: 0, messageHits: 0 }
     : await raceWithBudget(
       buildRecallContext(req.thread_id, trimmed, oldestInWindow, surroundingsQuery),
@@ -750,6 +753,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     sourceManifest,
     deliveryChannel: req.delivery_channel ?? null,
     usageStrategyInstruction: usageProfile.promptInstruction,
+    autoRecallEnabled,
+    autoFactsEnabled,
     allowedTools,
     toolPermissionMap,
   });

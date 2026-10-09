@@ -73,6 +73,10 @@ export function resolveUsageStrategy(agentOverride: unknown, globalStrategy: unk
   return parseUsageStrategy(agentOverride) ?? parseUsageStrategy(globalStrategy) ?? "balanced";
 }
 
+export function shouldAutoRecall(strategy: UsageStrategy, profileEnabled = true): boolean {
+  return strategy === "high_reasoning" && profileEnabled;
+}
+
 export function getUsageStrategyProfile(strategy: UsageStrategy): UsageStrategyProfile {
   return PROFILES[strategy];
 }
