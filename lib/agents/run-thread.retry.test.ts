@@ -284,7 +284,7 @@ describe("prepareThreadRun transient retry", () => {
     expect(streamWithConfigMock).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps per-agent router policy as retry seed instead of reverting to global", async () => {
+  it("uses the agent strategy for routing and retry policy despite legacy router fields", async () => {
     process.env.JARELA_MODEL_ROUTER_MODE = "heuristic";
     process.env.JARELA_MODEL_ROUTER_POLICY = "balanced";
 
@@ -297,8 +297,9 @@ describe("prepareThreadRun transient retry", () => {
       instructions: "Be helpful.",
       tools: [],
       model_config_name: null,
-      router_enabled: true,
-      router_policy: "cheap",
+      usage_strategy: "cost_saving",
+      router_enabled: false,
+      router_policy: "quality",
     });
     const thread = createThread("agent-retry-policy");
 
@@ -372,6 +373,8 @@ describe("prepareThreadRun transient retry", () => {
       tools: [],
       model_config_name: null,
       usage_strategy: "cost_saving",
+      router_enabled: false,
+      router_policy: "quality",
     });
     const thread = createThread("agent-cost-saving");
 
@@ -402,9 +405,9 @@ describe("prepareThreadRun transient retry", () => {
       };
     };
     expect(firstOptions.agent_run_config.route_decision).toMatchObject({ source: "heuristic", policy: "cheap" });
-    expect(firstOptions.agent_run_config.max_output_tokens).toBe(4_096);
-    expect(firstOptions.agent_run_config.output_reserve_tokens).toBe(4_096);
-    expect(firstOptions.agent_run_config.system_prompt).toContain("Cost-saving response style");
+    expect(firstOptions.agent_run_config.max_output_tokens).toBe(2_048);
+    expect(firstOptions.agent_run_config.output_reserve_tokens).toBe(2_048);
+    expect(firstOptions.agent_run_config.system_prompt).toContain("Economical response style");
   });
 
   it("applies cost-saving to the model's real window and turns thinking off where the provider allows", async () => {
@@ -433,7 +436,7 @@ describe("prepareThreadRun transient retry", () => {
       agent_run_config: { max_output_tokens?: number; thinking_params?: unknown };
     };
     expect(options.agent_run_config.thinking_params).toEqual({ thinking: { type: "disabled" } });
-    expect(options.agent_run_config.max_output_tokens).toBe(4_096);
+    expect(options.agent_run_config.max_output_tokens).toBe(2_048);
   });
 
   it("leaves output headroom when the model config explicitly keeps thinking on", async () => {
@@ -464,7 +467,7 @@ describe("prepareThreadRun transient retry", () => {
       agent_run_config: { max_output_tokens?: number; thinking_params?: unknown };
     };
     expect(options.agent_run_config.thinking_params).toBeUndefined();
-    expect(options.agent_run_config.max_output_tokens).toBe(32_768);
+    expect(options.agent_run_config.max_output_tokens).toBe(2_048);
   });
 
   it("lifts the cost-saving context cap for attachment turns without changing other strategy settings", async () => {
@@ -508,8 +511,8 @@ describe("prepareThreadRun transient retry", () => {
       };
     };
     expect(options.agent_run_config.route_decision.policy).toBe("cheap");
-    expect(options.agent_run_config.max_output_tokens).toBe(4_096);
-    expect(options.agent_run_config.system_prompt).toContain("Cost-saving response style");
+    expect(options.agent_run_config.max_output_tokens).toBe(2_048);
+    expect(options.agent_run_config.system_prompt).toContain("Economical response style");
   });
 
   it("flags a local stall without starting a quality retry under cost-saving", async () => {

@@ -68,9 +68,8 @@ export interface AgentConfigRow {
   // resolves via the integration's default credential, preserving the
   // legacy single-instance behaviour).
   tool_credentials: string | null;
-  // Per-agent model router settings (added via ALTER TABLE migration).
-  // router_policy: "cheap" | "fast" | "balanced" | "quality" | null (inherit global)
-  // router_enabled: 1 = always route, 0 = never route, NULL = inherit global mode
+  // Legacy per-agent router fields retained for stored-config compatibility.
+  // usage_strategy is authoritative at runtime.
   router_policy: string | null;
   router_enabled: number | null;
   usage_strategy: string | null;
@@ -178,13 +177,11 @@ export interface UpsertAgentInput {
   // = keep existing. An empty object clears every override; missing keys
   // fall back to the integration's default credential at call time.
   tool_credentials?: Record<string, string>;
-  // Per-agent router policy. null = clear override (use global env var).
-  // undefined = keep existing.
+  // Deprecated legacy router field; usage_strategy is authoritative at runtime.
   router_policy?: "cheap" | "fast" | "balanced" | "quality" | null;
-  // Per-agent router enable. null = clear override (inherit global mode).
-  // undefined = keep existing.
+  // Deprecated legacy router field; usage_strategy is authoritative at runtime.
   router_enabled?: boolean | null;
-  usage_strategy?: "cost_saving" | "balanced" | "high_reasoning" | null;
+  usage_strategy?: "cost_saving" | "fast" | "balanced" | "high_reasoning" | null;
 }
 
 /**
@@ -319,7 +316,7 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
       : input.router_enabled === null
         ? null
         : (input.router_enabled ? 1 : 0);
-  const VALID_USAGE_STRATEGIES = new Set(["cost_saving", "balanced", "high_reasoning"]);
+  const VALID_USAGE_STRATEGIES = new Set(["cost_saving", "fast", "balanced", "high_reasoning"]);
   const usageStrategy =
     input.usage_strategy === undefined
       ? (existing?.usage_strategy ?? null)

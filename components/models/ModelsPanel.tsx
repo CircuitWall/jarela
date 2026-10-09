@@ -213,14 +213,14 @@ export function ModelsPanel() {
                 disabled={routerLoading || routerSaving !== null}
                 onChange={(e) => { void handleGlobalStrategyChange(e.target.value as GlobalStrategy); }}
               >
-                <option value="cost_saving">Cost saving</option>
+                <option value="cost_saving">Economical</option>
                 <option value="fast">Fast</option>
                 <option value="balanced">Balanced</option>
                 <option value="high_reasoning">High reasoning</option>
               </Select>
             </label>
             <p className="text-[11px] text-fg-faint">
-              Each strategy sets both model routing and usage behavior. Cost saving favors cheaper routes, smaller context/output budgets, and concise replies. Per-agent overrides take precedence.
+              Each strategy sets model selection and usage behavior together. Economical favors lower-cost models, smaller context/output budgets, reduced thinking, fewer retries, and concise replies. Per-agent strategy overrides take precedence.
             </p>
             <p className="text-[11px] text-fg-faint">
               High reasoning automatically recalls saved facts and prior chats. Other strategies rely on explicit agent searches when that context is needed.
@@ -252,10 +252,10 @@ export function ModelsPanel() {
             </div>
             <div>
               <label className="block space-y-1">
-                <span className="text-[11px] text-fg-faint">Router mode</span>
+                <span className="text-[11px] text-fg-faint">Balanced strategy router mode</span>
                 <Select
                   value={routerMode}
-                  disabled={routerLoading || routerSaving !== null}
+                  disabled={routerLoading || routerSaving !== null || globalStrategy !== "balanced"}
                   onChange={(e) => { void handleRouterModeChange(e.target.value as RouterMode); }}
                 >
                   <option value="off">Off</option>
@@ -264,7 +264,7 @@ export function ModelsPanel() {
               </label>
             </div>
             <p className="text-[11px] text-fg-faint">
-              Explicit per-agent model overrides still win. The starred model below remains the fallback when no explicit or routed choice is available.
+              Economical, Fast, and High reasoning route automatically. This switch applies only to Balanced. Explicit per-agent model overrides still win; the starred model remains the fallback.
             </p>
             {routerSaving && <p className="text-[11px] text-fg-faint">Saving router settings…</p>}
             {routerError && <p className="text-[11px] text-red-700 dark:text-red-400">{routerError}</p>}

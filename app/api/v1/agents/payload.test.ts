@@ -59,12 +59,12 @@ describe("agent payload mapping", () => {
     const out = toUpdateAgentInput("agent-1", {
       router_policy: "quality",
       router_enabled: true,
-      usage_strategy: "high_reasoning",
+      usage_strategy: "fast",
     }, baseRow);
 
     expect(out.router_policy).toBe("quality");
     expect(out.router_enabled).toBe(true);
-    expect(out.usage_strategy).toBe("high_reasoning");
+    expect(out.usage_strategy).toBe("fast");
   });
 
   it("leaves router fields undefined on update when omitted", () => {

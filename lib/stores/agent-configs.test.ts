@@ -273,3 +273,18 @@ describe("agent tool_credentials (per-tool credential overrides)", () => {
     expect(getAgentToolCredentials(undefined)).toEqual({});
   });
 });
+
+describe("agent usage strategy", () => {
+  it("round-trips the fast profile through persistence", () => {
+    upsertAgentConfig({
+      id: "fast-strategy-agent",
+      name: "Fast Strategy Agent",
+      identity: "",
+      instructions: "",
+      tools: [],
+      usage_strategy: "fast",
+    });
+
+    expect(getAgentConfig("fast-strategy-agent")?.usage_strategy).toBe("fast");
+  });
+});

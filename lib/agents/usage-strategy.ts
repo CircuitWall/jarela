@@ -19,13 +19,16 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
     routerPolicy: "cheap",
     enableRouter: true,
     contextWindowCapTokens: 65_536,
-    outputTokenCap: 4_096,
+    outputTokenCap: 2_048,
     reduceThinking: true,
     stallRetries: 0,
     providerFailureRetries: 1,
     promptInstruction:
-      "--- Cost-saving response style ---\n" +
-      "Prefer concise, direct answers. Use only the context and tool calls needed to finish the task; avoid repeating work or expanding scope. Preserve accuracy, safety, and requested detail.",
+      "--- Economical response style ---\n" +
+      "Answer in the fewest words that fully satisfy the request. Lead with the result. " +
+      "Do not restate the request, narrate routine steps, or add unsolicited background. " +
+      "Use bullets only when they improve scanning. Keep explanations, examples, and caveats to what the task requires. " +
+      "Preserve accuracy, necessary safety caveats, and explicitly requested depth or format.",
   },
   fast: {
     routerPolicy: "fast",
@@ -85,7 +88,14 @@ export function getUsageStrategyProfile(strategy: UsageStrategy): UsageStrategyP
 // spend the whole cap on its chain of thought and return nothing.
 export const THINKING_OUTPUT_FLOOR_TOKENS = 32_768;
 
-export function resolveOutputTokenCap(profileCap: number | null, modelThinks: boolean): number | null {
+export function resolveOutputTokenCap(
+  profileCap: number | null,
+  modelThinks: boolean,
+  strategy: UsageStrategy,
+): number | null {
   if (profileCap === null) return null;
-  return modelThinks ? Math.max(profileCap, THINKING_OUTPUT_FLOOR_TOKENS) : profileCap;
+  if (modelThinks && strategy !== "cost_saving") {
+    return Math.max(profileCap, THINKING_OUTPUT_FLOOR_TOKENS);
+  }
+  return profileCap;
 }
