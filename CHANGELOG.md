@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.43.2] - 2026-10-09
+
+### Added
+
+- **The Memory workspace brings document, memory, and chat search together, with document matches grouped by file.**
+
+### Changed
+
+- **Automatic recall now runs only with the High Reasoning strategy.** Other strategies can still search memory and chats explicitly.
+
 ### Removed
 
 - **LinkedIn integrations** The LinkedIn Personal and LinkedIn Enterprise integrations, their OAuth routes, health probes, and the two never-published `@circuitwall/linkedin-*-langchain` packages are removed. Previously stored LinkedIn credentials are ignored.
+
+### Fixed
+
+- **The chat scroll control explains when auto-scroll is paused and resumes at the latest message.**
 
 ## [1.43.1] - 2026-10-08
 
