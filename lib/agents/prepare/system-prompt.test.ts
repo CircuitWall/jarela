@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getUsageStrategyProfile } from "@/lib/agents/usage-strategy";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-system-prompt-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -319,6 +320,7 @@ describe("buildToolPermissionContext", () => {
   });
 
   it("places usage-strategy instructions in the dynamic prompt suffix", () => {
+    const instruction = getUsageStrategyProfile("cost_saving").promptInstruction;
     const prompt = buildSystemPrompt({
       agentCfg: agentCfg(),
       trimmedMessage: "hi",
@@ -328,10 +330,13 @@ describe("buildToolPermissionContext", () => {
       factsCtx: "",
       experienceMode: "full",
       delegateRosterLines: [],
-      usageStrategyInstruction: "--- Cost-saving response style ---",
+      usageStrategyInstruction: instruction,
     });
 
-    expect(prompt.indexOf("--- Cost-saving response style ---")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+    expect(prompt.indexOf("--- Economical response style ---")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+    expect(prompt).toContain("Answer in the fewest words that fully satisfy the request.");
+    expect(prompt).toContain("Lead with the result.");
+    expect(prompt).toContain("Do not restate the request, narrate routine steps, or add unsolicited background.");
   });
 
   it("keeps manual recall guidance in the dynamic suffix when auto recall is disabled", () => {

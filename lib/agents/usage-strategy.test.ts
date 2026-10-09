@@ -27,7 +27,7 @@ describe("usage strategy profiles", () => {
       routerPolicy: "cheap",
       enableRouter: true,
       contextWindowCapTokens: 65_536,
-      outputTokenCap: 4_096,
+      outputTokenCap: 2_048,
       reduceThinking: true,
       stallRetries: 0,
       providerFailureRetries: 1,
@@ -53,9 +53,10 @@ describe("usage strategy profiles", () => {
     expect(getUsageStrategyProfile("high_reasoning")).toMatchObject({ routerPolicy: "quality", enableRouter: true });
   });
 
-  it("raises a tight output cap only for thinking models", () => {
-    expect(resolveOutputTokenCap(2_048, false)).toBe(2_048);
-    expect(resolveOutputTokenCap(2_048, true)).toBe(32_768);
-    expect(resolveOutputTokenCap(null, true)).toBeNull();
+  it("keeps cost-saving output capped while preserving the thinking floor for other strategies", () => {
+    expect(resolveOutputTokenCap(2_048, false, "cost_saving")).toBe(2_048);
+    expect(resolveOutputTokenCap(2_048, true, "cost_saving")).toBe(2_048);
+    expect(resolveOutputTokenCap(2_048, true, "fast")).toBe(32_768);
+    expect(resolveOutputTokenCap(null, true, "balanced")).toBeNull();
   });
 });

@@ -86,20 +86,12 @@ export interface AgentConfig {
    * back to the integration's default credential.
    */
   tool_credentials: Record<string, string>;
-  /**
-   * Per-agent model router policy override. When set, this agent uses the
-   * specified policy instead of the global JARELA_MODEL_ROUTER_POLICY env var.
-   * Ignored when `model_config_name` is set (forced model bypasses the router).
-   */
+  /** @deprecated Legacy field retained for compatibility; `usage_strategy` controls routing. */
   router_policy?: "cheap" | "fast" | "balanced" | "quality" | null;
-  /**
-   * Per-agent router enable override. true = always route (even when global
-   * mode is "off"); false = never route (even when global mode is "heuristic");
-   * null = inherit the global JARELA_MODEL_ROUTER_MODE setting.
-   */
+  /** @deprecated Legacy field retained for compatibility; `usage_strategy` controls routing. */
   router_enabled?: boolean | null;
   /** Per-agent usage profile; null inherits JARELA_USAGE_STRATEGY. */
-  usage_strategy?: "cost_saving" | "balanced" | "high_reasoning" | null;
+  usage_strategy?: "cost_saving" | "fast" | "balanced" | "high_reasoning" | null;
   created_at: string;
   updated_at: string;
 }
@@ -149,7 +141,7 @@ export interface AgentConfigIn {
   // null = clear override (inherit global); undefined = keep existing.
   router_enabled?: boolean | null;
   // null = inherit global strategy; undefined = leave as-is.
-  usage_strategy?: "cost_saving" | "balanced" | "high_reasoning" | null;
+  usage_strategy?: "cost_saving" | "fast" | "balanced" | "high_reasoning" | null;
 }
 
 export interface ThreadSummary {

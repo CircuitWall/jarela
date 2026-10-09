@@ -482,24 +482,13 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       retry_count: req._retry_count ?? 0,
     };
   }
-  // Per-agent router settings override the global env vars.
-  // router_enabled: 1 = force on, 0 = force off, null = follow global JARELA_MODEL_ROUTER_MODE.
-  // router_policy: set = use this policy, null = follow global JARELA_MODEL_ROUTER_POLICY.
+  // The resolved strategy is the single source of truth for model routing and usage.
   const usageStrategy = resolveUsageStrategy(agentCfg.usage_strategy, getConfig().usageStrategy);
   const usageProfile = getUsageStrategyProfile(usageStrategy);
   const autoRecallEnabled = shouldAutoRecall(usageStrategy, req.context_profile?.include_recall !== false);
   const autoFactsEnabled = shouldAutoRecall(usageStrategy, req.context_profile?.include_facts !== false);
-  const agentRouterEnabled = agentCfg.router_enabled ?? null;
-  const useRouter = agentRouterEnabled === 1
-    ? true
-    : agentRouterEnabled === 0
-    ? false
-    : usageProfile.enableRouter ?? getConfig().modelRouterMode === "heuristic";
-  const VALID_POLICIES: ReadonlySet<string> = new Set(["cheap", "fast", "balanced", "quality"]);
-  const agentPolicy = agentCfg.router_policy && VALID_POLICIES.has(agentCfg.router_policy)
-    ? agentCfg.router_policy as ModelRouterPolicy
-    : null;
-  const routePolicy = req._router_policy_override ?? agentPolicy ?? usageProfile.routerPolicy ?? getConfig().modelRouterPolicy;
+  const useRouter = usageProfile.enableRouter ?? getConfig().modelRouterMode === "heuristic";
+  const routePolicy = req._router_policy_override ?? usageProfile.routerPolicy ?? getConfig().modelRouterPolicy;
   if (!modelConfigName && useRouter) {
     const pricingTables = getPricingTables();
     const routed = routeTurnModel({
@@ -600,6 +589,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const outputTokenCap = resolveOutputTokenCap(
     usageProfile.outputTokenCap,
     !!modelCfg && modelThinksByDefault(modelCfg.provider, modelCfg.model_id) && !thinkingReduction?.off,
+    usageStrategy,
   );
   // Strategy caps must apply to the model's real window, not the 8k fallback,
   // otherwise a capped strategy shrinks a 1M-token model to 8k.

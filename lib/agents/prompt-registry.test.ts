@@ -16,6 +16,7 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-prompt-verify-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
 const { buildSystemPrompt, CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL } = await import("./prepare/system-prompt");
+const { getUsageStrategyProfile } = await import("./usage-strategy");
 const { listStaticPrompts, promptsAffectedBy, SYSTEM_PROMPT_SOURCE_PREFIXES } = await import("./prompt-registry");
 const { getAllToolCatalogAsync, applyAgentPermissionsToCatalog, markProxyOnlyTools } = await import("@/lib/tools");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
@@ -100,6 +101,7 @@ async function buildVariants(): Promise<Variant[]> {
     factsCtx: "",
     delegateRosterLines: [],
     runtimeInstanceId: "verify-instance",
+    usageStrategyInstruction: getUsageStrategyProfile("cost_saving").promptInstruction,
     systemSignals: [{
       seq: 1, id: "verify-signal", kind: "runtime.restart.completed" as const, schema_version: 1,
       operation_id: "verify-operation", agent_id: cfg.id, thread_id: "verify-thread",
@@ -292,6 +294,7 @@ describe("prompt registry coverage", () => {
     // Editing any system-prompt builder changes every variant.
     expect(promptsAffectedBy(["lib/agents/prepare/system-prompt.ts"]).systemPrompt).toBe(true);
     expect(promptsAffectedBy(["lib/agents/harness/presets.ts"]).systemPrompt).toBe(true);
+    expect(promptsAffectedBy(["lib/agents/usage-strategy.ts"]).systemPrompt).toBe(true);
     expect(promptsAffectedBy(["lib/tools/index.ts"]).systemPrompt).toBe(false);
 
     // A standalone prompt only affects its own artifact.
@@ -311,6 +314,17 @@ describe("prompt registry coverage", () => {
 });
 
 describe("assembled agent system prompt", () => {
+  it("keeps cost-saving response guidance in the dynamic suffix for every variant", () => {
+    for (const { id, prompt } of variants) {
+      const dynamic = prompt.split(CACHE_SPLIT_SENTINEL)[1] ?? "";
+      const stable = prompt.split(CACHE_SPLIT_SENTINEL)[0];
+      expect(dynamic, `${id}: concise response instruction missing`).toContain("Answer in the fewest words that fully satisfy the request.");
+      expect(dynamic, `${id}: lead-with-result instruction missing`).toContain("Lead with the result.");
+      expect(dynamic, `${id}: no-repetition instruction missing`).toContain("Do not restate the request, narrate routine steps, or add unsolicited background.");
+      expect(stable, `${id}: strategy instruction leaked into cached prefix`).not.toContain("Economical response style");
+    }
+  });
+
   it("emits both cache sentinels exactly once, in order", () => {
     for (const { id, prompt } of variants) {
       const shared = prompt.split(CACHE_SHARED_SPLIT_SENTINEL).length - 1;
