@@ -54,6 +54,9 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
           <option value="balanced">Balanced</option>
           <option value="high_reasoning">High reasoning</option>
         </Select>
+        <p className="text-[10px] text-fg-faint leading-snug">
+          High reasoning automatically recalls saved facts and prior chats. Other strategies rely on explicit agent searches when relevant.
+        </p>
       </div>
       <Divider />
       <TierOverrideField form={form} selectedModel={selectedModel} />

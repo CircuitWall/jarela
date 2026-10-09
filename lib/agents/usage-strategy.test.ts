@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { getUsageStrategyProfile, parseUsageStrategy, resolveOutputTokenCap, resolveUsageStrategy } from "./usage-strategy";
+import { getUsageStrategyProfile, parseUsageStrategy, resolveOutputTokenCap, resolveUsageStrategy, shouldAutoRecall } from "./usage-strategy";
 
 describe("usage strategy profiles", () => {
+  it("automatically recalls only for high reasoning, with profile opt-out", () => {
+    expect(shouldAutoRecall("high_reasoning")).toBe(true);
+    expect(shouldAutoRecall("balanced")).toBe(false);
+    expect(shouldAutoRecall("fast")).toBe(false);
+    expect(shouldAutoRecall("cost_saving")).toBe(false);
+    expect(shouldAutoRecall("balanced", true)).toBe(false);
+    expect(shouldAutoRecall("high_reasoning", false)).toBe(false);
+    expect(shouldAutoRecall("high_reasoning", true)).toBe(true);
+  });
+
   it("defaults invalid and missing values to balanced", () => {
     expect(parseUsageStrategy("unknown")).toBeNull();
     expect(resolveUsageStrategy(null, "unknown")).toBe("balanced");

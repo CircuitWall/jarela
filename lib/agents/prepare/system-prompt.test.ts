@@ -334,6 +334,44 @@ describe("buildToolPermissionContext", () => {
     expect(prompt.indexOf("--- Cost-saving response style ---")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
   });
 
+  it("keeps manual recall guidance in the dynamic suffix when auto recall is disabled", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(),
+      trimmedMessage: "where did we save the deployment notes?",
+      budget,
+      recallCtx: "",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+      autoRecallEnabled: false,
+      autoFactsEnabled: false,
+    });
+    const dynamic = prompt.slice(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+
+    expect(dynamic).toContain("Automatic saved-fact and chat-history recall is off for this turn.");
+    expect(dynamic).toContain("memory_search");
+    expect(dynamic).toContain("documents_search");
+    expect(prompt.indexOf("--- Automatic recall ---")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+  });
+
+  it("describes automatic retrieval when high-reasoning recall is enabled", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(),
+      trimmedMessage: "where did we save the deployment notes?",
+      budget,
+      recallCtx: "recalled fact",
+      warmSummaryCtx: "",
+      factsCtx: "saved fact",
+      experienceMode: "full",
+      delegateRosterLines: [],
+      autoRecallEnabled: true,
+      autoFactsEnabled: true,
+    });
+
+    expect(prompt).toContain("Automatic semantic recall of saved facts and prior chat messages is enabled for this turn.");
+  });
+
   it("keeps the cached prefix stable when provider-cap tool state changes", () => {
     const build = (toolPermissionMap: import("@/lib/tools").ToolCatalogEntry[]) => buildSystemPrompt({
       agentCfg: agentCfg(),
