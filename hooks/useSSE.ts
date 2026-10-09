@@ -9,6 +9,8 @@ import { pushActivity } from "@/lib/ui/loading";
 export type { ToolEvent };
 
 type AuthError = { message: string; credential_id?: string; provider?: string } | null;
+type SteeredSegment = { id: string; content: string };
+
 type UseSSEState = {
   streaming: boolean;
   streamingContent: string;
@@ -16,6 +18,7 @@ type UseSSEState = {
   toolEvents: ToolEvent[];
   error: string | null;
   authError: AuthError;
+  steeredSegments: SteeredSegment[];
 };
 type UseSSECommands = {
   dismissAuthError: () => void;
@@ -31,9 +34,17 @@ type UseSSECommands = {
   attach: (threadId: string) => Promise<void>;
   clearStreamingContent: () => void;
   clearToolEvents: () => void;
-  splitStreamingContent: () => string;
-  restoreStreamingContent: (content: string) => void;
-  expectSteeredContinuation: (expected: boolean) => void;
+  // ADR-0080 — arm with the steering message's id before the PATCH so a
+  // `done` that races in before the PATCH resolves still reconnects for a
+  // genuine continuation (see consume()'s "done" branch). Does NOT touch
+  // the live buffer by itself: the mainline case (steering drained by
+  // preModelHook into the same ongoing stream) never breaks the stream at
+  // all, so arming must be non-destructive or every steer would flash the
+  // bubble for no reason.
+  armSteeredContinuation: (id: string | null) => void;
+  // Undo a reactive split if the PATCH turns out to have been rejected —
+  // whether or not `done` had already raced in and frozen a segment.
+  rollbackSteeredSegment: (id: string) => void;
 };
 
 // Tool names with a `call` event but no later `result` for that id, in call
@@ -85,13 +96,28 @@ function useStreamingBuffer() {
   const pendingTextRef = useRef("");
   const pendingThinkingRef = useRef("");
   const rafIdRef = useRef<number | null>(null);
+  // Mirrors `streamingContent` for synchronous reads from long-running
+  // closures (consume()'s "done" branch runs inside the same `consume`
+  // invocation for a run's whole lifetime — its closure is fixed at the
+  // point the run started, well before any deltas arrived, so reading the
+  // `streamingContent` state variable directly there would see a stale
+  // snapshot. The ref is updated at every state write below and read
+  // instead wherever a split needs the *current* buffer, not the one at
+  // closure-creation time.
+  const streamingContentRef = useRef("");
 
   const flushPending = useCallback(() => {
     rafIdRef.current = null;
     if (pendingTextRef.current) {
       const delta = pendingTextRef.current;
       pendingTextRef.current = "";
-      setStreamingContent((p) => p + delta);
+      // Write the ref via plain assignment rather than inside the
+      // setState updater — the updater isn't guaranteed to run
+      // synchronously, so a split immediately after this call could still
+      // observe a stale ref if the write happened only inside it.
+      const next = streamingContentRef.current + delta;
+      streamingContentRef.current = next;
+      setStreamingContent(next);
     }
     if (pendingThinkingRef.current) {
       const delta = pendingThinkingRef.current;
@@ -130,23 +156,29 @@ function useStreamingBuffer() {
 
   const reset = useCallback(() => {
     cancelPendingFlush();
+    streamingContentRef.current = "";
     setStreamingContent("");
     setThinkingContent("");
   }, [cancelPendingFlush]);
 
   const clearStreamingContent = useCallback(() => {
+    streamingContentRef.current = "";
     setStreamingContent("");
   }, []);
 
   const splitStreamingContent = useCallback(() => {
-    const content = streamingContent + pendingTextRef.current;
+    const content = streamingContentRef.current + pendingTextRef.current;
     pendingTextRef.current = "";
+    streamingContentRef.current = "";
     setStreamingContent("");
     return content;
-  }, [streamingContent]);
+  }, []);
 
   const restoreStreamingContent = useCallback((content: string) => {
-    if (content) setStreamingContent((current) => content + current);
+    if (!content) return;
+    const next = content + streamingContentRef.current;
+    streamingContentRef.current = next;
+    setStreamingContent(next);
   }, []);
 
   // Output-validator retry (ADR-0037) discarding a flagged completed reply
@@ -156,6 +188,7 @@ function useStreamingBuffer() {
   // the now-empty string), then clear what's already rendered.
   const resetStreamingText = useCallback(() => {
     pendingTextRef.current = "";
+    streamingContentRef.current = "";
     setStreamingContent("");
   }, []);
 
@@ -196,7 +229,12 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
   const [authError, setAuthError] = useState<AuthError>(null);
   const abortRef = useRef<AbortController | null>(null);
   const threadIdRef = useRef<string | null>(null);
-  const steeredContinuationRef = useRef(false);
+  // ADR-0080 — id of the steering message currently armed for a possible
+  // continuation break, or null. Set eagerly (before the steer PATCH
+  // resolves) so a `done` that races in during that round trip still gets
+  // caught; cleared the moment a `done` is actually observed.
+  const steeredContinuationIdRef = useRef<string | null>(null);
+  const [steeredSegments, setSteeredSegments] = useState<SteeredSegment[]>([]);
   const {
     open: openActivity,
     close: closeActivity,
@@ -211,11 +249,19 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     flushPending,
     cancelPendingFlush,
     reset: resetBuffer,
-    clearStreamingContent,
+    clearStreamingContent: clearStreamingContentBuffer,
     splitStreamingContent,
     restoreStreamingContent,
     resetStreamingText,
   } = useStreamingBuffer();
+
+  // Clearing the live buffer in favor of the persisted message must also
+  // drop any still-frozen steered segment from this run — both are
+  // superseded by the same refetch (ChatView's finalizeRunFromServer).
+  const clearStreamingContent = useCallback(() => {
+    clearStreamingContentBuffer();
+    setSteeredSegments([]);
+  }, [clearStreamingContentBuffer]);
 
   // Abort the active EventSource on unmount so the server connection closes
   // and we don't call state setters on a dead component.
@@ -270,9 +316,22 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
         ]);
       } else if (event.type === "done") {
         flushPending();
-        const continueSteeredRun = steeredContinuationRef.current;
-        steeredContinuationRef.current = false;
-        if (continueSteeredRun) return true;
+        const pendingSteerId = steeredContinuationIdRef.current;
+        steeredContinuationIdRef.current = null;
+        if (pendingSteerId) {
+          // ADR-0080 — this `done` landed while a steer was armed. In the
+          // mainline case preModelHook already drained the steering into
+          // this same stream and this is just the turn's real end; in the
+          // rare edge case (steering during the final model call) a
+          // continuation turn is starting server-side right now. Either
+          // way, freeze what rendered so far under the steering message's
+          // id and reconnect — a non-continuation reconnect resolves to an
+          // immediate synthetic `done` (see the GET handler), so this
+          // costs one cheap extra round trip rather than any visible gap.
+          const frozen = splitStreamingContent();
+          if (frozen) setSteeredSegments((segs) => [...segs, { id: pendingSteerId, content: frozen }]);
+          return true;
+        }
         setStreaming(false);
         closeActivity();
         // Don't clear streamingContent here — it would cause a visual gap
@@ -307,7 +366,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       }
     }
     return false;
-  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, reportToolActivity, resetStreamingText, setActivityStatus]);
+  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, reportToolActivity, resetStreamingText, setActivityStatus, splitStreamingContent]);
 
   const start = useCallback(async (
     threadId: string,
@@ -326,6 +385,10 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     setToolEvents([]);
     setError(null);
     setAuthError(null);
+    // A fresh run must not inherit a stale arm/segment from whatever
+    // thread this hook instance was last attached to.
+    steeredContinuationIdRef.current = null;
+    setSteeredSegments([]);
     openActivity("Sending…");
 
     try {
@@ -385,7 +448,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     // start()/attach() — same pattern as the `done` branch in consume().
     closeActivity();
     abortRef.current?.abort();
-    steeredContinuationRef.current = false;
+    steeredContinuationIdRef.current = null;
     onDone?.();
   }, [closeActivity, flushPending, onDone]);
 
@@ -406,6 +469,8 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     setToolEvents([]);
     setError(null);
     setAuthError(null);
+    steeredContinuationIdRef.current = null;
+    setSteeredSegments([]);
     openActivity("Reconnecting…");
 
     try {
@@ -432,9 +497,22 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
   // Called by the consumer after a refetch lands, so the streaming bubble
   // gets swapped for the persisted assistant message in a single render.
   const dismissAuthError = useCallback(() => { setAuthError(null); }, []);
-  const expectSteeredContinuation = useCallback((expected: boolean) => {
-    steeredContinuationRef.current = expected;
+  const armSteeredContinuation = useCallback((id: string | null) => {
+    steeredContinuationIdRef.current = id;
   }, []);
+  // Undo a reactive split from consume()'s "done" branch if the steer PATCH
+  // turns out to have been rejected — whether or not `done` had already
+  // raced in and frozen a segment under this id (see steerRun in
+  // ChatView.tsx). If nothing was frozen yet, this just disarms.
+  const rollbackSteeredSegment = useCallback((id: string) => {
+    if (steeredContinuationIdRef.current === id) steeredContinuationIdRef.current = null;
+    setSteeredSegments((segs) => {
+      const match = segs.find((s) => s.id === id);
+      if (!match) return segs;
+      restoreStreamingContent(match.content);
+      return segs.filter((s) => s.id !== id);
+    });
+  }, [restoreStreamingContent]);
   const clearToolEvents = useCallback(() => { setToolEvents([]); }, []);
 
   const state: UseSSEState = {
@@ -444,6 +522,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     toolEvents,
     error,
     authError,
+    steeredSegments,
   };
   const commands: UseSSECommands = {
     dismissAuthError,
@@ -452,9 +531,8 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     attach,
     clearStreamingContent,
     clearToolEvents,
-    splitStreamingContent,
-    restoreStreamingContent,
-    expectSteeredContinuation,
+    armSteeredContinuation,
+    rollbackSteeredSegment,
   };
 
   return {
@@ -466,14 +544,14 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     toolEvents,
     error,
     authError,
+    steeredSegments,
     dismissAuthError,
     start,
     stop,
     attach,
     clearStreamingContent,
     clearToolEvents,
-    splitStreamingContent,
-    restoreStreamingContent,
-    expectSteeredContinuation,
+    armSteeredContinuation,
+    rollbackSteeredSegment,
   };
 }
