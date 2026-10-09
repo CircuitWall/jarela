@@ -8,32 +8,34 @@ import { SearchProbe } from "./SearchProbe";
 import { SourceList } from "./SourceList";
 import { useDocumentsPanel } from "./useDocumentsPanel";
 
-export function DocumentsPanel() {
+export function DocumentsPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const { dispatch } = useAppContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const panel = useDocumentsPanel();
   const [refreshing, setRefreshing] = useState(false);
 
   return (
-    <div className="flex flex-col h-full">
-      <PanelHeader icon={<FolderSearch size={14} />} title="Documents">
-        <HeaderAction
-          icon={<RefreshCw size={13} className={refreshing || panel.loading ? "animate-spin" : ""} />}
-          label="Refresh"
-          title="Refresh source list"
-          disabled={refreshing || panel.loading}
-          onClick={async () => {
-            setRefreshing(true);
-            try {
-              await panel.load();
-            } finally {
-              setRefreshing(false);
-            }
-          }}
-        />
-      </PanelHeader>
+    <div className={embedded ? "" : "flex flex-col h-full"}>
+      {!embedded && (
+        <PanelHeader icon={<FolderSearch size={14} />} title="Documents">
+          <HeaderAction
+            icon={<RefreshCw size={13} className={refreshing || panel.loading ? "animate-spin" : ""} />}
+            label="Refresh"
+            title="Refresh source list"
+            disabled={refreshing || panel.loading}
+            onClick={async () => {
+              setRefreshing(true);
+              try {
+                await panel.load();
+              } finally {
+                setRefreshing(false);
+              }
+            }}
+          />
+        </PanelHeader>
+      )}
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-5">
+      <div ref={containerRef} className={embedded ? "px-4 py-3 space-y-5" : "flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-5"}>
         <p className="text-xs text-fg-faint leading-relaxed">
           Sources listed here are indexed in the background. Text files in folders are chunked, embedded, and
           made available to agents via the <code className="font-mono text-fg-muted">documents_search</code> tool.
@@ -54,6 +56,24 @@ export function DocumentsPanel() {
           onSubmit={panel.addSource}
         />
 
+        {embedded && (
+          <button
+            type="button"
+            onClick={async () => {
+              setRefreshing(true);
+              try {
+                await panel.load();
+              } finally {
+                setRefreshing(false);
+              }
+            }}
+            disabled={refreshing || panel.loading}
+            className="text-xs text-accent hover:text-accent-hover disabled:opacity-50"
+          >
+            Refresh sources
+          </button>
+        )}
+
         {panel.error && (
           <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400 px-2 py-1.5 rounded-md bg-red-500/10 border border-red-500/20">
             <AlertCircle size={13} className="mt-0.5 shrink-0" />
@@ -70,7 +90,7 @@ export function DocumentsPanel() {
           onToggle={(s) => { void panel.toggleSource(s); }}
         />
 
-        <SearchProbe onSearch={panel.search} />
+        {!embedded && <SearchProbe onSearch={panel.search} />}
       </div>
     </div>
   );

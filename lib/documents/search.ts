@@ -10,10 +10,16 @@
 
 import { getDb } from "@/lib/db";
 import { embedQueryOne, cosine } from "@/lib/embeddings";
+import { isLocalEmbeddingsEnabled } from "@/lib/stores/app-settings";
 
 // Track documents we've already queued for reindexing this session to avoid
 // repeated work. This is session-scoped; the Set resets on app restart.
 const reindexQueued = new Set<string>();
+export const DEFAULT_DOCUMENT_MIN_SIMILARITY = 0.86;
+
+export function getDefaultDocumentMinSimilarity(): number {
+  return isLocalEmbeddingsEnabled() ? DEFAULT_DOCUMENT_MIN_SIMILARITY : 0.25;
+}
 
 export interface DocumentHit {
   document_id: string;
@@ -41,7 +47,7 @@ interface Row {
 
 export async function searchDocuments(
   query: string,
-  opts?: { limit?: number; sourceId?: string },
+  opts?: { limit?: number; sourceId?: string; minSimilarity?: number },
 ): Promise<DocumentHit[]> {
   const limit = Math.min(Math.max(opts?.limit ?? 8, 1), 25);
   const db = getDb();
@@ -78,6 +84,7 @@ export async function searchDocuments(
   const qVec = await embedQueryOne(trimmed);
   const scored: DocumentHit[] = [];
   const lowered = trimmed.toLowerCase();
+  const minSimilarity = Math.max(0, Math.min(1, opts?.minSimilarity ?? getDefaultDocumentMinSimilarity()));
   const mismatched = new Set<string>();
 
   for (const r of rows) {
@@ -91,6 +98,8 @@ export async function searchDocuments(
         if (score <= 0) {
           score = substringScore(r.text, lowered);
           match = "substring";
+        } else if (score <= minSimilarity) {
+          score = 0;
         }
       } else {
         // Dimension mismatch: track this document for reindexing.

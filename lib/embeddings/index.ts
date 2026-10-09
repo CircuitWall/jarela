@@ -407,6 +407,7 @@ export interface RecalledMemory {
   content: string;
   score: number;
   created_at: string;
+  match?: "semantic" | "keyword" | "literal";
 }
 
 export interface MemorySearchOptions {
@@ -418,10 +419,19 @@ export interface MemorySearchOptions {
   namespace?: string;
   /** Also match the query as literal text and rank those hits first. */
   literal?: boolean;
+  /** Minimum cosine score for semantic hits; keyword and literal fallbacks retain their own floor. */
+  minSimilarity?: number;
+  /** Optional separate cosine floor for chat messages. */
+  minMessageSimilarity?: number;
 }
 
 const LITERAL_SCORE = 0.9;
 const LITERAL_ROW_LIMIT = 50;
+export const DEFAULT_LOCAL_CHAT_MIN_SIMILARITY = 0.84;
+
+export function getDefaultChatMinSimilarity(): number {
+  return isLocalEmbeddingsEnabled() ? DEFAULT_LOCAL_CHAT_MIN_SIMILARITY : 0.25;
+}
 
 type MemoryRowLike = { namespace: string; key: string; value: string; created_at: string };
 
@@ -452,6 +462,8 @@ function toRecalled(r: MemoryRowLike, score: number, policy: MemoryPolicy, wantM
 // still pending embedding, and (when `literal`) exact text matches.
 export async function searchMemory(query: string, opts: MemorySearchOptions = {}): Promise<RecalledMemory[]> {
   const { limit = 5, policy = getMemoryPolicy(), sources = "all", namespace, literal = false } = opts;
+  const minSimilarity = Math.max(0, Math.min(1, opts.minSimilarity ?? 0.25));
+  const minMessageSimilarity = Math.max(0, Math.min(1, opts.minMessageSimilarity ?? minSimilarity));
   const wantMem = sources !== "messages";
   const wantMsg = sources !== "memory" && !namespace;
   const qVec = await embedQueryOne(query);
@@ -464,14 +476,18 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
   if (qVec) {
     for (const r of loadMemEmbedCache().values()) {
       if (namespace && r.namespace !== namespace) continue;
-      const hit = toRecalled(r, cosine(qVec, r.embedding), policy, wantMem, wantMsg);
-      if (hit) scored.push(hit);
+      const score = cosine(qVec, r.embedding);
+      const hit = score > minSimilarity ? toRecalled(r, score, policy, wantMem, wantMsg) : null;
+      if (hit) scored.push({ ...hit, match: "semantic" });
     }
     if (wantMsg) {
       for (const r of loadMsgEmbedCache().values()) {
+        const score = cosine(qVec, r.embedding);
+        if (score <= minMessageSimilarity) continue;
         scored.push({
           source: "message", thread_id: r.thread_id, role: r.role,
-          content: r.content, score: cosine(qVec, r.embedding), created_at: r.created_at,
+          content: r.content, score, created_at: r.created_at,
+          match: "semantic",
         });
       }
     }
@@ -491,7 +507,7 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
       const probe = toRecalled(r, 0, policy, wantMem, wantMsg);
       if (!probe) continue;
       const overlap = keywordOverlap(tokens, probe.content);
-      if (overlap > 0) scored.push({ ...probe, score: 0.26 + overlap * 0.1 });
+      if (overlap > 0) scored.push({ ...probe, score: 0.26 + overlap * 0.1, match: "keyword" });
     }
     if (wantMsg) {
       const recentMsg = db.prepare(
@@ -500,7 +516,7 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
       for (const r of recentMsg) {
         const overlap = keywordOverlap(tokens, r.content);
         if (overlap > 0) {
-          scored.push({ source: "message", thread_id: r.thread_id, role: r.role, content: r.content, score: 0.26 + overlap * 0.1, created_at: r.created_at });
+          scored.push({ source: "message", thread_id: r.thread_id, role: r.role, content: r.content, score: 0.26 + overlap * 0.1, created_at: r.created_at, match: "keyword" });
         }
       }
     }
@@ -519,7 +535,7 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
       ).all(like, like, ...EXCLUDED_NS, ...(namespace ? [namespace] : []), LITERAL_ROW_LIMIT) as MemoryRowLike[];
       for (const r of rows) {
         const hit = toRecalled(r, LITERAL_SCORE, policy, wantMem, wantMsg);
-        if (hit) scored.push(hit);
+        if (hit) scored.push({ ...hit, match: "literal" });
       }
     }
     if (wantMsg) {
@@ -527,7 +543,7 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
         "SELECT thread_id, role, content, created_at FROM messages WHERE content LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
       ).all(like, LITERAL_ROW_LIMIT) as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
       for (const r of rows) {
-        scored.push({ source: "message", thread_id: r.thread_id, role: r.role, content: r.content, score: LITERAL_SCORE, created_at: r.created_at });
+        scored.push({ source: "message", thread_id: r.thread_id, role: r.role, content: r.content, score: LITERAL_SCORE, created_at: r.created_at, match: "literal" });
       }
     }
   }
@@ -538,7 +554,8 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
   // semantically they're "the same fact" and the user wants the latest version.
   const groups = new Map<string, RecalledMemory>();
   for (const s of scored) {
-    if (s.score <= 0.25) continue;
+    const floor = s.source === "message" ? minMessageSimilarity : minSimilarity;
+    if (s.match === "semantic" ? s.score <= floor : s.score <= 0.25) continue;
     const key = `${s.source}:${normalizeForDedup(s.content)}`;
     const existing = groups.get(key);
     if (!existing) {

@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getMemory, putMemory, listMemory, deleteMemory, searchMemoryRows } from "@/lib/stores/memory";
-import { searchMemory } from "@/lib/embeddings";
+import { getDefaultChatMinSimilarity, searchMemory } from "@/lib/embeddings";
 import { CURRENT_STRUCTURED_MEMORY_VERSION, StructuredMemoryInputSchema } from "@/lib/memory/record";
 import { registerLangChainPackage } from "../packages/langchain-package";
 
@@ -101,16 +101,18 @@ export const memoryDeleteTool = tool(
 );
 
 export const memorySearchTool = tool(
-  async ({ query, namespace, limit, include_chats }) => {
+  async ({ query, namespace, limit, include_chats, min_similarity, min_chat_similarity }) => {
     const hits = await searchMemory(query, {
       limit: limit ?? 10,
       namespace,
       sources: include_chats ? "all" : "memory",
       literal: true,
+      minSimilarity: min_similarity,
+      minMessageSimilarity: include_chats ? min_chat_similarity ?? getDefaultChatMinSimilarity() : undefined,
     });
     return JSON.stringify(hits.map((h) => h.source === "memory"
-      ? { source: "memory", namespace: h.namespace, key: h.key, content: h.content, score: h.score, updated_at: h.created_at }
-      : { source: "chat", thread_id: h.thread_id, role: h.role, content: h.content, score: h.score, created_at: h.created_at }));
+      ? { source: "memory", namespace: h.namespace, key: h.key, content: h.content, score: h.score, match: h.match, updated_at: h.created_at }
+      : { source: "chat", thread_id: h.thread_id, role: h.role, content: h.content, score: h.score, match: h.match, created_at: h.created_at }));
   },
   {
     name: "memory_search",
@@ -121,6 +123,10 @@ export const memorySearchTool = tool(
       namespace: z.string().optional().describe("Restrict results to this namespace (optional; excludes chat history)"),
       limit: z.number().optional().describe("Max results (default 10)"),
       include_chats: z.boolean().optional().describe("Also search past conversations (default false)"),
+      min_similarity: z.number().min(0).max(1).optional()
+        .describe("Minimum cosine similarity for saved-memory hits (default 0.25). Lower toward 0 to widen semantic results; literal/keyword matches are unaffected."),
+      min_chat_similarity: z.number().min(0).max(1).optional()
+        .describe("When include_chats is true, minimum cosine similarity for chat hits (bundled local default 0.84; other providers 0.25). Lower toward 0 to widen chat results."),
     }),
   },
 );

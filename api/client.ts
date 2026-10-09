@@ -46,6 +46,7 @@ import type {
   SkillRepoIn,
   SkillRepoPatch,
   MemoryItem,
+  MemorySearchHit,
   ModelConfig,
   ModelConfigIn,
   Credential,
@@ -738,6 +739,24 @@ export const api = {
       p.set("limit", String(limit));
       return request<MemoryItem[]>(`/memory?${p}`);
     },
+    search: (query: string, opts?: {
+      source?: "all" | "memory" | "messages";
+      limit?: number;
+      min_similarity?: number;
+      min_chat_similarity?: number;
+    }) => {
+      const p = new URLSearchParams({ q: query });
+      if (opts?.source) p.set("source", opts.source);
+      if (opts?.limit) p.set("limit", String(opts.limit));
+      if (opts?.min_similarity !== undefined) p.set("min_similarity", String(opts.min_similarity));
+      if (opts?.min_chat_similarity !== undefined) p.set("min_chat_similarity", String(opts.min_chat_similarity));
+      return request<{
+        query: string;
+        source: "all" | "memory" | "messages";
+        hits: MemorySearchHit[];
+        min_chat_similarity: number | null;
+      }>(`/memory/search?${p}`);
+    },
     create: (namespace: string, key: string, value: unknown) =>
       request<MemoryItem>("/memory", { method: "POST", body: JSON.stringify({ namespace, key, value }) }),
     update: (namespace: string, key: string, value: unknown) =>
@@ -1098,11 +1117,12 @@ export const api = {
       request<{ deleted: boolean }>(`/documents/sources/${encodeURIComponent(id)}`, { method: "DELETE" }),
     reindex: (id: string) =>
       request<DocumentReindexResult>(`/documents/sources/${encodeURIComponent(id)}/reindex`, { method: "POST", body: "{}" }),
-    search: (q: string, opts?: { limit?: number; source_id?: string }) => {
+    search: (q: string, opts?: { limit?: number; source_id?: string; min_similarity?: number }) => {
       const p = new URLSearchParams({ q });
       if (opts?.limit) p.set("limit", String(opts.limit));
       if (opts?.source_id) p.set("source_id", opts.source_id);
-      return request<{ query: string; hits: DocumentHit[] }>(`/documents/search?${p.toString()}`);
+      if (opts?.min_similarity !== undefined) p.set("min_similarity", String(opts.min_similarity));
+      return request<{ query: string; hits: DocumentHit[]; min_similarity: number }>(`/documents/search?${p.toString()}`);
     },
     getSettings: () => request<DocumentSettings>("/documents/settings"),
     setSettings: (patch: DocumentSettings) =>

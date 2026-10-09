@@ -63,7 +63,7 @@ function groupDocumentHits(hits: Awaited<ReturnType<typeof searchDocuments>>, ma
 }
 
 export const documentsSearch = tool(
-  async ({ query, limit, source_id }) => {
+  async ({ query, limit, source_id, min_similarity }) => {
     if (source_id && !getDocumentSource(source_id)) {
       const available = listDocumentSources().map((s) => ({ id: s.id, label: s.label, path: s.path, enabled: s.enabled === 1 }));
       return JSON.stringify({
@@ -77,6 +77,7 @@ export const documentsSearch = tool(
     const hits = await searchDocuments(query, {
       limit: Math.min(maxFiles * 5, 25),
       sourceId: source_id,
+      minSimilarity: min_similarity,
     });
     return JSON.stringify({
       query,
@@ -89,13 +90,15 @@ export const documentsSearch = tool(
       "Search indexed local documents (notes, READMEs, code, configs) by semantic similarity. " +
       "Use when the user references files in folders they've added under Documents, or when " +
       "you need facts from project-specific text the model wouldn't otherwise know. Returns " +
-      "the top matching text chunks with their source path.",
+      "matching files with up to two ranked passages each.",
     schema: z.object({
       query: z.string().describe("Natural-language question or keywords to look up."),
       limit: z.number().int().min(1).max(25).optional()
         .describe("Max distinct files to return (default 5, capped at 10). Each file includes up to two short matching passages."),
       source_id: z.string().optional()
         .describe("Restrict the search to a single document_source id. Omit to search all."),
+      min_similarity: z.number().min(0).max(1).optional()
+        .describe("Minimum cosine similarity for semantic hits (bundled local default 0.86; other providers 0.25). Lower toward 0 to widen results; substring fallback is unaffected."),
     }),
   },
 );

@@ -71,16 +71,19 @@ test("menu separates common from advanced and Tools hosts capability sub-tabs", 
   await page.getByRole("button", { name: "Tools", exact: true }).click();
   const packagesTab = page.getByRole("tab", { name: "Packages", exact: true });
   await expect(packagesTab).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Documents", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Documents", exact: true })).toHaveCount(0);
   await expect(page.getByRole("tab", { name: "Memory", exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "MCP servers" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Bridges", exact: true })).toBeVisible();
   await expect(packagesTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Packages", exact: true })).toBeVisible();
 
-  // Switch to Documents sub-tab → DocumentsPanel renders inside the Tools surface.
-  await page.getByRole("tab", { name: "Documents", exact: true }).click();
-  await expect(page.getByRole("tab", { name: "Documents", exact: true })).toHaveAttribute("aria-selected", "true");
+  // Memory is now the shared search surface for documents and chat history.
+  await page.getByRole("tab", { name: "Memory", exact: true }).click();
+  await expect(page.getByPlaceholder("Search documents and chats…")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Search channel" })).toBeVisible();
+  await expect(page.locator("summary").getByText("Saved facts")).toBeVisible();
+  await expect(page.locator("summary").getByText("Documents")).toBeVisible();
 });
 
 test("Settings panel exposes advanced sub-tabs when experience mode is full", async ({ page }) => {
@@ -97,6 +100,60 @@ test("Settings panel exposes advanced sub-tabs when experience mode is full", as
   }
   // Test runs / Harnesses moved to Agents panel.
   await expect(page.getByRole("tab", { name: "Test runs", exact: true })).toHaveCount(0);
+});
+
+test("legacy Documents URLs open the unified Memory search", async ({ page }) => {
+  await page.goto("/?tab=documents");
+
+  await expect(page.getByPlaceholder("Search documents and chats…")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Memory", exact: true })).toHaveAttribute("aria-selected", "true");
+});
+
+test("Memory search merges document and chat hits and filters by channel", async ({ page }) => {
+  await page.evaluate(() => {
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
+      if (url.pathname === "/api/v1/documents/search") {
+        return Response.json({
+          query: "deploy",
+          min_similarity: 0.86,
+          hits: [{
+            document_id: "doc-1", source_id: "source-1", source_label: "Project", rel_path: "guide.md",
+            abs_path: "", chunk_index: 0, text: "Deployment steps", score: 0.93, match: "semantic",
+          }],
+        });
+      }
+      if (url.pathname === "/api/v1/memory/search") {
+        return Response.json({
+          query: "deploy",
+          source: "messages",
+          min_chat_similarity: 0.84,
+          hits: [{
+            source: "message", thread_id: "thread-12345678", role: "user", content: "We chose the deployment plan.",
+            score: 0.9, match: "semantic", created_at: "2026-10-09T00:00:00.000Z",
+          }],
+        });
+      }
+      return originalFetch(input, init);
+    };
+  });
+
+  await openMenu(page);
+  await page.getByRole("button", { name: "Tools", exact: true }).click();
+  await page.getByRole("tab", { name: "Memory", exact: true }).click();
+  await page.getByPlaceholder("Search documents and chats…").fill("deploy");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+
+  await expect(page.getByText("#1 · Documents · semantic")).toBeVisible();
+  await expect(page.getByText("#2 · Chats · semantic")).toBeVisible();
+  await expect(page.getByText("Deployment steps")).toBeVisible();
+  await expect(page.getByText("We chose the deployment plan.")).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Search channel" }).selectOption("chats");
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByText("We chose the deployment plan.")).toBeVisible();
+  await expect(page.getByText("Deployment steps")).toHaveCount(0);
 });
 
 test("Profile preset picker round-trips through the API", async ({ page, request }) => {
@@ -161,6 +218,8 @@ test("memory panel renders structured values and masks secret-shaped keys", asyn
   await openMenu(page);
   await page.getByRole("button", { name: "Tools", exact: true }).click();
   await page.getByRole("tab", { name: "Memory", exact: true }).click();
+
+  await page.locator("summary").filter({ hasText: "Saved facts" }).click();
 
   // Filter to our namespace so the list is bounded.
   await page.getByRole("combobox", { name: "Memory namespace" }).selectOption("e2e-demo");

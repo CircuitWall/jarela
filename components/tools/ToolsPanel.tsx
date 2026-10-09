@@ -1,9 +1,8 @@
 "use client";
 import { useAppContext } from "@/contexts/AppContext";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
-import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
 import { SkillsPanel } from "@/components/skills/SkillsPanel";
-import { MemoryPanel } from "@/components/memory/MemoryPanel";
+import { UnifiedMemoryPanel } from "@/components/memory/UnifiedMemoryPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { BrowserPanel } from "@/components/tools/BrowserPanel";
 import { PackagesPanel } from "./PackagesPanel";
@@ -13,9 +12,8 @@ import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 //   - "Packages"  — built-in tools, default LangChain packages, hot-loaded
 //                   manifests, and drop-in `.cjs` files. One home for
 //                   everything that turns into a LangChain tool.
-//   - "Documents" — indexed knowledge sources the agent can search.
 //   - "Skills"    — markdown playbooks (repos) the agent reads/writes on demand.
-//   - "Memory"    — long-lived facts persisted across conversations.
+//   - "Memory"    — searchable chats and documents, plus saved facts.
 //   - "MCP"       — external Model Context Protocol servers.
 //   - "Bridges"   — mobile / messaging bridge pairings.
 //   - "Browser"   — the local Chromium extension as an agent runtime surface.
@@ -24,18 +22,16 @@ import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 type Sub =
   | "packages"
   | "browser"
-  | "documents"
   | "skills"
   | "memory"
   | "mcp"
   | "bridges";
 
-const SUBS: Sub[] = ["packages", "browser", "documents", "skills", "memory", "mcp", "bridges"];
+const SUBS: Sub[] = ["packages", "browser", "skills", "memory", "mcp", "bridges"];
 
 const SUB_TITLES: Record<Sub, string> = {
   packages: "Packages",
   browser: "Browser",
-  documents: "Documents",
   skills: "Skills",
   memory: "Memory",
   mcp: "MCP servers",
@@ -47,6 +43,7 @@ const SUB_TITLES: Record<Sub, string> = {
 const LEGACY_SUBS: Record<string, Sub> = {
   builtin: "packages",
   extensions: "packages",
+  documents: "memory",
 };
 
 export function ToolsPanel() {
@@ -72,9 +69,8 @@ export function ToolsPanel() {
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {active === "packages" && <PackagesPanel />}
         {active === "browser" && <BrowserPanel />}
-        {active === "documents" && <DocumentsPanel />}
         {active === "skills" && <SkillsPanel />}
-        {active === "memory" && <MemoryPanel />}
+        {active === "memory" && <UnifiedMemoryPanel />}
         {active === "mcp" && <MCPPanel />}
         {active === "bridges" && <BridgesPanel />}
       </div>

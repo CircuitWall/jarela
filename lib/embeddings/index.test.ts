@@ -339,6 +339,14 @@ describe("searchMemory", () => {
     _resetReembedState();
   });
 
+  it("uses the calibrated chat floor only with bundled local embeddings", async () => {
+    const { getDefaultChatMinSimilarity } = await import("./index");
+    expect(getDefaultChatMinSimilarity()).toBe(0.25);
+
+    setLocalEmbeddingsEnabled(true);
+    expect(getDefaultChatMinSimilarity()).toBe(0.84);
+  });
+
   it("restricts hits by source and namespace", async () => {
     const { searchMemory } = await import("./index");
     seed("facts", "color", "orange", [1, 0, 0, 0]);
@@ -360,6 +368,33 @@ describe("searchMemory", () => {
     const hits = await searchMemory("ERR-4711", { sources: "memory", literal: true });
     expect(hits.map((h) => h.key)).toEqual(["ticket"]);
     expect(hits[0].score).toBeCloseTo(0.9);
+  });
+
+  it("allows a lower semantic floor without filtering literal fallbacks", async () => {
+    const { searchMemory } = await import("./index");
+    seed("facts", "needle", "the needle is recorded", [0.2, Math.sqrt(0.96), 0, 0]);
+    embedSpy.mockResolvedValue([[1, 0, 0, 0]]);
+
+    expect(await searchMemory("needle", { sources: "memory" })).toEqual([]);
+    const widened = await searchMemory("needle", { sources: "memory", minSimilarity: 0.1 });
+    expect(widened.map((hit) => hit.key)).toEqual(["needle"]);
+    expect(widened[0].match).toBe("semantic");
+
+    const literal = await searchMemory("needle", { sources: "memory", minSimilarity: 0.99, literal: true });
+    expect(literal.map((hit) => hit.key)).toEqual(["needle"]);
+    expect(literal[0].match).toBe("literal");
+  });
+
+  it("uses an independent threshold for chat-history matches", async () => {
+    const { searchMemory } = await import("./index");
+    const t = new Date().toISOString();
+    getDb().prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,metadata,embedding) VALUES (?,?,?,?,?,?,?)")
+      .run("threshold-chat", "thread-1", "user", "a related chat passage", t, null, JSON.stringify([0.2, Math.sqrt(0.96), 0, 0]));
+    embedSpy.mockResolvedValue([[1, 0, 0, 0]]);
+
+    expect(await searchMemory("query", { sources: "messages", minMessageSimilarity: 0.84 })).toEqual([]);
+    const widened = await searchMemory("query", { sources: "messages", minMessageSimilarity: 0.1 });
+    expect(widened.map((hit) => hit.thread_id)).toEqual(["thread-1"]);
   });
 
   it("embeds rows that never had a vector but leaves internal settings alone", async () => {
