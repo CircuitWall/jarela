@@ -20,7 +20,7 @@ jobs:
     name: Commit and PR conventions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -58,10 +58,10 @@ jobs:
       workflows:         ${{ steps.filter.outputs.workflows }}
       release_meta_only: ${{ steps.release-meta.outputs.only }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -139,7 +139,7 @@ jobs:
     needs: [changes]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Secrets scan uses only Node.js built-ins — no node_modules needed.
       # Runs unconditionally so every PR is checked, regardless of what changed.
@@ -154,7 +154,7 @@ jobs:
       # avoid a full `npm ci` just to run `npm audit`.
       - name: Setup Node
         if: needs.changes.outputs.deps == 'true' && needs.changes.outputs.release_meta_only != 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -177,10 +177,10 @@ jobs:
     if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.app == 'true' && needs.changes.outputs.release_meta_only != 'true' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -231,10 +231,10 @@ jobs:
         # re-running `next build`. `npm start` reads from .next/standalone/,
         # which postbuild has already hydrated with public/ + .next/static.
         # include-hidden-files is required: the bundle has its own nested
-        # .next/ (BUILD_ID, server/, static/) that v4 would otherwise strip
+        # .next/ (BUILD_ID, server/, static/) that the artifact action could otherwise strip
         # as a hidden path, leaving the standalone server unable to find the
         # production build at runtime.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: next-standalone
           path: .next/standalone
@@ -250,10 +250,10 @@ jobs:
     if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.app == 'true' && needs.changes.outputs.release_meta_only != 'true' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -266,7 +266,7 @@ jobs:
 
       - name: Upload unit coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: unit-coverage
           path: coverage/
@@ -289,10 +289,10 @@ jobs:
       JARELA_ENABLE_MOCK_PROVIDER: "1"
       JARELA_DISABLE_UPDATE_CHECK: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
@@ -306,7 +306,7 @@ jobs:
           echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: pw-cache
         with:
           path: ~/.cache/ms-playwright
@@ -321,7 +321,7 @@ jobs:
         run: npx playwright install-deps chromium webkit
 
       - name: Download runnable standalone bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: next-standalone
           path: .next/standalone
@@ -365,7 +365,7 @@ jobs:
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report
           path: playwright-report/
@@ -373,7 +373,7 @@ jobs:
 
       - name: Upload e2e coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: e2e-coverage
           path: coverage/
@@ -381,7 +381,7 @@ jobs:
 
       - name: Upload server log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: server-log
           path: server.log
