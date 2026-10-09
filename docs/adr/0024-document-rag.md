@@ -88,6 +88,11 @@ Exposed via the `documents_search` tool (category `Documents`) and the
 input). A second tool, `documents_list_sources`, lets agents discover
 available folders before scoping a search with `source_id`.
 
+The agent tool groups ranked chunk hits by document and returns up to five
+files by default (caller limit capped at ten), with at most two excerpts per
+file and 1 200 characters per excerpt. The Documents preview groups its
+eight chunk hits into up to five files with at most two excerpts each.
+
 ### UI
 
 A new top-level `documents` tab under the Common section of the menu.

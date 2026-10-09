@@ -22,6 +22,46 @@ import { indexOnDemand, runRemoteSource } from "@/lib/documents/remote";
 import { notifyTriggerHandlers } from "@/lib/triggers";
 import { errorMessage } from "@/lib/utils/error";
 
+const DOCUMENT_SEARCH_MAX_FILES = 5;
+const DOCUMENT_SEARCH_MAX_PASSAGES_PER_FILE = 2;
+const DOCUMENT_SEARCH_MAX_PASSAGE_CHARS = 1_200;
+
+function groupDocumentHits(hits: Awaited<ReturnType<typeof searchDocuments>>, maxFiles: number) {
+  const groups = new Map<string, {
+    source: string;
+    path: string;
+    score: number;
+    passages: Array<{ chunk_index: number; score: number; match: string; text: string }>;
+  }>();
+
+  for (const hit of hits) {
+    let group = groups.get(hit.document_id);
+    if (!group) {
+      if (groups.size >= maxFiles) continue;
+      group = {
+        source: hit.source_label ?? hit.source_id,
+        path: hit.rel_path,
+        score: Number(hit.score.toFixed(4)),
+        passages: [],
+      };
+      groups.set(hit.document_id, group);
+    }
+    if (group.passages.length >= DOCUMENT_SEARCH_MAX_PASSAGES_PER_FILE) continue;
+
+    const text = hit.text.length > DOCUMENT_SEARCH_MAX_PASSAGE_CHARS
+      ? `${hit.text.slice(0, DOCUMENT_SEARCH_MAX_PASSAGE_CHARS - 3).trimEnd()}...`
+      : hit.text;
+    group.passages.push({
+      chunk_index: hit.chunk_index,
+      score: Number(hit.score.toFixed(4)),
+      match: hit.match,
+      text,
+    });
+  }
+
+  return Array.from(groups.values());
+}
+
 export const documentsSearch = tool(
   async ({ query, limit, source_id }) => {
     if (source_id && !getDocumentSource(source_id)) {
@@ -33,17 +73,14 @@ export const documentsSearch = tool(
         recovery_hint: "Call documents_list_sources and use one of the returned ids, or omit source_id to search all indexed sources.",
       });
     }
-    const hits = await searchDocuments(query, { limit, sourceId: source_id });
+    const maxFiles = Math.min(limit ?? DOCUMENT_SEARCH_MAX_FILES, 10);
+    const hits = await searchDocuments(query, {
+      limit: Math.min(maxFiles * 5, 25),
+      sourceId: source_id,
+    });
     return JSON.stringify({
       query,
-      hits: hits.map((h) => ({
-        source: h.source_label ?? h.source_id,
-        path: h.rel_path,
-        chunk_index: h.chunk_index,
-        score: Number(h.score.toFixed(4)),
-        match: h.match,
-        text: h.text,
-      })),
+      hits: groupDocumentHits(hits, maxFiles),
     });
   },
   {
@@ -56,7 +93,7 @@ export const documentsSearch = tool(
     schema: z.object({
       query: z.string().describe("Natural-language question or keywords to look up."),
       limit: z.number().int().min(1).max(25).optional()
-        .describe("Max results to return (default 8)."),
+        .describe("Max distinct files to return (default 5, capped at 10). Each file includes up to two short matching passages."),
       source_id: z.string().optional()
         .describe("Restrict the search to a single document_source id. Omit to search all."),
     }),

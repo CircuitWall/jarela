@@ -7,10 +7,37 @@ interface Props {
   onSearch: (query: string) => Promise<DocumentHit[]>;
 }
 
+interface PreviewGroup {
+  documentId: string;
+  sourceLabel: string | null;
+  relPath: string;
+  hits: DocumentHit[];
+}
+
+function groupPreviewHits(hits: DocumentHit[]): PreviewGroup[] {
+  const groups = new Map<string, PreviewGroup>();
+  for (const hit of hits) {
+    let group = groups.get(hit.document_id);
+    if (!group) {
+      if (groups.size >= 5) continue;
+      group = {
+        documentId: hit.document_id,
+        sourceLabel: hit.source_label,
+        relPath: hit.rel_path,
+        hits: [],
+      };
+      groups.set(hit.document_id, group);
+    }
+    if (group.hits.length < 2) group.hits.push(hit);
+  }
+  return Array.from(groups.values());
+}
+
 export function SearchProbe({ onSearch }: Props) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<DocumentHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const groups = groupPreviewHits(hits);
 
   async function runSearch() {
     const q = query.trim();
@@ -45,19 +72,25 @@ export function SearchProbe({ onSearch }: Props) {
       </div>
       {hits.length > 0 && (
         <div className="space-y-2">
-          {hits.map((h) => (
-            <div key={`${h.document_id}-${h.chunk_index}`} className="rounded-md border border-border bg-surface px-3 py-2 text-xs">
-              <div className="flex items-center gap-2 mb-1">
+          {groups.map((group) => (
+            <div key={group.documentId} className="rounded-md border border-border bg-surface px-3 py-2 text-xs">
+              <div className="flex items-center mb-1">
                 <span className="font-mono text-fg-muted truncate flex-1">
-                  {h.source_label ? `${h.source_label} / ` : ""}{h.rel_path}
-                </span>
-                <span className="text-[10px] uppercase tracking-wide text-fg-faint shrink-0">
-                  {h.match} · {h.score.toFixed(2)}
+                  {group.sourceLabel ? `${group.sourceLabel} / ` : ""}{group.relPath}
                 </span>
               </div>
-              <pre className="whitespace-pre-wrap text-fg-muted text-[11px] leading-relaxed font-sans line-clamp-6">
-                {h.text}
-              </pre>
+              <div className="space-y-2">
+                {group.hits.map((hit) => (
+                  <div key={hit.chunk_index} className="border-t border-border/60 pt-1.5 first:border-t-0 first:pt-0">
+                    <div className="text-[10px] uppercase tracking-wide text-fg-faint mb-0.5">
+                      Chunk {hit.chunk_index + 1} · {hit.match} · {hit.score.toFixed(2)}
+                    </div>
+                    <pre className="whitespace-pre-wrap text-fg-muted text-[11px] leading-relaxed font-sans line-clamp-6">
+                      {hit.text}
+                    </pre>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
