@@ -49,7 +49,36 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       - name: Audit full dependency graph
-        run: npm audit --audit-level=moderate
+        run: |
+          set -euo pipefail
+          # Advisories with no upstream fix yet are allowlisted here, explicitly
+          # and by id, so the gate still fails on anything new. Each entry is a
+          # dated risk acceptance — remove it once the GHSA shows a patched
+          # version and re-run `npm audit` to confirm it's gone.
+          #   GHSA-vfj7-8cjw-p6xm braces (high, dev-only via eslint-config-next)
+          #     — reviewed 2026-10-09, "Patched versions: None" upstream.
+          #   GHSA-f94x-6692-553q music-metadata (moderate, via
+          #     @whiskeysockets/baileys) — reviewed 2026-10-09, unreleased fix.
+          #   GHSA-5gfj-9q3v-qfp3 music-metadata (moderate, via
+          #     @whiskeysockets/baileys) — reviewed 2026-10-09, unreleased fix.
+          allowed="GHSA-vfj7-8cjw-p6xm GHSA-f94x-6692-553q GHSA-5gfj-9q3v-qfp3"
+          report="$(npm audit --audit-level=moderate --json || true)"
+          unexpected="$(echo "$report" | jq -r --arg allowed "$allowed" '
+            ($allowed | split(" ")) as $allow
+            | [.vulnerabilities[].via[]?
+               | select(type == "object" and (.severity as $s | ["moderate","high","critical"] | index($s)))
+               | .url // "" | capture("advisories/(?<id>GHSA-[a-zA-Z0-9-]+)").id]
+            | unique
+            | map(select(. as $id | ($allow | index($id)) == null))
+            | .[]
+          ')"
+          if [ -n "$unexpected" ]; then
+            echo "npm audit found advisories outside the allowlist:" >&2
+            echo "$unexpected" >&2
+            echo "$report" | jq .
+            exit 1
+          fi
+          echo "Only allowlisted advisories present (or none): $allowed"
 
       - name: Verify npm package signatures
         run: npm audit signatures
