@@ -27,8 +27,8 @@ type UseSSECommands = {
     message: string,
     options?: StreamOptions,
     attachments?: ContentPart[],
-    hotSince?: string | null,
     channels?: string[],
+    hotSinceSeq?: number | null,
   ) => Promise<{ accepted: boolean }>;
   stop: () => void;
   attach: (threadId: string) => Promise<void>;
@@ -373,8 +373,8 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     message: string,
     options?: StreamOptions,
     attachments?: ContentPart[],
-    hotSince?: string | null,
     channels?: string[],
+    hotSinceSeq?: number | null,
   ): Promise<{ accepted: boolean }> => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -395,7 +395,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       // Command: register the run server-side. 202 = we own this turn; 409
       // = another tab/device owns it (caller re-queues, we still subscribe
       // so the user sees the in-flight turn's deltas render).
-      const submit = await submitRun(threadId, message, ctrl.signal, options, attachments, hotSince, channels);
+      const submit = await submitRun(threadId, message, ctrl.signal, options, attachments, channels, hotSinceSeq);
 
       // Query: subscribe to the run's chunk stream. Always opens the GET,
       // regardless of whether we got 202 or 409 — if 409 a run is already

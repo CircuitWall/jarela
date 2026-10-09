@@ -132,8 +132,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       text,
       { filters: { include_tools: true, include_thinking: true }, ui_experience_mode: state.experienceMode },
       atts.length ? atts : undefined,
-      thread.hotSince ?? undefined,
       activeChannels,
+      thread.hotSinceSeq,
     );
     if (!accepted) {
       // Server rejected because another run was in flight (second tab,
@@ -198,8 +198,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         // older history past JARELA_MAX_THREAD_MESSAGES has been pruned
         // server-side but its content lives on inside the warm summary.
         thread.metaApplier.setHotSince(result.hot_since ?? null);
+        thread.metaApplier.setHotSinceSeq(result.hot_since_seq ?? null);
         thread.metaApplier.setWarmSummary(result.warm_summary ?? null);
         thread.metaApplier.setWarmSummaryBefore(result.warm_summary_before ?? null);
+        thread.metaApplier.setWarmSummaryBeforeSeq(result.warm_summary_before_seq ?? null);
+        thread.metaApplier.setWarmSummaryBeforeSeq(result.warm_summary_before_seq ?? null);
         thread.metaApplier.setWarmSummaryComputedAt(result.warm_summary_computed_at ?? null);
         thread.metaApplier.setWarmSummarySourceMessages(result.warm_summary_source_messages ?? null);
         thread.metaApplier.setWarmSummarySourceChars(result.warm_summary_source_chars ?? null);
@@ -261,9 +264,9 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         onLoadMore={thread.loadOlder}
         queuedMessages={queuedMessages}
         onRemoveQueued={queue.removeQueued}
-        hotSince={thread.hotSince}
+        hotSinceSeq={thread.hotSinceSeq}
         warmSummary={thread.warmSummary}
-        warmSummaryBefore={thread.warmSummaryBefore}
+        warmSummaryBeforeSeq={thread.warmSummaryBeforeSeq}
         warmSummaryComputedAt={thread.warmSummaryComputedAt}
         warmSummarySourceMessages={thread.warmSummarySourceMessages}
         warmSummarySourceChars={thread.warmSummarySourceChars}

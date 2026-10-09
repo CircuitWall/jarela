@@ -21,8 +21,10 @@ export interface ThreadDataApi {
   loadingMore: boolean;
   messagesLoading: boolean;
   hotSince: string | null;
+  hotSinceSeq: number | null;
   warmSummary: string | null;
   warmSummaryBefore: string | null;
+  warmSummaryBeforeSeq: number | null;
   warmSummaryComputedAt: string | null;
   warmSummarySourceMessages: number | null;
   warmSummarySourceChars: number | null;
@@ -32,7 +34,7 @@ export interface ThreadDataApi {
   contextWindowTokens: number | null;
   metaApplier: ThreadMetaApplier;
   loadOlder: () => Promise<void>;
-  setContextPin: (next: string | null) => Promise<void>;
+  setContextPin: (next: number | null) => Promise<void>;
 }
 
 export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
@@ -42,8 +44,10 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   const [loadingMore, setLoadingMore] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [hotSince, setHotSince] = useState<string | null>(null);
+  const [hotSinceSeq, setHotSinceSeq] = useState<number | null>(null);
   const [warmSummary, setWarmSummary] = useState<string | null>(null);
   const [warmSummaryBefore, setWarmSummaryBefore] = useState<string | null>(null);
+  const [warmSummaryBeforeSeq, setWarmSummaryBeforeSeq] = useState<number | null>(null);
   const [warmSummaryComputedAt, setWarmSummaryComputedAt] = useState<string | null>(null);
   const [warmSummarySourceMessages, setWarmSummarySourceMessages] = useState<number | null>(null);
   const [warmSummarySourceChars, setWarmSummarySourceChars] = useState<number | null>(null);
@@ -56,7 +60,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   messagesRef.current = messages;
 
   const metaApplier: ThreadMetaApplier = {
-    setHotSince, setWarmSummary, setWarmSummaryBefore,
+    setHotSince, setHotSinceSeq, setWarmSummary, setWarmSummaryBefore, setWarmSummaryBeforeSeq,
     setWarmSummaryComputedAt, setWarmSummarySourceMessages,
     setWarmSummarySourceChars, setContextWindowTokens, setWarmSummaryPending,
     setCompactionPending, setWarmSummaryTopics,
@@ -73,8 +77,10 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       setHasMore(false);
       setMessagesLoading(false);
       setHotSince(null);
+      setHotSinceSeq(null);
       setWarmSummary(null);
       setWarmSummaryBefore(null);
+      setWarmSummaryBeforeSeq(null);
       setWarmSummaryComputedAt(null);
       setWarmSummarySourceMessages(null);
       setWarmSummarySourceChars(null);
@@ -89,8 +95,10 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     setMessages([]);
     setHasMore(false);
     setHotSince(null);
+    setHotSinceSeq(null);
     setWarmSummary(null);
     setWarmSummaryBefore(null);
+    setWarmSummaryBeforeSeq(null);
     setWarmSummaryComputedAt(null);
     setWarmSummarySourceMessages(null);
     setWarmSummarySourceChars(null);
@@ -118,21 +126,28 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
 
   // ADR-0042. Keep the current boundary visible while the server prepares
   // and atomically publishes the replacement warm context plus new pin.
-  const setContextPin = useCallback(async (next: string | null) => {
+  const setContextPin = useCallback(async (next: number | null) => {
     if (!threadId) return;
-    if (next === null) setHotSince(null);
+    if (next === null) {
+      setHotSince(null);
+      setHotSinceSeq(null);
+    }
     setCompactionPending(next !== null);
     try {
       const updated = await api.threads.setContextPin(threadId, next);
       setHotSince(updated.hot_since);
+      setHotSinceSeq(updated.hot_since_seq);
       setWarmSummary(updated.warm_summary);
       setWarmSummaryBefore(updated.warm_summary_before);
+      setWarmSummaryBeforeSeq(updated.warm_summary_before_seq);
       setWarmSummaryComputedAt(updated.warm_summary_computed_at);
       setWarmSummarySourceMessages(updated.warm_summary_source_messages);
       setWarmSummarySourceChars(updated.warm_summary_source_chars);
       setWarmSummaryTopics(updated.warm_summary_topics);
-      setCompactionPending(!!updated.pending_hot_since);
-      if (!updated.pending_hot_since && (!updated.hot_since || updated.warm_summary_before === updated.hot_since)) {
+      setCompactionPending(updated.pending_hot_since_seq != null);
+      const summaryFresh = updated.hot_since_seq != null
+        && updated.warm_summary_before_seq === updated.hot_since_seq;
+      if (!updated.pending_hot_since_seq && (!updated.hot_since_seq || summaryFresh)) {
         setWarmSummaryPending(false);
       }
     } catch (err) {
@@ -144,9 +159,10 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
 
   useEffect(() => {
     if (!threadId) return;
-    const summaryStale = warmSummaryPending && !!hotSince && warmSummaryBefore !== hotSince;
+    const summaryFresh = hotSinceSeq !== null && warmSummaryBeforeSeq === hotSinceSeq;
+    const summaryStale = warmSummaryPending && hotSinceSeq !== null && !summaryFresh;
     if (!summaryStale && !compactionPending) {
-      if (warmSummaryPending && hotSince && warmSummaryBefore === hotSince) setWarmSummaryPending(false);
+      if (warmSummaryPending && hotSinceSeq !== null && summaryFresh) setWarmSummaryPending(false);
       return;
     }
     let cancelled = false;
@@ -154,7 +170,9 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       void api.threads.get(threadId).then((d) => {
         if (cancelled) return;
         applyThreadMeta(metaApplier, d);
-        if (!d.hot_since || d.warm_summary_before === d.hot_since) {
+        const refreshedSummaryIsFresh = d.hot_since_seq != null
+          && d.warm_summary_before_seq === d.hot_since_seq;
+        if (!d.hot_since_seq || refreshedSummaryIsFresh) {
           setWarmSummaryPending(false);
         }
       }).catch((err) => {
@@ -166,7 +184,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       window.clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, warmSummaryPending, compactionPending, hotSince, warmSummaryBefore]);
+  }, [threadId, warmSummaryPending, compactionPending, hotSince, hotSinceSeq, warmSummaryBefore, warmSummaryBeforeSeq]);
 
   const loadOlder = useCallback(async () => {
     if (!threadId || loadingMore || !hasMore || messages.length === 0) return;
@@ -189,7 +207,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   return {
     messages, setMessages, messagesRef, notices, setNotices, addNotice,
     hasMore, setHasMore, loadingMore, messagesLoading,
-    hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt,
+    hotSince, hotSinceSeq, warmSummary, warmSummaryBefore, warmSummaryBeforeSeq, warmSummaryComputedAt,
     warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending, compactionPending, contextWindowTokens,
     metaApplier, loadOlder, setContextPin,
   };

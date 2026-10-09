@@ -18,10 +18,8 @@ interface WarmSummaryCardProps {
   olderCount: number;
   /** Latest persisted summary text, NULL/empty if not yet computed. */
   summary: string | null;
-  /** ISO timestamp the cached summary covers; compared to `hotSince` to know freshness. */
-  summaryBefore: string | null;
-  /** Pin position. When this differs from `summaryBefore`, the card shows a placeholder. */
-  hotSince: string | null;
+  summaryBeforeSeq?: number | null;
+  hotSinceSeq?: number | null;
   /** Wall-clock the summary was computed at; rendered as a relative footer chip. */
   computedAt: string | null;
   /** True while a turn is streaming — promotes the placeholder to a "computing…" state. */
@@ -33,14 +31,14 @@ interface WarmSummaryCardProps {
 export function WarmSummaryCard({
   olderCount,
   summary,
-  summaryBefore,
-  hotSince,
+  summaryBeforeSeq,
+  hotSinceSeq,
   computedAt,
   streaming,
   topics,
 }: WarmSummaryCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const fresh = !!summary && summaryBefore === hotSince;
+  const fresh = !!summary && hotSinceSeq != null && summaryBeforeSeq === hotSinceSeq;
   const stale = !!summary && !fresh;
   const computing = stale && streaming;
   // Topics cover the same range as the prose (persisted together); only

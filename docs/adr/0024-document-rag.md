@@ -73,7 +73,7 @@ cap to 5 000 so an explicit user click is bounded but exhaustive.
 
 ### Search
 
-`searchDocuments(query, { limit, sourceId? })`:
+`searchDocuments(query, { limit, sourceId?, minSimilarity? })`:
 
 - Embed the query (`embedQueryOne`), pull all chunks from enabled sources
   (capped at 20 000 rows per call as a defensive ceiling), score each
@@ -89,24 +89,26 @@ cap to 5 000 so an explicit user click is bounded but exhaustive.
    substring fallback is unaffected.
 
 Exposed via the `documents_search` tool (category `Documents`) and the
-`GET /api/v1/documents/search` endpoint (used by the panel's preview
-input). A second tool, `documents_list_sources`, lets agents discover
+`GET /api/v1/documents/search` endpoint used by the unified Memory search
+workspace. A second tool, `documents_list_sources`, lets agents discover
 available folders before scoping a search with `source_id`.
 
 The agent tool groups ranked chunk hits by document and returns up to five
 files by default (caller limit capped at ten), with at most two excerpts per
-file and 1 200 characters per excerpt. The Documents preview groups its
-eight chunk hits into up to five files with at most two excerpts each.
+file and 1 200 characters per excerpt. The unified Memory workspace groups
+results into up to eight files or conversations per channel, with at most two
+passages per group and 1 200 characters per passage.
 
 ### UI
 
 Documents search and chat-history search share the **Tools → Memory**
 workspace. One query searches either or both channels; results are grouped by
-file or conversation and ranked by similarity relative to each channel's
-active floor. Exact, keyword, and substring fallbacks remain visible below
-semantic results. The locally calibrated chat floor is provisionally `0.84`
-(`0.25` for other providers); `memory_search` accepts `min_chat_similarity`
-to widen chat results.
+file or conversation. Semantic scores are normalized against each channel's
+active floor before cross-channel ranking. Exact literal matches rank first;
+keyword and substring fallbacks remain visible below semantic results. The
+locally calibrated chat floor is provisionally `0.84` (`0.25` for other
+providers); `memory_search` accepts `min_chat_similarity` to widen chat
+results.
 
 Saved facts and document-source controls live in collapsed sections below the
 results. The workspace lets the user:

@@ -22,9 +22,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { listAgentConfigs } from "@/lib/stores/agent-configs";
 import { getDefaultModelConfig } from "@/lib/stores/model-config";
-import { commitThreadWarmContext, listThreadsByAgent, getRecentMessagesWindow } from "@/lib/stores/threads";
-import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
-import { wrapWarmSummary } from "@/lib/agents/prepare/history-window";
+import { listThreadsByAgent, getRecentMessagesWindow } from "@/lib/stores/threads";
+import { compactThreadWarmContext } from "@/lib/agents/warm-summary-background";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
@@ -77,33 +76,20 @@ export async function POST(req: NextRequest, { params }: Params) {
       // the system considers part of the conversation.
       const msgs = getRecentMessagesWindow(t.thread_id, 0, undefined, "foreground");
       if (msgs.length <= keep_last) { skipped += 1; continue; }
-      const warmMsgs = msgs.slice(0, msgs.length - keep_last);
       const hotStart = msgs[msgs.length - keep_last]!;
-      const transcript = warmMsgs
-        .map((m) => `${m.role}: ${transcriptText(m.content)}`)
-        .join("\n");
       try {
-        const summary = await summarizeTranscript(
-          provider,
-          using.model_id,
-          (using.params ?? {}) as ProviderParams,
-          transcript,
-        );
-        if (summary) {
-          const sourceChars = warmMsgs.reduce((total, message) => total + transcriptText(message.content).length, 0);
-          const committed = commitThreadWarmContext(t.thread_id, {
-            hotSince: hotStart.created_at,
-            summary: wrapWarmSummary(summary, "foreground"),
-            sourceMessages: warmMsgs.length,
-            sourceChars,
-            expectedHotSince: t.hot_since ?? null,
-            expectedWarmSummary: t.warm_summary ?? null,
-          });
-          if (committed) compacted += 1;
-          else skipped += 1;
-        } else {
-          skipped += 1;
-        }
+        const committed = await compactThreadWarmContext(t.thread_id, hotStart.seq, {
+          expectedHotSinceSeq: t.hot_since_seq ?? null,
+          alignTopicBoundary: false,
+          allowEmptySummary: true,
+          providerOverride: {
+            provider,
+            modelId: using.model_id,
+            params: (using.params ?? {}) as ProviderParams,
+          },
+        });
+        if (committed) compacted += 1;
+        else skipped += 1;
       } catch (e) {
         errors.push({ thread_id: t.thread_id, error: errorMessage(e) });
       }

@@ -21,7 +21,7 @@ export const compactContextTool = tool(
     }
 
     // The current user message stays hot; everything before it becomes the warm summary.
-    moveThreadContextBoundary(threadId, lastUser.created_at, { refreshWarmSummary: true });
+    moveThreadContextBoundary(threadId, lastUser.seq, { refreshWarmSummary: true });
     return JSON.stringify({
       ok: true,
       status: "scheduled",

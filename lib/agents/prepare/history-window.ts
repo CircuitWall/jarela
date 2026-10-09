@@ -8,7 +8,7 @@
 //
 // See ADR-0039 for the decomposition rationale.
 
-import { countMessagesBetween, getRecentMessagesWindow, getThread, getThreadChannelSummary } from "@/lib/stores/threads";
+import { countMessagesBetweenSeq, getRecentMessagesWindow, getThread, getThreadChannelSummary } from "@/lib/stores/threads";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
@@ -99,56 +99,38 @@ const WARM_CACHE_STALE_MESSAGE_TOLERANCE = 4;
 function resolveWarmCacheHit(
   thread_id: string,
   cachedWarm: { scope: "foreground" | "bridge" | "all" | "none" | null; content: string } | null,
-  cachedBoundary: string | null,
   cachedSourceMessages: number | null,
-  currentBoundary: string | null,
   scope: "foreground" | "bridge" | "all" | "none",
+  cachedBoundarySeq: number | null,
+  currentBoundarySeq: number | null,
 ): string | null {
   if (!cachedWarm) return null;
   if (cachedWarm.scope !== scope) return null;
-  if (currentBoundary === null) return null;
-  if (cachedBoundary === null) return null;
-  if (cachedBoundary === currentBoundary) return cachedWarm.content;
-  if (isWarmCacheStaleBeyondTolerance(thread_id, cachedBoundary, currentBoundary, scope, cachedSourceMessages)) {
-    return null;
-  }
-  return cachedWarm.content;
+  if (cachedBoundarySeq === null || currentBoundarySeq === null) return null;
+  if (cachedBoundarySeq === currentBoundarySeq) return cachedWarm.content;
+  return isWarmCacheStaleBySeq(thread_id, cachedBoundarySeq, currentBoundarySeq, scope, cachedSourceMessages)
+    ? null
+    : cachedWarm.content;
 }
 
-function isWarmCacheStaleBeyondTolerance(
+function isWarmCacheStaleBySeq(
   thread_id: string,
-  cachedBoundary: string,
-  currentBoundary: string,
+  cachedBoundarySeq: number,
+  currentBoundarySeq: number,
   scope: "foreground" | "bridge" | "all" | "none",
   cachedSourceMessages: number | null,
 ): boolean {
-  // Boundary moved back (user drag / /compact): don't tolerate — the cached
-  // summary covers messages that are now hot, so reusing it would double
-  // up on content and misrepresent "warm" to the model. Rebuild.
-  if (currentBoundary < cachedBoundary) return true;
-  if (currentBoundary === cachedBoundary) return false;
-  // Boundary moved forward: count how many messages fell between the old
-  // and new boundary at the matching scope. One bounded DB count (cap at
-  // tolerance+1 — we only care "more than tolerance" vs "within"),
-  // cheaper than paying the LLM summariser's wall-clock budget on every
-  // turn.
-  const windowScope: "foreground" | "bridge" | "all" =
-    scope === "all" || scope === "none" ? "all" : scope;
-  const delta = countMessagesBetween(
+  if (currentBoundarySeq < cachedBoundarySeq) return true;
+  const windowScope: "foreground" | "bridge" | "all" = scope === "all" || scope === "none" ? "all" : scope;
+  const delta = countMessagesBetweenSeq(
     thread_id,
-    cachedBoundary,
-    currentBoundary,
+    cachedBoundarySeq,
+    currentBoundarySeq,
     windowScope,
     WARM_CACHE_STALE_MESSAGE_TOLERANCE + 1,
   );
   if (delta > WARM_CACHE_STALE_MESSAGE_TOLERANCE) return true;
-  // Sanity floor: if the cached summary was built from very few source
-  // messages, don't let a near-miss count mask a proportionally large
-  // drift (e.g. tolerance=4 against a 3-source summary is a 100%+ growth).
-  if (cachedSourceMessages !== null && cachedSourceMessages > 0 && delta > cachedSourceMessages) {
-    return true;
-  }
-  return false;
+  return cachedSourceMessages !== null && cachedSourceMessages > 0 && delta > cachedSourceMessages;
 }
 
 /**
@@ -170,12 +152,13 @@ export async function buildHistoryWindow(
   providerParams: ProviderParams,
   trimmedMessage: string,
   modelInfo: { providerName?: string; modelId?: string },
-  hotSince?: string | null,
+  _hotSinceDisplay?: string | null,
   options: {
     scope?: "foreground" | "bridge" | "all" | "none";
     includeWarm?: boolean;
     includeFacts?: boolean;
     bridgeKey?: string;
+    hotSinceSeq?: number | null;
     /**
      * ADR-0044 — active channel set for this turn. "chat" plus zero or more
      * of AUTOMATION_CHANNEL_ORDER. Omitted, or exactly ["chat"], is
@@ -194,22 +177,20 @@ export async function buildHistoryWindow(
     ? Math.max(configuredLimit, hotTurnLimit * 2)
     : configuredLimit;
   const windowHours = agentCfg.history_window_hours ?? 8;
-  // Explicit pin wins over the agent default. NULL/undefined falls back to
-  // the time-window heuristic; existing threads with no pin behave exactly
-  // as they did before this ADR landed.
-  const sinceISO = hotSince
-    ? hotSince
-    : windowHours > 0
-      ? new Date(Date.now() - windowHours * 3600_000).toISOString()
-      : undefined;
+  const cached = getThread(thread_id);
+  const pinnedBoundarySeq = options.hotSinceSeq ?? cached?.hot_since_seq ?? null;
+  const hotSinceCursor = pinnedBoundarySeq ?? undefined;
+  const sinceISO = pinnedBoundarySeq === null && windowHours > 0
+    ? new Date(Date.now() - windowHours * 3600_000).toISOString()
+    : undefined;
   const scope = options.scope ?? "all";
   // Deterministic display/summarisation order — fixed regardless of the
   // order channels appear in options.channels.
   const orderedAutomationChannels = AUTOMATION_CHANNEL_ORDER.filter((c) => options.channels?.includes(c));
   const multiChannel = orderedAutomationChannels.length > 0;
   const storedWindowMessages = multiChannel
-    ? getRecentMessagesWindow(thread_id, limit, sinceISO, "channels", options.bridgeKey, options.channels)
-    : getRecentMessagesWindow(thread_id, limit, sinceISO, scope, options.bridgeKey);
+    ? getRecentMessagesWindow(thread_id, limit, sinceISO, "channels", options.bridgeKey, options.channels, hotSinceCursor)
+    : getRecentMessagesWindow(thread_id, limit, sinceISO, scope, options.bridgeKey, undefined, hotSinceCursor);
   const allWindowMessages = storedWindowMessages.map((message) => {
     if (message.role !== "assistant" || !message.metadata) return message;
     try {
@@ -228,8 +209,6 @@ export async function buildHistoryWindow(
   // cutoff between warm and hot. Without this fallback every unpinned turn
   // paid a full LLM round-trip to re-summarise an unchanged transcript and
   // the result was never persisted, so the summariser tax was permanent.
-  const cached = getThread(thread_id);
-
   // A non-positive configured window is meaningless and would floor the hot
   // budget at zero — i.e. call the model with no transcript at all. Treat it
   // as unset and fall back to the known window for the model.
@@ -279,34 +258,20 @@ export async function buildHistoryWindow(
         ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, 0));
         continue;
       }
-      // Boundary key the cached summary is stamped with. Prefer the explicit
-      // pin; fall back to the first hot message's timestamp so unpinned
-      // threads can also benefit from cache hits across turns that don't
-      // change the hot/warm split.
       const hotForSlice = hotMessages ?? (hotTurnLimit > 0
         ? takeRecentTurnsWithinBudget(allWindowMessages, budget.tierBudgets.hot, hotTurnLimit)
         : takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot));
-      const autoBoundary = hotForSlice[0]?.created_at ?? null;
-      const boundaryKey = hotSince ?? autoBoundary;
+      const boundaryKeySeq = pinnedBoundarySeq ?? hotForSlice[0]?.seq ?? null;
       const cachedWarm = cached?.warm_summary
         ? unwrapWarmSummary(cached.warm_summary)
         : null;
-      // Strict ISO-timestamp equality on the boundary key meant the cache
-      // almost never hit when `hot_since` advanced incrementally between
-      // turns, so the summariser paid its wall-clock-bounded LLM round-trip
-      // every turn — reported by users as "preparing context takes a
-      // really long time". Tolerate a small near-miss (boundary moved
-      // forward by only a few messages at the matching scope): reuse the
-      // cached summary and let the background compactor catch up. A
-      // backward-moved boundary (user drag / /compact) must still rebuild,
-      // because the cached summary would over-cover the now-hot range.
       const cacheResult = resolveWarmCacheHit(
         thread_id,
         cachedWarm,
-        cached?.warm_summary_before ?? null,
         cached?.warm_summary_source_messages ?? null,
-        boundaryKey,
         scope,
+        cached?.warm_summary_before_seq ?? null,
+        boundaryKeySeq,
       );
       if (cacheResult !== null) {
         // Boundary-stable or small-slide turn: don't pay the summariser tax again.
@@ -320,7 +285,7 @@ export async function buildHistoryWindow(
         // exactly the leak ADR-0044 exists to close. Pass hotCount=0 since
         // the boundary filter has already excluded the hot portion.
         const chatSourceMessages = multiChannel
-          ? allWindowMessages.filter((m) => m.category == null && (boundaryKey === null || m.created_at < boundaryKey))
+          ? allWindowMessages.filter((m) => m.category == null && (boundaryKeySeq === null || m.seq < boundaryKeySeq))
           : allWindowMessages;
         const chatHotCount = multiChannel ? 0 : hotForSlice.length;
         // Race the summariser against a wall-clock budget so a slow or hung
@@ -356,7 +321,7 @@ export async function buildHistoryWindow(
         const automationBlocks: Array<{ channel: string; content: string; computedAt: string | null }> = [];
         for (const channel of orderedAutomationChannels) {
           const row = getThreadChannelSummary(thread_id, channel);
-          if (!row || !row.summary || boundaryKey === null || row.summary_before !== boundaryKey) continue;
+          if (!row || !row.summary || boundaryKeySeq === null || row.summary_before_seq !== boundaryKeySeq) continue;
           automationBlocks.push({ channel, content: row.summary, computedAt: row.computed_at });
         }
         warmSummaryCtx = [...(chatBlock ? [chatBlock] : []), ...automationBlocks]
@@ -520,7 +485,7 @@ function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promis
 }
 
 async function buildWarmSummary(
-  allWindowMessages: readonly { role: string; content: string }[],
+  allWindowMessages: readonly { seq: number; created_at: string; role: string; content: string }[],
   hotCount: number,
   providerName: string | undefined,
   modelId: string | undefined,
@@ -535,7 +500,7 @@ async function buildWarmSummary(
   // Keep summary input bounded by the warm budget to avoid recursive prompt bloat.
   const summaryInputChars = Math.max(0, warmBudgetTokens * 4);
   const transcript = warmMessages
-    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
+    .map((m) => `[seq=${m.seq}] [${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
     .join("\n\n")
     .slice(-summaryInputChars);
   if (!transcript.trim()) return "";

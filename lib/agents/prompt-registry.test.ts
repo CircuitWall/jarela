@@ -266,6 +266,7 @@ describe("prompt registry coverage", () => {
     const declaring = [
       "lib/agents/citation-checker.ts",
       "lib/agents/hallucination-classifier.ts",
+      "lib/agents/conversation-summary.ts",
       "lib/pricing/llm-extract.ts",
       "lib/tools/claude-delegate.ts",
       "lib/agents/prepare/system-prompt.ts",
@@ -275,6 +276,14 @@ describe("prompt registry coverage", () => {
     for (const source of declaring) {
       expect(registered, `${source} declares a prompt but is not in prompt-registry.ts`).toContain(source);
     }
+  });
+
+  it("uses source seq values, not timestamps, for conversation topic boundaries", () => {
+    const prompt = staticPrompts.find((p) => p.id === "agent.conversation-summary")?.text ?? "";
+    expect(prompt).toContain("start_seq");
+    expect(prompt).toContain("end_seq");
+    expect(prompt).toContain("timestamps only as display labels");
+    expect(prompt).not.toContain("copy those exact timestamps");
   });
 
   it("gives every registered prompt a non-empty id, purpose and body", () => {
@@ -301,6 +310,8 @@ describe("prompt registry coverage", () => {
     const citation = promptsAffectedBy(["lib/agents/citation-checker.ts"]);
     expect(citation.staticPromptIds).toContain("audit.citation-checker");
     expect(citation.staticPromptIds).not.toContain("pricing.llm-extract");
+    expect(promptsAffectedBy(["lib/agents/conversation-summary.ts"]).staticPromptIds)
+      .toContain("agent.conversation-summary");
 
     // Windows paths must resolve too, or the narrowing silently returns nothing.
     expect(promptsAffectedBy(["lib\\agents\\prepare\\system-prompt.ts"]).systemPrompt).toBe(true);

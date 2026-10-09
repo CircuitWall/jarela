@@ -14,8 +14,10 @@ export interface SystemNotice {
 
 export interface ThreadMetaApplier {
   setHotSince: (v: string | null) => void;
+  setHotSinceSeq: (v: number | null) => void;
   setWarmSummary: (v: string | null) => void;
   setWarmSummaryBefore: (v: string | null) => void;
+  setWarmSummaryBeforeSeq: (v: number | null) => void;
   setWarmSummaryComputedAt: (v: string | null) => void;
   setWarmSummarySourceMessages: (v: number | null) => void;
   setWarmSummarySourceChars: (v: number | null) => void;
@@ -27,13 +29,16 @@ export interface ThreadMetaApplier {
 
 export interface ThreadGetPayload {
   hot_since?: string | null;
+  hot_since_seq?: number | null;
   warm_summary?: string | null;
   warm_summary_before?: string | null;
+  warm_summary_before_seq?: number | null;
   warm_summary_computed_at?: string | null;
   warm_summary_source_messages?: number | null;
   warm_summary_source_chars?: number | null;
   warm_summary_topics?: SummaryTopicSegment[] | null;
   pending_hot_since?: string | null;
+  pending_hot_since_seq?: number | null;
   context_window_tokens?: number | null;
 }
 
@@ -112,18 +117,21 @@ export function appendUnique(prev: Message[], incoming: Message[]): Message[] {
 }
 
 export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPayload): void {
-  const hotSince = payload.hot_since ?? null;
-  const summaryBefore = payload.warm_summary_before ?? null;
-  meta.setHotSince(hotSince);
+  const hotSinceSeq = payload.hot_since_seq ?? null;
+  const summaryBeforeSeq = payload.warm_summary_before_seq ?? null;
+  meta.setHotSince(payload.hot_since ?? null);
+  meta.setHotSinceSeq(hotSinceSeq);
   meta.setWarmSummary(payload.warm_summary ?? null);
-  meta.setWarmSummaryBefore(summaryBefore);
+  meta.setWarmSummaryBefore(payload.warm_summary_before ?? null);
+  meta.setWarmSummaryBeforeSeq(summaryBeforeSeq);
   meta.setWarmSummaryComputedAt(payload.warm_summary_computed_at ?? null);
   meta.setWarmSummarySourceMessages(payload.warm_summary_source_messages ?? null);
   meta.setWarmSummarySourceChars(payload.warm_summary_source_chars ?? null);
   meta.setWarmSummaryTopics?.(payload.warm_summary_topics ?? null);
   meta.setContextWindowTokens(payload.context_window_tokens ?? null);
-  meta.setWarmSummaryPending?.(!!hotSince && summaryBefore !== hotSince);
-  meta.setCompactionPending?.(!!payload.pending_hot_since);
+  const summaryFresh = hotSinceSeq !== null && summaryBeforeSeq === hotSinceSeq;
+  meta.setWarmSummaryPending?.(hotSinceSeq !== null && !summaryFresh);
+  meta.setCompactionPending?.(payload.pending_hot_since_seq != null);
 }
 
 export function makeQueuedId(prefix = "q"): string {

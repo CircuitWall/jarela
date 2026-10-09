@@ -16,6 +16,7 @@ import { DESIGN_QA_PROMPT } from "@/lib/tools/delegation/claude-delegate";
 import { buildSharedToolCatalogContext } from "@/lib/agents/prepare/system-prompt";
 import { BUILTIN_HARNESSES } from "@/lib/agents/harness/presets";
 import { SYSTEM_SIGNAL_WAKE_PROMPT } from "@/lib/lifecycle/system-signals";
+import { buildConversationSummaryMessages } from "@/lib/agents/conversation-summary";
 
 export interface StaticPrompt {
   id: string;
@@ -32,6 +33,9 @@ export interface StaticPrompt {
  * builds it from fixtures instead.
  */
 export function listStaticPrompts(): StaticPrompt[] {
+  const conversationSummary = buildConversationSummaryMessages(
+    "[seq=42] [2026-10-09T10:00:00.000Z] User: Example transcript row.",
+  ).map((message) => `${message.role.toUpperCase()}\n${typeof message.content === "string" ? message.content : JSON.stringify(message.content)}`).join("\n\n");
   const prompts: StaticPrompt[] = [
     {
       id: "agent.system-signal-wakeup",
@@ -44,6 +48,12 @@ export function listStaticPrompts(): StaticPrompt[] {
       source: "lib/agents/prepare/system-prompt.ts",
       purpose: "Cross-agent tool discovery and invocation procedure; cached prefix of every agent turn.",
       text: buildSharedToolCatalogContext(),
+    },
+    {
+      id: "agent.conversation-summary",
+      source: "lib/agents/conversation-summary.ts",
+      purpose: "Compress warm chat context while preserving source seq boundaries for topic alignment.",
+      text: conversationSummary,
     },
     {
       id: "audit.citation-checker",

@@ -16,6 +16,7 @@ process.env.JARELA_DB_DIR = tmpRoot;
 
 const { embedOne } = await import("@/lib/embeddings");
 const { getDb } = await import("@/lib/db");
+const { runMigrations } = await import("@/lib/db/migrations");
 
 const {
   addMessage,
@@ -66,15 +67,53 @@ describe("thread context pin (ADR-0042)", () => {
 
   it("setThreadContextPin moves the boundary and clearing it returns null", () => {
     const t = createThread("agent-x");
-    setThreadContextPin(t.thread_id, "2026-06-01T10:00:00.000Z");
+    setThreadContextPin(t.thread_id, "2026-06-01T10:00:00.000Z", 1);
     expect(getThread(t.thread_id)?.hot_since).toBe("2026-06-01T10:00:00.000Z");
+    expect(getThread(t.thread_id)?.hot_since_seq).toBe(1);
     setThreadContextPin(t.thread_id, null);
     expect(getThread(t.thread_id)?.hot_since).toBeNull();
+    expect(getThread(t.thread_id)?.hot_since_seq).toBeNull();
+  });
+
+  it("filters the hot window by the exact source seq when timestamps tie", () => {
+    const t = createThread("agent-seq-boundary");
+    const first = addMessage(t.thread_id, "user", "first tied row");
+    const second = addMessage(t.thread_id, "assistant", "pinned tied row");
+    const tiedAt = "2026-06-01T10:00:00.000Z";
+    getDb().prepare("UPDATE messages SET created_at=? WHERE msg_id IN (?, ?)").run(tiedAt, first.msg_id, second.msg_id);
+
+    setThreadContextPin(t.thread_id, tiedAt, second.seq);
+    const hot = getRecentMessagesWindow(t.thread_id, 0, tiedAt, "foreground", undefined, undefined, second.seq);
+
+    expect(getThread(t.thread_id)?.hot_since_seq).toBe(second.seq);
+    expect(hot.map((message) => message.content)).toEqual(["pinned tied row"]);
+  });
+
+  it("clears legacy timestamp-only pins instead of selecting an ambiguous source row", () => {
+    const t = createThread("developer");
+    const first = addMessage(t.thread_id, "user", "first tied row");
+    addMessage(t.thread_id, "assistant", "second tied row");
+    const tiedAt = "2026-06-01T10:00:00.000Z";
+    getDb().prepare("UPDATE messages SET created_at=? WHERE thread_id=?").run(tiedAt, t.thread_id);
+    getDb().prepare(
+      "UPDATE threads SET hot_since=?, hot_since_seq=NULL, warm_summary_before=?, warm_summary_before_seq=NULL WHERE thread_id=?",
+    ).run(tiedAt, tiedAt, t.thread_id);
+    commitThreadChannelSummary(t.thread_id, "watcher", { summary: "legacy recap", summaryBefore: tiedAt, summaryBeforeSeq: first.seq });
+    getDb().prepare("UPDATE thread_channel_summaries SET summary_before_seq=NULL WHERE thread_id=?").run(t.thread_id);
+
+    runMigrations(getDb());
+
+    expect(getThread(t.thread_id)).toBeTruthy();
+    expect((getDb().prepare("PRAGMA table_info(threads)").all() as Array<{ name: string }>).some((column) => column.name === "hot_since_seq")).toBe(true);
+    expect(getThread(t.thread_id)?.hot_since).toBeNull();
+    expect(getThread(t.thread_id)?.hot_since_seq).toBeNull();
+    expect(getThread(t.thread_id)?.warm_summary_before_seq).toBeNull();
+    expect(getThreadChannelSummary(t.thread_id, "watcher")?.summary_before_seq).toBeNull();
   });
 
   it("setThreadWarmSummary stores text + boundary + a computed_at stamp", () => {
     const t = createThread("agent-x");
-    setThreadWarmSummary(t.thread_id, "older context recap", "2026-06-01T10:00:00.000Z");
+    setThreadWarmSummary(t.thread_id, "older context recap", "2026-06-01T10:00:00.000Z", undefined, undefined, undefined, 1);
     const after = getThread(t.thread_id);
     expect(after?.warm_summary).toBe("older context recap");
     expect(after?.warm_summary_before).toBe("2026-06-01T10:00:00.000Z");
@@ -84,41 +123,49 @@ describe("thread context pin (ADR-0042)", () => {
   });
 
   it("warm summary freshness key: cleared when hot_since changes (caller's responsibility — store just stores)", () => {
-    // The store doesn't auto-invalidate; the convention is that the consumer
-    // (buildHistoryWindow) compares warm_summary_before vs hot_since and
-    // overwrites both atomically when they diverge. Verify both fields move
-    // independently so the consumer can implement that contract.
+    // The store doesn't auto-invalidate; the consumer compares exact seq
+    // coverage and overwrites the cursor and summary atomically when they diverge.
     const t = createThread("agent-x");
-    setThreadWarmSummary(t.thread_id, "old recap", "2026-06-01T10:00:00.000Z");
-    setThreadContextPin(t.thread_id, "2026-06-01T08:00:00.000Z");
+    setThreadWarmSummary(t.thread_id, "old recap", "2026-06-01T10:00:00.000Z", undefined, undefined, undefined, 1);
+    setThreadContextPin(t.thread_id, "2026-06-01T08:00:00.000Z", 2);
     const drifted = getThread(t.thread_id);
     expect(drifted?.hot_since).toBe("2026-06-01T08:00:00.000Z");
     expect(drifted?.warm_summary_before).toBe("2026-06-01T10:00:00.000Z");
-    // ⇒ freshness check `warm_summary_before === hot_since` returns false.
+    // ⇒ freshness check `warm_summary_before_seq === hot_since_seq` returns false.
   });
 
   it("commits a hot boundary and its warm summary atomically", () => {
     const t = createThread("agent-x");
     const committed = commitThreadWarmContext(t.thread_id, {
       hotSince: "2026-06-01T10:00:00.000Z",
+      hotSinceSeq: 1,
       summary: "<!-- jarela:warm-scope=foreground -->\nolder context recap",
       sourceMessages: 4,
       sourceChars: 120,
       topics: "[]",
-      expectedHotSince: null,
+      expectedHotSinceSeq: null,
+      channelSummaries: [{ channel: "watcher", summary: "watcher recap" }],
     });
 
     expect(committed?.hot_since).toBe("2026-06-01T10:00:00.000Z");
     expect(committed?.warm_summary_before).toBe("2026-06-01T10:00:00.000Z");
     expect(committed?.warm_summary_source_messages).toBe(4);
+    expect(committed?.hot_since_seq).toBe(1);
+    expect(committed?.warm_summary_before_seq).toBe(1);
+    expect(getThreadChannelSummary(t.thread_id, "watcher")).toMatchObject({
+      summary: "watcher recap",
+      summary_before_seq: 1,
+    });
 
-    setThreadContextPin(t.thread_id, "2026-06-01T11:00:00.000Z");
+    setThreadContextPin(t.thread_id, "2026-06-01T11:00:00.000Z", 2);
     const stale = commitThreadWarmContext(t.thread_id, {
       hotSince: "2026-06-01T12:00:00.000Z",
+      hotSinceSeq: 3,
       summary: "stale recap",
       sourceMessages: 6,
       sourceChars: 180,
-      expectedHotSince: "2026-06-01T10:00:00.000Z",
+      expectedHotSinceSeq: 1,
+      expectedHotSinceSeq: 1,
     });
     expect(stale).toBeNull();
     expect(getThread(t.thread_id)?.hot_since).toBe("2026-06-01T11:00:00.000Z");
@@ -126,19 +173,23 @@ describe("thread context pin (ADR-0042)", () => {
     const expectedSummary = getThread(t.thread_id)?.warm_summary ?? null;
     const replacement = commitThreadWarmContext(t.thread_id, {
       hotSince: "2026-06-01T11:00:00.000Z",
+      hotSinceSeq: 2,
       summary: "newer recap",
       sourceMessages: 6,
       sourceChars: 180,
-      expectedHotSince: "2026-06-01T11:00:00.000Z",
+      expectedHotSinceSeq: 2,
+      expectedHotSinceSeq: 2,
       expectedWarmSummary: expectedSummary,
     });
     expect(replacement?.warm_summary).toBe("newer recap");
     const staleSummary = commitThreadWarmContext(t.thread_id, {
       hotSince: "2026-06-01T11:00:00.000Z",
+      hotSinceSeq: 2,
       summary: "must not replace newer recap",
       sourceMessages: 7,
       sourceChars: 210,
-      expectedHotSince: "2026-06-01T11:00:00.000Z",
+      expectedHotSinceSeq: 2,
+      expectedHotSinceSeq: 2,
       expectedWarmSummary: expectedSummary,
     });
     expect(staleSummary).toBeNull();
@@ -517,7 +568,7 @@ describe("thread channel summaries (ADR-0044)", () => {
     const t = createThread("agent-chsum-1");
     expect(getThreadChannelSummary(t.thread_id, "watcher")).toBeNull();
 
-    commitThreadChannelSummary(t.thread_id, "watcher", { summary: "recap", summaryBefore: "2026-01-01T00:00:00.000Z" });
+    commitThreadChannelSummary(t.thread_id, "watcher", { summary: "recap", summaryBefore: "2026-01-01T00:00:00.000Z", summaryBeforeSeq: 1 });
     const row = getThreadChannelSummary(t.thread_id, "watcher");
     expect(row?.summary).toBe("recap");
     expect(row?.summary_before).toBe("2026-01-01T00:00:00.000Z");
@@ -526,8 +577,8 @@ describe("thread channel summaries (ADR-0044)", () => {
 
   it("upserts in place — a second commit for the same channel replaces, not duplicates", () => {
     const t = createThread("agent-chsum-2");
-    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "first", summaryBefore: "2026-01-01T00:00:00.000Z" });
-    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "second", summaryBefore: "2026-01-02T00:00:00.000Z" });
+    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "first", summaryBefore: "2026-01-01T00:00:00.000Z", summaryBeforeSeq: 1 });
+    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "second", summaryBefore: "2026-01-02T00:00:00.000Z", summaryBeforeSeq: 2 });
     expect(getThreadChannelSummary(t.thread_id, "bridge")?.summary).toBe("second");
   });
 

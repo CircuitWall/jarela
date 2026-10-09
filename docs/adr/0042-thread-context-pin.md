@@ -64,6 +64,6 @@ It's the only option that decouples re-reading from context cost. Users scroll f
 ## Implementation notes
 
 * Persistence: four nullable columns on `threads` (`hot_since`, `warm_summary`, `warm_summary_before`, `warm_summary_computed_at`). No new table — there is exactly one boundary and one cached summary per thread.
-* Freshness: the cached summary is fresh iff `warm_summary_before === hot_since`. `setThreadContextPin` does not invalidate; the next `buildHistoryWindow` checks the equality and re-summarises lazily on send.
-* API: `POST /threads/:id/run` gains an optional `hot_since` field (server writes it through to the column). New `PATCH /threads/:id/context-pin` lets the UI move the boundary without sending a turn.
-* Cross-references: ADR-0039 (history-window decomposition — this PR threads `hot_since` through the same call sites). ADR-0008 (run command/query split — `PATCH context-pin` is a third command, kept tiny).
+* Superseded by ADR-0096 for boundary identity and summary freshness: the exact `seq` cursor is authoritative; timestamps are display metadata only.
+* API: `POST /threads/:id/run` carries `hot_since_seq`; `PATCH /threads/:id/context-pin` accepts the exact seq and lets the UI move the boundary without sending a turn.
+* Cross-references: ADR-0039 (history-window decomposition), ADR-0008 (run command/query split), and ADR-0096 (seq-only cursor and warm-context service).

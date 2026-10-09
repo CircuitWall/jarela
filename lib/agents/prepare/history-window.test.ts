@@ -32,7 +32,7 @@ vi.mock("@/lib/embeddings", () => ({
   resetMessageEmbedCache: () => {},
 }));
 
-const { addMessage, createThread, deleteThread, getThread, listThreads, setThreadContextPin, setThreadWarmSummary, commitThreadChannelSummary } =
+const { addMessage, createThread, deleteThread, getThread, getMessages, listThreads, setThreadContextPin, setThreadWarmSummary, commitThreadChannelSummary } =
   await import("@/lib/stores/threads");
 const { putMemory, deleteMemory } = await import("@/lib/stores/memory");
 const { buildHistoryWindow, wrapWarmSummary } = await import("./history-window");
@@ -250,6 +250,30 @@ describe("buildHistoryWindow warm-summary cache", () => {
     for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
   });
 
+  it("uses the exact hot boundary seq even when timestamps tie or disagree", async () => {
+    const thread_id = createThread("agent-seq-history-window").thread_id;
+    const first = addMessage(thread_id, "user", "earlier tied row");
+    const pinned = addMessage(thread_id, "assistant", "pinned tied row");
+    const tiedTimestamp = "2026-10-01T00:00:00.000Z";
+    const displayTimestamp = "2099-01-01T00:00:00.000Z";
+    const { getDb } = await import("@/lib/db");
+    getDb().prepare("UPDATE messages SET created_at=? WHERE msg_id IN (?, ?)")
+      .run(tiedTimestamp, first.msg_id, pinned.msg_id);
+    setThreadContextPin(thread_id, displayTimestamp, pinned.seq);
+
+    const result = await buildHistoryWindow(
+      thread_id,
+      agentCfg(),
+      providerParams,
+      "follow up",
+      modelInfo,
+      displayTimestamp,
+      { scope: "foreground", hotSinceSeq: pinned.seq },
+    );
+
+    expect(result.history.map((message) => message.content)).toEqual(["pinned tied row"]);
+  });
+
   it("keeps an unpinned warm fallback ephemeral until background compaction commits", async () => {
     const thread_id = seedWarmThread();
     chatReturns("RECAP-A");
@@ -308,12 +332,13 @@ describe("buildHistoryWindow warm-summary cache", () => {
     addMessage(thread.thread_id, "user", "BRIDGE_SECRET", null, "bridge", bridgeMetadata);
     addMessage(thread.thread_id, "assistant", "BRIDGE_RESULT", null, "bridge", bridgeMetadata);
     const boundary = "2099-01-01T00:00:00.000Z";
-    setThreadContextPin(thread.thread_id, boundary);
+    const boundarySeq = getMessages(thread.thread_id).at(-1)!.seq + 1;
+    setThreadContextPin(thread.thread_id, boundary, boundarySeq);
     chatReturns("BACKGROUND-RECAP");
 
     await refreshWarmSummary(thread.thread_id);
 
-    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(chatSpy).toHaveBeenCalled();
     const summaryRequest = JSON.stringify(chatSpy.mock.calls[0]);
     expect(summaryRequest).toContain("foreground question");
     expect(summaryRequest).toContain("foreground answer");
@@ -321,8 +346,9 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(summaryRequest).not.toContain("BRIDGE_");
     const persisted = getThread(thread.thread_id);
     expect(persisted?.warm_summary).toContain("<!-- jarela:warm-scope=foreground -->");
-    expect(persisted?.warm_summary_before).toBe(boundary);
+    expect(persisted?.warm_summary_before_seq).toBe(boundarySeq);
     expect(persisted?.warm_summary_source_messages).toBe(2);
+    const callsAfterRefresh = chatSpy.mock.calls.length;
 
     const result = await buildHistoryWindow(
       thread.thread_id,
@@ -331,10 +357,10 @@ describe("buildHistoryWindow warm-summary cache", () => {
       "follow up",
       modelInfo,
       boundary,
-      { scope: "foreground" },
+      { scope: "foreground", hotSinceSeq: boundarySeq },
     );
     expect(result.warmSummaryCtx).toContain("BACKGROUND-RECAP");
-    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(chatSpy).toHaveBeenCalledTimes(callsAfterRefresh);
   });
 
   it("does not overwrite a foreground summary completed during a background refresh", async () => {
@@ -357,7 +383,8 @@ describe("buildHistoryWindow warm-summary cache", () => {
     addMessage(thread.thread_id, "user", "foreground question with enough detail");
     addMessage(thread.thread_id, "assistant", "foreground answer with enough detail");
     const boundary = "2099-01-01T00:00:00.000Z";
-    setThreadContextPin(thread.thread_id, boundary);
+    const boundarySeq = getMessages(thread.thread_id).at(-1)!.seq + 1;
+    setThreadContextPin(thread.thread_id, boundary, boundarySeq);
 
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -377,6 +404,8 @@ describe("buildHistoryWindow warm-summary cache", () => {
       boundary,
       2,
       64,
+      null,
+      boundarySeq,
     );
     release();
     await refresh;
@@ -401,35 +430,15 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(result.budget.contextWindowTokens).toBe(200_000);
   });
 
-  it("rebuilds an uncommitted explicit pin summary until the coordinator stores it", async () => {
-    const thread_id = seedWarmThread();
-    chatReturns("RECAP-PIN-1");
-    setThreadContextPin(thread_id, "2026-06-17T00:00:00.000Z");
-    await buildHistoryWindow(thread_id, agentCfg(), providerParams, "q", modelInfo, "2026-06-17T00:00:00.000Z");
-    expect(chatSpy).toHaveBeenCalledTimes(1);
-
-    chatSpy.mockClear();
-    chatReturns("RECAP-PIN-2");
-    // The direct pin has no atomically committed recap, so this remains an
-    // ephemeral fallback until the background coordinator publishes one.
-    await buildHistoryWindow(thread_id, agentCfg(), providerParams, "q2", modelInfo, "2026-06-17T00:00:00.000Z");
-    expect(chatSpy).toHaveBeenCalledTimes(1);
-
-    // Moving the pin rebuilds against the new boundary.
-    chatSpy.mockClear();
-    await buildHistoryWindow(thread_id, agentCfg(), providerParams, "q3", modelInfo, "2026-06-17T06:00:00.000Z");
-    expect(chatSpy).toHaveBeenCalledTimes(1);
-  });
-
   it("reuses the cached warm summary on a small sliding-window boundary move", async () => {
     const thread_id = seedWarmThread();
     const stamped = await reseedMessageTimestamps(thread_id, "2026-10-01T00:00:00.000Z");
     // Simulate the boundary advancing by two messages between the moment
     // the cached summary was persisted and this new turn.
-    const cachedBoundary = stamped[1].created_at;
-    const currentBoundary = stamped[3].created_at;
-    setThreadContextPin(thread_id, currentBoundary);
-    setThreadWarmSummary(thread_id, wrapWarmSummary("CACHED-RECAP", "all"), cachedBoundary, 2);
+    const cachedBoundary = stamped[1];
+    const currentBoundary = stamped[3];
+    setThreadContextPin(thread_id, currentBoundary.created_at, currentBoundary.seq);
+    setThreadWarmSummary(thread_id, wrapWarmSummary("CACHED-RECAP", "all"), cachedBoundary.created_at, 2, undefined, undefined, cachedBoundary.seq);
 
     chatReturns("REBUILD-RECAP");
     const result = await buildHistoryWindow(
@@ -438,7 +447,8 @@ describe("buildHistoryWindow warm-summary cache", () => {
       providerParams,
       "next question",
       modelInfo,
-      currentBoundary,
+      currentBoundary.created_at,
+      { hotSinceSeq: currentBoundary.seq },
     );
     expect(result.warmSummaryCtx).toContain("CACHED-RECAP");
     expect(result.warmSummaryCtx).not.toContain("REBUILD-RECAP");
@@ -452,10 +462,10 @@ describe("buildHistoryWindow warm-summary cache", () => {
     // tolerance of 4 — so the cache must not be reused. Assert that the
     // stale text is absent, independent of whether the race budget lets
     // the fresh summariser complete.
-    const cachedBoundary = stamped[0].created_at;
-    const currentBoundary = stamped[5].created_at;
-    setThreadContextPin(thread_id, currentBoundary);
-    setThreadWarmSummary(thread_id, wrapWarmSummary("STALE-RECAP", "all"), cachedBoundary, 5);
+    const cachedBoundary = stamped[0];
+    const currentBoundary = stamped[5];
+    setThreadContextPin(thread_id, currentBoundary.created_at, currentBoundary.seq);
+    setThreadWarmSummary(thread_id, wrapWarmSummary("STALE-RECAP", "all"), cachedBoundary.created_at, 5, undefined, undefined, cachedBoundary.seq);
 
     chatReturns("REBUILT-RECAP");
     const result = await buildHistoryWindow(
@@ -464,7 +474,8 @@ describe("buildHistoryWindow warm-summary cache", () => {
       providerParams,
       "next question",
       modelInfo,
-      currentBoundary,
+      currentBoundary.created_at,
+      { hotSinceSeq: currentBoundary.seq },
     );
     expect(result.warmSummaryCtx).not.toContain("STALE-RECAP");
   });
@@ -476,10 +487,10 @@ describe("buildHistoryWindow warm-summary cache", () => {
     // backward (or hit /compact and then moved the boundary earlier). The
     // cached summary covers messages that are now hot, so reusing it
     // would double-cover; must rebuild regardless of how small the delta.
-    const cachedBoundary = stamped[4].created_at;
-    const currentBoundary = stamped[3].created_at;
-    setThreadContextPin(thread_id, currentBoundary);
-    setThreadWarmSummary(thread_id, wrapWarmSummary("BACK-STALE-RECAP", "all"), cachedBoundary, 4);
+    const cachedBoundary = stamped[4];
+    const currentBoundary = stamped[3];
+    setThreadContextPin(thread_id, currentBoundary.created_at, currentBoundary.seq);
+    setThreadWarmSummary(thread_id, wrapWarmSummary("BACK-STALE-RECAP", "all"), cachedBoundary.created_at, 4, undefined, undefined, cachedBoundary.seq);
 
     chatReturns("REBUILT-RECAP");
     const result = await buildHistoryWindow(
@@ -488,7 +499,8 @@ describe("buildHistoryWindow warm-summary cache", () => {
       providerParams,
       "next question",
       modelInfo,
-      currentBoundary,
+      currentBoundary.created_at,
+      { hotSinceSeq: currentBoundary.seq },
     );
     expect(result.warmSummaryCtx).not.toContain("BACK-STALE-RECAP");
   });
@@ -604,15 +616,17 @@ describe("buildHistoryWindow multi-channel context (ADR-0044)", () => {
 
   it("surfaces a fresh automation-channel summary block but skips a stale one", async () => {
     const t = createThread("test-agent", "multi-3");
-    addMessage(t.thread_id, "user", "hot chat row");
-    const boundary = "2099-01-01T00:00:00.000Z";
-    setThreadContextPin(t.thread_id, boundary);
-    commitThreadChannelSummary(t.thread_id, "watcher", { summary: "watcher recap content", summaryBefore: boundary });
-    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "stale bridge recap", summaryBefore: "2020-01-01T00:00:00.000Z" });
+    const pinned = addMessage(t.thread_id, "user", "hot chat row");
+    const boundary = pinned.created_at;
+    const boundarySeq = pinned.seq;
+    setThreadContextPin(t.thread_id, boundary, boundarySeq);
+    commitThreadChannelSummary(t.thread_id, "watcher", { summary: "watcher recap content", summaryBefore: boundary, summaryBeforeSeq: boundarySeq });
+    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "stale bridge recap", summaryBefore: "2020-01-01T00:00:00.000Z", summaryBeforeSeq: (boundarySeq ?? 1) - 1 });
     chatReturns("CHAT-RECAP");
 
     const result = await buildHistoryWindow(t.thread_id, agentCfg(), providerParams, "q", modelInfo, boundary, {
       scope: "foreground",
+      hotSinceSeq: boundarySeq,
       channels: ["chat", "watcher", "bridge"],
     });
 

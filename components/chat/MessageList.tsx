@@ -44,12 +44,11 @@ interface Props {
   onRemoveQueued?: (id: string) => void;
   // ADR-0042 — explicit context boundary state. The boundary divider is
   // rendered in the message stream right after the last message older than
-  // `hotSince` (or above the first loaded message when the pin sits earlier
-  // than the visible window). The warm-summary card sits directly above
-  // the divider and shows the latest persisted recap.
-  hotSince?: string | null;
+  // `hotSinceSeq` (or above the first loaded message when the pin sits earlier
+  // than the visible window). The timestamp is display-only.
+  hotSinceSeq?: number | null;
   warmSummary?: string | null;
-  warmSummaryBefore?: string | null;
+  warmSummaryBeforeSeq?: number | null;
   warmSummaryComputedAt?: string | null;
   warmSummarySourceMessages?: number | null;
   warmSummarySourceChars?: number | null;
@@ -57,7 +56,7 @@ interface Props {
   warmSummaryPending?: boolean;
   /** An automatic compaction is summarising earlier messages right now. */
   compactionPending?: boolean;
-  onSetContextPin?: (hot_since: string | null) => void;
+  onSetContextPin?: (hot_since_seq: number | null) => void;
   streaming?: boolean;
   // Thread-level context window cap, forwarded to each MessageBubble so
   // the ContextUsageBar has a baseline for rows whose own usage snapshot
@@ -80,7 +79,7 @@ const ALL_FILTERS_SHOWN: Record<MessageFilterKey, boolean> = Object.fromEntries(
   MESSAGE_FILTER_KEYS.map((k) => [k, true]),
 ) as Record<MessageFilterKey, boolean>;
 
-export function MessageList({ threadId, messages, steeredSegments, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = () => {}, onResetFilters: reset = () => {} }: Props) {
+export function MessageList({ threadId, messages, steeredSegments, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = () => {}, onResetFilters: reset = () => {} }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -98,11 +97,11 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   const dragGuideRef = useRef<HTMLDivElement>(null);
   const dragGuideStatsRef = useRef<HTMLSpanElement>(null);
   const dragMaskRef = useRef<HTMLDivElement>(null);
-  const previewHotSinceRef = useRef<string | null>(null);
+  const previewHotSinceSeqRef = useRef<number | null>(null);
   const autoRecoveredRef = useRef<string | null>(null);
   const [isDraggingFocus, setIsDraggingFocus] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingHotSince, setPendingHotSince] = useState<string | null>(null);
+  const [pendingHotSinceSeq, setPendingHotSinceSeq] = useState<number | null>(null);
   const [topControlsOpen, setTopControlsOpen] = useState(false);
   const [summaryPopoverOpen, setSummaryPopoverOpen] = useState(false);
 
@@ -127,18 +126,18 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   }, [messages, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
 
   const hiddenCount = messages.length - visibleMessages.length;
-  const effectiveHotSince = hotSince ?? null;
+  const effectiveHotSinceSeq = hotSinceSeq ?? null;
   // The boundary divider only ever renders when a pin is set (see the
-  // `hasBoundary` computation below, which is gated on `effectiveHotSince`).
+  // `hasBoundary` computation below, which is gated on `effectiveHotSinceSeq`).
   // Without this check "Locate boundary line" silently no-ops when there's
   // no pin yet — clicking does nothing and looks like a broken button.
-  const hasContextPin = !!effectiveHotSince;
+  const hasContextPin = effectiveHotSinceSeq !== null;
 
-  function pickHotSinceFromPointerY(clientY: number): string | null {
+  function pickHotSinceSeqFromPointerY(clientY: number): number | null {
     const root = scrollRef.current;
-    if (!root || visibleMessages.length === 0) return hotSince ?? null;
-    const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1']"));
-    if (candidates.length === 0) return hotSince ?? null;
+    if (!root || visibleMessages.length === 0) return effectiveHotSinceSeq;
+    const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1'][data-message-seq]"));
+    if (candidates.length === 0) return effectiveHotSinceSeq;
 
     // Use on-screen message positions (midpoints between consecutive rows)
     // so small drags move the boundary locally instead of jumping by a large
@@ -147,37 +146,32 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
       const currentTop = candidates[i].getBoundingClientRect().top;
       const nextTop = candidates[i + 1].getBoundingClientRect().top;
       const midpoint = currentTop + (nextTop - currentTop) / 2;
-      if (clientY < midpoint) return candidates[i].dataset.createdAt ?? null;
+      if (clientY < midpoint) return Number(candidates[i].dataset.messageSeq);
     }
-    return candidates[candidates.length - 1]?.dataset.createdAt ?? null;
+    const lastCandidate = candidates[candidates.length - 1];
+    const lastSeq = Number(lastCandidate?.dataset.messageSeq);
+    return Number.isFinite(lastSeq) ? lastSeq : effectiveHotSinceSeq;
   }
 
-  function boundaryIndexFor(hot: string | null): number {
-    if (!hot || visibleMessages.length === 0) return -1;
-    const i = visibleMessages.findIndex((m) => m.created_at >= hot);
+  const boundaryIndexFor = useCallback((seq: number | null = effectiveHotSinceSeq): number => {
+    if (seq === null || visibleMessages.length === 0) return -1;
+    const i = visibleMessages.findIndex((m) => typeof m.seq === "number" && m.seq >= seq);
     if (i !== -1) return i;
     return visibleMessages.length;
+  }, [effectiveHotSinceSeq, visibleMessages]);
+
+  function countOlderForHotSince(seq: number | null = effectiveHotSinceSeq): number {
+    const index = boundaryIndexFor(seq);
+    return index < 0 ? 0 : index;
   }
 
-  function countOlderForHotSince(hot: string | null): number {
-    const interactiveBoundary = !!onSetContextPin && visibleMessages.length > 0;
-    const i = hot ? visibleMessages.findIndex((m) => m.created_at >= hot) : -1;
-    const pinAfterAll =
-      (!!hot && visibleMessages.length > 0 && i === -1
-        && visibleMessages[visibleMessages.length - 1].created_at < hot)
-      || (!hot && interactiveBoundary);
-    if (pinAfterAll) return visibleMessages.length;
-    if (hot && i !== -1) return i;
-    return 0;
-  }
-
-  function lineStatsForHotSince(hot: string | null): string {
-    const older = countOlderForHotSince(hot);
+  function lineStatsForHotSince(seq: number | null = effectiveHotSinceSeq): string {
+    const older = countOlderForHotSince(seq);
     const recent = Math.max(0, visibleMessages.length - older);
     return `recent ${recent} · warm ${older}`;
   }
 
-  function boundaryTopForHotSince(hot: string | null): number | null {
+  function boundaryTopForHotSince(seq: number | null = effectiveHotSinceSeq): number | null {
     const root = scrollRef.current;
     const host = hostRef.current;
     if (!root || !host || visibleMessages.length === 0) return null;
@@ -185,12 +179,12 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     if (candidates.length === 0) return null;
     const hostTop = host.getBoundingClientRect().top;
 
-    if (!hot) {
+    if (seq === null) {
       return candidates[candidates.length - 1].getBoundingClientRect().bottom - hostTop;
     }
 
-    const i = visibleMessages.findIndex((m) => m.created_at >= hot);
-    if (i === -1) {
+    const i = boundaryIndexFor(seq);
+    if (i < 0 || i >= visibleMessages.length) {
       return candidates[candidates.length - 1].getBoundingClientRect().bottom - hostTop;
     }
 
@@ -204,7 +198,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     const host = hostRef.current;
     if (!root || !host) return null;
     const boundary = root.querySelector<HTMLElement>("[data-focus-boundary='1'] [aria-label='conversation focus boundary']");
-    if (!boundary) return boundaryTopForHotSince(hotSince ?? null);
+    if (!boundary) return boundaryTopForHotSince(effectiveHotSinceSeq);
     const hostTop = host.getBoundingClientRect().top;
     const rect = boundary.getBoundingClientRect();
     return rect.top + (rect.height / 2) - hostTop;
@@ -233,13 +227,12 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     if (candidates.length === 0 || visibleMessages.length === 0) return null;
 
     const regionTop = region.getBoundingClientRect().top;
-    const effective = hotSince ?? null;
-    if (!effective) {
+    if (effectiveHotSinceSeq === null) {
       return candidates[candidates.length - 1].getBoundingClientRect().bottom - regionTop;
     }
 
-    const i = visibleMessages.findIndex((m) => m.created_at >= effective);
-    if (i === -1) {
+    const i = boundaryIndexFor(effectiveHotSinceSeq);
+    if (i < 0 || i >= visibleMessages.length) {
       return candidates[candidates.length - 1].getBoundingClientRect().bottom - regionTop;
     }
 
@@ -265,9 +258,8 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
       const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1']"));
       if (candidates.length > 0 && visibleMessages.length > 0) {
         const regionTop = region.getBoundingClientRect().top;
-        const effective = hotSince ?? null;
-        const targetIndex = effective ? visibleMessages.findIndex((m) => m.created_at >= effective) : -1;
-        if (!effective || targetIndex === -1) {
+        const targetIndex = boundaryIndexFor(effectiveHotSinceSeq);
+        if (effectiveHotSinceSeq === null || targetIndex < 0 || targetIndex >= visibleMessages.length) {
           boundaryTop = candidates[candidates.length - 1].getBoundingClientRect().bottom - regionTop;
         } else {
           const target = candidates[targetIndex];
@@ -302,7 +294,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
       ? "1px solid rgba(59,130,246,0.42)"
       : "0";
     mask.style.opacity = "1";
-  }, [hotSince, visibleMessages]);
+  }, [boundaryIndexFor, effectiveHotSinceSeq, visibleMessages]);
 
   function clearDragState() {
     if (dragFrameRef.current !== null) {
@@ -320,7 +312,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     dragStartYRef.current = null;
     dragMovedRef.current = false;
     dragPointerIdRef.current = null;
-    previewHotSinceRef.current = null;
+    previewHotSinceSeqRef.current = null;
     dragGuideTopRef.current = null;
     setIsDraggingFocus(false);
     if (dragGuideRef.current) dragGuideRef.current.style.opacity = "0";
@@ -409,9 +401,9 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
       dragGuideRef.current.style.opacity = "1";
     }
 
-    const next = pickHotSinceFromPointerY(clampedY);
-    if (previewHotSinceRef.current !== next) {
-      previewHotSinceRef.current = next;
+    const next = pickHotSinceSeqFromPointerY(clampedY);
+    if (previewHotSinceSeqRef.current !== next) {
+      previewHotSinceSeqRef.current = next;
       if (dragGuideStatsRef.current) {
         dragGuideStatsRef.current.textContent = lineStatsForHotSince(next);
       }
@@ -429,10 +421,10 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     });
   }
 
-  function commitDragCandidate(next: string | null) {
+  function commitDragCandidate(next: number | null) {
     clearDragState();
-    if (!next || next === (hotSince ?? null)) return;
-    setPendingHotSince(next);
+    if (next === null || next === effectiveHotSinceSeq) return;
+    setPendingHotSinceSeq(next);
     setConfirmOpen(true);
   }
 
@@ -442,7 +434,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     dragPointerIdRef.current = e.pointerId;
     dragStartYRef.current = e.clientY;
     dragMovedRef.current = false;
-    previewHotSinceRef.current = hotSince ?? null;
+    previewHotSinceSeqRef.current = effectiveHotSinceSeq;
     e.currentTarget.setPointerCapture(e.pointerId);
     setIsDraggingFocus(true);
     updateAutoScrollFromPointer(e.clientY);
@@ -473,7 +465,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
       return;
     }
     const y = dragYRef.current ?? e.clientY;
-    const next = pickHotSinceFromPointerY(y);
+    const next = pickHotSinceSeqFromPointerY(y);
     suppressBoundaryClickRef.current = true;
     requestAnimationFrame(() => {
       suppressBoundaryClickRef.current = false;
@@ -495,8 +487,8 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     setSummaryPopoverOpen((x) => !x);
   }
 
-  const currentBoundaryIndex = boundaryIndexFor(hotSince ?? null);
-  const pendingBoundaryIndex = boundaryIndexFor(pendingHotSince);
+  const currentBoundaryIndex = boundaryIndexFor(effectiveHotSinceSeq);
+  const pendingBoundaryIndex = boundaryIndexFor(pendingHotSinceSeq);
   const currentHotCount = currentBoundaryIndex < 0 ? null : visibleMessages.length - currentBoundaryIndex;
   const nextHotCount = pendingBoundaryIndex < 0 ? null : visibleMessages.length - pendingBoundaryIndex;
   const removesFromRecent =
@@ -504,7 +496,9 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
       ? nextHotCount < currentHotCount
       : false;
   const hasWarmSummary = !!warmSummary;
-  const summaryFresh = hasWarmSummary && warmSummaryBefore === (hotSince ?? null);
+  const summaryFresh = hasWarmSummary
+    && effectiveHotSinceSeq !== null
+    && warmSummaryBeforeSeq === effectiveHotSinceSeq;
   const summaryUpdating = hasWarmSummary && !summaryFresh && !!streaming;
   const summaryStale = hasWarmSummary && !summaryFresh && !summaryUpdating;
 
@@ -679,9 +673,10 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   // was last scrolled to, rather than on raw scrollHeight — relocating
   // the divider doesn't change total height, so the existing
   // height-delta effects can't catch it.
-  const prevHotSinceRef = useRef<string | null>(hotSince ?? null);
+  const boundaryIdentity = effectiveHotSinceSeq;
+  const prevHotSinceRef = useRef<number | null>(boundaryIdentity);
   useLayoutEffect(() => {
-    const next = hotSince ?? null;
+    const next = boundaryIdentity;
     const prev = prevHotSinceRef.current;
     prevHotSinceRef.current = next;
     if (prev === next) return;
@@ -694,7 +689,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     const containerTop = el.getBoundingClientRect().top;
     const newTop = node.getBoundingClientRect().top - containerTop;
     el.scrollTop += newTop - anchor.top;
-  }, [hotSince]);
+  }, [boundaryIdentity]);
 
   // Resolve `#msg-<id>` deep links: scroll the matching bubble into view and
   // flash the same highlight ring used by settings deep links. Re-runs when
@@ -759,7 +754,9 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   function scrollToBoundaryLine() {
     const root = scrollRef.current;
     if (!root) return;
-    const boundary = root.querySelector("[data-focus-boundary='1']") as HTMLElement | null;
+    const boundary = effectiveHotSinceSeq !== null
+      ? document.getElementById(`context-boundary-${effectiveHotSinceSeq}`)
+      : root.querySelector("[data-focus-boundary='1']") as HTMLElement | null;
     if (!boundary) return;
     atBottomRef.current = false;
     setShowScrollButton(hasScrollTarget);
@@ -882,18 +879,13 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
         // the visible list; everything before it is older-than-pin and gets
         // covered by the warm summary card sitting above the divider.
         //
-        const boundaryIndex = effectiveHotSince
-          ? visibleMessages.findIndex((m) => m.created_at >= effectiveHotSince)
-          : -1;
-        const interactiveBoundary = !!effectiveHotSince && !!onSetContextPin && visibleMessages.length > 0;
-        const pinAfterAll =
-          (!!effectiveHotSince && visibleMessages.length > 0 && boundaryIndex === -1
-            && visibleMessages[visibleMessages.length - 1].created_at < effectiveHotSince)
-          || (!effectiveHotSince && interactiveBoundary);
+        const hasPin = effectiveHotSinceSeq !== null;
+        const boundaryIndex = hasPin ? boundaryIndexFor(effectiveHotSinceSeq) : -1;
+        const pinAfterAll = hasPin && visibleMessages.length > 0 && boundaryIndex === visibleMessages.length;
         // The pin is the boundary's source of truth. Summary data can arrive
         // later (or be unavailable on an older thread), but hiding the line
         // in that interval makes a valid focus selection look like it vanished.
-        const hasBoundary = !!effectiveHotSince && (boundaryIndex !== -1 || pinAfterAll);
+        const hasBoundary = hasPin && boundaryIndex >= 0;
         const olderInVisible = pinAfterAll
           ? visibleMessages.length
           : hasBoundary ? boundaryIndex : 0;
@@ -901,13 +893,18 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
         const olderCountLabel = olderInVisible + (hasMore ? 1 : 0);
 
         const renderBoundary = (key: string) => (
-          <div key={key} data-focus-boundary="1">
+          <div
+            key={key}
+            id={effectiveHotSinceSeq !== null ? `context-boundary-${effectiveHotSinceSeq}` : undefined}
+            data-focus-boundary="1"
+            data-boundary-seq={effectiveHotSinceSeq ?? undefined}
+          >
             <ContextBoundaryDivider
               sourceMessages={warmSummarySourceMessages ?? null}
               sourceChars={warmSummarySourceChars ?? null}
               summaryChars={warmSummary ? warmSummary.length : null}
-              lineStats={lineStatsForHotSince(effectiveHotSince)}
-              updating={warmSummaryPending && warmSummaryBefore !== effectiveHotSince}
+              lineStats={lineStatsForHotSince(effectiveHotSinceSeq)}
+              updating={warmSummaryPending && !summaryFresh}
               draggable={!!onSetContextPin}
               hidden={isDraggingFocus}
               disabled={!!streaming}
@@ -941,9 +938,10 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
           out.push(
             <div
               key={msg.id}
-              id={`msg-${msg.id}`}
+              id={typeof msg.seq === "number" ? String(msg.seq) : `msg-${msg.id}`}
               data-message-id={msg.id}
               data-hot-candidate="1"
+              data-message-seq={msg.seq}
               data-created-at={msg.created_at}
               className={startsTurn && i > 0 ? "mt-3" : undefined}
             >
@@ -1026,7 +1024,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
             ref={dragGuideStatsRef}
             className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-fg-faint bg-surface/75 px-1.5 rounded border border-border/60"
           >
-            {lineStatsForHotSince(hotSince ?? null)}
+            {lineStatsForHotSince(effectiveHotSinceSeq)}
           </span>
           </div>
         </>
@@ -1070,10 +1068,10 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
               </p>
             )}
             <WarmSummaryCard
-              olderCount={countOlderForHotSince(hotSince ?? null) + (hasMore ? 1 : 0)}
+              olderCount={countOlderForHotSince(effectiveHotSinceSeq) + (hasMore ? 1 : 0)}
               summary={warmSummary ?? null}
-              summaryBefore={warmSummaryBefore ?? null}
-              hotSince={hotSince ?? null}
+              summaryBeforeSeq={warmSummaryBeforeSeq ?? null}
+              hotSinceSeq={effectiveHotSinceSeq}
               computedAt={warmSummaryComputedAt ?? null}
               streaming={!!streaming}
               topics={warmSummaryTopics ?? null}
@@ -1084,7 +1082,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
 
       <Dialog
         open={confirmOpen}
-        onClose={() => { setConfirmOpen(false); setPendingHotSince(null); }}
+        onClose={() => { setConfirmOpen(false); setPendingHotSinceSeq(null); }}
         size="sm"
         align="center"
         dismissOnBackdrop={false}
@@ -1106,7 +1104,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
         <div className="flex justify-end gap-2 pt-1">
           <button
             type="button"
-            onClick={() => { setConfirmOpen(false); setPendingHotSince(null); }}
+            onClick={() => { setConfirmOpen(false); setPendingHotSinceSeq(null); }}
             className="px-3 py-1.5 text-xs text-fg-subtle hover:text-fg transition-colors"
           >
             Cancel
@@ -1114,9 +1112,9 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
           <button
             type="button"
             onClick={() => {
-              if (pendingHotSince && onSetContextPin) onSetContextPin(pendingHotSince);
+              if (pendingHotSinceSeq !== null && onSetContextPin) onSetContextPin(pendingHotSinceSeq);
               setConfirmOpen(false);
-              setPendingHotSince(null);
+              setPendingHotSinceSeq(null);
             }}
             className="px-3 py-1.5 rounded-md text-xs border border-accent/40 bg-accent text-white hover:opacity-95 transition-opacity"
           >
