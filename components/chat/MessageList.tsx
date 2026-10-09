@@ -1011,8 +1011,8 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
           onClick={scrollToBottom}
           style={{ bottom: "calc(1rem + var(--app-safe-bottom))" }}
           className="absolute right-4 p-2 rounded-full bg-accent/40 hover:bg-accent/80 text-white backdrop-blur-sm shadow-md transition-all animate-in fade-in slide-in-from-bottom-2 duration-200 z-20"
-          title="Scroll to latest message"
-          aria-label="Scroll to latest message"
+          title="Auto-scroll paused — resume at latest message"
+          aria-label="Resume auto-scroll to latest message"
         >
           <ArrowDown size={18} />
         </button>
