@@ -1,4 +1,5 @@
 import { getProvider } from "@/lib/providers";
+import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
 import { summarizeTranscript, transcriptText, extractTopicSegments, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
 import { unwrapWarmSummary, wrapWarmSummary, AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-configs";
@@ -10,6 +11,7 @@ import {
   getMessagesByAutomationCategory,
   getRecentMessagesWindow,
   getThread,
+  getThreadMessageBySeq,
   getThreadChannelSummary,
 } from "@/lib/stores/threads";
 
@@ -20,7 +22,7 @@ const activeRefreshes = new Set<string>();
 // Boundaries an automatic compaction has proposed but not yet committed.
 // The pin only moves once the recap that replaces the cut-off messages is
 // stored, so the turn that proposes it still runs on the old boundary.
-const pendingBoundaries = new Map<string, string>();
+const pendingBoundaries = new Map<string, number>();
 // A boundary request that arrived while a prior one for the same thread was
 // still in flight. Last-write-wins: kickBoundaryCompaction used to silently
 // drop any request that arrived while one was already running (dragging
@@ -31,7 +33,7 @@ const pendingBoundaries = new Map<string, string>();
 // the in-flight commit settles makes the boundary always converge on what
 // the caller most recently asked for.
 const queuedBoundaries = new Map<string, {
-  boundary: string;
+  boundarySeq: number;
   options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount">;
 }>();
 
@@ -52,7 +54,12 @@ export function kickWarmSummaryRefresh(threadId: string): void {
  * in-flight commit settles, so it's the honest answer to "what's pending".
  */
 export function pendingCompactionBoundary(threadId: string): string | null {
-  return queuedBoundaries.get(threadId)?.boundary ?? pendingBoundaries.get(threadId) ?? null;
+  const seq = pendingCompactionBoundarySeq(threadId);
+  return seq === null ? null : getThreadMessageBySeq(threadId, seq)?.created_at ?? null;
+}
+
+export function pendingCompactionBoundarySeq(threadId: string): number | null {
+  return queuedBoundaries.get(threadId)?.boundarySeq ?? pendingBoundaries.get(threadId) ?? null;
 }
 
 /**
@@ -69,27 +76,28 @@ export function pendingCompactionBoundary(threadId: string): string | null {
  */
 export function kickBoundaryCompaction(
   threadId: string,
-  boundary: string,
+  boundarySeq: number,
   options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount"> = {},
 ): void {
-  if (!threadId || !boundary) return;
+  if (!threadId || !Number.isSafeInteger(boundarySeq) || boundarySeq <= 0) return;
   if (activeRefreshes.has(threadId) || pendingBoundaries.has(threadId)) {
-    queuedBoundaries.set(threadId, { boundary, options });
+    queuedBoundaries.set(threadId, { boundarySeq, options });
     return;
   }
-  runBoundaryCompaction(threadId, boundary, options);
+  runBoundaryCompaction(threadId, boundarySeq, options);
 }
 
 function runBoundaryCompaction(
   threadId: string,
-  boundary: string,
+  boundarySeq: number,
   options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount">,
 ): void {
-  const basePin = getThread(threadId)?.hot_since ?? null;
-  pendingBoundaries.set(threadId, boundary);
+  const baseThread = getThread(threadId);
+  const basePinSeq = baseThread?.hot_since_seq ?? null;
+  pendingBoundaries.set(threadId, boundarySeq);
   activeRefreshes.add(threadId);
   queueMicrotask(() => {
-    void commitBoundaryCompaction(threadId, boundary, basePin, options)
+    void commitBoundaryCompaction(threadId, boundarySeq, basePinSeq, options)
       .catch((err) => console.warn(`[context-boundary:auto] compaction failed thread=${threadId}: ${String(err)}`))
       .finally(() => {
         pendingBoundaries.delete(threadId);
@@ -100,43 +108,28 @@ function runBoundaryCompaction(
         // Skip a no-op re-run if the boundary that just committed already
         // matches what was queued — the queued request was superseded by
         // the very commit it was waiting behind.
-        const settled = getThread(threadId)?.hot_since ?? null;
-        if (queued.boundary !== settled) runBoundaryCompaction(threadId, queued.boundary, queued.options);
+        const settled = getThread(threadId);
+        const alreadySettled = queued.boundarySeq === (settled?.hot_since_seq ?? null);
+        if (!alreadySettled) runBoundaryCompaction(threadId, queued.boundarySeq, queued.options);
       });
   });
 }
 
 async function commitBoundaryCompaction(
   threadId: string,
-  boundary: string,
-  basePin: string | null,
+  boundarySeq: number,
+  basePinSeq: number | null,
   options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount">,
 ): Promise<void> {
-  const committed = await compactThreadWarmContext(threadId, boundary, {
-    expectedHotSince: basePin,
+  const committed = await compactThreadWarmContext(threadId, boundarySeq, {
+    expectedHotSinceSeq: basePinSeq,
     alignTopicBoundary: true,
     allowEmptySummary: true,
     ...options,
   });
   if (!committed) return;
   console.info(
-    `[context-boundary:auto] thread=${threadId} committed boundary=${committed.boundary} warm_msgs=${committed.sourceMessages}`,
-  );
-  // ADR-0044 — keep every automation channel's summary in step with the
-  // same resolved boundary the chat channel just committed (topic-boundary
-  // alignment may have shifted it away from the raw `boundary` argument, so
-  // every channel must cut at committed.boundary, not `boundary`, or their
-  // summaries would silently disagree on where "hot" starts). Deliberately
-  // eager rather than the ADR's stated "lazy on next toggle" — refreshing
-  // all three fixed, low-volume channels here avoids a second import
-  // direction between this module and history-window.ts (which already
-  // imports FROM here) and keeps the eventual read side (buildHistoryWindow)
-  // a plain cache read, no inline LLM call, no new circular dependency.
-  await Promise.all(
-    AUTOMATION_CHANNEL_ORDER.map((channel) =>
-      compactAutomationChannelWarmContext(threadId, channel, committed.boundary, committed.boundarySeq ?? undefined)
-        .catch((err) => console.warn(`[context-boundary:auto] channel=${channel} thread=${threadId} refresh failed: ${String(err)}`)),
-    ),
+    `[context-boundary:auto] thread=${threadId} committed boundary_seq=${committed.boundarySeq} warm_msgs=${committed.sourceMessages}`,
   );
 }
 
@@ -151,7 +144,7 @@ export interface TopicBoundary {
   seq: number;
 }
 
-export async function findTopicBoundary(threadId: string, boundary: string): Promise<TopicBoundary | null> {
+export async function findTopicBoundary(threadId: string, boundarySeq: number): Promise<TopicBoundary | null> {
   const thread = getThread(threadId);
   if (!thread) return null;
   const agent = getAgentConfig(thread.agent_id);
@@ -162,7 +155,7 @@ export async function findTopicBoundary(threadId: string, boundary: string): Pro
 
   const rows = getRecentMessagesWindow(threadId, 0, undefined, "foreground")
     .filter((row) => row.role === "user" || row.role === "assistant");
-  const boundaryIndex = rows.findIndex((row) => row.created_at >= boundary);
+  const boundaryIndex = rows.findIndex((row) => row.seq >= boundarySeq);
   if (boundaryIndex < 0) return null;
 
   const previewRows = rows.slice(Math.max(0, boundaryIndex - 8), Math.min(rows.length, boundaryIndex + 10));
@@ -170,7 +163,7 @@ export async function findTopicBoundary(threadId: string, boundary: string): Pro
   const previewParts: string[] = [];
   for (const row of previewRows) {
     if (previewChars >= MAX_TOPIC_PREVIEW_CHARS) break;
-    const prefix = `[${row.created_at}] ${row.role === "user" ? "User" : "Assistant"}: `;
+    const prefix = `[seq=${row.seq}] [${row.created_at}] ${row.role === "user" ? "User" : "Assistant"}: `;
     const remaining = MAX_TOPIC_PREVIEW_CHARS - previewChars - prefix.length;
     if (remaining <= 0) break;
     const text = transcriptText(row.content).slice(0, remaining);
@@ -189,15 +182,16 @@ export async function findTopicBoundary(threadId: string, boundary: string): Pro
     }, transcript);
     const { topics } = extractTopicSegments(raw);
     const candidate = topics
-      .filter((topic) => topic.start_at < boundary && topic.end_at >= boundary)
-      .sort((a, b) => b.start_at.localeCompare(a.start_at))[0];
+      .filter((topic) => typeof topic.start_seq === "number" && typeof topic.end_seq === "number"
+        && topic.start_seq < boundarySeq && topic.end_seq >= boundarySeq)
+      .sort((a, b) => (b.start_seq ?? 0) - (a.start_seq ?? 0))[0];
     if (!candidate) return null;
 
-    const candidateIndex = rows.findIndex((row) => row.created_at >= candidate.start_at);
+    const candidateIndex = rows.findIndex((row) => row.seq >= candidate.start_seq!);
     if (candidateIndex < 0 || candidateIndex >= boundaryIndex) return null;
     const expansionTurns = rows.slice(candidateIndex, boundaryIndex).filter((row) => row.role === "user").length;
     return expansionTurns <= MAX_TOPIC_BOUNDARY_EXPANSION_TURNS
-      ? { created_at: candidate.start_at, seq: rows[candidateIndex].seq }
+      ? { created_at: rows[candidateIndex].created_at, seq: rows[candidateIndex].seq }
       : null;
   } catch {
     return null;
@@ -206,9 +200,9 @@ export async function findTopicBoundary(threadId: string, boundary: string): Pro
 
 export async function refreshWarmSummary(threadId: string): Promise<void> {
   const thread = getThread(threadId);
-  if (!thread?.hot_since) return;
-  await compactThreadWarmContext(threadId, thread.hot_since, {
-    expectedHotSince: thread.hot_since,
+  if (!thread?.hot_since_seq) return;
+  await compactThreadWarmContext(threadId, thread.hot_since_seq, {
+    expectedHotSinceSeq: thread.hot_since_seq,
     alignTopicBoundary: false,
     allowEmptySummary: true,
   });
@@ -226,12 +220,7 @@ interface BuiltSummary {
 
 export interface CommittedWarmContext {
   boundary: string;
-  // The exact row `boundary` cuts at, when the caller supplied one (via
-  // `requestedBoundarySeq`) or topic alignment resolved one. Destructive
-  // callers (pruning) must cut on this, not by re-matching `boundary`
-  // against created_at — see TopicBoundary and ADR-0088. Null when neither
-  // source had one (e.g. the automatic paths, which never prune).
-  boundarySeq: number | null;
+  boundarySeq: number;
   summary: string;
   sourceMessages: number;
   sourceChars: number;
@@ -239,16 +228,16 @@ export interface CommittedWarmContext {
 }
 
 export interface WarmContextCompactionOptions {
-  expectedHotSince?: string | null;
+  expectedHotSinceSeq?: number | null;
   expectedWarmSummary?: string | null;
   alignTopicBoundary?: boolean;
   allowEmptySummary?: boolean;
   autoBoundaryLockedUntilMessageCount?: number;
-  // The exact row `requestedBoundary` was derived from, when the caller
-  // already has one (e.g. thread-compaction.ts picking a row by array
-  // index). Superseded by topic alignment's own resolved seq when that
-  // applies.
-  requestedBoundarySeq?: number;
+  providerOverride?: {
+    provider: Pick<ModelProvider, "chat">;
+    modelId: string;
+    params: ProviderParams;
+  };
 }
 
 // The only path that turns raw foreground history into warm context. The LLM
@@ -257,28 +246,41 @@ export interface WarmContextCompactionOptions {
 // stale result if another action changed the pin meanwhile.
 export async function compactThreadWarmContext(
   threadId: string,
-  requestedBoundary: string,
+  requestedBoundarySeq: number,
   options: WarmContextCompactionOptions = {},
 ): Promise<CommittedWarmContext | null> {
   const baseThread = getThread(threadId);
   if (!baseThread) return null;
-  const topicBoundary = options.alignTopicBoundary ? await findTopicBoundary(threadId, requestedBoundary) : null;
-  const boundary = topicBoundary?.created_at ?? requestedBoundary;
-  const boundarySeq = topicBoundary?.seq ?? options.requestedBoundarySeq ?? null;
-  const built = await buildSummaryBefore(threadId, boundary, boundarySeq);
+  const topicBoundary = options.alignTopicBoundary ? await findTopicBoundary(threadId, requestedBoundarySeq) : null;
+  const boundarySeq = topicBoundary?.seq ?? requestedBoundarySeq;
+  const boundaryRow = getThreadMessageBySeq(threadId, boundarySeq)
+    ?? getThreadMessageBySeq(threadId, boundarySeq - 1);
+  if (!boundaryRow) return null;
+  const boundary = boundaryRow.created_at;
+  const built = await buildSummaryBefore(threadId, boundary, boundarySeq, options.providerOverride);
   if (!built || (!built.summary && !options.allowEmptySummary)) return null;
+
+  const channelSummaries = await Promise.all(AUTOMATION_CHANNEL_ORDER.map(async (channel) => {
+    const channelSummary = await buildAutomationChannelSummaryBefore(threadId, channel, boundarySeq, options.providerOverride);
+    if (!channelSummary) throw new Error(`Could not build ${channel} warm summary`);
+    return { channel, summary: channelSummary.summary };
+  }));
 
   const committed = commitThreadWarmContext(threadId, {
     hotSince: boundary,
+    hotSinceSeq: boundarySeq,
     summary: built.summary ? wrapWarmSummary(built.summary, "foreground") : "",
     sourceMessages: built.sourceMessages,
     sourceChars: built.sourceChars,
     topics: built.topics.length > 0 ? JSON.stringify(built.topics) : null,
-    expectedHotSince: Object.hasOwn(options, "expectedHotSince") ? options.expectedHotSince : (baseThread.hot_since ?? null),
+    expectedHotSinceSeq: Object.hasOwn(options, "expectedHotSinceSeq")
+      ? options.expectedHotSinceSeq
+      : (baseThread.hot_since_seq ?? null),
     expectedWarmSummary: Object.hasOwn(options, "expectedWarmSummary")
       ? options.expectedWarmSummary
       : (baseThread.warm_summary ?? null),
     autoBoundaryLockedUntilMessageCount: options.autoBoundaryLockedUntilMessageCount,
+    channelSummaries,
   });
   if (!committed) return null;
   upliftTopicFacts(built.topics);
@@ -286,22 +288,19 @@ export async function compactThreadWarmContext(
 }
 
 /**
- * Summarise every foreground message older than `boundary`. Returns null
+ * Summarise every foreground message whose seq is below `boundarySeq`. Returns null
  * when the thread/agent/model can't be resolved or the provider produced
  * nothing — callers treat that as "don't touch the stored summary".
  *
- * `boundarySeq`, when supplied, cuts on the exact row instead of the
- * `created_at` string: a same-millisecond tie at the boundary (possible
- * since ADR-0088 removed addMessage's collision-bump) would otherwise fail
- * `created_at < boundary` for every tied row, excluding a row from the
- * summary that pruneThreadMessages's seq-exact cutoff still deletes —
- * summarized-vs-deleted must agree on the same row, or that row is lost.
- * Only covers the *current* cut; `canExtendPrior`'s older
- * `warm_summary_before` boundary below has no stored seq companion and
- * still compares by string — a narrower, lower-severity residual of the
- * same class, since that boundary is never used to delete anything.
+ * Both the new cut and prior-summary extension use rowid seq cursors, so
+ * summary coverage and destructive pruning always select the same rows.
  */
-async function buildSummaryBefore(threadId: string, boundary: string, boundarySeq?: number | null): Promise<BuiltSummary | null> {
+async function buildSummaryBefore(
+  threadId: string,
+  boundary: string,
+  boundarySeq: number,
+  providerOverride?: WarmContextCompactionOptions["providerOverride"],
+): Promise<BuiltSummary | null> {
   const thread = getThread(threadId);
   if (!thread) return null;
 
@@ -312,19 +311,20 @@ async function buildSummaryBefore(threadId: string, boundary: string, boundarySe
   const modelCfg = modelName ? getModelConfig(modelName) : null;
   if (!modelCfg?.provider || !modelCfg.model_id) return null;
 
-  const baseParams = getModelParams(modelCfg);
+  const baseParams = providerOverride?.params ?? getModelParams(modelCfg);
   const tier = getAgentTierProportions(agent);
   const providerParams = tier ? { ...baseParams, context_tier_proportions: tier } : baseParams;
 
   const rows = getRecentMessagesWindow(threadId, 0, undefined, "foreground")
     .filter((m) => m.role === "user" || m.role === "assistant");
   const prior = thread.warm_summary ? unwrapWarmSummary(thread.warm_summary) : null;
+  const priorBoundarySeq = thread.warm_summary_before_seq ?? null;
   const canExtendPrior = prior?.scope === "foreground"
-    && !!thread.warm_summary_before
-    && thread.warm_summary_before < boundary;
+    && priorBoundarySeq !== null
+    && priorBoundarySeq < boundarySeq;
   const warmRows = rows.filter((m) => {
-    const belowBoundary = typeof boundarySeq === "number" ? m.seq < boundarySeq : m.created_at < boundary;
-    return belowBoundary && (!canExtendPrior || m.created_at >= thread.warm_summary_before!);
+    const belowBoundary = m.seq < boundarySeq;
+    return belowBoundary && (!canExtendPrior || m.seq >= priorBoundarySeq);
   });
   const newChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
   const sourceMessages = canExtendPrior
@@ -344,7 +344,7 @@ async function buildSummaryBefore(threadId: string, boundary: string, boundarySe
   const summaryInputChars = Math.max(4000, Math.min(120000, Math.round(contextTokens * 3)));
 
   const newTranscript = warmRows
-    .map((m) => `[${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
+    .map((m) => `[seq=${m.seq}] [${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
     .join("\n\n")
     .trim();
   const transcript = (canExtendPrior
@@ -359,12 +359,13 @@ async function buildSummaryBefore(threadId: string, boundary: string, boundarySe
   ).slice(-summaryInputChars).trim();
   if (!transcript) return null;
 
-  const provider = getProvider(modelCfg.provider);
+  const provider = providerOverride?.provider ?? getProvider(modelCfg.provider);
+  const modelId = providerOverride?.modelId ?? modelCfg.model_id;
   const summaryParams = providerParams.max_tokens
     ? providerParams
     : { ...providerParams, max_tokens: 1024 };
 
-  const raw = (await summarizeTranscript(provider, modelCfg.model_id, summaryParams, transcript)).trim();
+  const raw = (await summarizeTranscript(provider, modelId, summaryParams, transcript)).trim();
   if (!raw) return null;
   const { body: summary, topics } = extractTopicSegments(raw);
   if (!summary) return null;
@@ -443,8 +444,8 @@ export interface BuiltChannelSummary {
 async function buildAutomationChannelSummaryBefore(
   threadId: string,
   channel: string,
-  boundary: string,
-  boundarySeq?: number | null,
+  boundarySeq: number,
+  providerOverride?: WarmContextCompactionOptions["providerOverride"],
 ): Promise<BuiltChannelSummary | null> {
   const thread = getThread(threadId);
   if (!thread) return null;
@@ -456,14 +457,12 @@ async function buildAutomationChannelSummaryBefore(
   const modelCfg = modelName ? getModelConfig(modelName) : null;
   if (!modelCfg?.provider || !modelCfg.model_id) return null;
 
-  const baseParams = getModelParams(modelCfg);
+  const baseParams = providerOverride?.params ?? getModelParams(modelCfg);
   const tier = getAgentTierProportions(agent);
   const providerParams = tier ? { ...baseParams, context_tier_proportions: tier } : baseParams;
 
   const rows = getMessagesByAutomationCategory(threadId, channel);
-  const warmRows = rows.filter((m) =>
-    typeof boundarySeq === "number" ? m.seq < boundarySeq : m.created_at < boundary,
-  );
+  const warmRows = rows.filter((m) => m.seq < boundarySeq);
   const sourceChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
 
   if (sourceChars < 24 || warmRows.length < 2) {
@@ -476,18 +475,19 @@ async function buildAutomationChannelSummaryBefore(
   const summaryInputChars = Math.max(4000, Math.min(120000, Math.round(contextTokens * 3)));
 
   const transcript = warmRows
-    .map((m) => `[${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
+    .map((m) => `[seq=${m.seq}] [${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
     .join("\n\n")
     .trim()
     .slice(-summaryInputChars);
   if (!transcript) return null;
 
-  const provider = getProvider(modelCfg.provider);
+  const provider = providerOverride?.provider ?? getProvider(modelCfg.provider);
+  const modelId = providerOverride?.modelId ?? modelCfg.model_id;
   const summaryParams = providerParams.max_tokens
     ? providerParams
     : { ...providerParams, max_tokens: 1024 };
 
-  const raw = (await summarizeTranscript(provider, modelCfg.model_id, summaryParams, transcript)).trim();
+  const raw = (await summarizeTranscript(provider, modelId, summaryParams, transcript)).trim();
   if (!raw) return null;
   const { body: summary } = extractTopicSegments(raw);
   if (!summary) return null;
@@ -511,18 +511,25 @@ async function buildAutomationChannelSummaryBefore(
 export async function compactAutomationChannelWarmContext(
   threadId: string,
   channel: string,
-  boundary: string,
-  boundarySeq?: number | null,
+  boundarySeq: number,
 ): Promise<BuiltChannelSummary | null> {
-  const built = await buildAutomationChannelSummaryBefore(threadId, channel, boundary, boundarySeq);
+  const boundaryRow = getThreadMessageBySeq(threadId, boundarySeq)
+    ?? getThreadMessageBySeq(threadId, boundarySeq - 1);
+  if (!boundaryRow) return null;
+  const boundary = boundaryRow.created_at;
+  const built = await buildAutomationChannelSummaryBefore(threadId, channel, boundarySeq);
   if (!built) return null;
-  commitThreadChannelSummary(threadId, channel, { summary: built.summary, summaryBefore: boundary });
+  commitThreadChannelSummary(threadId, channel, {
+    summary: built.summary,
+    summaryBefore: boundary,
+    summaryBeforeSeq: boundarySeq,
+  });
   return built;
 }
 
 // Fresh iff the cached row's summary_before matches the current boundary —
 // mirrors ADR-0042's freshness check for the chat channel's warm_summary.
-export function isChannelSummaryFresh(threadId: string, channel: string, boundary: string): boolean {
+export function isChannelSummaryFresh(threadId: string, channel: string, boundarySeq: number): boolean {
   const cached = getThreadChannelSummary(threadId, channel);
-  return !!cached && cached.summary_before === boundary;
+  return !!cached && cached.summary_before_seq === boundarySeq;
 }

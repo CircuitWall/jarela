@@ -1,4 +1,4 @@
-import { getThread, setThreadContextPin, setAutoBoundaryLock } from "@/lib/stores/threads";
+import { getThread, getThreadMessageBySeq, setThreadContextPin, setAutoBoundaryLock } from "@/lib/stores/threads";
 import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
 
 // Every caller of moveThreadContextBoundary represents a user-initiated
@@ -28,24 +28,26 @@ export interface MoveThreadContextBoundaryOptions {
 
 export function moveThreadContextBoundary(
   threadId: string,
-  hotSince: string | null,
+  boundarySeq: number | null,
   options: MoveThreadContextBoundaryOptions = {},
 ) {
   // Do not expose a narrower hot query before its replacement warm context
   // exists. The background coordinator publishes both in one transaction.
-  if (hotSince && options.refreshWarmSummary) {
+  if (boundarySeq !== null && options.refreshWarmSummary) {
     const currentCount = getThread(threadId)?.message_count ?? 0;
-    kickBoundaryCompaction(threadId, hotSince, {
+    kickBoundaryCompaction(threadId, boundarySeq, {
       autoBoundaryLockedUntilMessageCount: currentCount + MANUAL_PIN_COOLDOWN_TURNS * MESSAGES_PER_TURN,
     });
     return getThread(threadId);
   }
 
-  setThreadContextPin(threadId, hotSince);
+  const source = boundarySeq === null ? null : getThreadMessageBySeq(threadId, boundarySeq);
+  if (boundarySeq !== null && !source) throw new Error("Boundary seq does not belong to this thread");
+  setThreadContextPin(threadId, source?.created_at ?? null, boundarySeq);
   // Clearing the pin (hotSince=null) means the user wants auto-detection
   // back in full control right away — clear the lock instead of arming it.
   // Only an actual manual placement earns a cooldown.
   const currentCount = getThread(threadId)?.message_count ?? 0;
-  setAutoBoundaryLock(threadId, hotSince ? currentCount + MANUAL_PIN_COOLDOWN_TURNS * MESSAGES_PER_TURN : 0);
+  setAutoBoundaryLock(threadId, boundarySeq !== null ? currentCount + MANUAL_PIN_COOLDOWN_TURNS * MESSAGES_PER_TURN : 0);
   return getThread(threadId);
 }

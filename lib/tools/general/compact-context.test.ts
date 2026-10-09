@@ -37,7 +37,7 @@ describe("compact_context tool", () => {
     const out = parse(await compactContextTool.invoke({}, { configurable: { thread_id: thread.thread_id } }));
 
     expect(out.ok).toBe(true);
-    expect(moveMock).toHaveBeenCalledWith(thread.thread_id, latestUser.created_at, { refreshWarmSummary: true });
+    expect(moveMock).toHaveBeenCalledWith(thread.thread_id, latestUser.seq, { refreshWarmSummary: true });
   });
 
   it("refuses bridge conversations", async () => {

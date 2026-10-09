@@ -13,7 +13,7 @@ import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-
 import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
-import { addMessage, getMessagesPage, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, getMessagesPage, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -114,18 +114,16 @@ function isAutoBoundaryEligibleCategory(category: string | null | undefined): bo
 function estimateRequiredHotContextTokens(
   thread_id: string,
   agentCfg: { history_limit?: number | null; history_window_hours?: number | null },
-  hotSince: string | null,
+  hotSinceSeq: number | null,
   scope: "foreground" | "bridge" | "all" | "none" | undefined,
   bridgeKey: string | null | undefined,
 ): number | null {
   const limit = agentCfg.history_limit ?? 50;
   const windowHours = agentCfg.history_window_hours ?? 8;
-  const sinceISO = hotSince
-    ? hotSince
-    : windowHours > 0
-      ? new Date(Date.now() - windowHours * 3600_000).toISOString()
-      : undefined;
-  const messages = getRecentMessagesWindow(thread_id, limit, sinceISO, scope ?? "all", bridgeKey ?? undefined);
+  const sinceISO = hotSinceSeq === null && windowHours > 0
+    ? new Date(Date.now() - windowHours * 3600_000).toISOString()
+    : undefined;
+  const messages = getRecentMessagesWindow(thread_id, limit, sinceISO, scope ?? "all", bridgeKey ?? undefined, undefined, hotSinceSeq ?? undefined);
   const hotTokens = messages.reduce((acc, m) => acc + estimateTokens(transcriptText(m.content)), 0);
   return hotTokens > 0 ? hotTokens : null;
 }
@@ -135,14 +133,16 @@ function hotTurnBoundary(
   agentCfg: { history_limit?: number | null; history_window_hours?: number | null; hot_turn_limit?: number | null },
   scope: "foreground" | "bridge" | "all",
   bridgeKey?: string,
-): string | null {
+): number | null {
   const turnLimit = agentCfg.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT;
   if (turnLimit <= 0 || scope === "bridge") return null;
 
   const thread = getThread(threadId);
   const windowHours = agentCfg.history_window_hours ?? 8;
-  const sinceISO = thread?.hot_since
-    ?? (windowHours > 0 ? new Date(Date.now() - windowHours * 3600_000).toISOString() : undefined);
+  const sinceSeq = thread?.hot_since_seq ?? undefined;
+  const sinceISO = sinceSeq === undefined && windowHours > 0
+    ? new Date(Date.now() - windowHours * 3600_000).toISOString()
+    : undefined;
   const messages = getRecentMessagesWindow(
     threadId,
     (agentCfg.history_limit ?? 50) > 0
@@ -151,10 +151,13 @@ function hotTurnBoundary(
     sinceISO,
     scope,
     bridgeKey,
+    undefined,
+    sinceSeq,
   );
   const userMessages = messages.filter((message) => message.role === "user");
   if (userMessages.length <= turnLimit) return null;
-  return userMessages[userMessages.length - turnLimit]?.created_at ?? null;
+  const boundary = userMessages[userMessages.length - turnLimit];
+  return boundary?.seq ?? null;
 }
 
 async function maybeAutoCompactOversizedThread(agentId: string, threadId: string, messageCount: number): Promise<void> {
@@ -422,7 +425,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     // warm summary in the background. The boundary is committed only after
     // the summary succeeds, so this turn still has its previous context.
     if (
-      req.hot_since === undefined
+      req.hot_since_seq === undefined
       && isAutoBoundaryEligibleCategory(req.user_category)
       && autoBoundaryScope === "foreground"
     ) {
@@ -431,7 +434,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
         && latestThread.message_count < (latestThread.auto_boundary_locked_until_msg_count ?? 0);
       if (!locked) {
         const boundary = hotTurnBoundary(req.thread_id, agentCfg, autoBoundaryScope);
-        if (boundary) kickBoundaryCompaction(req.thread_id, boundary);
+        if (boundary !== null) kickBoundaryCompaction(req.thread_id, boundary);
       }
     }
   }
@@ -441,18 +444,25 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   const agentTierProportions = getAgentTierProportions(agentCfg);
 
-  const requestedHotSinceDiffers = req.hot_since !== undefined && req.hot_since !== (thread.hot_since ?? null);
-  const effectiveHotSince = req.context_profile?.history_scope === "bridge"
+  const requestedHotSinceDiffers = req.hot_since_seq !== undefined
+    && req.hot_since_seq !== (thread.hot_since_seq ?? null);
+  const requestedBoundaryMessage = typeof req.hot_since_seq === "number"
+    ? getThreadMessageBySeq(req.thread_id, req.hot_since_seq)
+    : null;
+  if (typeof req.hot_since_seq === "number" && !requestedBoundaryMessage) {
+    throw new RunThreadError(400, "Boundary seq does not belong to this thread", "invalid_boundary");
+  }
+  const effectiveHotSinceSeq = req.context_profile?.history_scope === "bridge"
     ? null
     : requestedHotSinceDiffers
-      ? (thread.hot_since ?? null)
-      : (req.hot_since ?? thread.hot_since ?? null);
+      ? req.hot_since_seq === null ? null : (thread.hot_since_seq ?? null)
+      : (req.hot_since_seq ?? thread.hot_since_seq ?? null);
   const requiredHotContextTokens = req.context_profile?.include_hot === false
     ? null
     : estimateRequiredHotContextTokens(
       req.thread_id,
       agentCfg,
-      effectiveHotSince,
+      effectiveHotSinceSeq,
       req.context_profile?.history_scope,
       req.history_bridge_key,
     );
@@ -623,8 +633,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // New non-null pins are deferred until their warm summary is ready. A clear
   // broadens context, so it can be committed immediately without a recap.
   if (requestedHotSinceDiffers) {
-    if (req.hot_since === null) moveThreadContextBoundary(req.thread_id, null);
-    else if (req.hot_since) kickBoundaryCompaction(req.thread_id, req.hot_since);
+    if (req.hot_since_seq === null) moveThreadContextBoundary(req.thread_id, null);
+    else if (typeof req.hot_since_seq === "number") kickBoundaryCompaction(req.thread_id, req.hot_since_seq);
   }
   const historyWindow = await buildHistoryWindow(
     req.thread_id,
@@ -632,13 +642,14 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     providerParams,
     trimmed,
     { providerName: modelCfg?.provider, modelId: modelCfg?.model_id },
-    effectiveHotSince,
+    undefined,
     {
       scope: req.context_profile?.history_scope,
       includeWarm: req.context_profile?.include_warm,
       includeFacts: autoFactsEnabled,
       bridgeKey: req.history_bridge_key ?? undefined,
       channels: req.channels,
+      hotSinceSeq: effectiveHotSinceSeq,
     },
   );
 

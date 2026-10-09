@@ -33,6 +33,28 @@ describe("submitRun", () => {
     expect(body.attachments).toEqual(attachments);
   });
 
+  it("submits the exact hot boundary cursor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(submitRun(
+      "thread-1",
+      "continue",
+      new AbortController().signal,
+      undefined,
+      undefined,
+      ["watcher"],
+      42,
+    )).resolves.toEqual({ accepted: true });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as {
+      hot_since?: string;
+      hot_since_seq: number;
+    };
+    expect(body.hot_since_seq).toBe(42);
+    expect(body).not.toHaveProperty("hot_since");
+  });
+
   it("uploads inline images before submitting oversized run payloads", async () => {
     const refA: ContentPart = { type: "image_ref", media_type: "image/png", name: "a.png", sha256: "a" };
     const refB: ContentPart = { type: "image_ref", media_type: "image/jpeg", name: "b.jpg", sha256: "b" };

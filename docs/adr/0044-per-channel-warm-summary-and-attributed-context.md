@@ -122,8 +122,9 @@ CREATE TABLE thread_channel_summaries (
   thread_id    TEXT NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
   channel      TEXT NOT NULL,
   summary      TEXT NOT NULL,
-  summary_before  TEXT,            -- mirrors ADR-0042 freshness key (hot_since)
-  computed_at  TEXT NOT NULL,
+  summary_before  TEXT,            -- display timestamp only
+  summary_before_seq INTEGER,      -- exact source cursor (ADR-0096)
+  computed_at     TEXT NOT NULL,
   PRIMARY KEY (thread_id, channel)
 );
 ```
@@ -153,8 +154,9 @@ assembly time, not at persistence time. When the active set is exactly
 `{"chat"}` the output is byte-identical to today's (no labels).
 
 **Summary freshness.** Each `(thread_id, channel)` row caches its own
-`summary_before` against `hot_since`, mirroring ADR-0042. A summary is
-fresh iff `summary_before === hot_since AND no new messages of that
+`summary_before_seq` against `hot_since_seq` (ADR-0096). Timestamps remain
+display metadata; they never resolve the boundary row. A summary is fresh
+iff `summary_before_seq === hot_since_seq AND no new messages of that
 channel since computed_at`. Stale or missing summaries are computed
 lazily on the next turn that asks for that channel — so adding a new
 channel toggle is at most one extra summarisation, not N.

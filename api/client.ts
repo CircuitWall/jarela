@@ -211,7 +211,7 @@ async function externalizeRunAttachmentsIfNeeded(
     message: string;
     stream_options?: StreamOptions;
     attachments?: ContentPart[];
-    hot_since?: string | null;
+    hot_since_seq?: number | null;
   },
   signal: AbortSignal,
 ): Promise<typeof payload> {
@@ -471,8 +471,10 @@ export const api = {
         pruned?: number;
         archive_pruned?: number;
         hot_since?: string | null;
+        hot_since_seq?: number | null;
         warm_summary?: string | null;
         warm_summary_before?: string | null;
+        warm_summary_before_seq?: number | null;
         warm_summary_computed_at?: string | null;
         warm_summary_source_messages?: number | null;
         warm_summary_source_chars?: number | null;
@@ -719,10 +721,10 @@ export const api = {
     // Pass `null` to clear the pin and let the agent's default window apply.
     // Fire-and-forget from the chat — UI updates optimistically and the
     // returned shape just confirms server-side state for resync if needed.
-    setContextPin: (thread_id: string, hot_since: string | null) =>
+    setContextPin: (thread_id: string, hot_since_seq: number | null) =>
       request<import("./types").ThreadContextPin>(
         `/threads/${thread_id}/context-pin`,
-        { method: "PATCH", body: JSON.stringify({ hot_since }) },
+        { method: "PATCH", body: JSON.stringify({ hot_since_seq }) },
       ),
   },
 
@@ -1360,18 +1362,18 @@ export async function submitRun(
   signal: AbortSignal,
   stream_options?: StreamOptions,
   attachments?: ContentPart[],
-  hot_since?: string | null,
   channels?: string[],
+  hot_since_seq?: number | null,
 ): Promise<SubmitResult> {
   const payload: {
     message: string;
     stream_options?: StreamOptions;
     attachments?: ContentPart[];
-    hot_since?: string | null;
+    hot_since_seq?: number | null;
     channels?: string[];
   } = { message, stream_options, attachments };
-  if (hot_since !== undefined) payload.hot_since = hot_since;
   if (channels !== undefined) payload.channels = channels;
+  if (hot_since_seq !== undefined) payload.hot_since_seq = hot_since_seq;
   const runPayload = await externalizeRunAttachmentsIfNeeded(payload, signal);
 
   const res = await fetch(`${BASE}/threads/${thread_id}/run`, {

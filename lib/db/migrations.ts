@@ -362,7 +362,6 @@ export function runMigrations(db: DatabaseSync): void {
     );
     -- Generic change-tracker primitive (ADR-0025). Lets any subsystem ask
     -- "has (scope, key) changed since we last looked?" by recording a
-    -- fingerprint (e.g. content hash, mtime+size, etag) per key. Future
     -- triggers (fs_watch, tool_call dedupe) use it; the document indexer
     -- in lib/documents will migrate onto it in a later PR.
     CREATE TABLE IF NOT EXISTS change_tracker (
@@ -614,11 +613,16 @@ function ensureThreadChannelSummariesTable(db: DatabaseSync): void {
       channel         TEXT NOT NULL,
       summary         TEXT NOT NULL,
       summary_before  TEXT,
+      summary_before_seq INTEGER,
       computed_at     TEXT NOT NULL,
       PRIMARY KEY (thread_id, channel)
     );
     CREATE INDEX IF NOT EXISTS idx_thread_channel_summaries_thread ON thread_channel_summaries(thread_id);
   `);
+  const cols = db.prepare("PRAGMA table_info(thread_channel_summaries)").all() as Array<{ name: string }>;
+  if (!cols.some((column) => column.name === "summary_before_seq")) {
+    db.exec("ALTER TABLE thread_channel_summaries ADD COLUMN summary_before_seq INTEGER");
+  }
 }
 
 // ADR-0041. Immutable per-assistant-turn snapshot of LLM usage. Written once
@@ -1028,22 +1032,26 @@ function ensureTaskAssignmentColumns(db: DatabaseSync): void {
 }
 
 // ADR-0042 Ã¢â‚¬â€ explicit per-thread context pin + persisted warm summary.
-// hot_since: ISO timestamp of the boundary the user has chosen to include in
-//   the agent's hot context. NULL = no explicit pin Ã¢â€ â€™ buildHistoryWindow falls
-//   back to the agent's history_window_hours default.
+// hot_since_seq: exact first-hot message rowid; hot_since is display-only.
+// Missing seq means no explicit pin; history_window_hours applies.
 // warm_summary: latest LLM-summarised recap of messages older than
 //   warm_summary_before. The chat UI renders this as an inline card above the
 //   boundary divider so the user can see what the agent had to compress.
-// warm_summary_before: the boundary the cached summary covers. The summary is
-//   considered fresh only when warm_summary_before === hot_since; otherwise
-//   the next run will re-summarise and overwrite both.
+// warm_summary_before_seq: exact source cursor the cached summary covers.
+//   The summary is fresh only when it equals hot_since_seq.
 function ensureThreadContextPinColumns(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(threads)").all() as Array<{ name: string }>;
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("hot_since"))               db.exec("ALTER TABLE threads ADD COLUMN hot_since TEXT");
+  if (!names.has("hot_since_seq"))           db.exec("ALTER TABLE threads ADD COLUMN hot_since_seq INTEGER");
   if (!names.has("warm_summary"))            db.exec("ALTER TABLE threads ADD COLUMN warm_summary TEXT");
   if (!names.has("warm_summary_before"))     db.exec("ALTER TABLE threads ADD COLUMN warm_summary_before TEXT");
+  if (!names.has("warm_summary_before_seq")) db.exec("ALTER TABLE threads ADD COLUMN warm_summary_before_seq INTEGER");
   if (!names.has("warm_summary_computed_at")) db.exec("ALTER TABLE threads ADD COLUMN warm_summary_computed_at TEXT");
+  // Timestamp-only cursors cannot be safely mapped to a source row when
+  // created_at values collide. Discard legacy pins; the agent's configured
+  // history window applies until the user places a seq-backed boundary.
+  db.exec("UPDATE threads SET hot_since=NULL WHERE hot_since IS NOT NULL AND hot_since_seq IS NULL");
   // Compaction stats Ã¢â‚¬â€ message count + original transcript char count of the
   // material that fed `warm_summary`. The chat UI displays them on the
   // boundary chip so the user can see how much was compressed and by how

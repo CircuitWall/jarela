@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
-  rows: [] as Array<{ role: "user" | "assistant"; content: string; created_at: string }>,
+  rows: [] as Array<{ seq: number; role: "user" | "assistant"; content: string; created_at: string }>,
+  movedSeq: null as number | null,
   movedTo: null as string | null,
   alignTopicBoundary: false,
 }));
@@ -17,10 +18,11 @@ vi.mock("@/lib/stores/threads", () => ({
 }));
 vi.mock("@/lib/stores/memory", () => ({ putMemory: () => {}, listMemory: () => [], deleteMemory: () => false }));
 vi.mock("@/lib/agents/warm-summary-background", () => ({
-  compactThreadWarmContext: async (_threadId: string, boundary: string, options: { alignTopicBoundary: boolean }) => {
-    state.movedTo = boundary;
+  compactThreadWarmContext: async (_threadId: string, boundarySeq: number, options: { alignTopicBoundary: boolean }) => {
+    state.movedSeq = boundarySeq;
+    state.movedTo = state.rows.at(-1)?.created_at ?? null;
     state.alignTopicBoundary = options.alignTopicBoundary;
-    return { boundary, summary: "summary", sourceMessages: state.rows.length, sourceChars: 42, topics: [] };
+    return { boundary: state.movedTo, boundarySeq, summary: "summary", sourceMessages: state.rows.length, sourceChars: 42, topics: [] };
   },
 }));
 vi.mock("@/lib/env/config", () => ({ getConfig: () => ({ maxThreadMessages: 1000, maxSessionArchives: 20 }) }));
@@ -40,7 +42,9 @@ describe("autoCompactionKeepLast", () => {
 
   it("places a full-session reset boundary after the final message", async () => {
     state.movedTo = null;
+    state.movedSeq = null;
     state.rows = [{
+      seq: 1,
       role: "user",
       content: "start a fresh session",
       created_at: "2026-09-25T12:00:00.000Z",
@@ -49,24 +53,27 @@ describe("autoCompactionKeepLast", () => {
     const result = await compactAgentThread("agent-1");
 
     expect(result.compacted).toBe(true);
-    expect(result.hot_since).toBe("2026-09-25T12:00:00.001Z");
-    expect(state.movedTo).toBe("2026-09-25T12:00:00.001Z");
+    expect(result.hot_since).toBe("2026-09-25T12:00:00.000Z");
+    expect(state.movedTo).toBe("2026-09-25T12:00:00.000Z");
+    expect(state.movedSeq).toBe(2);
     expect(state.alignTopicBoundary).toBe(false);
   });
 
   it("resets all context even when ordinary retention would keep recent rows", async () => {
     state.movedTo = null;
+    state.movedSeq = null;
     state.rows = [
-      { role: "user", content: "older session", created_at: "2026-09-25T12:00:00.000Z" },
-      { role: "assistant", content: "older answer", created_at: "2026-09-25T12:00:01.000Z" },
-      { role: "user", content: "start fresh", created_at: "2026-09-25T12:00:02.000Z" },
+      { seq: 1, role: "user", content: "older session", created_at: "2026-09-25T12:00:00.000Z" },
+      { seq: 2, role: "assistant", content: "older answer", created_at: "2026-09-25T12:00:01.000Z" },
+      { seq: 3, role: "user", content: "start fresh", created_at: "2026-09-25T12:00:02.000Z" },
     ];
 
     const result = await compactAgentThread("agent-1", 1, true);
 
     expect(result.compacted).toBe(true);
-    expect(result.hot_since).toBe("2026-09-25T12:00:02.001Z");
-    expect(state.movedTo).toBe("2026-09-25T12:00:02.001Z");
+    expect(result.hot_since).toBe("2026-09-25T12:00:02.000Z");
+    expect(state.movedTo).toBe("2026-09-25T12:00:02.000Z");
+    expect(state.movedSeq).toBe(4);
     expect(state.alignTopicBoundary).toBe(false);
   });
 });

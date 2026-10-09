@@ -217,10 +217,14 @@ sequenceDiagram
     participant LLM as LLM Provider
 
     U->>UI: drags context boundary line
-    UI->>PIN: PATCH { hot_since } (ADR-0042)
-    PIN->>DB: UPDATE threads.hot_since
-    PIN-->>UI: { hot_since, warm_summary, ... }
-    Note over UI: Card shows placeholder<br/>until next run recomputes summary
+    UI->>PIN: PATCH { hot_since_seq } (ADR-0096)
+    PIN->>DB: validate seq belongs to thread; read source timestamp
+    PIN->>AG: prepare chat + channel summaries for seq
+    AG->>LLM: summarize warm rows per channel
+    LLM-->>AG: channel summaries
+    AG->>DB: atomically commit hot_since_seq + matching summaries
+    PIN-->>UI: committed cursor or pending cursor
+    Note over UI: Divider and Locate target the source seq id
 
     U->>UI: types message + adds attachments
     opt image / binary file attachment
@@ -228,18 +232,18 @@ sequenceDiagram
       ATT->>DB: persist metadata in message refs later
       ATT-->>UI: image_ref / file_ref
     end
-    UI->>G: POST /threads/:id/run (submit, hot_since)
+    UI->>G: POST /threads/:id/run (submit, hot_since_seq)
     G->>G: check Origin / Sec-Fetch-Site
     G->>API: forward if same-origin
-    API->>AG: startRun + invoke(threadId, msg, hot_since)
-    AG->>DB: load checkpoint + thread.hot_since
-    AG->>AG: buildHistoryWindow honours hot_since
+    API->>AG: startRun + invoke(threadId, msg, hot_since_seq)
+    AG->>DB: load checkpoint + thread.hot_since_seq
+    AG->>DB: buildHistoryWindow selects rowid >= hot_since_seq
     AG->>ATT: materialize refs for the newest turn only (ADR-0090)
     Note over AG: Older image_ref/file_ref in the window become a<br/>placeholder; model calls view_attachment to re-read one
-    opt warm_summary_before ≠ hot_since
-        AG->>LLM: summarise older messages
-        LLM-->>AG: summary
-        AG->>DB: setThreadWarmSummary
+    opt warm_summary_before_seq ≠ hot_since_seq
+      AG->>LLM: build bounded ephemeral chat fallback if needed
+      LLM-->>AG: summary for this prompt
+      Note over AG: Durable channel summaries are committed by the boundary coordinator
     end
     API-->>UI: 202 Accepted
     UI->>API: GET /threads/:id/run (EventSource subscribe)

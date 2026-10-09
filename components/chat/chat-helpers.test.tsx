@@ -106,8 +106,10 @@ describe("applyThreadMeta", () => {
       calls,
       meta: {
         setHotSince: push("hotSince") as (v: string | null) => void,
+        setHotSinceSeq: push("hotSinceSeq") as (v: number | null) => void,
         setWarmSummary: push("warmSummary") as (v: string | null) => void,
         setWarmSummaryBefore: push("warmSummaryBefore") as (v: string | null) => void,
+        setWarmSummaryBeforeSeq: push("warmSummaryBeforeSeq") as (v: number | null) => void,
         setWarmSummaryComputedAt: push("warmSummaryComputedAt") as (v: string | null) => void,
         setWarmSummarySourceMessages: push("warmSummarySourceMessages") as (v: number | null) => void,
         setWarmSummarySourceChars: push("warmSummarySourceChars") as (v: number | null) => void,
@@ -122,21 +124,25 @@ describe("applyThreadMeta", () => {
 
     applyThreadMeta(meta, {
       hot_since: "2026-08-28T07:00:00.000Z",
+      hot_since_seq: 7,
       warm_summary: null,
       warm_summary_before: null,
+      warm_summary_before_seq: null,
     });
 
     expect(calls.hotSince).toEqual(["2026-08-28T07:00:00.000Z"]);
     expect(calls.warmSummaryPending).toEqual([true]);
   });
 
-  it("clears pending once the warm summary covers the current boundary", () => {
+  it("clears pending once the warm summary covers the current seq", () => {
     const { meta, calls } = recorder();
 
     applyThreadMeta(meta, {
       hot_since: "2026-08-28T07:00:00.000Z",
+      hot_since_seq: 7,
       warm_summary: "summary",
       warm_summary_before: "2026-08-28T07:00:00.000Z",
+      warm_summary_before_seq: 7,
     });
 
     expect(calls.warmSummaryPending).toEqual([false]);

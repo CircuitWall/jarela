@@ -155,6 +155,8 @@ describe("prepareThreadRun auto context boundary", () => {
       "```jarela-topics",
       JSON.stringify([{
         title: "active topic",
+        start_seq: orderedSeeded[2].seq,
+        end_seq: orderedSeeded[5].seq + 1,
         start_at: orderedSeeded[2].created_at,
         end_at: new Date(Date.now() + 60_000).toISOString(),
         recap: "The active topic continues across the raw boundary.",
@@ -177,8 +179,8 @@ describe("prepareThreadRun auto context boundary", () => {
     // The trigger commits asynchronously after the topic-aware recap succeeds.
     await waitForCondition(() => {
       const updated = getThread(thread.thread_id);
-      return !!updated?.hot_since
-        && updated.warm_summary_before === updated.hot_since
+      return updated?.hot_since_seq === orderedSeeded[2].seq
+        && updated.warm_summary_before_seq === updated.hot_since_seq
         && updated.warm_summary_source_messages === 2;
     });
   });
@@ -214,6 +216,8 @@ describe("prepareThreadRun auto context boundary", () => {
       "```jarela-topics",
       JSON.stringify([{
         title: "retained topic",
+        start_seq: seeded[20].seq,
+        end_seq: seeded[23].seq,
         start_at: seeded[20].created_at,
         end_at: seeded[23].created_at,
         recap: "The retained topic spans the size-compaction boundary.",
@@ -235,7 +239,7 @@ describe("prepareThreadRun auto context boundary", () => {
 
     const updated = getThread(thread.thread_id);
     expect(updated?.warm_summary).toContain("AUTO-COMPACT-RECAP");
-    expect(updated?.hot_since).toBe(seeded[20].created_at);
+    expect(updated?.hot_since_seq).toBe(seeded[20].seq);
     expect(getMessages(thread.thread_id).map((m) => m.content)).toEqual([
       "older turn 20",
       "older turn 21",

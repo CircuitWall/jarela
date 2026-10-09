@@ -62,14 +62,8 @@ export interface ThreadRunRequest {
    */
   delivery_channel?: DeliveryChannel | null;
 
-  /**
-   * ADR-0042 — explicit context boundary chosen by the user. ISO timestamp.
-   * When non-empty, `buildHistoryWindow` uses it as the lower bound for the
-   * hot tier (overriding `agentCfg.history_window_hours`) and the run route
-   * persists it on the thread so subsequent loads see the same pin. Public
-   * callers leave it undefined to keep today's behaviour.
-   */
-  hot_since?: string | null;
+  /** Exact first-hot message `seq`; null clears the explicit pin. */
+  hot_since_seq?: number | null;
 
   /**
    * Per-category context profile. When set, suppresses one or more of

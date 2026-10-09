@@ -378,12 +378,13 @@ export interface ThreadDetail extends ThreadSummary {
   context_window_tokens?: number | null;
   // ADR-0042 — explicit context boundary + cached warm summary. NULL on
   // threads with no pin (the agent's history_window_hours default applies).
-  // The summary is fresh iff `warm_summary_before === hot_since`; the chat
-  // UI uses that comparison to decide whether to show the live summary or
-  // a "will appear after your next reply" placeholder.
+  // The summary is fresh iff `warm_summary_before_seq === hot_since_seq`; the
+  // timestamp values below are display metadata only.
   hot_since?: string | null;
+  hot_since_seq?: number | null;
   warm_summary?: string | null;
   warm_summary_before?: string | null;
+  warm_summary_before_seq?: number | null;
   warm_summary_computed_at?: string | null;
   // Compaction stats — drive the boundary chip's "N msgs · old → new chars"
   // readout. Null when the summary was produced before these columns existed.
@@ -398,6 +399,7 @@ export interface ThreadDetail extends ThreadSummary {
   // moves once its recap is stored, so this is the only signal the UI has
   // that a compaction is in flight.
   pending_hot_since?: string | null;
+  pending_hot_since_seq?: number | null;
 }
 
 export interface SummaryTopicFact {
@@ -417,13 +419,16 @@ export interface SummaryTopicSegment {
 
 export interface ThreadContextPin {
   hot_since: string | null;
+  hot_since_seq: number | null;
   warm_summary: string | null;
   warm_summary_before: string | null;
+  warm_summary_before_seq: number | null;
   warm_summary_computed_at: string | null;
   warm_summary_source_messages: number | null;
   warm_summary_source_chars: number | null;
   warm_summary_topics: SummaryTopicSegment[] | null;
   pending_hot_since?: string | null;
+  pending_hot_since_seq?: number | null;
 }
 
 export interface MemoryItem {

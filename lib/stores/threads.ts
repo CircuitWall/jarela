@@ -38,12 +38,14 @@ function foregroundCategoryGuardSql(): string {
 export interface ThreadRow {
   thread_id: string; agent_id: string; title: string | null;
   created_at: string; updated_at: string; message_count: number;
-  // ADR-0042 — explicit context pin + cached warm summary. NULL on threads
+  // ADR-0096 — explicit source cursor + cached warm summary. NULL on threads
   // that haven't had the boundary moved away from the agent default. The
-  // summary is fresh only when warm_summary_before === hot_since.
+  // summary is fresh only when warm_summary_before_seq === hot_since_seq.
   hot_since?: string | null;
+  hot_since_seq?: number | null;
   warm_summary?: string | null;
   warm_summary_before?: string | null;
+  warm_summary_before_seq?: number | null;
   warm_summary_computed_at?: string | null;
   // Compaction-stat columns — set alongside warm_summary. Null when the
   // summary predates these columns or was computed in a path that doesn't
@@ -127,6 +129,10 @@ export function getThread(thread_id: string): ThreadRow | null {
   return (getDb().prepare("SELECT * FROM threads WHERE thread_id=?").get(thread_id) as unknown as ThreadRow) ?? null;
 }
 
+export function getThreadMessageBySeq(thread_id: string, seq: number): MessageRow | null {
+  return (getDb().prepare(MSG_COLS_SQL + " WHERE thread_id=? AND rowid=?").get(thread_id, seq) as unknown as MessageRow | undefined) ?? null;
+}
+
 export function createThread(agent_id: string, title?: string): ThreadRow {
   const existing = getDb()
     .prepare("SELECT * FROM threads WHERE agent_id=? LIMIT 1")
@@ -174,6 +180,7 @@ export function getRecentMessagesWindow(
   // FOREGROUND_EXCLUDED_CATEGORIES. An empty/omitted list degenerates to
   // "no rows" rather than silently falling back to "all".
   channels?: readonly string[],
+  sinceSeq?: number,
 ): MessageRow[] {
   if (scope === "none") return [];
   const db = getDb();
@@ -203,7 +210,10 @@ export function getRecentMessagesWindow(
     sql += " AND (" + clauses.join(" OR ") + ")";
     params.push(...extra);
   }
-  if (sinceISO) {
+  if (sinceSeq !== undefined) {
+    sql += " AND rowid >= ?";
+    params.push(sinceSeq);
+  } else if (sinceISO) {
     sql += " AND created_at >= ?";
     params.push(sinceISO);
   }
@@ -216,22 +226,17 @@ export function getRecentMessagesWindow(
   return rows.reverse();
 }
 
-// Count messages in a [fromISO, toISO) half-open range at the given
-// scope, capped so very long gaps don't scan the whole table. Used by
-// the warm summary cache in `history-window.ts` to decide whether the
-// cached boundary has drifted too far from the current turn's boundary
-// to still be reused.
-export function countMessagesBetween(
+export function countMessagesBetweenSeq(
   thread_id: string,
-  fromISO: string,
-  toISO: string,
+  fromSeq: number,
+  toSeq: number,
   scope: "foreground" | "bridge" | "all",
   limit: number,
 ): number {
-  if (toISO <= fromISO) return 0;
-  const params: (string | number)[] = [thread_id, fromISO, toISO];
+  if (toSeq <= fromSeq) return 0;
+  const params: (string | number)[] = [thread_id, fromSeq, toSeq];
   let sql = "SELECT COUNT(*) AS n FROM (SELECT 1 FROM messages"
-    + " WHERE thread_id=? AND created_at >= ? AND created_at < ?"
+    + " WHERE thread_id=? AND rowid >= ? AND rowid < ?"
     + " AND (category IS NULL OR category != 'run_error')"
     + ` AND (metadata IS NULL OR instr(metadata, '"automation_activity"') = 0)`;
   if (scope === "foreground") {
@@ -452,6 +457,7 @@ export interface ThreadChannelSummaryRow {
   channel: string;
   summary: string;
   summary_before: string | null;
+  summary_before_seq: number | null;
   computed_at: string;
 }
 
@@ -464,23 +470,27 @@ export interface ThreadChannelSummaryRow {
 // hot/warm boundary move, there's no cross-field invariant to protect here.
 export function getThreadChannelSummary(threadId: string, channel: string): ThreadChannelSummaryRow | null {
   return (getDb()
-    .prepare("SELECT thread_id, channel, summary, summary_before, computed_at FROM thread_channel_summaries WHERE thread_id=? AND channel=?")
+    .prepare("SELECT thread_id, channel, summary, summary_before, summary_before_seq, computed_at FROM thread_channel_summaries WHERE thread_id=? AND channel=?")
     .get(threadId, channel) as ThreadChannelSummaryRow | undefined) ?? null;
 }
 
 export function commitThreadChannelSummary(
   threadId: string,
   channel: string,
-  input: { summary: string; summaryBefore: string | null },
+  input: { summary: string; summaryBefore: string | null; summaryBeforeSeq?: number | null },
 ): void {
+  if (input.summaryBefore !== null && input.summaryBeforeSeq == null) {
+    throw new Error("summaryBeforeSeq is required for a boundary summary");
+  }
   getDb()
     .prepare(
-      `INSERT INTO thread_channel_summaries (thread_id, channel, summary, summary_before, computed_at)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO thread_channel_summaries (thread_id, channel, summary, summary_before, summary_before_seq, computed_at)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(thread_id, channel) DO UPDATE SET
-         summary=excluded.summary, summary_before=excluded.summary_before, computed_at=excluded.computed_at`,
+         summary=excluded.summary, summary_before=excluded.summary_before,
+         summary_before_seq=excluded.summary_before_seq, computed_at=excluded.computed_at`,
     )
-    .run(threadId, channel, input.summary, input.summaryBefore, now());
+    .run(threadId, channel, input.summary, input.summaryBefore, input.summaryBeforeSeq ?? null, now());
 }
 
 export function touchThread(thread_id: string, firstMsg?: string): void {
@@ -493,10 +503,13 @@ export function touchThread(thread_id: string, firstMsg?: string): void {
 // ADR-0042. Move the user's explicit boundary between hot and warm context.
 // Pass `null` to clear the pin and let the agent's default window apply
 // again. Persisting the pin here keeps it stable across reloads and devices.
-export function setThreadContextPin(thread_id: string, hot_since: string | null): void {
+export function setThreadContextPin(thread_id: string, hot_since: string | null, hot_since_seq?: number | null): void {
+  if (hot_since !== null && hot_since_seq == null) {
+    throw new Error("hot_since_seq is required for a context pin");
+  }
   getDb()
-    .prepare("UPDATE threads SET hot_since=? WHERE thread_id=?")
-    .run(hot_since, thread_id);
+    .prepare("UPDATE threads SET hot_since=?, hot_since_seq=? WHERE thread_id=?")
+    .run(hot_since, hot_since === null ? null : hot_since_seq!, thread_id);
 }
 
 // Called by moveThreadContextBoundary whenever the user explicitly moves the
@@ -512,15 +525,16 @@ export function setAutoBoundaryLock(thread_id: string, untilMessageCount: number
 
 export interface ThreadWarmContextCommit {
   hotSince: string;
+  hotSinceSeq: number;
   summary: string;
   sourceMessages: number;
   sourceChars: number;
   topics?: string | null;
-  /** Reject the commit if another compactor or user action moved the pin. */
-  expectedHotSince?: string | null;
+  expectedHotSinceSeq?: number | null;
   /** Reject the commit if another compactor refreshed the same boundary. */
   expectedWarmSummary?: string | null;
   autoBoundaryLockedUntilMessageCount?: number;
+  channelSummaries?: Array<{ channel: string; summary: string }>;
 }
 
 // A warm recap is only valid for the exact boundary it replaced. Commit both
@@ -531,25 +545,31 @@ export function commitThreadWarmContext(
   input: ThreadWarmContextCommit,
 ): ThreadRow | null {
   const db = getDb();
-  const checkExpectedPin = Object.hasOwn(input, "expectedHotSince");
+  const checkExpectedPinSeq = Object.hasOwn(input, "expectedHotSinceSeq");
   const checkExpectedSummary = Object.hasOwn(input, "expectedWarmSummary");
+  const hotSinceSeq = input.hotSinceSeq;
+  if (!Number.isSafeInteger(hotSinceSeq) || hotSinceSeq <= 0) {
+    throw new Error("hotSinceSeq must be a positive source cursor");
+  }
   db.exec("BEGIN IMMEDIATE");
   try {
     const current = getThread(thread_id);
     if (
       !current
-      || (checkExpectedPin && (current.hot_since ?? null) !== input.expectedHotSince)
+      || (checkExpectedPinSeq && (current.hot_since_seq ?? null) !== input.expectedHotSinceSeq)
       || (checkExpectedSummary && (current.warm_summary ?? null) !== input.expectedWarmSummary)
     ) {
       db.exec("ROLLBACK");
       return null;
     }
     db.prepare(
-      "UPDATE threads SET hot_since=?, warm_summary=?, warm_summary_before=?, warm_summary_computed_at=?, warm_summary_source_messages=?, warm_summary_source_chars=?, warm_summary_topics=?, auto_boundary_locked_until_msg_count=? WHERE thread_id=?",
+      "UPDATE threads SET hot_since=?, hot_since_seq=?, warm_summary=?, warm_summary_before=?, warm_summary_before_seq=?, warm_summary_computed_at=?, warm_summary_source_messages=?, warm_summary_source_chars=?, warm_summary_topics=?, auto_boundary_locked_until_msg_count=? WHERE thread_id=?",
     ).run(
       input.hotSince,
+      hotSinceSeq,
       input.summary,
       input.hotSince,
+      hotSinceSeq,
       now(),
       input.sourceMessages,
       input.sourceChars,
@@ -557,6 +577,16 @@ export function commitThreadWarmContext(
       input.autoBoundaryLockedUntilMessageCount ?? current.auto_boundary_locked_until_msg_count ?? 0,
       thread_id,
     );
+    const upsertChannel = db.prepare(
+      `INSERT INTO thread_channel_summaries (thread_id, channel, summary, summary_before, summary_before_seq, computed_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(thread_id, channel) DO UPDATE SET
+         summary=excluded.summary, summary_before=excluded.summary_before,
+         summary_before_seq=excluded.summary_before_seq, computed_at=excluded.computed_at`,
+    );
+    for (const channelSummary of input.channelSummaries ?? []) {
+      upsertChannel.run(thread_id, channelSummary.channel, channelSummary.summary, input.hotSince, hotSinceSeq, now());
+    }
     db.exec("COMMIT");
     return getThread(thread_id);
   } catch (err) {
@@ -576,14 +606,19 @@ export function setThreadWarmSummary(
   sourceMessages?: number | null,
   sourceChars?: number | null,
   topics?: string | null,
+  beforeSeq?: number | null,
 ): void {
+  if (before !== null && beforeSeq == null) {
+    throw new Error("beforeSeq is required for a warm summary");
+  }
   getDb()
     .prepare(
-      "UPDATE threads SET warm_summary=?, warm_summary_before=?, warm_summary_computed_at=?, warm_summary_source_messages=?, warm_summary_source_chars=?, warm_summary_topics=? WHERE thread_id=?",
+      "UPDATE threads SET warm_summary=?, warm_summary_before=?, warm_summary_before_seq=?, warm_summary_computed_at=?, warm_summary_source_messages=?, warm_summary_source_chars=?, warm_summary_topics=? WHERE thread_id=?",
     )
     .run(
       summary,
       before,
+      before === null ? null : beforeSeq!,
       now(),
       typeof sourceMessages === "number" ? sourceMessages : null,
       typeof sourceChars === "number" ? sourceChars : null,

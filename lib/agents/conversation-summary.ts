@@ -26,7 +26,7 @@ export function transcriptText(raw: string): string {
   }
 }
 
-function summaryMessages(transcript: string): ProviderMessage[] {
+export function buildConversationSummaryMessages(transcript: string): ProviderMessage[] {
   return [
     {
       role: "system",
@@ -83,11 +83,13 @@ function summaryMessages(transcript: string): ProviderMessage[] {
         "After the sections above, append one more fenced block using the exact",
         "language tag `jarela-topics`: a JSON array segmenting the transcript into",
         "the distinct topics/subjects it covers, in chronological order. Each",
-        "message in the transcript below is prefixed with its real ISO timestamp —",
-        "copy those exact timestamps, never invent or estimate one. Each array",
+        "message in the transcript below is prefixed with its exact SQLite seq and ISO timestamp.",
+        "Copy the exact seq values for topic boundaries; never infer or estimate seq. Keep the",
+        "timestamps only as display labels. Each array",
         "entry is:",
-        '  {"title": short topic label, "start_at": ISO timestamp of that topic\'s',
-        '   first message, "end_at": ISO timestamp of its last message, "recap":',
+        '  {"title": short topic label, "start_seq": seq of that topic\'s first message,',
+        '   "end_seq": seq of its last message, "start_at": ISO display timestamp of the first,',
+        '   "end_at": ISO display timestamp of the last, "recap":',
         '   1-2 sentence recap of just this topic, "facts": [...]}.',
         "`facts` is usually empty — only include an entry when the topic produced",
         "a durable preference, decision, or constraint worth recalling in an",
@@ -134,6 +136,8 @@ export interface SummaryTopicFact {
 
 export interface SummaryTopicSegment {
   title: string;
+  start_seq?: number;
+  end_seq?: number;
   start_at: string;
   end_at: string;
   recap: string;
@@ -155,6 +159,8 @@ export function extractTopicSegments(text: string): { body: string; topics: Summ
     if (!item || typeof item !== "object") continue;
     const obj = item as Record<string, unknown>;
     const title = typeof obj.title === "string" ? obj.title.trim() : "";
+    const start_seq = typeof obj.start_seq === "number" && Number.isSafeInteger(obj.start_seq) ? obj.start_seq : undefined;
+    const end_seq = typeof obj.end_seq === "number" && Number.isSafeInteger(obj.end_seq) ? obj.end_seq : undefined;
     const start_at = typeof obj.start_at === "string" ? obj.start_at.trim() : "";
     const end_at = typeof obj.end_at === "string" ? obj.end_at.trim() : "";
     const recap = typeof obj.recap === "string" ? obj.recap.trim() : "";
@@ -174,7 +180,7 @@ export function extractTopicSegments(text: string): { body: string; topics: Summ
         facts.push({ subject, content, tags, confidence });
       }
     }
-    topics.push({ title, start_at, end_at, recap, facts });
+    topics.push({ title, start_seq, end_seq, start_at, end_at, recap, facts });
   }
   const body = text.slice(0, m.index).trimEnd();
   return { body, topics };
@@ -200,7 +206,7 @@ export async function summarizeTranscript(
   const trimmed = transcript.trim();
   if (!trimmed) return "";
 
-  const { stream } = await provider.chat(modelId, summaryMessages(trimmed), providerParams);
+  const { stream } = await provider.chat(modelId, buildConversationSummaryMessages(trimmed), providerParams);
   let summary = "";
   for await (const chunk of stream) summary += chunk;
   const result = summary.trim();

@@ -15,7 +15,7 @@ vi.mock("./ToolList", () => ({
 }));
 
 function mkMessage(id: string, role: "user" | "assistant", content: string, created_at: string): Message {
-  return { id, role, content, created_at, status: "confirmed" };
+  return { id, role, content, created_at, seq: Number(id.replace(/\D/g, "")), status: "confirmed" };
 }
 
 function setRect(el: Element, top: number, height = 24) {
@@ -153,9 +153,9 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={onSetContextPin}
-        hotSince="2026-08-09T10:00:00.000Z"
+        hotSinceSeq={1}
         warmSummary="Short cached summary"
-        warmSummaryBefore="2026-08-09T10:00:00.000Z"
+        warmSummaryBeforeSeq={1}
       />,
     );
 
@@ -177,7 +177,7 @@ describe("MessageList conversation focus", () => {
     expect(onSetContextPin).not.toHaveBeenCalled();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Move focus" }));
-    expect(onSetContextPin).toHaveBeenCalledWith("2026-08-09T10:00:01.000Z");
+    expect(onSetContextPin).toHaveBeenCalledWith(2);
   });
 
   it("cancels without persisting when the dialog is dismissed", async () => {
@@ -191,9 +191,9 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={onSetContextPin}
-        hotSince="2026-08-09T10:00:01.000Z"
+        hotSinceSeq={2}
         warmSummary="Short cached summary"
-        warmSummaryBefore="2026-08-09T10:00:01.000Z"
+        warmSummaryBeforeSeq={2}
       />,
     );
 
@@ -225,9 +225,9 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={onSetContextPin}
-        hotSince="2026-08-09T10:00:01.000Z"
+        hotSinceSeq={2}
         warmSummary="Short cached summary"
-        warmSummaryBefore="2026-08-09T10:00:01.000Z"
+        warmSummaryBeforeSeq={2}
       />,
     );
 
@@ -251,9 +251,9 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={onSetContextPin}
-        hotSince="2026-08-09T10:00:01.000Z"
+        hotSinceSeq={2}
         warmSummary="Short cached summary"
-        warmSummaryBefore="2026-08-09T10:00:01.000Z"
+        warmSummaryBeforeSeq={2}
       />,
     );
 
@@ -279,9 +279,7 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={vi.fn()}
-        hotSince={null}
         warmSummary={null}
-        warmSummaryBefore={null}
       />,
     );
 
@@ -299,9 +297,8 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={vi.fn()}
-        hotSince="2026-08-09T10:00:02.000Z"
+        hotSinceSeq={3}
         warmSummary={null}
-        warmSummaryBefore={null}
       />,
     );
 
@@ -319,9 +316,9 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={vi.fn()}
-        hotSince="2026-08-09T10:00:01.000Z"
+        hotSinceSeq={2}
         warmSummary="Old cached summary"
-        warmSummaryBefore="2026-08-09T10:00:00.000Z"
+        warmSummaryBeforeSeq={1}
         warmSummaryPending={true}
       />,
     );
@@ -346,9 +343,9 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={vi.fn()}
-        hotSince="2026-08-09T10:00:02.000Z"
+        hotSinceSeq={3}
         warmSummary="Short cached summary"
-        warmSummaryBefore="2026-08-09T10:00:02.000Z"
+        warmSummaryBeforeSeq={3}
       />,
     );
 
@@ -359,6 +356,39 @@ describe("MessageList conversation focus", () => {
     expect(screen.getByText("recent 0 · warm 2")).toBeTruthy();
   });
 
+  it("renders and locates the exact source seq when message timestamps tie", () => {
+    const timestamp = "2026-08-09T10:00:00.000Z";
+    const messages = [
+      mkMessage("m1", "user", "first tied row", timestamp),
+      mkMessage("m2", "assistant", "pinned tied row", timestamp),
+    ];
+    const { container } = render(
+      <MessageList
+        threadId="thread-1"
+        messages={messages}
+        onSetContextPin={vi.fn()}
+        hotSinceSeq={2}
+        warmSummary="Exact summary"
+        warmSummaryBeforeSeq={2}
+      />,
+    );
+
+    const boundary = container.querySelector("[data-focus-boundary='1']") as HTMLElement;
+    const first = document.getElementById("1")!;
+    const pinned = document.getElementById("2")!;
+    expect(boundary.id).toBe("context-boundary-2");
+    expect(first.compareDocumentPosition(boundary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(boundary.compareDocumentPosition(pinned) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("recent 1 · warm 1")).toBeTruthy();
+
+    const scrollIntoView = vi.fn();
+    boundary.scrollIntoView = scrollIntoView;
+    fireEvent.click(screen.getByRole("button", { name: /filters & focus/i }));
+    const locate = screen.getByRole("button", { name: "Locate boundary line" });
+    fireEvent.click(locate);
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
   it("keeps the anchor message on screen when hot_since relocates the boundary line", () => {
     const messages = [
       mkMessage("m1", "user", "one", "2026-08-09T10:00:00.000Z"),
@@ -367,7 +397,7 @@ describe("MessageList conversation focus", () => {
       mkMessage("m4", "assistant", "four", "2026-08-09T10:00:03.000Z"),
     ];
     const { container, rerender } = render(
-      <MessageList threadId="thread-1" messages={messages} hotSince="2026-08-09T10:00:02.000Z" />,
+      <MessageList threadId="thread-1" messages={messages} hotSinceSeq={3} />,
     );
 
     const scroller = container.querySelector(".panel-scrollbar") as HTMLDivElement;
@@ -390,7 +420,7 @@ describe("MessageList conversation focus", () => {
     // in for that by nudging m3's rect by -50.
     setRect(container.querySelector('[data-message-id="m3"]')!, 100);
     rerender(
-      <MessageList threadId="thread-1" messages={messages} hotSince="2026-08-09T10:00:03.000Z" />,
+      <MessageList threadId="thread-1" messages={messages} hotSinceSeq={4} />,
     );
 
     // scrollTop drops by exactly the amount m3 moved up, so the anchor
@@ -420,9 +450,9 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={vi.fn()}
-        hotSince="2026-08-09T10:00:01.000Z"
+        hotSinceSeq={2}
         warmSummary="Short cached summary"
-        warmSummaryBefore="2026-08-09T10:00:01.000Z"
+        warmSummaryBeforeSeq={2}
       />,
     );
 

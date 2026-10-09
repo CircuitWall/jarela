@@ -23,7 +23,7 @@ import { broadcast, finishRun, startRun, subscribe, abortRun, pushSteering, drai
 import { runAgentTurn } from "@/lib/agents/agent-turn";
 import { enqueueThreadRun, QueueFullError, getQueueDepth } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
-import { getThread, addMessage } from "@/lib/stores/threads";
+import { getThread, getThreadMessageBySeq, addMessage } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { sseResponse } from "@/lib/api/sse";
 import { validateBody } from "@/lib/api/responses";
@@ -91,10 +91,8 @@ const RunBody = z.object({
   message: z.string(),
   attachments: z.array(z.unknown()).optional(),
   stream_options: z.unknown().optional(),
-  // ADR-0042 — explicit context boundary the chat picked. ISO timestamp,
-  // null to clear the pin, omitted to leave whatever's already persisted
-  // on the thread.
-  hot_since: z.string().nullable().optional(),
+  // ADR-0096 — exact first-hot message seq; null clears the pin.
+  hot_since_seq: z.number().int().positive().nullable().optional(),
   // ADR-0044 — automation channels the chat panel's filter toolbar has
   // toggled on for this turn (scheduled_task/watcher/bridge). "chat" is
   // unioned in server-side regardless of what the client sends, so callers
@@ -120,7 +118,13 @@ export async function POST(req: NextRequest, { params }: Params) {
   const message = parsed.message;
   const attachments = parsed.attachments as ContentPart[] | undefined;
   const stream_options = parsed.stream_options as StreamOptions | undefined;
-  const hot_since = parsed.hot_since;
+  const hotSinceSource = typeof parsed.hot_since_seq === "number"
+    ? getThreadMessageBySeq(thread_id, parsed.hot_since_seq)
+    : null;
+  if (typeof parsed.hot_since_seq === "number" && !hotSinceSource) {
+    return NextResponse.json({ error: "Boundary seq does not belong to this thread", code: "invalid_boundary" }, { status: 400 });
+  }
+  const hot_since_seq = parsed.hot_since_seq;
   const channels = parsed.channels ? Array.from(new Set(["chat", ...parsed.channels])) : undefined;
 
   // Per-thread priority queue (lib/agents/run-queue.ts). Every entry point
@@ -160,7 +164,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           options: stream_options,
           attachments,
           signal: active.abort.signal,
-          hot_since,
+          hot_since_seq,
           channels,
           context_profile: resolveTurnProfile("user"),
           _pinned_model_config_name: pinnedModelConfigName,
