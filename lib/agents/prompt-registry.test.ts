@@ -425,7 +425,7 @@ describe("assembled agent system prompt", () => {
   it("names only tools that actually exist", async () => {
     const known = new Set((await getAllToolCatalogAsync()).map((t) => t.name));
     // Tool names the prompt tells the model to call, outside the bound list.
-    const referenced = ["list_tools", "invoke_tool", "read_skill", "memory_write", "schedule_task"];
+    const referenced = ["list_tools", "invoke_tool", "read_skill", "memory_write", "schedule_task", "workflow_progress"];
     for (const name of referenced) {
       expect(known, `prompt references ${name} but no such tool is registered`).toContain(name);
     }

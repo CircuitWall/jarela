@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agents can track complex tasks with visible workflow checklists.** Built-in
+  skills define when to use them; updates are verified snapshots, with
+  approval blockers and secrets handled explicitly.
+
 ## [1.43.2] - 2026-10-09
 
 ### Added

@@ -8,14 +8,22 @@ import {
 } from "@/lib/stores/version-adoption";
 import { errorMessage } from "@/lib/utils/error";
 
+const workflowItemStatusSchema = z.enum(["pending", "checking", "done", "needs_attention", "skipped"]);
+
 const workflowProgressSchema = z.object({
-  workflow_id: z.string().describe("Workflow id. Currently supported: version_adoption."),
-  phase: z.string().optional().describe("Optional workflow phase to show in the UI. For version_adoption, use impact_radius, adoption, or complete."),
+  workflow_id: z.string().min(1).max(80).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/)
+    .describe("Use version_adoption for the system-owned adoption workflow; otherwise use a stable task slug."),
+  phase: z.string().max(80).optional().describe("Optional current phase. For version_adoption, use impact_radius, adoption, or complete."),
+  items: z.array(z.object({
+    id: z.string().min(1).max(64).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
+    label: z.string().min(1).max(120),
+    status: workflowItemStatusSchema.optional(),
+  })).max(12).optional().describe("For agent-created workflows, send the complete current checklist snapshot on every update. Omitted item statuses default to pending."),
   item_id: z.string().optional().describe("Optional checklist item id to update."),
-  status: z.enum(["pending", "checking", "done", "needs_attention", "skipped"]).optional().describe("Optional checklist item status. Requires item_id."),
-  summary: z.string().optional().describe("Optional short workflow summary to persist and show in the UI."),
-  detail: z.string().optional().describe("Optional live progress text to stream immediately to the UI."),
-  needs_attention_reason: z.string().optional().describe("Optional reason shown when the item or workflow needs user attention."),
+  status: workflowItemStatusSchema.optional().describe("For version_adoption only: checklist item status. Requires item_id."),
+  summary: z.string().max(300).optional().describe("Optional short workflow summary shown in the chat checklist."),
+  detail: z.string().max(300).optional().describe("Optional live progress text to stream immediately to the UI."),
+  needs_attention_reason: z.string().max(300).optional().describe("Optional reason shown when the item or workflow needs user attention."),
 });
 
 function versionAdoptionPhase(phase: string | undefined): "impact_radius" | "adoption" | "complete" | undefined {
@@ -31,10 +39,46 @@ export const workflowProgressTool = tool(
     reportToolProgress(config as ToolConfig | undefined, "workflow_progress", detail);
 
     if (input.workflow_id !== "version_adoption") {
+      if (!input.items || input.items.length === 0) {
+        return JSON.stringify({
+          ok: false,
+          workflow_id: input.workflow_id,
+          error: "Agent-created workflows require the complete current items checklist on every update.",
+        });
+      }
+      if (input.item_id || input.status) {
+        return JSON.stringify({
+          ok: false,
+          workflow_id: input.workflow_id,
+          error: "Agent-created workflows update item statuses through the complete items checklist, not item_id/status fields.",
+        });
+      }
+      const itemIds = input.items.map((item) => item.id);
+      if (new Set(itemIds).size !== itemIds.length) {
+        return JSON.stringify({
+          ok: false,
+          workflow_id: input.workflow_id,
+          error: "Workflow item ids must be unique.",
+        });
+      }
+      const checklist = input.items.map((item) => ({ ...item, status: item.status ?? "pending" as const }));
+      if (input.phase === "complete" && checklist.some((item) => item.status !== "done" && item.status !== "skipped")) {
+        return JSON.stringify({
+          ok: false,
+          workflow_id: input.workflow_id,
+          error: "A workflow cannot be completed while checklist items remain open or need attention.",
+        });
+      }
       return JSON.stringify({
-        ok: false,
+        ok: true,
         workflow_id: input.workflow_id,
-        error: `unsupported workflow_id: ${input.workflow_id}`,
+        state: {
+          phase: input.phase ?? null,
+          summary: input.summary ?? "",
+          error: input.needs_attention_reason ?? null,
+          checklist,
+        },
+        updated_item_id: null,
       });
     }
 
@@ -64,9 +108,8 @@ export const workflowProgressTool = tool(
   {
     name: "workflow_progress",
     description:
-      "Report structured progress for an agent-led multi-step workflow. " +
-      "Use this to create or advance a visible checklist: set the workflow phase, mark items checking/done/skipped/needs_attention, and provide short live detail text. " +
-      "Currently supported workflow_id: version_adoption.",
+      "Report structured progress for a substantial multi-step task. Use only when the task has several dependent phases, likely spans turns, or needs explicit verification; skip simple tasks and work already covered by native tool progress. For agent-created workflows, send the full current items snapshot on every call and reuse the same workflow_id. Keep secrets and private data out of workflow fields. Mark items done only after verifying the action; use needs_attention for blockers; phase=complete requires every item done or skipped. " +
+      "The system-owned version_adoption workflow has its own durable checklist.",
     schema: workflowProgressSchema,
   },
 );

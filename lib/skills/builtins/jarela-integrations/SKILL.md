@@ -57,3 +57,6 @@ Call `describe_extension_surfaces` when unsure which path fits.
 - Be explicit about whether an action is local setup, vendor setup, OAuth
   consent, or a Jarela approval.
 - Validate after saving credentials or changing integration configuration.
+- For multi-stage setup or diagnosis, use `workflow_progress` with prerequisites → approval/consent → configuration → probe. Skip simple credential-status questions.
+- Keep one stable, task-specific `workflow_id` and send the complete current item list on each update. Never put credentials, OAuth codes, or private values in workflow fields.
+- Keep approval and consent steps `needs_attention` until the user/provider flow confirms them; mark configuration or probe steps done only after a successful result.

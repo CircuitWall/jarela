@@ -39,6 +39,12 @@ lives.
 - For destructive actions, confirm the target and effect unless the user has
   already explicitly authorized it.
 
+## Progress Tracking
+
+- For complex operations with distinct execution and verification stages, use `workflow_progress` with inspect → act → verify → report. Skip simple status checks and actions that already expose sufficient native progress.
+- Use one stable, task-specific `workflow_id` and include the full current checklist on every update. Mark steps done only after observing their result; use `needs_attention` for blockers or approvals. Keep secrets and private data out of checklist fields.
+- For scheduled prompt runs, track progress for that firing only. Script-based scheduled tasks do not run an agent and cannot call `workflow_progress`; use the Tasks panel for schedule-level state.
+
 ## Useful Surfaces
 
 - Credentials: model providers, integrations, bridge/API credentials.

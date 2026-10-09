@@ -92,3 +92,9 @@ For reusable workflows, persist them as skills:
   payloads.
 - After a config change, validate through the narrowest relevant API, UI state,
   or tool call.
+
+## Progress Tracking
+
+- For multi-step configuration work with dependencies, approval, or verification, use `workflow_progress` with a concise inspect → configure → verify checklist. Skip single-setting changes and read-only questions.
+- Keep a stable task-specific `workflow_id` and send the complete current item list on each update. Keep credentials and private values out of checklist fields.
+- Mark approval-dependent steps `needs_attention` while waiting. Mark steps done only after the approval or configuration tool returns success and the result is verified.
