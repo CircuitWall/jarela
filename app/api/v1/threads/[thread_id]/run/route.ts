@@ -23,7 +23,7 @@ import { broadcast, finishRun, startRun, subscribe, abortRun, pushSteering, drai
 import { runAgentTurn } from "@/lib/agents/agent-turn";
 import { enqueueThreadRun, QueueFullError, getQueueDepth } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
-import { getThread, getThreadMessageBySeq, addMessage, updateMessageContent } from "@/lib/stores/threads";
+import { getThread, getThreadMessageBySeq, isValidThreadContextCursor, addMessage, updateMessageContent } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { sseResponse } from "@/lib/api/sse";
 import { validateBody } from "@/lib/api/responses";
@@ -120,10 +120,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   const message = parsed.message;
   const attachments = parsed.attachments as ContentPart[] | undefined;
   const stream_options = parsed.stream_options as StreamOptions | undefined;
-  const hotSinceSource = typeof parsed.hot_since_seq === "number"
-    ? getThreadMessageBySeq(thread_id, parsed.hot_since_seq)
-    : null;
-  if (typeof parsed.hot_since_seq === "number" && !hotSinceSource) {
+  if (typeof parsed.hot_since_seq === "number" && !isValidThreadContextCursor(thread_id, parsed.hot_since_seq)) {
     return NextResponse.json({ error: "Boundary seq does not belong to this thread", code: "invalid_boundary" }, { status: 400 });
   }
   const hot_since_seq = parsed.hot_since_seq;

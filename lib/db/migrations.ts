@@ -454,6 +454,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureMessagesCategoryColumn(db);
   ensureMessagesMetadataColumn(db);
   ensureMessageTranscriptStatusColumns(db);
+  ensureMessageSequenceAllocator(db);
   ensureScheduledTasksSilentColumn(db);
   ensureAgentDisplayFiltersColumn(db);
   ensureDocumentSourceRemoteColumns(db);
@@ -772,6 +773,19 @@ function ensureMessageTranscriptStatusColumns(db: DatabaseSync): void {
   if (!names.has("status_reason")) {
     db.exec("ALTER TABLE messages ADD COLUMN status_reason TEXT");
   }
+}
+
+function ensureMessageSequenceAllocator(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS message_seq_allocator (
+      id       INTEGER PRIMARY KEY CHECK (id=1),
+      last_seq INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT OR IGNORE INTO message_seq_allocator (id, last_seq) VALUES (1, 0);
+    UPDATE message_seq_allocator
+       SET last_seq=MAX(last_seq, COALESCE((SELECT MAX(rowid) FROM messages), 0))
+     WHERE id=1;
+  `);
 }
 
 // ADR-0030 Ã¢â‚¬â€ per-watcher reaction prompt. NULL = use the default

@@ -4,7 +4,7 @@ import { withDbTransaction } from "@/lib/db/transaction";
 import { stripDeclaredReferencesFence } from "@/api/message-content";
 import { processMessageEmbeddingJobs, resetMessageEmbedCache, resetMemoryEmbedCache } from "@/lib/embeddings";
 import { enqueueMessageEmbeddingJob } from "./message-embedding-jobs";
-import { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey } from "./chat-archive-key";
+import { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey, parseChatArchiveKey } from "./chat-archive-key";
 export { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey, parseChatArchiveKey } from "./chat-archive-key";
 
 const now = () => new Date().toISOString();
@@ -157,6 +157,11 @@ export function getThreadMessageBySeq(thread_id: string, seq: number): MessageRo
   return (getDb().prepare(MSG_COLS_SQL + " WHERE thread_id=? AND rowid=?").get(thread_id, seq) as unknown as MessageRow | undefined) ?? null;
 }
 
+export function isValidThreadContextCursor(thread_id: string, seq: number): boolean {
+  if (getThreadMessageBySeq(thread_id, seq)) return true;
+  return getThread(thread_id)?.hot_since_seq === seq;
+}
+
 export function createThread(agent_id: string, title?: string): ThreadRow {
   const existing = getDb()
     .prepare("SELECT * FROM threads WHERE agent_id=? LIMIT 1")
@@ -173,12 +178,22 @@ export function createThread(agent_id: string, title?: string): ThreadRow {
 
 export function deleteThread(thread_id: string): boolean {
   const db = getDb();
+  let archivedRowsDeleted = 0;
   const deleted = withDbTransaction(() => {
+    const archiveKeys = db.prepare("SELECT key FROM memory_store WHERE namespace=?")
+      .all(CHAT_ARCHIVE_NAMESPACE) as Array<{ key: string }>;
+    for (const { key } of archiveKeys) {
+      if (parseChatArchiveKey(key)?.thread_id !== thread_id) continue;
+      archivedRowsDeleted += Number(db.prepare("DELETE FROM memory_store WHERE namespace=? AND key=?")
+        .run(CHAT_ARCHIVE_NAMESPACE, key).changes);
+    }
     db.prepare("DELETE FROM messages WHERE thread_id=?").run(thread_id);
+    db.prepare("DELETE FROM message_usage WHERE thread_id=?").run(thread_id);
     const r = db.prepare("DELETE FROM threads WHERE thread_id=?").run(thread_id);
     return r.changes > 0;
   });
   resetMessageEmbedCache();
+  if (archivedRowsDeleted > 0) resetMemoryEmbedCache();
   return deleted;
 }
 
@@ -332,11 +347,15 @@ export function addMessage(
   const toolEventsJson = toolEvents && toolEvents.length > 0 ? JSON.stringify(toolEvents) : null;
   const metadataJson = metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null;
   const seq = withDbTransaction(() => {
-    const info = db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category,metadata,transcript_status,status_reason) VALUES (?,?,?,?,?,?,?,?,?,?)")
-      .run(msg_id, thread_id, role, content, t, toolEventsJson, category, metadataJson, transcriptStatus, statusReason);
+    const allocator = db.prepare("SELECT last_seq FROM message_seq_allocator WHERE id=1").get() as { last_seq: number };
+    const maximum = db.prepare("SELECT COALESCE(MAX(rowid), 0) AS max_seq FROM messages").get() as { max_seq: number };
+    const nextSeq = Math.max(allocator.last_seq, maximum.max_seq) + 1;
+    db.prepare("UPDATE message_seq_allocator SET last_seq=? WHERE id=1").run(nextSeq);
+    db.prepare("INSERT INTO messages (rowid,msg_id,thread_id,role,content,created_at,tool_events,category,metadata,transcript_status,status_reason) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+      .run(nextSeq, msg_id, thread_id, role, content, t, toolEventsJson, category, metadataJson, transcriptStatus, statusReason);
     db.prepare("UPDATE threads SET message_count=message_count+1 WHERE thread_id=?").run(thread_id);
     if (shouldEmbedTranscript(content, metadataJson, transcriptStatus)) enqueueMessageEmbeddingJob(msg_id, content);
-    return Number(info.lastInsertRowid);
+    return nextSeq;
   });
   if (shouldEmbedTranscript(content, metadataJson, transcriptStatus)) scheduleMessageEmbeddingWorker();
   return {
@@ -617,8 +636,9 @@ export function pruneThreadMessages(threadId: string, keepLast: number, preserve
       ? [threadId, preserveFromSeq, ...FOREGROUND_EXCLUDED_CATEGORIES, removeCount]
       : [threadId, removeCount]));
   const removed = Number(r.changes);
+  const remaining = (db.prepare("SELECT COUNT(*) AS n FROM messages WHERE thread_id=?").get(threadId) as { n: number }).n;
   db.prepare("UPDATE threads SET message_count=?, updated_at=? WHERE thread_id=?")
-    .run(Math.max(0, total - removed), new Date().toISOString(), threadId);
+    .run(remaining, new Date().toISOString(), threadId);
   if (removed > 0) resetMessageEmbedCache();
   return removed;
 }
