@@ -11,6 +11,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/embeddings", () => ({
   embedQueryOne: mocks.embedQueryOne,
+  processMessageEmbeddingJobs: vi.fn(async () => 0),
   cosine: (_query: number[], vector: number[]) => vector[0],
 }));
 vi.mock("@/lib/stores/app-settings", () => ({ isLocalEmbeddingsEnabled: mocks.localEmbeddingsEnabled }));

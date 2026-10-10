@@ -445,6 +445,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureAgentConfigColumns(db);
   ensureTaskAssignmentColumns(db);
   ensureEmbeddingColumns(db);
+  ensureMessageEmbeddingJobsTable(db);
   ensureUserProfileLocationColumns(db);
   ensureProxyConfigSchemeAndCaBundle(db);
   ensureThreadsAgentIdUnique(db);
@@ -672,6 +673,33 @@ function ensureEmbeddingColumns(db: DatabaseSync): void {  // Embeddings stored 
     // text, which loses arguments + results on reload.
     db.exec("ALTER TABLE messages ADD COLUMN tool_events TEXT");
   }
+}
+
+function ensureMessageEmbeddingJobsTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS message_embedding_jobs (
+      message_id       TEXT PRIMARY KEY REFERENCES messages(msg_id) ON DELETE CASCADE,
+      source_hash      TEXT NOT NULL DEFAULT '',
+      model_signature  TEXT,
+      attempted_signature TEXT,
+      state            TEXT NOT NULL DEFAULT 'pending'
+                       CHECK(state IN ('pending','processing','done','failed','skipped')),
+      attempts         INTEGER NOT NULL DEFAULT 0,
+      available_at_ms  INTEGER NOT NULL DEFAULT 0,
+      lease_until_ms   INTEGER,
+      last_error       TEXT,
+      created_at       TEXT NOT NULL,
+      updated_at       TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_embedding_jobs_due
+      ON message_embedding_jobs(state, available_at_ms, lease_until_ms);
+    INSERT OR IGNORE INTO message_embedding_jobs (message_id, created_at, updated_at)
+      SELECT msg_id, created_at, created_at FROM messages WHERE embedding IS NULL;
+  `);
+  const cols = db.prepare("PRAGMA table_info(message_embedding_jobs)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((column) => column.name));
+  if (!names.has("model_signature")) db.exec("ALTER TABLE message_embedding_jobs ADD COLUMN model_signature TEXT");
+  if (!names.has("attempted_signature")) db.exec("ALTER TABLE message_embedding_jobs ADD COLUMN attempted_signature TEXT");
 }
 
 function ensureProxyConfigSchemeAndCaBundle(db: DatabaseSync): void {

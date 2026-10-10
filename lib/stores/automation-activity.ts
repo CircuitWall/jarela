@@ -5,7 +5,7 @@ import type {
   AutomationActivityState,
 } from "@/api/types";
 import { getDb } from "@/lib/db";
-import { addMessage, touchThread, type MessageRow } from "@/lib/stores/threads";
+import { addMessage, touchThread, updateMessageContent, type MessageRow } from "@/lib/stores/threads";
 
 export interface CreateAutomationActivityInput {
   threadId: string;
@@ -97,13 +97,9 @@ function getActivityMessage(messageId: string): MessageRow | null {
 }
 
 function writeActivity(messageId: string, activity: AutomationActivityMetadata): void {
-  getDb()
-    .prepare("UPDATE messages SET content=?, metadata=? WHERE msg_id=?")
-    .run(
-      activityContent(activity),
-      JSON.stringify({ automation_activity: activity }),
-      messageId,
-    );
+  updateMessageContent(messageId, activityContent(activity), {
+    metadata: { automation_activity: activity },
+  });
 }
 
 export function createAutomationActivity(input: CreateAutomationActivityInput): MessageRow {
@@ -193,12 +189,10 @@ function collapseNoAction(messageId: string): MessageRow | null {
   const db = getDb();
   db.exec("BEGIN IMMEDIATE");
   try {
-    db.prepare("UPDATE messages SET content=?, created_at=?, metadata=? WHERE msg_id=?").run(
-      activityContent(merged),
-      currentRow.created_at,
-      JSON.stringify({ automation_activity: merged }),
-      priorRow!.msg_id,
-    );
+    updateMessageContent(priorRow!.msg_id, activityContent(merged), {
+      created_at: currentRow.created_at,
+      metadata: { automation_activity: merged },
+    });
     db.prepare("DELETE FROM messages WHERE msg_id=?").run(messageId);
     db.prepare(
       "UPDATE threads SET message_count=MAX(0, message_count-1), updated_at=? WHERE thread_id=?",

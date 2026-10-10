@@ -1,25 +1,18 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Wrap the real embedOne (not a bare mock) so these tests exercise the
-// actual no-op-when-unconfigured path while still letting us assert what
-// text addMessage handed it — see the ContentPart[] extraction tests below.
-vi.mock("@/lib/embeddings", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/embeddings")>();
-  return { ...actual, embedOne: vi.fn(actual.embedOne) };
-});
-
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-threads-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { embedOne } = await import("@/lib/embeddings");
 const { getDb } = await import("@/lib/db");
 const { runMigrations } = await import("@/lib/db/migrations");
 
 const {
   addMessage,
+  updateMessageContent,
   createThread,
   listThreadsByAgent,
   getMessages,
@@ -197,41 +190,54 @@ describe("thread context pin (ADR-0042)", () => {
   });
 });
 
-describe("addMessage embedding input (issue: image attachments break embedding)", () => {
+describe("addMessage embedding scheduling (issue: image attachments break embedding)", () => {
   beforeEach(() => {
     for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
-    vi.mocked(embedOne).mockClear();
   });
 
-  it("embeds only the text part of a ContentPart[] attachment payload, not the serialized blob", () => {
+  it("queues only the text part of a ContentPart[] attachment payload, not the serialized blob", () => {
     const t = createThread("agent-embed");
     const stored = JSON.stringify([
       { type: "text", text: "what is in this screenshot of the dashboard" },
       { type: "image_ref", media_type: "image/png", name: "abc.png" },
     ]);
     addMessage(t.thread_id, "user", stored);
-    expect(embedOne).toHaveBeenCalledTimes(1);
-    expect(embedOne).toHaveBeenCalledWith("what is in this screenshot of the dashboard");
+    const job = getDb().prepare("SELECT state, source_hash FROM message_embedding_jobs").get() as { state: string; source_hash: string };
+    expect(["pending", "processing", "done"]).toContain(job.state);
+    expect(job.source_hash).toBe(createHash("sha256").update("what is in this screenshot of the dashboard").digest("hex"));
     // The persisted row keeps the full multimodal payload — only the
     // embedding call gets the extracted text.
     const [row] = getMessages(t.thread_id);
     expect(row.content).toBe(stored);
   });
 
-  it("skips embedding entirely when the attachment payload has no text part worth embedding", () => {
+  it("marks an attachment with no transcript text as skipped", () => {
     const t = createThread("agent-embed");
     const stored = JSON.stringify([
       { type: "text", text: "" },
       { type: "image_ref", media_type: "image/png", name: "abc.png" },
     ]);
     addMessage(t.thread_id, "user", stored);
-    expect(embedOne).not.toHaveBeenCalled();
+    expect(getDb().prepare("SELECT state FROM message_embedding_jobs").get()).toEqual({ state: "skipped" });
   });
 
-  it("still embeds plain-string content unchanged (no attachments)", () => {
+  it("queues plain-string content unchanged (no attachments)", () => {
     const t = createThread("agent-embed");
     addMessage(t.thread_id, "user", "a perfectly ordinary text-only message");
-    expect(embedOne).toHaveBeenCalledWith("a perfectly ordinary text-only message");
+    const job = getDb().prepare("SELECT source_hash, state FROM message_embedding_jobs").get() as { source_hash: string; state: string };
+    expect(["pending", "processing", "done"]).toContain(job.state);
+  });
+
+  it("invalidates the old vector and schedules a new content revision", () => {
+    const t = createThread("agent-embed-update");
+    const message = addMessage(t.thread_id, "assistant", "original message text");
+    getDb().prepare("UPDATE messages SET embedding=? WHERE msg_id=?").run("[0.1,0.2]", message.msg_id);
+    const previousHash = getDb().prepare("SELECT source_hash FROM message_embedding_jobs WHERE message_id=?").get(message.msg_id) as { source_hash: string };
+
+    updateMessageContent(message.msg_id, "revised message text");
+
+    expect(getDb().prepare("SELECT embedding FROM messages WHERE msg_id=?").get(message.msg_id)).toEqual({ embedding: null });
+    expect(getDb().prepare("SELECT source_hash FROM message_embedding_jobs WHERE message_id=?").get(message.msg_id)).not.toEqual(previousHash);
   });
 });
 
