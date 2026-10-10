@@ -90,7 +90,7 @@ function parseActivity(raw: string | null | undefined): AutomationActivityMetada
 function getActivityMessage(messageId: string): MessageRow | null {
   const row = getDb()
     .prepare(
-      "SELECT rowid AS seq, msg_id, thread_id, role, content, created_at, tool_events, category, metadata FROM messages WHERE msg_id=?",
+      "SELECT rowid AS seq, msg_id, thread_id, role, content, created_at, tool_events, category, metadata, transcript_status, status_reason FROM messages WHERE msg_id=?",
     )
     .get(messageId);
   return (row as MessageRow | undefined) ?? null;
@@ -151,7 +151,7 @@ function collapseNoAction(messageId: string): MessageRow | null {
 
   const priorRows = getDb()
     .prepare(
-      `SELECT rowid AS seq, msg_id, thread_id, role, content, created_at, tool_events, category, metadata
+      `SELECT rowid AS seq, msg_id, thread_id, role, content, created_at, tool_events, category, metadata, transcript_status, status_reason
        FROM messages
        WHERE thread_id=? AND rowid < (SELECT rowid FROM messages WHERE msg_id=?)
        ORDER BY rowid DESC

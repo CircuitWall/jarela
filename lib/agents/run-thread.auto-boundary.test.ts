@@ -118,6 +118,40 @@ describe("prepareThreadRun auto context boundary", () => {
     return options.agent_run_config.system_prompt;
   }
 
+  it("creates the assistant draft through the hook after the user row is durable", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-transcript-order",
+      name: "Transcript Order",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 0,
+    });
+    const thread = createThread("agent-transcript-order");
+    let hookSawUserRow = false;
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Persist this before the assistant draft.",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      _onTranscriptUserPersisted: () => {
+        const rows = getMessages(thread.thread_id);
+        hookSawUserRow = rows.at(-1)?.role === "user";
+        addMessage(thread.thread_id, "assistant", "", null, null, null, "in_progress");
+      },
+    });
+
+    const rows = getMessages(thread.thread_id);
+    expect(hookSawUserRow).toBe(true);
+    expect(rows.slice(-2).map((row) => [row.role, row.transcript_status])).toEqual([
+      ["user", "completed"],
+      ["assistant", "in_progress"],
+    ]);
+    expect(rows.at(-1)!.seq).toBeGreaterThan(rows.at(-2)!.seq);
+  });
+
   it("hints the agent to ask when the thread was idle for 3h or more", async () => {
     const prompt = await runAfterIdle("agent-gap-long", 4, "hey");
     expect(prompt).toContain("--- Conversation gap ---");

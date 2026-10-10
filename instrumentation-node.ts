@@ -59,6 +59,14 @@ export async function bootNode(): Promise<void> {
   const { initTools } = await import("@/lib/tools");
   initTools();
 
+  const { recoverAbandonedMessageDrafts } = await import("@/lib/stores/threads");
+  recoverAbandonedMessageDrafts();
+
+  const { processMessageEmbeddingJobs } = await import("@/lib/embeddings");
+  void processMessageEmbeddingJobs().catch((err) =>
+    console.warn("[embeddings] startup message queue failed:", err),
+  );
+
   const triggers = await import("@/lib/triggers");
   await triggers.startAllTriggerHandlers();
 
@@ -67,11 +75,6 @@ export async function bootNode(): Promise<void> {
 
   const { startSystemSignalLifecycle } = await import("@/lib/lifecycle/system-signals");
   startSystemSignalLifecycle();
-
-  const { processMessageEmbeddingJobs } = await import("@/lib/embeddings");
-  void processMessageEmbeddingJobs().catch((err) =>
-    console.warn("[embeddings] startup message queue failed:", err),
-  );
 
   warnIfExposedBind();
 }

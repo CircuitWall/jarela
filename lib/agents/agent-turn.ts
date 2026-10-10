@@ -1,11 +1,13 @@
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import { prepareThreadRun, persistAssistantMessage, snapshotThreadModelConfigName, withInterruptMarker } from "@/lib/agents/run-thread";
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
+import { createAssistantTranscriptDraft, persistAssistantDraftChunk, type AssistantTranscriptDraft } from "@/lib/agents/transcript-draft";
+import { safeTranscriptFailureReason } from "@/api/message-content";
 import { finalizeRouteDecision } from "@/lib/agents/model-router";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { enqueueThreadRun, type QueueLane } from "@/lib/agents/run-queue";
 import { startRun, finishRun, broadcast } from "@/lib/agents/run-registry";
-import { getThread } from "@/lib/stores/threads";
+import { getThread, updateMessageContent } from "@/lib/stores/threads";
 import { resolveTurnProfile, type TurnContextProfile } from "@/lib/agents/turn-profile";
 import type { DeliveryChannel } from "@/lib/agents/prepare/request";
 
@@ -137,6 +139,8 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
     // serialise with the queue.
     const active = startRun(req.thread_id, thread?.agent_id ?? null);
     let terminal: "done" | "error" = "error";
+    let assistantDraft: AssistantTranscriptDraft | null = null;
+    let transcriptFinalized = false;
     try {
       const prepared = await prepareThreadRun({
         _system_signal_continuation: req.system_signal_continuation,
@@ -158,11 +162,19 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
             ? true
             : undefined,
         _history_append_message: req.history_append_message,
+        _onTranscriptUserPersisted: req.silent ? undefined : () => {
+          assistantDraft = createAssistantTranscriptDraft(req.thread_id);
+        },
       });
+
+      if (!req.silent && !assistantDraft) assistantDraft = createAssistantTranscriptDraft(req.thread_id);
 
       const startedAt = Date.now();
       const collected = await collectStream(prepared.stream, {
-        onChunk: (chunk) => broadcast(active, chunk),
+        onChunk: (chunk) => {
+          if (assistantDraft) persistAssistantDraftChunk(assistantDraft, chunk);
+          broadcast(active, chunk);
+        },
       });
       const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
         durationMs: Date.now() - startedAt,
@@ -191,6 +203,14 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         const contentToPersist = collected.aborted
           ? withInterruptMarker(collected.assistantContent)
           : collected.assistantContent;
+        const noResponse = collected.terminal === "done"
+          && !collected.aborted
+          && !contentToPersist.trim()
+          && !collected.toolEvents.length
+          && !prepared.signal_delivery?.signals.length;
+        const transcriptStatus = collected.aborted
+          ? "interrupted"
+          : collected.terminal === "done" && !noResponse ? "completed" : "failed";
         persistAssistantMessage(
           req.thread_id,
           contentToPersist,
@@ -204,11 +224,21 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
           prepared.memory_recall
             ? { ...req.assistant_message_metadata, memory_recall: prepared.memory_recall }
             : req.assistant_message_metadata ?? null,
-          prepared.signal_delivery,
+          collected.terminal === "done" && !collected.aborted ? prepared.signal_delivery : undefined,
+          assistantDraft ? {
+            draftMessageId: assistantDraft.msg_id,
+            transcriptStatus,
+            statusReason: transcriptStatus === "interrupted"
+              ? "Stopped by user."
+              : noResponse ? "The model completed without producing a response."
+              : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null,
+          } : undefined,
         );
+        transcriptFinalized = true;
       } else if (prepared.signal_delivery?.signals.length) {
         persistAssistantMessage(req.thread_id, "", undefined, undefined, "system_signal",
           undefined, undefined, undefined, undefined, undefined, prepared.signal_delivery);
+        transcriptFinalized = true;
       }
 
       terminal = collected.terminal === "error" ? "error" : "done";
@@ -218,6 +248,31 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         usage: collected.usage ?? null,
         aborted: collected.aborted === true,
       };
+    } catch (err) {
+      terminal = "error";
+      if (!transcriptFinalized && (assistantDraft || !req.silent)) {
+        const reason = safeTranscriptFailureReason(err instanceof AgentTurnStreamError ? err.code : undefined);
+        try {
+          if (assistantDraft) {
+            updateMessageContent(assistantDraft.msg_id, assistantDraft.visibleContent, {
+              category: assistantDraft.visibleContent ? null : "run_error",
+              transcriptStatus: "failed",
+              statusReason: reason,
+            });
+          } else {
+            persistAssistantMessage(req.thread_id, "", undefined, undefined, "run_error", undefined, undefined, undefined, undefined, {
+              kind: "run_error",
+              code: err instanceof AgentTurnStreamError ? err.code : "run_crashed",
+            }, undefined, {
+              transcriptStatus: "failed",
+              statusReason: reason,
+            });
+          }
+        } catch (persistError) {
+          console.error("[agent-turn] failed to persist terminal transcript status", persistError);
+        }
+      }
+      throw err;
     } finally {
       finishRun(active, terminal);
     }

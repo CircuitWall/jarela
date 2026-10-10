@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { withDbTransaction } from "@/lib/db/transaction";
+import { stripDeclaredReferencesFence } from "@/api/message-content";
 import { processMessageEmbeddingJobs, resetMessageEmbedCache, resetMemoryEmbedCache } from "@/lib/embeddings";
 import { enqueueMessageEmbeddingJob } from "./message-embedding-jobs";
 import { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey } from "./chat-archive-key";
@@ -15,7 +16,7 @@ const now = () => new Date().toISOString();
 // every rowid table has one for free, no migration needed. It's the only
 // reliable ordering key: `created_at` is wall-clock and can collide within
 // the same millisecond on a fast burst (see addMessage below).
-const MSG_COLS_SQL = "SELECT rowid AS seq, msg_id, thread_id, role, content, created_at, tool_events, category, metadata FROM messages";
+const MSG_COLS_SQL = "SELECT rowid AS seq, msg_id, thread_id, role, content, created_at, tool_events, category, metadata, transcript_status, status_reason FROM messages";
 
 // Categories carrying only automation/background activity — never part of
 // the "foreground" conversation view and never folded into the warm summary
@@ -66,6 +67,8 @@ export interface MessageRow {
   // The canonical sort/pagination key; created_at is display-only.
   seq: number;
   msg_id: string; thread_id: string; role: string; content: string; created_at: string;
+  transcript_status: MessageTranscriptStatus;
+  status_reason: string | null;
   // JSON-encoded array of PersistedToolEvent. null when no tool work happened
   // on this turn or for user messages. Read back by the chat UI so historical
   // bubbles show the same expandable CALL/RESULT entries as live streaming.
@@ -80,11 +83,32 @@ export interface MessageRow {
   metadata?: string | null;
 }
 
+export type MessageTranscriptStatus = "in_progress" | "completed" | "interrupted" | "failed";
+
 export interface PersistedToolEvent {
   id: string;
   phase: "call" | "result";
   name: string;
   payload: unknown;
+}
+
+const MAX_PERSISTED_PAYLOAD_BYTES = 8_000;
+
+export function capToolEventPayload(ev: PersistedToolEvent): PersistedToolEvent {
+  try {
+    const serialized = JSON.stringify(ev.payload);
+    if (serialized.length <= MAX_PERSISTED_PAYLOAD_BYTES) return ev;
+    return {
+      ...ev,
+      payload: {
+        __truncated: true,
+        preview: serialized.slice(0, MAX_PERSISTED_PAYLOAD_BYTES),
+        original_bytes: serialized.length,
+      },
+    };
+  } catch {
+    return { ...ev, payload: { __truncated: true, error: "unserializable" } };
+  }
 }
 
 // Tool names the agent called in this thread, most recent first. Includes
@@ -190,6 +214,7 @@ export function getRecentMessagesWindow(
   // of the conversation ("assistant: 400 API_KEY_INVALID"). See ADR-0069.
   let sql = MSG_COLS_SQL
     + " WHERE thread_id=?"
+    + " AND transcript_status != 'in_progress'"
     + " AND (category IS NULL OR category != 'run_error')"
     + ` AND (metadata IS NULL OR instr(metadata, '"automation_activity"') = 0)`;
   if (scope === "foreground") {
@@ -237,6 +262,7 @@ export function countMessagesBetweenSeq(
   const params: (string | number)[] = [thread_id, fromSeq, toSeq];
   let sql = "SELECT COUNT(*) AS n FROM (SELECT 1 FROM messages"
     + " WHERE thread_id=? AND rowid >= ? AND rowid < ?"
+    + " AND transcript_status != 'in_progress'"
     + " AND (category IS NULL OR category != 'run_error')"
     + ` AND (metadata IS NULL OR instr(metadata, '"automation_activity"') = 0)`;
   if (scope === "foreground") {
@@ -297,6 +323,8 @@ export function addMessage(
   toolEvents?: PersistedToolEvent[] | null,
   category: string | null = null,
   metadata?: Record<string, unknown> | null,
+  transcriptStatus: MessageTranscriptStatus = "completed",
+  statusReason: string | null = null,
 ): MessageRow {
   const msg_id = randomUUID();
   const db = getDb();
@@ -304,14 +332,26 @@ export function addMessage(
   const toolEventsJson = toolEvents && toolEvents.length > 0 ? JSON.stringify(toolEvents) : null;
   const metadataJson = metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null;
   const seq = withDbTransaction(() => {
-    const info = db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category,metadata) VALUES (?,?,?,?,?,?,?,?)")
-      .run(msg_id, thread_id, role, content, t, toolEventsJson, category, metadataJson);
+    const info = db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category,metadata,transcript_status,status_reason) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .run(msg_id, thread_id, role, content, t, toolEventsJson, category, metadataJson, transcriptStatus, statusReason);
     db.prepare("UPDATE threads SET message_count=message_count+1 WHERE thread_id=?").run(thread_id);
-    enqueueMessageEmbeddingJob(msg_id, content);
+    if (shouldEmbedTranscript(content, metadataJson, transcriptStatus)) enqueueMessageEmbeddingJob(msg_id, content);
     return Number(info.lastInsertRowid);
   });
-  scheduleMessageEmbeddingWorker();
-  return { seq, msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson, category, metadata: metadataJson };
+  if (shouldEmbedTranscript(content, metadataJson, transcriptStatus)) scheduleMessageEmbeddingWorker();
+  return {
+    seq,
+    msg_id,
+    thread_id,
+    role,
+    content,
+    created_at: t,
+    tool_events: toolEventsJson,
+    category,
+    metadata: metadataJson,
+    transcript_status: transcriptStatus,
+    status_reason: statusReason,
+  };
 }
 
 function scheduleMessageEmbeddingWorker(): void {
@@ -320,17 +360,41 @@ function scheduleMessageEmbeddingWorker(): void {
   });
 }
 
+function shouldEmbedTranscript(
+  content: string,
+  metadataJson: string | null,
+  transcriptStatus: MessageTranscriptStatus,
+): boolean {
+  return transcriptStatus !== "in_progress"
+    && content.trim().length > 0
+    && !isPendingAutomationActivity(metadataJson);
+}
+
 export function updateMessageContent(
   msg_id: string,
   content: string,
-  options: { metadata?: Record<string, unknown> | null; created_at?: string } = {},
+  options: {
+    metadata?: Record<string, unknown> | null;
+    created_at?: string;
+    toolEvents?: PersistedToolEvent[] | null;
+    category?: string | null;
+    transcriptStatus?: MessageTranscriptStatus;
+    statusReason?: string | null;
+  } = {},
 ): MessageRow | null {
   const db = getDb();
   let contentChanged = false;
+  let shouldQueueEmbedding = false;
   const updated = withDbTransaction(() => {
-    const current = db.prepare("SELECT content FROM messages WHERE msg_id=?").get(msg_id) as { content: string } | undefined;
+    const current = db.prepare("SELECT content, metadata, transcript_status FROM messages WHERE msg_id=?").get(msg_id) as {
+      content: string;
+      metadata: string | null;
+      transcript_status: MessageTranscriptStatus;
+    } | undefined;
     if (!current) return null;
     contentChanged = current.content !== content;
+    const nextStatus = options.transcriptStatus ?? current.transcript_status;
+    const statusChanged = nextStatus !== current.transcript_status;
     const assignments = ["content=?"];
     const values: Array<string | null> = [content];
     if (contentChanged) assignments.push("embedding=NULL");
@@ -339,20 +403,109 @@ export function updateMessageContent(
       const metadata = options.metadata;
       values.push(metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null);
     }
+    const nextMetadata = Object.hasOwn(options, "metadata")
+      ? (options.metadata && Object.keys(options.metadata).length > 0 ? JSON.stringify(options.metadata) : null)
+      : current.metadata;
+    const metadataChanged = nextMetadata !== current.metadata;
+    if (Object.hasOwn(options, "toolEvents")) {
+      assignments.push("tool_events=?");
+      values.push(options.toolEvents && options.toolEvents.length > 0 ? JSON.stringify(options.toolEvents) : null);
+    }
+    if (Object.hasOwn(options, "category")) {
+      assignments.push("category=?");
+      values.push(options.category ?? null);
+    }
+    if (statusChanged) {
+      assignments.push("transcript_status=?");
+      values.push(nextStatus);
+    }
+    if (Object.hasOwn(options, "statusReason")) {
+      assignments.push("status_reason=?");
+      values.push(options.statusReason ?? null);
+    }
     if (options.created_at !== undefined) {
       assignments.push("created_at=?");
       values.push(options.created_at);
     }
     values.push(msg_id);
     db.prepare(`UPDATE messages SET ${assignments.join(", ")} WHERE msg_id=?`).run(...values);
-    if (contentChanged) enqueueMessageEmbeddingJob(msg_id, content, true);
+    const isFinal = nextStatus !== "in_progress";
+    shouldQueueEmbedding = isFinal
+      && !isPendingAutomationActivity(nextMetadata)
+      && (contentChanged || statusChanged || (metadataChanged && isFinal));
+    if (shouldQueueEmbedding) enqueueMessageEmbeddingJob(msg_id, content, true);
     return db.prepare(MSG_COLS_SQL + " WHERE msg_id=?").get(msg_id) as unknown as MessageRow;
   });
   if (contentChanged) {
     resetMessageEmbedCache();
-    scheduleMessageEmbeddingWorker();
   }
+  if (shouldQueueEmbedding) scheduleMessageEmbeddingWorker();
   return updated;
+}
+
+function isPendingAutomationActivity(metadataJson: string | null): boolean {
+  if (!metadataJson) return false;
+  try {
+    const metadata = JSON.parse(metadataJson) as { automation_activity?: { state?: unknown } };
+    return !!metadata.automation_activity && metadata.automation_activity.state !== "complete";
+  } catch {
+    return false;
+  }
+}
+
+export function appendMessageDraft(msg_id: string, delta: string): boolean {
+  if (!delta) return false;
+  const changed = getDb().prepare(
+    "UPDATE messages SET content=content || ? WHERE msg_id=? AND transcript_status='in_progress'",
+  ).run(delta, msg_id).changes;
+  return changed > 0;
+}
+
+export function appendMessageDraftToolEvent(msg_id: string, event: PersistedToolEvent): boolean {
+  const db = getDb();
+  return withDbTransaction(() => {
+    const row = db.prepare(
+      "SELECT tool_events FROM messages WHERE msg_id=? AND transcript_status='in_progress'",
+    ).get(msg_id) as { tool_events: string | null } | undefined;
+    if (!row) return false;
+    let events: PersistedToolEvent[] = [];
+    if (row.tool_events) {
+      try {
+        const parsed: unknown = JSON.parse(row.tool_events);
+        if (Array.isArray(parsed)) events = parsed as PersistedToolEvent[];
+      } catch { /* replace malformed legacy data with the current event */ }
+    }
+    events.push(event);
+    db.prepare("UPDATE messages SET tool_events=? WHERE msg_id=? AND transcript_status='in_progress'")
+      .run(JSON.stringify(events), msg_id);
+    return true;
+  });
+}
+
+export function replaceMessageDraft(msg_id: string, content: string): boolean {
+  const changed = getDb().prepare(
+    "UPDATE messages SET content=?, embedding=NULL WHERE msg_id=? AND transcript_status='in_progress'",
+  ).run(content, msg_id).changes;
+  return changed > 0;
+}
+
+export function recoverAbandonedMessageDrafts(): number {
+  const db = getDb();
+  const drafts = db.prepare(
+    "SELECT msg_id, content, metadata FROM messages WHERE transcript_status='in_progress'",
+  ).all() as Array<{ msg_id: string; content: string; metadata: string | null }>;
+  if (drafts.length === 0) return 0;
+  withDbTransaction(() => {
+    for (const draft of drafts) {
+      const content = stripDeclaredReferencesFence(draft.content);
+      db.prepare(
+        "UPDATE messages SET content=?, transcript_status='interrupted', status_reason='The server restarted before this response completed.' WHERE msg_id=? AND transcript_status='in_progress'",
+      ).run(content, draft.msg_id);
+      if (!isPendingAutomationActivity(draft.metadata)) enqueueMessageEmbeddingJob(draft.msg_id, content, true);
+    }
+  });
+  scheduleMessageEmbeddingWorker();
+  return drafts.length;
 }
 
 // Shallow-merge `partial` into a message's existing metadata. Use this

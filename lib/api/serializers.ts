@@ -135,6 +135,8 @@ export function messageToResponse(
     role: m.role,
     content: m.content,
     created_at: m.created_at,
+    transcript_status: m.transcript_status,
+    status_reason: m.status_reason,
     tool_events: parseToolEventsForResponse(m.tool_events),
     category: m.category ?? null,
     usage: messageUsageToResponse(usageById.get(m.msg_id)),

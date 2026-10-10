@@ -198,6 +198,8 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  transcript_status?: "in_progress" | "completed" | "interrupted" | "failed";
+  status_reason?: string | null;
   // Server-assigned monotonic order (SQLite rowid). The canonical sort and
   // pagination-cursor key — created_at is wall-clock and can collide.
   // Absent on client-only optimistic bubbles that haven't been persisted yet.

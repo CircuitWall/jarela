@@ -23,6 +23,7 @@ import { pushToast } from "@/lib/ui/toasts";
 import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/message-role";
 import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extension-turn-prompt";
 import { errorMessage } from "@/lib/utils/error";
+import { stripDeclaredReferencesFence } from "@/api/message-content";
 
 interface ExtractedRef {
   title: string;
@@ -80,20 +81,6 @@ function extractRefs(text: string): { body: string; refs: ExtractedRef[] } {
   }
   const body = (text.slice(0, match.index) + text.slice(match.index + match[0].length)).trimEnd();
   return { body, refs };
-}
-
-// Mid-stream guard for the agent's optional trailing
-// ```jarela-references` fence. The server-side parser folds that block
-// into the citation manifest and strips it from the persisted body, but
-// during streaming the in-flight buffer still contains it. Cut from the
-// opening fence onward so the user never sees raw JSON flash on screen.
-// Once the closing fence has arrived the body is identical to what the
-// server will persist either way; cutting from the open is the simple
-// path that handles partial-block and complete-block cases uniformly.
-function stripDeclaredReferencesFence(text: string): string {
-  const idx = text.indexOf("```jarela-references");
-  if (idx < 0) return text;
-  return text.slice(0, idx).trimEnd();
 }
 
 // Tracks which TTS clips have started auto-playing this session so a clip
@@ -1744,6 +1731,8 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
+  const transcriptStatus = "transcript_status" in message ? message.transcript_status : undefined;
+  const statusReason = "status_reason" in message ? message.status_reason : null;
   // Memoize the JSON-or-plain-text parse: `parseContent` runs JSON.parse on
   // anything that looks like a serialized ContentPart[]. For the streaming
   // bubble this is called on every rAF flush as `content` grows; without
@@ -1995,6 +1984,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
     const text = typeof parsed === "string"
       ? parsed
       : parsed.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim();
+    const detail = text || statusReason;
     return (
       <div className="flex flex-row gap-2 mb-1.5 items-start ml-9">
         <div
@@ -2004,7 +1994,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
           <AlertTriangle size={11} className="mt-0.5 shrink-0" />
           <div className="min-w-0">
             <span className="font-medium">Run failed</span>
-            {text ? <span className="ml-1 opacity-80 break-words">— {text}</span> : null}
+            {detail ? <span className="ml-1 opacity-80 break-words">· {detail}</span> : null}
             {timeLabel ? <span className="ml-1 opacity-60">· {timeLabel}</span> : null}
           </div>
         </div>
@@ -2139,6 +2129,20 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             </div>
           ) : null}
         </div>
+        {!isUser && !streaming && transcriptStatus && transcriptStatus !== "completed" && (
+          <div
+            role="status"
+            className={`flex items-center gap-1 text-xs px-1 mt-1 ${transcriptStatus === "failed" ? "text-rose-700 dark:text-rose-300" : "text-fg-faint"}`}
+          >
+            {transcriptStatus === "in_progress" ? <Loader2 size={11} className="animate-spin" />
+              : transcriptStatus === "interrupted" ? <Pause size={11} />
+              : <AlertTriangle size={11} />}
+            <span>{transcriptStatus === "in_progress" ? "Response in progress"
+              : transcriptStatus === "interrupted" ? "Response interrupted"
+              : "Response failed"}</span>
+            {statusReason && <span className="break-words">· {statusReason}</span>}
+          </div>
+        )}
         {isUser && "status" in message && (message.status === 'pending' || message.status === 'steering') && (
           <span className="flex items-center gap-1 text-xs opacity-50 px-1 self-end">
             {message.status === 'steering' ? <CornerDownRight size={10} /> : <Clock size={10} />}

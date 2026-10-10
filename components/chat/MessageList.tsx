@@ -111,6 +111,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   // they're handled below by gating the inline ToolList / ThinkingLine.
   const visibleMessages = useMemo(() => {
     return messages.filter((m) => {
+      if (m.transcript_status === "in_progress" && (streaming || !!streamingContent)) return false;
       const cat = m.category;
       if (!cat) return true;
       if (cat === "scheduled_task") return filters.scheduled_task;
@@ -123,7 +124,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
       // never silently drop content the server thinks should be visible.
       return true;
     });
-  }, [messages, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
+  }, [messages, streaming, streamingContent, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
 
   const hiddenCount = messages.length - visibleMessages.length;
   const effectiveHotSinceSeq = hotSinceSeq ?? null;

@@ -32,6 +32,8 @@ export interface ThreadRunRequest {
   options?: StreamOptions;
   attachments?: ContentPart[];
   signal?: AbortSignal;
+  /** Internal chat hook, called immediately after the user transcript row is inserted. */
+  _onTranscriptUserPersisted?: () => void;
   /**
    * Classification tag persisted on the injected user message; surfaces in
    * the chat panel's category-filter toolbar. `null` / undefined = ordinary

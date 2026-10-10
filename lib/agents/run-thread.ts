@@ -13,7 +13,7 @@ import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-
 import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
-import { addMessage, getMessagesPage, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, capToolEventPayload, getMessagesPage, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -48,6 +48,7 @@ import {
   type SourceManifestEntry,
 } from "@/lib/agents/citation-checker";
 import { getEffectiveProviderToolLimit } from "@/lib/providers/tool-limit";
+import { withDbTransaction } from "@/lib/db/transaction";
 import {
   allowedToolNamesFromPermissionMap,
   applyAgentPermissionsToCatalog,
@@ -411,15 +412,18 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     : null;
 
   if (!req._skip_persist_message) {
-    addMessage(
-      req.thread_id,
-      "user",
-      stored,
-      undefined,
-      req.user_category ?? null,
-      req.message_metadata ?? null,
-    );
-    touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+    withDbTransaction(() => {
+      addMessage(
+        req.thread_id,
+        "user",
+        stored,
+        undefined,
+        req.user_category ?? null,
+        req.message_metadata ?? null,
+      );
+      touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+      req._onTranscriptUserPersisted?.();
+    });
 
     // Once the configured hot-turn count is exceeded, prepare a topic-aware
     // warm summary in the background. The boundary is committed only after
@@ -1360,6 +1364,11 @@ export function persistAssistantMessage(
   routeDecision?: RouteDecisionMetadata | null,
   messageMetadata?: Record<string, unknown> | null,
   signalDelivery?: SystemSignalBatch,
+  finalization?: {
+    draftMessageId?: string | null;
+    transcriptStatus?: MessageTranscriptStatus;
+    statusReason?: string | null;
+  },
 ): void {
   const trimmed = content.trim();
   let final = trimmed;
@@ -1411,23 +1420,51 @@ export function persistAssistantMessage(
   // messages.content is the clean prose without the fence.
   const { body: persisted, refs: declaredRefs } = extractDeclaredReferences(withoutAutoplay);
   const attachmentReferences = collectTurnFileReferences(thread_id, toolEvents);
-  if (!persisted && !sanitizedEvents?.length && signalDelivery?.signals.length && !wasInterrupted) {
+  const hasSignalReceipt = !persisted && !sanitizedEvents?.length && !!signalDelivery?.signals.length && !wasInterrupted;
+  if (hasSignalReceipt && !finalization?.draftMessageId) {
     commitSystemSignalTranscript(signalDelivery, () => {
       addMessage(thread_id, "assistant", "System signals processed.", null, "system_signal", {
         system_signal_receipt: signalDelivery.signals.map((signal) => signal.id),
       });
     });
   }
-  if (persisted || (sanitizedEvents && sanitizedEvents.length > 0)) {
+  if (persisted || (sanitizedEvents && sanitizedEvents.length > 0) || finalization?.draftMessageId || finalization?.transcriptStatus) {
     const persistRow = () => {
-      const row = addMessage(
-        thread_id,
-        "assistant",
-        persisted,
-        sanitizedEvents,
-        category,
-        messageMetadata,
-      );
+      const rowCategory = hasSignalReceipt
+        ? "system_signal"
+        : finalization?.transcriptStatus === "failed"
+        && !persisted
+        && !sanitizedEvents?.length
+        ? "run_error"
+        : category;
+      const rowContent = hasSignalReceipt && finalization?.draftMessageId
+        ? "System signals processed."
+        : persisted;
+      const rowMetadata = hasSignalReceipt
+        ? {
+            ...(messageMetadata ?? {}),
+            system_signal_receipt: signalDelivery!.signals.map((signal) => signal.id),
+          }
+        : messageMetadata ?? null;
+      const row = finalization?.draftMessageId
+        ? updateMessageContent(finalization.draftMessageId, rowContent, {
+            toolEvents: sanitizedEvents,
+            category: rowCategory,
+            metadata: rowMetadata,
+            transcriptStatus: finalization.transcriptStatus ?? "completed",
+            statusReason: finalization.statusReason ?? null,
+          })
+        : addMessage(
+            thread_id,
+            "assistant",
+            rowContent,
+            sanitizedEvents,
+            rowCategory,
+            rowMetadata,
+            finalization?.transcriptStatus ?? "completed",
+            finalization?.statusReason ?? null,
+          );
+      if (!row) throw new Error("Assistant transcript draft could not be finalized");
       if (attachmentReferences.length > 0) {
         mergeMessageMetadata(row.msg_id, {
           attachment_handling: {
@@ -1704,25 +1741,6 @@ function stripAutoplayHints(text: string): string {
       return cleaned === "?" || cleaned === "" ? base : `${base}${cleaned}`;
     },
   );
-}
-
-const MAX_PERSISTED_PAYLOAD_BYTES = 8_000;
-
-function capToolEventPayload(ev: PersistedToolEvent): PersistedToolEvent {
-  try {
-    const serialized = JSON.stringify(ev.payload);
-    if (serialized.length <= MAX_PERSISTED_PAYLOAD_BYTES) return ev;
-    return {
-      ...ev,
-      payload: {
-        __truncated: true,
-        preview: serialized.slice(0, MAX_PERSISTED_PAYLOAD_BYTES),
-        original_bytes: serialized.length,
-      },
-    };
-  } catch {
-    return { ...ev, payload: { __truncated: true, error: "unserializable" } };
-  }
 }
 
 const TOOL_LOOP_THRESHOLD = 3;
