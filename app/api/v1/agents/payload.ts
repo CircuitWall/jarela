@@ -2,6 +2,9 @@ import type { MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import type { AgentConfigRow, UpsertAgentInput } from "@/lib/stores/agent-configs";
 import type { AgentConfigIn } from "@/api/types";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { z } from "zod";
+
+export const WarmSummaryLimitSchema = z.number().int().nonnegative().optional();
 
 export type AgentCreateBody = AgentConfigIn;
 export type AgentUpdateBody = Partial<AgentConfigIn>;
@@ -19,6 +22,7 @@ export function toCreateAgentInput(id: string, body: AgentCreateBody): UpsertAge
     history_limit: body.history_limit,
     history_window_hours: body.history_window_hours,
     hot_turn_limit: body.hot_turn_limit,
+    warm_summary_limit: body.warm_summary_limit,
     never_reply: body.never_reply,
     adaptive_persona_enabled: body.adaptive_persona_enabled,
     adaptive_persona_strength: body.adaptive_persona_strength,
@@ -61,6 +65,7 @@ export function toUpdateAgentInput(
     history_limit: body.history_limit,
     history_window_hours: body.history_window_hours,
     hot_turn_limit: body.hot_turn_limit,
+    warm_summary_limit: body.warm_summary_limit,
     never_reply: body.never_reply,
     adaptive_persona_enabled: body.adaptive_persona_enabled,
     adaptive_persona_strength: body.adaptive_persona_strength,

@@ -24,6 +24,7 @@ export function agentToResponse(a: AgentConfigRow) {
     history_limit: a.history_limit,
     history_window_hours: a.history_window_hours,
     hot_turn_limit: a.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT,
+    warm_summary_limit: a.warm_summary_limit,
     never_reply: !!a.never_reply,
     adaptive_persona_enabled: !!a.adaptive_persona_enabled,
     adaptive_persona_strength: a.adaptive_persona_strength,

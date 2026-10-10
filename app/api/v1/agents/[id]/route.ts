@@ -15,13 +15,13 @@ import {
 import { agentToResponse } from "@/lib/api/serializers";
 import { notFoundResponse, validateBody } from "@/lib/api/responses";
 import type { AgentConfigIn } from "@/api/types";
-import { toUpdateAgentInput } from "../payload";
+import { toUpdateAgentInput, WarmSummaryLimitSchema } from "../payload";
 
 type Params = { params: Promise<{ id: string }> };
 
 // Permissive schema — PATCH-style update: all fields optional, additional
 // fields pass through. The payload handler controls field-by-field merging.
-const UpdateBody = z.looseObject({});
+const UpdateBody = z.looseObject({ warm_summary_limit: WarmSummaryLimitSchema });
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;

@@ -8,5 +8,6 @@ export {
 } from "./system-prompt";
 export {
   buildHistoryWindow,
+  warmSummaryMessageLimit,
   type ResolvedHistoryWindow,
 } from "./history-window";

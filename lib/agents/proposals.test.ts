@@ -132,6 +132,30 @@ describe("applyAction(upsert_harness)", () => {
 });
 
 describe("applyAction(update_agent) with harness_id", () => {
+  it("updates warm_summary_limit including zero", async () => {
+    seedAgent("agent-warm-summary-limit");
+
+    const result = await applyAction("update_agent", {
+      agent_id: "agent-warm-summary-limit",
+      warm_summary_limit: 0,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(getAgentConfig("agent-warm-summary-limit")!.warm_summary_limit).toBe(0);
+  });
+
+  it("rejects a negative warm_summary_limit", async () => {
+    seedAgent("agent-invalid-warm-summary-limit");
+
+    const result = await applyAction("update_agent", {
+      agent_id: "agent-invalid-warm-summary-limit",
+      warm_summary_limit: -1,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.detail).toBe("warm_summary_limit must be a nonnegative integer");
+  });
+
   it("updates instructions so an approved proposal can change future system prompts", async () => {
     seedAgent("agent-update-instructions");
 

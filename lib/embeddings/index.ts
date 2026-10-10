@@ -362,7 +362,7 @@ function loadMemEmbedCache(): Map<string, CachedMemoryEmbedding> {
 function loadMsgEmbedCache(): Map<string, CachedMessageEmbedding> {
   if (msgEmbedCache) return msgEmbedCache;
   const rows = getDb().prepare(
-    "SELECT msg_id, thread_id, role, content, embedding, created_at FROM messages WHERE embedding IS NOT NULL",
+    "SELECT msg_id, thread_id, role, content, embedding, created_at FROM messages WHERE embedding IS NOT NULL AND transcript_status != 'in_progress'",
   ).all() as Array<{ msg_id: string; thread_id: string; role: string; content: string; embedding: string; created_at: string }>;
   const cache = new Map<string, CachedMessageEmbedding>();
   for (const r of rows) {
@@ -526,7 +526,7 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
     }
     if (wantMsg) {
       const recentMsg = db.prepare(
-        "SELECT thread_id, role, content, created_at FROM messages WHERE embedding IS NULL ORDER BY created_at DESC LIMIT 50",
+        "SELECT thread_id, role, content, created_at FROM messages WHERE embedding IS NULL AND transcript_status != 'in_progress' ORDER BY created_at DESC LIMIT 50",
       ).all() as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
       for (const r of recentMsg) {
         const overlap = keywordOverlap(tokens, r.content);
@@ -555,7 +555,7 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
     }
     if (wantMsg) {
       const rows = db.prepare(
-        "SELECT thread_id, role, content, created_at FROM messages WHERE content LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
+        "SELECT thread_id, role, content, created_at FROM messages WHERE content LIKE ? ESCAPE '\\' AND transcript_status != 'in_progress' ORDER BY created_at DESC LIMIT ?",
       ).all(like, LITERAL_ROW_LIMIT) as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
       for (const r of rows) {
         scored.push({ source: "message", thread_id: r.thread_id, role: r.role, content: r.content, score: LITERAL_SCORE, created_at: r.created_at, match: "literal" });

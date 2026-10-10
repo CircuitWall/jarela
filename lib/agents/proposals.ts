@@ -154,9 +154,14 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     instructions_edits?: unknown;
     history_limit?: number;
     history_window_hours?: number;
+    warm_summary_limit?: number;
     harness_id?: string | null;
   };
   if (!p.agent_id) return { ok: false, detail: "agent_id required" };
+  if (p.warm_summary_limit !== undefined
+    && (!Number.isInteger(p.warm_summary_limit) || p.warm_summary_limit < 0)) {
+    return { ok: false, detail: "warm_summary_limit must be a nonnegative integer" };
+  }
   const editModes = [
     p.instructions !== undefined,
     p.instructions_append !== undefined,
@@ -204,6 +209,7 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     model_config_name: existing.model_config_name,
     history_limit: p.history_limit ?? existing.history_limit,
     history_window_hours: p.history_window_hours ?? existing.history_window_hours,
+    warm_summary_limit: p.warm_summary_limit ?? existing.warm_summary_limit,
     harness_id: p.harness_id,
   });
   return {

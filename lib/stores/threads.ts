@@ -157,6 +157,11 @@ export function getThreadMessageBySeq(thread_id: string, seq: number): MessageRo
   return (getDb().prepare(MSG_COLS_SQL + " WHERE thread_id=? AND rowid=?").get(thread_id, seq) as unknown as MessageRow | undefined) ?? null;
 }
 
+export function countThreadMessagesFromSeq(thread_id: string, seq: number): number {
+  const row = getDb().prepare("SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid>=?").get(thread_id, seq) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
 export function isValidThreadContextCursor(thread_id: string, seq: number): boolean {
   if (getThreadMessageBySeq(thread_id, seq)) return true;
   return getThread(thread_id)?.hot_since_seq === seq;

@@ -34,6 +34,14 @@ export interface ThreadRunRequest {
   signal?: AbortSignal;
   /** Internal chat hook, called immediately after the user transcript row is inserted. */
   _onTranscriptUserPersisted?: () => void;
+  /** Internal hook, called when the run blocks on a thread compaction summary. */
+  _onCompacting?: () => void;
+  /** Internal — the submission path already committed this user's transcript row. */
+  _user_message_persisted?: boolean;
+  /** Thread message count captured before an eagerly persisted user turn. */
+  _message_count_before_user?: number;
+  /** Conversation idle duration captured before an eagerly persisted user turn. */
+  _idle_ms_before_user?: number | null;
   /**
    * Classification tag persisted on the injected user message; surfaces in
    * the chat panel's category-filter toolbar. `null` / undefined = ordinary

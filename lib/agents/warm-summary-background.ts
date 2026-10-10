@@ -1,7 +1,7 @@
 import { getProvider } from "@/lib/providers";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
 import { summarizeTranscript, transcriptText, extractTopicSegments, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
-import { unwrapWarmSummary, wrapWarmSummary, AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
+import { takeRecentWarmMessages, wrapWarmSummary, AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-configs";
 import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { putMemory } from "@/lib/stores/memory";
@@ -317,46 +317,30 @@ async function buildSummaryBefore(
 
   const rows = getRecentMessagesWindow(threadId, 0, undefined, "foreground")
     .filter((m) => m.role === "user" || m.role === "assistant");
-  const prior = thread.warm_summary ? unwrapWarmSummary(thread.warm_summary) : null;
-  const priorBoundarySeq = thread.warm_summary_before_seq ?? null;
-  const canExtendPrior = prior?.scope === "foreground"
-    && priorBoundarySeq !== null
-    && priorBoundarySeq < boundarySeq;
-  const warmRows = rows.filter((m) => {
-    const belowBoundary = m.seq < boundarySeq;
-    return belowBoundary && (!canExtendPrior || m.seq >= priorBoundarySeq);
-  });
-  const newChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
-  const sourceMessages = canExtendPrior
-    ? (thread.warm_summary_source_messages ?? 0) + warmRows.length
-    : warmRows.length;
-  const sourceChars = canExtendPrior
-    ? (thread.warm_summary_source_chars ?? 0) + newChars
-    : newChars;
-
-  if ((canExtendPrior ? newChars : sourceChars) < 24 || (canExtendPrior ? warmRows.length === 0 : warmRows.length < 2)) {
-    return { summary: canExtendPrior ? prior.content : "", sourceMessages, sourceChars, topics: [] };
-  }
-
   const contextTokens = typeof providerParams.context_window_tokens === "number"
     ? providerParams.context_window_tokens
     : 32768;
   const summaryInputChars = Math.max(4000, Math.min(120000, Math.round(contextTokens * 3)));
+  const eligibleRows = takeRecentWarmMessages(rows.filter((m) => m.seq < boundarySeq), agent.warm_summary_limit);
+  const selectedRows: typeof eligibleRows = [];
+  const selectedTranscript: string[] = [];
+  let selectedTranscriptChars = 0;
+  for (let index = eligibleRows.length - 1; index >= 0; index -= 1) {
+    const row = eligibleRows[index];
+    const formatted = `[seq=${row.seq}] [${row.created_at}] ${row.role === "user" ? "User" : "Assistant"}: ${transcriptText(row.content)}`;
+    const addedChars = formatted.length + (selectedTranscript.length > 0 ? 2 : 0);
+    if (selectedTranscriptChars + addedChars > summaryInputChars) break;
+    selectedRows.unshift(row);
+    selectedTranscript.unshift(formatted);
+    selectedTranscriptChars += addedChars;
+  }
+  const sourceMessages = selectedRows.length;
+  const sourceChars = selectedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
+  if (sourceChars < 24 || sourceMessages < 2) {
+    return { summary: "", sourceMessages, sourceChars, topics: [] };
+  }
 
-  const newTranscript = warmRows
-    .map((m) => `[seq=${m.seq}] [${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
-    .join("\n\n")
-    .trim();
-  const transcript = (canExtendPrior
-    ? [
-        "Previous compressed memory (preserve every fact, identifier, and decision below):",
-        prior.content,
-        "",
-        "--- New turns since the above summary ---",
-        newTranscript,
-      ].join("\n\n")
-    : newTranscript
-  ).slice(-summaryInputChars).trim();
+  const transcript = selectedTranscript.join("\n\n").trim();
   if (!transcript) return null;
 
   const provider = providerOverride?.provider ?? getProvider(modelCfg.provider);
@@ -373,10 +357,10 @@ async function buildSummaryBefore(
   return {
     summary: [
       "--- Warm context summary ---",
-      "Compressed recap of earlier messages outside the hot window:",
+      "Compressed recap of recent messages immediately before the hot window:",
       summary,
     ].join("\n"),
-    sourceMessages: warmRows.length,
+    sourceMessages,
     sourceChars,
     topics,
   };
@@ -462,7 +446,10 @@ async function buildAutomationChannelSummaryBefore(
   const providerParams = tier ? { ...baseParams, context_tier_proportions: tier } : baseParams;
 
   const rows = getMessagesByAutomationCategory(threadId, channel);
-  const warmRows = rows.filter((m) => m.seq < boundarySeq);
+  const warmRows = takeRecentWarmMessages(
+    rows.filter((m) => m.seq < boundarySeq),
+    agent.warm_summary_limit,
+  );
   const sourceChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
 
   if (sourceChars < 24 || warmRows.length < 2) {

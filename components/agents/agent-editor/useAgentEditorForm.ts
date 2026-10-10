@@ -32,6 +32,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [historyLimit, setHistoryLimit] = useState<number>(agent?.history_limit ?? 50);
   const [historyWindowHours, setHistoryWindowHours] = useState<number>(agent?.history_window_hours ?? 8);
   const [hotTurnLimit, setHotTurnLimit] = useState<number>(agent?.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT);
+  const [warmSummaryLimit, setWarmSummaryLimit] = useState<number>(agent?.warm_summary_limit ?? 50);
   const [selectedTools, setSelectedTools] = useState<string[]>(agent?.tools ?? []);
   const [toolCredentials, setToolCredentials] = useState<Record<string, string>>(
     agent?.tool_credentials ?? {},
@@ -83,7 +84,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
     isDefault, setIsDefault, iconInputRef, handleIconFile: handleIconFileFor(setIcon),
     modelConfigName, setModelConfigName,
     historyLimit, setHistoryLimit, historyWindowHours, setHistoryWindowHours,
-    hotTurnLimit, setHotTurnLimit, tools, selectedTools,
+    hotTurnLimit, setHotTurnLimit, warmSummaryLimit, setWarmSummaryLimit, tools, selectedTools,
     toolCredentials, setToolCredentialFor,
     delegateTargets, setDelegateTargets, harnessId, setHarnessId,
     antiHallucMode, setAntiHallucMode, antiHallucModel, setAntiHallucModel,
@@ -116,7 +117,7 @@ function handleIconFileFor(setIcon: (v: string | null) => void) {
 interface PayloadFields {
   name: string; icon: string | null; identity: string; instructions: string;
   isDefault: boolean; modelConfigName: string;
-  historyLimit: number; historyWindowHours: number; hotTurnLimit: number; selectedTools: string[];
+  historyLimit: number; historyWindowHours: number; hotTurnLimit: number; warmSummaryLimit: number; selectedTools: string[];
   toolCredentials: Record<string, string>;
   delegateTargets: string[]; harnessId: string; tierOverride: TierOverride;
   antiHallucMode: AntiHallucMode; antiHallucModel: string;
@@ -139,6 +140,7 @@ function buildAgentPayload(f: PayloadFields): AgentConfigIn {
     history_limit: Math.max(0, Math.floor(f.historyLimit)),
     history_window_hours: Math.max(0, Math.floor(f.historyWindowHours)),
     hot_turn_limit: Math.max(0, Math.floor(f.hotTurnLimit)),
+    warm_summary_limit: Math.max(0, Math.floor(f.warmSummaryLimit)),
     is_default: f.isDefault,
     adaptive_persona_enabled: f.adaptivePersonaEnabled,
     adaptive_mbti: f.adaptiveMbti,

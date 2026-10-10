@@ -121,6 +121,13 @@ describe("MessageList conversation focus", () => {
   });
 
   it("uses the live stream bubble instead of duplicating a persisted draft", () => {
+    const pendingUser: Message = {
+      id: "pending-user-1",
+      role: "user",
+      content: "queued user prompt",
+      created_at: "2026-08-09T09:59:59.000Z",
+      transcript_status: "in_progress",
+    };
     const draft: Message = {
       id: "draft-1",
       role: "assistant",
@@ -129,11 +136,12 @@ describe("MessageList conversation focus", () => {
       transcript_status: "in_progress",
     };
     const { rerender } = render(
-      <MessageList threadId="thread-draft" messages={[draft]} streaming streamingContent="live partial" />,
+      <MessageList threadId="thread-draft" messages={[pendingUser, draft]} streaming streamingContent="live partial" />,
     );
 
+    expect(screen.getByText("queued user prompt")).toBeTruthy();
     expect(screen.queryByText("persisted partial")).toBeNull();
-    rerender(<MessageList threadId="thread-draft" messages={[draft]} />);
+    rerender(<MessageList threadId="thread-draft" messages={[pendingUser, draft]} />);
     expect(screen.getByText("persisted partial")).toBeTruthy();
   });
 

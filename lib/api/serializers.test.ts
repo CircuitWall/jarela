@@ -27,6 +27,7 @@ describe("agentToResponse", () => {
     is_default: 1,
     history_limit: 50,
     history_window_hours: 24,
+    warm_summary_limit: 64,
     never_reply: 0,
     adaptive_persona_enabled: 1,
     adaptive_persona_strength: 0.5,
@@ -81,6 +82,7 @@ describe("agentToResponse", () => {
     const out = agentToResponse(baseRow);
     expect(out.id).toBe("alice");
     expect(out.history_limit).toBe(50);
+    expect(out.warm_summary_limit).toBe(64);
     expect(out.created_at).toBe("2026-05-21T00:00:00Z");
   });
 });

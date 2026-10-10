@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
     warm_summary_before_seq: null as number | null,
     message_count: 2,
   },
+  warmSummaryLimit: 2,
   commits: [] as Array<{ hotSince: string; summary: string }>,
   rows: [] as unknown[],
   automationRows: {} as Record<string, unknown[]>,
@@ -65,7 +66,7 @@ vi.mock("@/lib/stores/threads", () => ({
   },
 }));
 vi.mock("@/lib/stores/agent-configs", () => ({
-  getAgentConfig: () => ({ id: "agent-1", model_config_name: "model-1" }),
+  getAgentConfig: () => ({ id: "agent-1", model_config_name: "model-1", warm_summary_limit: state.warmSummaryLimit }),
   getAgentTierProportions: () => null,
 }));
 vi.mock("@/lib/stores/model-config", () => ({
@@ -78,6 +79,8 @@ vi.mock("@/lib/stores/memory", () => ({ putMemory: () => {} }));
 vi.mock("@/lib/agents/prepare/history-window", () => ({
   unwrapWarmSummary: (s: string) => ({ scope: "foreground", content: s }),
   wrapWarmSummary: (s: string) => s,
+  takeRecentWarmMessages: <T>(messages: readonly T[], warmSummaryLimit?: number | null) =>
+    warmSummaryLimit === 0 ? [] : messages.slice(-(warmSummaryLimit ?? 50)),
   AUTOMATION_CHANNEL_ORDER: ["scheduled_task", "watcher", "bridge"],
 }));
 vi.mock("@/lib/agents/conversation-summary", () => ({
@@ -118,6 +121,68 @@ describe("compactThreadWarmContext — seq-exact boundary (ADR-0088)", () => {
     // folded into the summary's source count. seq=11 (the boundary row
     // itself) must NOT be counted as summarized, since it survives the prune.
     expect(context?.sourceMessages).toBe(1);
+  });
+
+  it("summarizes only the configured recent warm window, leaving older transcript for embedding recall", async () => {
+    state.thread = {
+      thread_id: "thread-1",
+      hot_since: null,
+      hot_since_seq: null,
+      warm_summary: "stale recap of the entire transcript",
+      warm_summary_before: null,
+      warm_summary_before_seq: 1,
+      message_count: 5,
+    };
+    state.commits = [];
+    state.automationRows = {};
+    state.channelSummaries = {};
+    state.rows = [
+      { seq: 1, role: "user", content: "old embedding-only question", created_at: "2026-09-25T09:00:00.000Z" },
+      { seq: 2, role: "assistant", content: "old embedding-only answer", created_at: "2026-09-25T09:00:01.000Z" },
+      { seq: 3, role: "user", content: "recent warm question", created_at: "2026-09-25T09:01:00.000Z" },
+      { seq: 4, role: "assistant", content: "recent warm answer", created_at: "2026-09-25T09:01:01.000Z" },
+      { seq: 5, role: "user", content: "hot boundary question", created_at: "2026-09-25T09:02:00.000Z" },
+    ];
+    vi.mocked(summarizeTranscript).mockResolvedValueOnce("bounded warm recap");
+
+    const context = await compactThreadWarmContext("thread-1", 5);
+    const transcript = vi.mocked(summarizeTranscript).mock.calls.at(-1)?.[3] as string;
+
+    expect(context?.sourceMessages).toBe(2);
+    expect(transcript).toContain("recent warm question");
+    expect(transcript).toContain("recent warm answer");
+    expect(transcript).not.toContain("old embedding-only");
+    expect(transcript).not.toContain("stale recap of the entire transcript");
+    expect(transcript).not.toContain("hot boundary question");
+  });
+
+  it("disables persistent chat and automation summaries when the limit is zero", async () => {
+    const previousLimit = state.warmSummaryLimit;
+    const previousRows = state.rows;
+    const previousAutomationRows = state.automationRows;
+    state.warmSummaryLimit = 0;
+    state.commits = [];
+    state.rows = DEFAULT_ROWS;
+    state.automationRows = {
+      watcher: [
+        { seq: 8, role: "assistant", content: "older watcher event", created_at: "2026-09-25T09:00:00.000Z" },
+        { seq: 9, role: "assistant", content: "recent watcher event", created_at: "2026-09-25T09:01:00.000Z" },
+      ],
+    };
+    vi.mocked(summarizeTranscript).mockClear();
+
+    try {
+      const chat = await compactThreadWarmContext("thread-1", 11, { allowEmptySummary: true });
+      const automation = await compactAutomationChannelWarmContext("thread-1", "watcher", 11);
+
+      expect(chat).toMatchObject({ summary: "", sourceMessages: 0 });
+      expect(automation).toMatchObject({ summary: "", sourceMessages: 0 });
+      expect(summarizeTranscript).not.toHaveBeenCalled();
+    } finally {
+      state.warmSummaryLimit = previousLimit;
+      state.rows = previousRows;
+      state.automationRows = previousAutomationRows;
+    }
   });
 });
 
