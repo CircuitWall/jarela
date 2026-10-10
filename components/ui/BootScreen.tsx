@@ -109,7 +109,6 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
     () =>
       agents
         .filter((a) => !a.is_default)
-        .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
         .slice(0, 3),
     [agents],
   );
@@ -402,16 +401,16 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
             fades its opacity in/out — it never adds or removes layout
             height, so the tile and headline stay put.
       */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center gap-6">
-        <Logo className="h-16 w-auto" />
+      <div className="boot-screen-stack absolute inset-0 flex flex-col items-center justify-center gap-6 lg:gap-8">
+        <Logo className="boot-screen-logo h-16 w-auto" />
         <p
-          className="text-[11px] uppercase tracking-[0.3em] text-fg-faint animate-pulse min-h-[1.25rem] text-center px-6"
+          className="text-xs uppercase tracking-[0.2em] text-fg-faint animate-pulse min-h-[1.25rem] text-center px-6"
         >
           {statusText}
         </p>
 
         {/* Tile slot — always reserves the same 11rem so neighbours don't shift. */}
-        <div className="relative z-10 h-44 w-44">
+        <div className="boot-screen-tile relative z-10 h-44 w-44 lg:h-56 lg:w-56">
           {tileAgent ? (
             <button
               type="button"
@@ -486,7 +485,7 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
           rendered so the picker→opening transition is a fade, not a
           layout shift.
         */}
-        <div className="w-48 min-h-[8rem] relative">
+        <div className="boot-screen-recent-slot w-48 min-h-[12rem] relative lg:w-72 lg:min-h-[13rem]">
           <div
             className={[
               "absolute inset-x-0 top-0 flex flex-col items-center gap-2",
@@ -496,7 +495,7 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
                 : "opacity-0 pointer-events-none",
             ].join(" ")}
           >
-            <p className="text-[10px] text-fg-faint uppercase tracking-wider">
+            <p className="text-[11px] text-fg-faint uppercase tracking-wider">
               Recent
             </p>
             <div className="flex flex-col gap-1.5 w-full">
