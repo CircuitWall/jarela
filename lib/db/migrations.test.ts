@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +17,6 @@ const { listCredentials, getCredentialParams } = await import("@/lib/stores/cred
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
-
 describe("backfillMailSendTools", () => {
   it("adds send tools to existing agents that already have draft tools", async () => {
     const db = getDb();
@@ -463,22 +463,38 @@ describe("message transcript status migration", () => {
   });
 });
 
-describe("message transcript status migration", () => {
-  it("adds completed defaults to legacy message rows and is idempotent", async () => {
+describe("message sequence allocator migration", () => {
+  it("seeds a global high-water mark from existing rowids and is idempotent", async () => {
     const db = getDb();
-    const timestamp = new Date().toISOString();
+    const maxRow = (db.prepare("SELECT COALESCE(MAX(rowid),0) AS seq FROM messages").get() as { seq: number }).seq;
+    const expected = maxRow + 50;
+    const messageId = randomUUID();
+    db.exec("DROP TABLE message_seq_allocator");
     db.prepare(
-      "INSERT OR REPLACE INTO messages (msg_id,thread_id,role,content,created_at) VALUES (?,?,?,?,?)",
-    ).run("transcript-status-migration-test", "transcript-status-thread", "assistant", "legacy response", timestamp);
-    db.exec("ALTER TABLE messages DROP COLUMN status_reason; ALTER TABLE messages DROP COLUMN transcript_status;");
+      "INSERT INTO messages (rowid,msg_id,thread_id,role,content,created_at) VALUES (?,?,?,?,?,?)",
+    ).run(expected, messageId, "sequence-allocator-thread", "user", "legacy row", new Date().toISOString());
 
     const { runMigrations } = await import("@/lib/db/migrations");
     runMigrations(db);
     runMigrations(db);
 
-    const row = db.prepare(
-      "SELECT transcript_status, status_reason FROM messages WHERE msg_id='transcript-status-migration-test'",
-    ).get();
-    expect(row).toEqual({ transcript_status: "completed", status_reason: null });
+    expect(db.prepare("SELECT last_seq FROM message_seq_allocator WHERE id=1").get()).toEqual({ last_seq: expected });
+  });
+});
+describe("message sequence allocator migration", () => {
+  it("seeds the high-water mark from existing rowids and is idempotent", async () => {
+    const db = getDb();
+    const currentMax = (db.prepare("SELECT COALESCE(MAX(rowid),0) AS seq FROM messages").get() as { seq: number }).seq;
+    const expected = currentMax + 100;
+    db.exec("DROP TABLE message_seq_allocator");
+    db.prepare(
+      "INSERT INTO messages (rowid,msg_id,thread_id,role,content,created_at) VALUES (?,?,?,?,?,?)",
+    ).run(expected, "sequence-allocator-migration-test", "sequence-allocator-thread", "user", "legacy row", new Date().toISOString());
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+    runMigrations(db);
+
+    expect(db.prepare("SELECT last_seq FROM message_seq_allocator WHERE id=1").get()).toEqual({ last_seq: expected });
   });
 });

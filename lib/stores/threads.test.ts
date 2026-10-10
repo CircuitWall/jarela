@@ -22,6 +22,7 @@ const {
   getMessagesAfter,
   getMessagesPage,
   getThread,
+  isValidThreadContextCursor,
   commitThreadWarmContext,
   setThreadContextPin,
   setThreadWarmSummary,
@@ -69,6 +70,33 @@ describe("thread context pin (ADR-0042)", () => {
     setThreadContextPin(t.thread_id, null);
     expect(getThread(t.thread_id)?.hot_since).toBeNull();
     expect(getThread(t.thread_id)?.hot_since_seq).toBeNull();
+  });
+
+  it("accepts only an extant message seq or the thread's committed reset cursor", () => {
+    const t = createThread("agent-reset-cursor");
+    const last = addMessage(t.thread_id, "user", "the last row before reset");
+    const resetCursor = last.seq + 1;
+    setThreadContextPin(t.thread_id, last.created_at, resetCursor);
+
+    expect(isValidThreadContextCursor(t.thread_id, last.seq)).toBe(true);
+    expect(isValidThreadContextCursor(t.thread_id, resetCursor)).toBe(true);
+    expect(isValidThreadContextCursor(t.thread_id, resetCursor + 10)).toBe(false);
+  });
+
+  it("keeps reset cursors ahead of new messages after pruning the previous high rowid", () => {
+    const t = createThread("agent-reset-high-water");
+    addMessage(t.thread_id, "user", "first old row");
+    const last = addMessage(t.thread_id, "assistant", "last old row");
+    const resetCursor = last.seq + 1;
+    setThreadContextPin(t.thread_id, last.created_at, resetCursor);
+    expect(pruneThreadMessages(t.thread_id, 1, resetCursor)).toBe(2);
+
+    const next = addMessage(t.thread_id, "user", "first row after reset");
+
+    expect(next.seq).toBe(resetCursor);
+    expect(isValidThreadContextCursor(t.thread_id, resetCursor)).toBe(true);
+    expect(getRecentMessagesWindow(t.thread_id, 0, undefined, "foreground", undefined, undefined, resetCursor).map((row) => row.content))
+      .toEqual(["first row after reset"]);
   });
 
   it("filters the hot window by the exact source seq when timestamps tie", () => {
@@ -407,6 +435,7 @@ describe("pruneThreadMessages", () => {
     expect(removed).toBe(2); // only the two foreground "chat before" rows
     const remaining = getMessages(t.thread_id).map((r) => r.content);
     expect(remaining).toEqual(["scheduled task ran", "watcher fired", "bridge inbound", "chat after"]);
+    expect(getThread(t.thread_id)?.message_count).toBe(4);
   });
 
   it("drift guard: every category getRecentMessagesWindow's foreground scope excludes is also guarded by pruneThreadMessages, for the full FOREGROUND_EXCLUDED_CATEGORIES list", () => {
@@ -482,6 +511,26 @@ describe("pruneThreadMessages", () => {
     // Exactly one archived — the row that had an embedding.
     expect(archived).toHaveLength(1);
     expect(archived[0].value).toBe("nope-0");
+  });
+
+  it("deletes only the removed thread's archived chat from recall", () => {
+    const deleted = createThread("agent-delete-archive");
+    const retained = createThread("agent-retain-archive");
+    for (let index = 0; index < 6; index++) {
+      addMessage(deleted.thread_id, index % 2 === 0 ? "user" : "assistant", `deleted-${index}`);
+      addMessage(retained.thread_id, index % 2 === 0 ? "user" : "assistant", `retained-${index}`);
+    }
+    const db = getDb();
+    const fakeVec = JSON.stringify(new Array(8).fill(0.3));
+    db.prepare("UPDATE messages SET embedding=? WHERE thread_id IN (?, ?)").run(fakeVec, deleted.thread_id, retained.thread_id);
+    pruneThreadMessages(deleted.thread_id, 4);
+    pruneThreadMessages(retained.thread_id, 4);
+
+    expect(deleteThread(deleted.thread_id)).toBe(true);
+
+    const remainingKeys = db.prepare("SELECT key FROM memory_store WHERE namespace='chat_archive'").all() as Array<{ key: string }>;
+    expect(remainingKeys.some((row) => row.key.includes(`::${deleted.thread_id}::`))).toBe(false);
+    expect(remainingKeys.some((row) => row.key.includes(`::${retained.thread_id}::`))).toBe(true);
   });
 });
 
