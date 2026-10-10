@@ -1,7 +1,7 @@
 "use client";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Brain, ChevronRight, Hourglass, X, ArrowDown, Eye, EyeOff } from "lucide-react";
-import type { AgentConfig, ContentPart, Message, SummaryTopicSegment, UserProfile } from "@/api/types";
+import type { AgentConfig, AutomationActivityMetadata, ContentPart, Message, SummaryTopicSegment, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
 import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
@@ -893,6 +893,30 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
         // "+ N more we don't know about yet" — older pages are likely unloaded.
         const olderCountLabel = olderInVisible + (hasMore ? 1 : 0);
 
+        const attachedActivities = new Map<string, AutomationActivityMetadata>();
+        const hiddenActivityIds = new Set<string>();
+        for (let i = 0; i < visibleMessages.length - 1; i++) {
+          const activityMessage = visibleMessages[i];
+          const activity = activityMessage.metadata?.automation_activity;
+          if (!activity) continue;
+          const related = visibleMessages[i + 1];
+          const matches = !related.metadata?.automation_activity && (
+            activity.source_kind === "bridge"
+              ? related.role === "user"
+                && related.metadata?.bridge_conversation?.key === activity.source_id
+              : related.role === "assistant" && related.category === activity.source_kind
+          );
+          if (!matches) continue;
+          attachedActivities.set(related.id, activity);
+          hiddenActivityIds.add(activityMessage.id);
+        }
+        const previousVisibleRoles = new Map<string, Message["role"] | null>();
+        let previousVisibleRole: Message["role"] | null = null;
+        for (const message of visibleMessages) {
+          previousVisibleRoles.set(message.id, previousVisibleRole);
+          if (!hiddenActivityIds.has(message.id)) previousVisibleRole = message.role;
+        }
+
         const renderBoundary = (key: string) => (
           <div
             key={key}
@@ -919,8 +943,13 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
         );
 
         const nodes = visibleMessages.flatMap((msg, i) => {
-          const startsTurn = i === 0 || visibleMessages[i - 1].role !== msg.role;
           const out = [] as React.ReactNode[];
+          if (hasBoundary && !pinAfterAll && i === boundaryIndex) {
+            out.push(renderBoundary(`boundary-${msg.id}`));
+          }
+          if (hiddenActivityIds.has(msg.id)) return out;
+          const previousRole = previousVisibleRoles.get(msg.id);
+          const startsTurn = previousRole == null || previousRole !== msg.role;
           const steeredSegment = steeredSegments?.find((segment) => segment.id === msg.id);
           if (steeredSegment) {
             out.push(
@@ -932,9 +961,6 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
                 showAvatar={i === 0 || visibleMessages[i - 1].role !== "assistant"}
               />,
             );
-          }
-          if (hasBoundary && !pinAfterAll && i === boundaryIndex) {
-            out.push(renderBoundary(`boundary-${msg.id}`));
           }
           out.push(
             <div
@@ -948,6 +974,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
             >
               <MessageBubble
                 message={msg}
+                attachedActivity={attachedActivities.get(msg.id)}
                 threadId={threadId ?? null}
                 agentConfig={agentConfig}
                 userProfile={userProfile}
