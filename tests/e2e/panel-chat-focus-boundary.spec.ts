@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { seedMockAgent } from "./helpers";
 
 type ThreadSummary = { thread_id: string; agent_id: string; updated_at: string; message_count: number };
-type ThreadDetail = ThreadSummary & { messages: Array<{ created_at: string }> };
+type ThreadDetail = ThreadSummary & { messages: Array<{ seq: number; created_at: string }> };
 
 test.beforeEach(async ({ request }) => {
   await seedMockAgent(request);
@@ -45,12 +45,12 @@ async function pinLatestThreadForBoundary(page: import("@playwright/test").Page)
   expect(detailRes.ok()).toBeTruthy();
   const detail = (await detailRes.json()) as ThreadDetail;
   const firstMessage = detail.messages[0];
-  expect(firstMessage?.created_at).toBeTruthy();
+  expect(firstMessage?.seq).toBeTruthy();
 
   const pinRes = await page.request.patch(`/api/v1/threads/${thread.thread_id}/context-pin`, {
-    data: { hot_since: firstMessage.created_at },
+    data: { hot_since_seq: firstMessage.seq },
   });
-  expect(pinRes.ok()).toBeTruthy();
+  expect(pinRes.ok(), await pinRes.text()).toBeTruthy();
   await page.goto(`/?agent=${encodeURIComponent(thread.agent_id)}&thread=${encodeURIComponent(thread.thread_id)}`);
   await expect(page.getByRole("button", { name: /Drag to move conversation focus/i })).toBeEnabled({ timeout: 20_000 });
 }
@@ -112,11 +112,11 @@ test("renders a pinned boundary before warm summary metadata arrives", async ({ 
   const detailRes = await page.request.get(`/api/v1/threads/${thread.thread_id}`);
   const detail = (await detailRes.json()) as ThreadDetail;
   const firstMessage = detail.messages[0];
-  expect(firstMessage?.created_at).toBeTruthy();
+  expect(firstMessage?.seq).toBeTruthy();
   const pinRes = await page.request.patch(`/api/v1/threads/${thread.thread_id}/context-pin`, {
-    data: { hot_since: firstMessage.created_at },
+    data: { hot_since_seq: firstMessage.seq },
   });
-  expect(pinRes.ok()).toBeTruthy();
+  expect(pinRes.ok(), await pinRes.text()).toBeTruthy();
 
   // A warm-summary refresh is asynchronous. Hide its metadata in the
   // browser response to exercise the exact interval that used to drop the
@@ -132,6 +132,7 @@ test("renders a pinned boundary before warm summary metadata arrives", async ({ 
         ...payload,
         warm_summary: null,
         warm_summary_before: null,
+        warm_summary_before_seq: null,
         warm_summary_computed_at: null,
         warm_summary_source_messages: null,
         warm_summary_source_chars: null,
