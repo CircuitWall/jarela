@@ -64,36 +64,45 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
       <Divider />
       <div className="space-y-2">
         <p className="text-[11px] text-fg-subtle leading-snug font-medium">Conversation history</p>
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2">
           <HistoryNumberField
             id="hot-turn-limit"
-            label="Hot turns"
+            label="Full-text turns"
+            description="Recent turns sent as-is. 0 = token budget only."
             value={form.hotTurnLimit}
             onChange={form.setHotTurnLimit}
           />
           <HistoryNumberField
-            id="history-limit"
-            label="Raw history"
-            value={form.historyLimit}
-            onChange={form.setHistoryLimit}
-          />
-          <HistoryNumberField
-            id="history-window-hours"
-            label="Max age (hours)"
-            value={form.historyWindowHours}
-            onChange={form.setHistoryWindowHours}
-          />
-          <HistoryNumberField
             id="warm-summary-limit"
-            label="Warm messages"
+            label="Prior-topic messages"
+            description="Recent earlier messages summarized. 0 = off."
             value={form.warmSummaryLimit}
             onChange={form.setWarmSummaryLimit}
           />
         </div>
         <p className="text-[10px] text-fg-faint leading-snug">
-          Hot turns caps recent verbatim turns (0 = token budget only). Raw history caps rows considered for context; 0 removes that count cap. Max age limits row age; 0 removes that age cap. Warm messages sets the recent recap size (default 50); 0 disables warm summaries. Older messages can be retrieved through embeddings when recall is enabled.
+          Compaction starts near the full-text token budget and preserves topic boundaries. Older chats can surface through memory recall when enabled.
         </p>
       </div>
+      <details className="space-y-2">
+        <summary className="cursor-pointer text-[10px] text-fg-faint">Source limits</summary>
+        <div className="grid grid-cols-2 gap-2">
+          <HistoryNumberField
+            id="history-limit"
+            label="Message limit"
+            description="Maximum source messages. 0 = unlimited."
+            value={form.historyLimit}
+            onChange={form.setHistoryLimit}
+          />
+          <HistoryNumberField
+            id="history-window-hours"
+            label="History age (hours)"
+            description="Ignore older source messages. 0 = no age limit."
+            value={form.historyWindowHours}
+            onChange={form.setHistoryWindowHours}
+          />
+        </div>
+      </details>
       <Divider />
       <ToolCredentialsSection form={form} embedded />
       <Divider />
@@ -123,11 +132,13 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
 function HistoryNumberField({
   id,
   label,
+  description,
   value,
   onChange,
 }: {
   id: string;
   label: string;
+  description: string;
   value: number;
   onChange: (value: number) => void;
 }) {
@@ -136,6 +147,7 @@ function HistoryNumberField({
       <label className="text-[10px] text-fg-faint" htmlFor={id}>{label}</label>
       <input
         id={id}
+        aria-describedby={`${id}-description`}
         type="number"
         min={0}
         step={1}
@@ -143,6 +155,7 @@ function HistoryNumberField({
         onChange={(e) => onChange(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
         className="w-full rounded-md border border-border bg-surface-1 px-2 py-1.5 text-xs text-fg"
       />
+      <p id={`${id}-description`} className="min-h-8 text-[10px] leading-snug text-fg-faint">{description}</p>
     </div>
   );
 }

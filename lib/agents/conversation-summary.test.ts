@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { summarizeTranscript, transcriptText } from "./conversation-summary";
+import { extractTopicSegments, summarizeTranscript, transcriptText, validateTopicSegments } from "./conversation-summary";
 import type { ModelProvider, ProviderMessage, ProviderParams } from "@/lib/providers/types";
 
 describe("transcriptText", () => {
@@ -20,6 +20,93 @@ describe("transcriptText", () => {
 
   it("falls back to raw when JSON is malformed", () => {
     expect(transcriptText("[not-json")).toBe("[not-json");
+  });
+});
+
+describe("topic compaction validation", () => {
+  const rows = [
+    { seq: 1, created_at: "2026-10-10T10:00:00.000Z" },
+    { seq: 2, created_at: "2026-10-10T10:00:01.000Z" },
+    { seq: 3, created_at: "2026-10-10T10:01:00.000Z" },
+    { seq: 4, created_at: "2026-10-10T10:01:01.000Z" },
+  ];
+
+  function topic(start_seq: number, end_seq: number, title = `topic ${start_seq}`) {
+    return {
+      title,
+      start_seq,
+      end_seq,
+      start_at: rows.find((row) => row.seq === start_seq)?.created_at ?? "2026-10-10T09:00:00.000Z",
+      end_at: rows.find((row) => row.seq === end_seq)?.created_at ?? "2026-10-10T09:00:00.000Z",
+      recap: `${title} recap`,
+      facts: [],
+    };
+  }
+
+  it("validates exact source ranges and marks a topic cut by the warm limit as partial", () => {
+    const valid = validateTopicSegments(
+      [{ ...topic(1, 3), partial_start: true }, topic(4, 4)],
+      rows,
+      rows.slice(2),
+      { boundarySeq: 5, allowPartialStart: true },
+    );
+
+    expect(valid.map((segment) => [segment.start_seq, segment.end_seq, segment.partial_start])).toEqual([
+      [3, 3, true],
+      [4, 4, undefined],
+    ]);
+  });
+
+  it("rejects fabricated, overlapping, and hot-crossing ranges", () => {
+    const valid = validateTopicSegments(
+      [topic(1, 3), topic(2, 3), topic(90, 91)],
+      rows,
+      rows,
+      { boundarySeq: 4 },
+    );
+
+    expect(valid.map((segment) => [segment.start_seq, segment.end_seq])).toEqual([[1, 3]]);
+  });
+
+  it("uses seq membership as truth while treating timestamps as display labels", () => {
+    const labelMismatch = { ...topic(1, 2), end_at: "2026-10-10T10:09:00.000Z" };
+    const valid = validateTopicSegments([labelMismatch], rows, rows, { boundarySeq: 4 });
+
+    expect(valid.map((segment) => [segment.start_seq, segment.end_seq])).toEqual([[1, 2]]);
+  });
+
+  it("rejects an out-of-window topic start unless partial_start is explicit", () => {
+    const range = topic(1, 3);
+    const withoutMarker = validateTopicSegments([range], rows, rows.slice(2), {
+      boundarySeq: 5,
+      allowPartialStart: true,
+    });
+    const withMarker = validateTopicSegments([{ ...range, partial_start: true }], rows, rows.slice(2), {
+      boundarySeq: 5,
+      allowPartialStart: true,
+    });
+
+    expect(withoutMarker).toEqual([]);
+    expect(withMarker[0]).toMatchObject({ start_seq: 3, start_at: rows[2].created_at, partial_start: true });
+  });
+
+  it("does not promote facts with an unknown confidence as explicit", () => {
+    const parsed = extractTopicSegments([
+      "summary body",
+      "```jarela-topics",
+      JSON.stringify([{
+        ...topic(1, 2),
+        facts: [
+          { subject: "valid", content: "verified fact", confidence: "verified" },
+          { subject: "invalid", content: "unverified claim", confidence: "probably" },
+        ],
+      }]),
+      "```",
+    ].join("\n"));
+
+    expect(parsed.topics[0].facts).toEqual([
+      { subject: "valid", content: "verified fact", tags: [], confidence: "verified" },
+    ]);
   });
 });
 

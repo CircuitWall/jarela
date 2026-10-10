@@ -1,7 +1,7 @@
 import { getProvider } from "@/lib/providers";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
-import { summarizeTranscript, transcriptText, extractTopicSegments, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
-import { takeRecentWarmMessages, wrapWarmSummary, AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
+import { summarizeTranscript, transcriptText, extractTopicSegments, validateTopicSegments, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
+import { takeRecentWarmMessages, warmSummaryMessageLimit, wrapWarmSummary, AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-configs";
 import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { putMemory } from "@/lib/stores/memory";
@@ -15,7 +15,6 @@ import {
   getThreadChannelSummary,
 } from "@/lib/stores/threads";
 
-const MAX_TOPIC_BOUNDARY_EXPANSION_TURNS = 4;
 const MAX_TOPIC_PREVIEW_CHARS = 24_000;
 
 const activeRefreshes = new Set<string>();
@@ -157,8 +156,17 @@ export async function findTopicBoundary(threadId: string, boundarySeq: number): 
     .filter((row) => row.role === "user" || row.role === "assistant");
   const boundaryIndex = rows.findIndex((row) => row.seq >= boundarySeq);
   if (boundaryIndex < 0) return null;
+  if (boundaryIndex === 0) {
+    return { created_at: rows[0].created_at, seq: rows[0].seq };
+  }
 
-  const previewRows = rows.slice(Math.max(0, boundaryIndex - 8), Math.min(rows.length, boundaryIndex + 10));
+  const hotTurnLimit = Math.max(1, agent.hot_turn_limit ?? 12);
+  const topicLookbackMessages = Math.max(8, warmSummaryMessageLimit(agent.warm_summary_limit) + hotTurnLimit * 2);
+  const topicLookaheadMessages = Math.max(10, hotTurnLimit * 2);
+  const previewRows = rows.slice(
+    Math.max(0, boundaryIndex - topicLookbackMessages),
+    Math.min(rows.length, boundaryIndex + topicLookaheadMessages),
+  );
   let previewChars = 0;
   const previewParts: string[] = [];
   for (const row of previewRows) {
@@ -181,18 +189,16 @@ export async function findTopicBoundary(threadId: string, boundarySeq: number): 
       max_tokens: params.max_tokens ?? 768,
     }, transcript);
     const { topics } = extractTopicSegments(raw);
-    const candidate = topics
-      .filter((topic) => typeof topic.start_seq === "number" && typeof topic.end_seq === "number"
-        && topic.start_seq < boundarySeq && topic.end_seq >= boundarySeq)
+    const candidate = validateTopicSegments(topics, rows, previewRows, {
+      boundarySeq,
+      crossesBoundary: true,
+    })
       .sort((a, b) => (b.start_seq ?? 0) - (a.start_seq ?? 0))[0];
     if (!candidate) return null;
 
-    const candidateIndex = rows.findIndex((row) => row.seq >= candidate.start_seq!);
+    const candidateIndex = rows.findIndex((row) => row.seq === candidate.start_seq);
     if (candidateIndex < 0 || candidateIndex >= boundaryIndex) return null;
-    const expansionTurns = rows.slice(candidateIndex, boundaryIndex).filter((row) => row.role === "user").length;
-    return expansionTurns <= MAX_TOPIC_BOUNDARY_EXPANSION_TURNS
-      ? { created_at: rows[candidateIndex].created_at, seq: rows[candidateIndex].seq }
-      : null;
+    return { created_at: rows[candidateIndex].created_at, seq: rows[candidateIndex].seq };
   } catch {
     return null;
   }
@@ -252,6 +258,12 @@ export async function compactThreadWarmContext(
   const baseThread = getThread(threadId);
   if (!baseThread) return null;
   const topicBoundary = options.alignTopicBoundary ? await findTopicBoundary(threadId, requestedBoundarySeq) : null;
+  if (options.alignTopicBoundary && !topicBoundary) return null;
+  if (
+    topicBoundary
+    && baseThread.hot_since_seq === topicBoundary.seq
+    && baseThread.warm_summary_before_seq === topicBoundary.seq
+  ) return null;
   const boundarySeq = topicBoundary?.seq ?? requestedBoundarySeq;
   const boundaryRow = getThreadMessageBySeq(threadId, boundarySeq)
     ?? getThreadMessageBySeq(threadId, boundarySeq - 1);
@@ -334,10 +346,9 @@ async function buildSummaryBefore(
     selectedTranscript.unshift(formatted);
     selectedTranscriptChars += addedChars;
   }
-  const sourceMessages = selectedRows.length;
-  const sourceChars = selectedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
-  if (sourceChars < 24 || sourceMessages < 2) {
-    return { summary: "", sourceMessages, sourceChars, topics: [] };
+  const selectedSourceChars = selectedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
+  if (selectedSourceChars < 24 || selectedRows.length < 2) {
+    return { summary: "", sourceMessages: selectedRows.length, sourceChars: selectedSourceChars, topics: [] };
   }
 
   const transcript = selectedTranscript.join("\n\n").trim();
@@ -351,8 +362,25 @@ async function buildSummaryBefore(
 
   const raw = (await summarizeTranscript(provider, modelId, summaryParams, transcript)).trim();
   if (!raw) return null;
-  const { body: summary, topics } = extractTopicSegments(raw);
+  const { body, topics } = extractTopicSegments(raw);
+  const validatedTopics = validateTopicSegments(topics, rows, selectedRows, {
+    boundarySeq,
+    allowPartialStart: true,
+  });
+  const summarizedSeqs = new Set(validatedTopics.flatMap((topic) =>
+    selectedRows
+      .filter((row) => row.seq >= topic.start_seq! && row.seq <= topic.end_seq!)
+      .map((row) => row.seq),
+  ));
+  const summarizedRows = validatedTopics.length > 0
+    ? selectedRows.filter((row) => summarizedSeqs.has(row.seq))
+    : selectedRows;
+  const summary = validatedTopics.length > 0
+    ? renderTopicRecaps(validatedTopics)
+    : body;
   if (!summary) return null;
+  const sourceMessages = summarizedRows.length;
+  const sourceChars = summarizedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
 
   return {
     summary: [
@@ -362,8 +390,14 @@ async function buildSummaryBefore(
     ].join("\n"),
     sourceMessages,
     sourceChars,
-    topics,
+    topics: validatedTopics,
   };
+}
+
+function renderTopicRecaps(topics: readonly SummaryTopicSegment[]): string {
+  return topics.map((topic) =>
+    `### ${topic.title}${topic.partial_start ? " (partial; earlier messages omitted)" : ""}\n${topic.recap}`,
+  ).join("\n\n");
 }
 
 // Batched uplift (once per compaction pass, covering every topic segment
@@ -446,26 +480,35 @@ async function buildAutomationChannelSummaryBefore(
   const providerParams = tier ? { ...baseParams, context_tier_proportions: tier } : baseParams;
 
   const rows = getMessagesByAutomationCategory(threadId, channel);
+  const eligibleRows = rows.filter((m) => m.seq < boundarySeq);
   const warmRows = takeRecentWarmMessages(
-    rows.filter((m) => m.seq < boundarySeq),
+    eligibleRows,
     agent.warm_summary_limit,
   );
-  const sourceChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
-
-  if (sourceChars < 24 || warmRows.length < 2) {
-    return { summary: "", sourceMessages: warmRows.length, sourceChars };
-  }
 
   const contextTokens = typeof providerParams.context_window_tokens === "number"
     ? providerParams.context_window_tokens
     : 32768;
   const summaryInputChars = Math.max(4000, Math.min(120000, Math.round(contextTokens * 3)));
 
-  const transcript = warmRows
-    .map((m) => `[seq=${m.seq}] [${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
-    .join("\n\n")
-    .trim()
-    .slice(-summaryInputChars);
+  const selectedRows: typeof warmRows = [];
+  const selectedTranscript: string[] = [];
+  let selectedTranscriptChars = 0;
+  for (let index = warmRows.length - 1; index >= 0; index -= 1) {
+    const row = warmRows[index];
+    const formatted = `[seq=${row.seq}] [${row.created_at}] ${row.role === "user" ? "User" : "Assistant"}: ${transcriptText(row.content)}`;
+    const addedChars = formatted.length + (selectedTranscript.length > 0 ? 2 : 0);
+    if (selectedTranscriptChars + addedChars > summaryInputChars) break;
+    selectedRows.unshift(row);
+    selectedTranscript.unshift(formatted);
+    selectedTranscriptChars += addedChars;
+  }
+  const sourceChars = selectedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
+  if (sourceChars < 24 || selectedRows.length < 2) {
+    return { summary: "", sourceMessages: selectedRows.length, sourceChars };
+  }
+
+  const transcript = selectedTranscript.join("\n\n").trim();
   if (!transcript) return null;
 
   const provider = providerOverride?.provider ?? getProvider(modelCfg.provider);
@@ -476,8 +519,24 @@ async function buildAutomationChannelSummaryBefore(
 
   const raw = (await summarizeTranscript(provider, modelId, summaryParams, transcript)).trim();
   if (!raw) return null;
-  const { body: summary } = extractTopicSegments(raw);
+  const { body, topics } = extractTopicSegments(raw);
+  const validatedTopics = validateTopicSegments(topics, rows, selectedRows, {
+    boundarySeq,
+    allowPartialStart: true,
+  });
+  const summary = validatedTopics.length > 0
+    ? renderTopicRecaps(validatedTopics)
+    : body;
   if (!summary) return null;
+  const summarizedSeqs = new Set(validatedTopics.flatMap((topic) =>
+    selectedRows
+      .filter((row) => row.seq >= topic.start_seq! && row.seq <= topic.end_seq!)
+      .map((row) => row.seq),
+  ));
+  const summarizedRows = validatedTopics.length > 0
+    ? selectedRows.filter((row) => summarizedSeqs.has(row.seq))
+    : selectedRows;
+  const summarizedChars = summarizedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
 
   return {
     summary: [
@@ -485,8 +544,8 @@ async function buildAutomationChannelSummaryBefore(
       "Compressed recap of automation activity outside the hot window:",
       summary,
     ].join("\n"),
-    sourceMessages: warmRows.length,
-    sourceChars,
+    sourceMessages: summarizedRows.length,
+    sourceChars: summarizedChars,
   };
 }
 

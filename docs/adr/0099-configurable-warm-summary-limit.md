@@ -18,12 +18,19 @@ unbounded summary.
 Add a per-agent `warm_summary_limit`, measured in transcript messages. It
 defaults to 50, accepts nonnegative values, and zero disables warm summaries.
 The configured value is also bounded by the existing prompt-character budget.
+Warm output uses validated topic recaps newest-first; if the cap cuts through a
+topic, the stored recap is marked partial and starts at the first source row.
 Older transcript remains stored and searchable through message recall; it is
 not accumulated into the warm summary.
 
 Existing agents receive the default through an additive SQLite migration.
 `history_limit` continues to control the raw history window and retains its
 existing zero-means-unlimited behavior.
+
+All automatic, manual, and retention compaction requests use the shared
+topic-aware boundary coordinator. Hot-turn overflow and near-budget hot-token
+pressure may trigger it; `warm_summary_limit` only caps its result and does not
+trigger another compaction.
 
 ## Consequences
 
