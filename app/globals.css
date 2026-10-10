@@ -324,6 +324,29 @@ body {
   min-height: 2rem;
 }
 
+@media (max-height: 640px) and (max-width: 767px) {
+  .boot-screen-stack {
+    justify-content: flex-start;
+    gap: 1rem;
+    overflow-y: auto;
+    padding-top: 1rem;
+    padding-bottom: 3.5rem;
+  }
+  .boot-screen-stack > * {
+    flex-shrink: 0;
+  }
+  .boot-screen-logo {
+    height: 3rem;
+  }
+  .boot-screen-tile {
+    width: 9rem;
+    height: 9rem;
+  }
+  .boot-screen-recent-slot {
+    min-height: 13rem;
+  }
+}
+
 @media (hover: none) and (pointer: coarse) {
   .control-tap {
     min-height: 2.5rem;

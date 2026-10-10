@@ -17,7 +17,10 @@ const {
   getAgentToolCredentials,
   getAgentTierProportions,
   DISPLAY_FILTER_DEFAULTS,
+  listAgentConfigs,
 } = await import("./agent-configs");
+const { getDb } = await import("@/lib/db");
+const { createThread } = await import("./threads");
 
 afterAll(() => {
   try {
@@ -286,5 +289,36 @@ describe("agent usage strategy", () => {
     });
 
     expect(getAgentConfig("fast-strategy-agent")?.usage_strategy).toBe("fast");
+  });
+});
+
+describe("agent list ordering", () => {
+  it("keeps the default first and sorts other agents by latest message time", () => {
+    const db = getDb();
+    const agents = [
+      { id: "order-default", configAt: "2010-01-01T00:00:00.000Z", threadAt: "2010-01-01T00:00:00.000Z", messageAt: "2020-01-01T00:00:00.000Z", isDefault: true },
+      { id: "order-config-recent", configAt: "2099-01-01T00:00:00.000Z", threadAt: "2099-01-01T00:00:00.000Z", messageAt: "2025-01-01T00:00:00.000Z", isDefault: false },
+      { id: "order-message-recent", configAt: "2010-01-01T00:00:00.000Z", threadAt: "2010-01-01T00:00:00.000Z", messageAt: "2026-01-01T00:00:00.000Z", isDefault: false },
+    ];
+
+    for (const agent of agents) {
+      seedAgent(agent.id);
+      db.prepare("UPDATE agent_configs SET is_default=?, created_at=?, updated_at=? WHERE id=?")
+        .run(agent.isDefault ? 1 : 0, agent.configAt, agent.configAt, agent.id);
+      const thread = createThread(agent.id);
+      db.prepare("UPDATE threads SET updated_at=? WHERE thread_id=?").run(agent.threadAt, thread.thread_id);
+      db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at) VALUES (?,?, 'user', ?, ?)")
+        .run(`message-${agent.id}`, thread.thread_id, agent.id, agent.messageAt);
+    }
+
+    const listed = listAgentConfigs()
+      .filter((agent) => agents.some((candidate) => candidate.id === agent.id))
+      .map((agent) => agent.id);
+
+    expect(listed).toEqual([
+      "order-default",
+      "order-message-recent",
+      "order-config-recent",
+    ]);
   });
 });

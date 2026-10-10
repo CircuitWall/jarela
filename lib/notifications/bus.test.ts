@@ -74,6 +74,14 @@ describe("recentSince", () => {
     expect(bus.recentSince(999)).toEqual([]);
   });
 
+  it("replays a second event even when it was published in the same millisecond", async () => {
+    const bus = await freshBus();
+    bus.publish(ev("a", 100));
+    bus.publish(ev("b", 100));
+
+    expect(bus.recentSince(100).map((event) => event.type === "run_completed" ? event.preview : "")).toEqual(["b"]);
+  });
+
   it("caps the buffer at the recent limit (50)", async () => {
     const bus = await freshBus();
     for (let i = 0; i < 60; i++) bus.publish(ev(`p${i}`, i + 1));

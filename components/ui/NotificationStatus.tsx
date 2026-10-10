@@ -25,7 +25,9 @@ export function NotificationStatus() {
 
   useEffect(() => {
     setStatus(readStatus());
-    setDismissed(typeof localStorage !== "undefined" && localStorage.getItem(DISMISS_KEY) === "1");
+    let wasDismissed = false;
+    try { wasDismissed = window.localStorage.getItem(DISMISS_KEY) === "1"; } catch { /* storage may be unavailable */ }
+    setDismissed(wasDismissed);
 
     // Re-check on focus — the user may have toggled it in browser settings.
     const onFocus = () => setStatus(readStatus());
@@ -67,7 +69,7 @@ export function NotificationStatus() {
 
   function dismiss() {
     setDismissed(true);
-    localStorage.setItem(DISMISS_KEY, "1");
+    try { window.localStorage.setItem(DISMISS_KEY, "1"); } catch { /* storage may be unavailable */ }
   }
 
   // Hide the banner when granted (just show a tiny test affordance) or when user dismissed.
@@ -78,9 +80,13 @@ export function NotificationStatus() {
   }
   if (dismissed) return null;
 
+  const bannerTone = status === "denied"
+    ? "border-rose-500/30 bg-rose-500/10"
+    : "border-amber-500/30 bg-amber-500/10";
+
   return (
     <div className="absolute top-9 left-0 right-0 z-30 mx-auto max-w-2xl px-4 mt-2 pointer-events-none">
-      <div className="pointer-events-auto rounded-lg border border-amber-700/60 bg-amber-950/40 backdrop-blur px-3 py-2 flex items-center gap-2 shadow-lg">
+      <div role="status" className={`pointer-events-auto rounded-lg border ${bannerTone} backdrop-blur px-3 py-2 flex items-center gap-2 shadow-lg`}>
         {status === "denied"
           ? <BellOff size={14} className="text-rose-700 dark:text-rose-400 shrink-0" />
           : <Bell size={14} className="text-amber-700 dark:text-amber-400 shrink-0" />}
@@ -91,8 +97,9 @@ export function NotificationStatus() {
         </p>
         {status === "default" && (
           <button
+            type="button"
             onClick={enable}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-amber-600 hover:bg-amber-500 text-white"
+            className="control-tap inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-amber-700 hover:bg-amber-800 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
           >
             <BellRing size={11} /> Enable
           </button>
@@ -100,7 +107,7 @@ export function NotificationStatus() {
         {testFired && (
           <span className="text-[10px] text-emerald-700 dark:text-emerald-400">test sent</span>
         )}
-        <button onClick={dismiss} className="p-1 text-fg-subtle hover:text-fg" title="Dismiss">
+        <button type="button" onClick={dismiss} className="control-tap p-1 text-fg-subtle hover:text-fg" title="Dismiss" aria-label="Dismiss notification prompt">
           <X size={12} />
         </button>
       </div>

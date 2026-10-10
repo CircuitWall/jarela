@@ -114,10 +114,15 @@ const listeners = busState.listeners;
 const recent = busState.recent;
 
 export function publish(ev: NotificationEvent): void {
-  recent.push(ev);
+  // `recentSince` uses a strict timestamp cursor. Multiple events can be
+  // published in one millisecond, so make the cursor unique or reconnects
+  // would skip later events carrying the same `ts`.
+  const lastTs = recent[recent.length - 1]?.ts ?? 0;
+  const event = ev.ts > lastTs ? ev : { ...ev, ts: lastTs + 1 } as NotificationEvent;
+  recent.push(event);
   if (recent.length > RECENT_LIMIT) recent.shift();
   for (const l of listeners) {
-    try { l(ev); } catch { /* listener errored, ignore */ }
+    try { l(event); } catch { /* listener errored, ignore */ }
   }
 }
 

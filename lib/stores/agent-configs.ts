@@ -106,17 +106,18 @@ export function getAgentTierProportions(row: AgentConfigRow): AgentTierProportio
 }
 
 export function listAgentConfigs(): AgentConfigRow[] {
-  // Default agent always first; then by most recently interacted with.
+  // Default agent always first; then by the timestamp of each agent's latest message.
   return getDb()
     .prepare(
       `SELECT a.*
        FROM agent_configs a
        LEFT JOIN (
-         SELECT agent_id, MAX(updated_at) AS last_active
-         FROM threads
-         GROUP BY agent_id
-       ) t ON t.agent_id = a.id
-       ORDER BY a.is_default DESC, COALESCE(t.last_active, a.created_at) DESC`
+         SELECT t.agent_id, MAX(m.created_at) AS last_message_at
+         FROM threads t
+         JOIN messages m ON m.thread_id = t.thread_id
+         GROUP BY t.agent_id
+       ) latest ON latest.agent_id = a.id
+       ORDER BY a.is_default DESC, COALESCE(latest.last_message_at, a.created_at) DESC, a.id ASC`
     )
     .all() as unknown as AgentConfigRow[];
 }

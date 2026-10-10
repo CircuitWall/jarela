@@ -149,68 +149,74 @@ function ToastCard({ toast }: { toast: Toast }) {
   // Avatar — when we have an agent_id use a deterministic gradient. Otherwise
   // fall back to a generic bot icon.
   const avatar = toast.agent_id ? (
-    <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradientFor(toast.agent_id)} flex items-center justify-center text-sm font-bold text-white shrink-0`}>
+    <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradientFor(toast.agent_id)} flex items-center justify-center text-sm font-bold text-white shrink-0`}>
       {toast.title.charAt(0).toUpperCase()}
-    </div>
+    </span>
   ) : (
-    <div className="w-9 h-9 rounded-lg bg-surface-3 flex items-center justify-center shrink-0">
+    <span className="w-9 h-9 rounded-lg bg-surface-3 flex items-center justify-center shrink-0">
       {isError ? <AlertCircle size={16} className="text-rose-700 dark:text-rose-400" /> : <Bot size={16} className="text-fg-muted" />}
-    </div>
+    </span>
   );
 
   return (
     <div
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      onClick={open}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === "Enter") open(); }}
-      className={`pointer-events-auto group relative cursor-pointer rounded-xl border bg-surface-2/95 backdrop-blur shadow-2xl transition-all duration-200 ${
+      className={`pointer-events-auto group relative rounded-xl border bg-surface-2/95 backdrop-blur shadow-2xl transition-all duration-200 ${
         exiting ? "opacity-0 translate-x-2" : "opacity-100 translate-x-0"
       } ${isError ? "border-rose-700/60" : "border-border hover:border-border"}`}
     >
       <div className="flex items-start gap-3 px-3 py-2.5">
-        {avatar}
-        <div className="flex-1 min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-fg-faint font-semibold truncate">
-            {toast.sourceLabel}
-          </p>
-          <p className="text-sm font-medium text-fg truncate">{toast.title}</p>
-          {toast.preview ? (
-            <p className={`text-xs ${isError ? "text-rose-700 dark:text-rose-300/90" : "text-fg-muted"} line-clamp-2 mt-0.5 italic`}>
-              “{toast.preview}”
-            </p>
-          ) : (
-            <p className={`text-xs ${isError ? "text-rose-700 dark:text-rose-300/90" : "text-fg-subtle"} line-clamp-2 mt-0.5`}>
-              {toast.body}
-            </p>
-          )}
-          {toast.href ? (
-            <p className="text-[10px] text-accent/80 mt-1">{toast.hrefLabel ?? "Open →"}</p>
-          ) : (toast.agent_id || toast.thread_id) ? (
-            <p className="text-[10px] text-accent/80 mt-1">Open chat →</p>
-          ) : null}
-          {hasReport && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
-              className="control-tap mt-1.5 inline-flex items-center gap-1 text-[10px] text-rose-700 dark:text-rose-300/90 hover:text-rose-900 dark:hover:text-rose-200"
-              aria-expanded={expanded}
-            >
-              {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-              {expanded ? "Hide details" : "Show details"}
-            </button>
-          )}
-        </div>
         <button
+          type="button"
+          onClick={open}
+          aria-label={`Open notification: ${toast.title}`}
+          className="control-tap flex min-w-0 flex-1 items-start gap-3 rounded-md text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          {avatar}
+          <span className="flex-1 min-w-0">
+            <span className="block text-[10px] uppercase tracking-wider text-fg-faint font-semibold truncate">
+              {toast.sourceLabel}
+            </span>
+            <span className="block text-sm font-medium text-fg truncate">{toast.title}</span>
+            {toast.preview ? (
+              <span className={`block text-xs ${isError ? "text-rose-700 dark:text-rose-300/90" : "text-fg-muted"} line-clamp-2 mt-0.5 italic`}>
+                “{toast.preview}”
+              </span>
+            ) : (
+              <span className={`block text-xs ${isError ? "text-rose-700 dark:text-rose-300/90" : "text-fg-subtle"} line-clamp-2 mt-0.5`}>
+                {toast.body}
+              </span>
+            )}
+            {toast.href ? (
+              <span className="block text-[10px] text-accent/80 mt-1">{toast.hrefLabel ?? "Open →"}</span>
+            ) : (toast.agent_id || toast.thread_id) ? (
+              <span className="block text-[10px] text-accent/80 mt-1">Open chat →</span>
+            ) : null}
+          </span>
+        </button>
+        <button
+          type="button"
           onClick={(e) => { e.stopPropagation(); close(); }}
-          className="control-tap opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity px-1.5 -mr-1 -mt-0.5 text-fg-faint hover:text-fg"
+          className="control-tap opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 focus-visible:opacity-100 transition-opacity px-1.5 -mr-1 -mt-0.5 text-fg-faint hover:text-fg"
           aria-label="Dismiss"
         >
           <X size={13} />
         </button>
       </div>
+      {hasReport && (
+        <div className="px-3 pb-1">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="control-tap inline-flex items-center gap-1 text-[10px] text-rose-700 dark:text-rose-300/90 hover:text-rose-900 dark:hover:text-rose-200"
+            aria-expanded={expanded}
+          >
+            {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            {expanded ? "Hide details" : "Show details"}
+          </button>
+        </div>
+      )}
       {hasReport && expanded && (
         <div
           className="border-t border-rose-700/30 bg-rose-50/40 dark:bg-rose-950/20 px-3 py-2 space-y-2"
