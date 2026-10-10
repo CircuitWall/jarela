@@ -22,6 +22,7 @@ export interface ThreadDataApi {
   messagesLoading: boolean;
   hotSince: string | null;
   hotSinceSeq: number | null;
+  hotSinceSeqForRun: number | null | undefined;
   warmSummary: string | null;
   warmSummaryBefore: string | null;
   warmSummaryBeforeSeq: number | null;
@@ -43,6 +44,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [metadataThreadId, setMetadataThreadId] = useState<string | null>(null);
   const [hotSince, setHotSince] = useState<string | null>(null);
   const [hotSinceSeq, setHotSinceSeq] = useState<number | null>(null);
   const [warmSummary, setWarmSummary] = useState<string | null>(null);
@@ -58,6 +60,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
 
   const messagesRef = useRef<Message[]>([]);
   messagesRef.current = messages;
+  const metadataMatchesThread = metadataThreadId === threadId;
 
   const metaApplier: ThreadMetaApplier = {
     setHotSince, setHotSinceSeq, setWarmSummary, setWarmSummaryBefore, setWarmSummaryBeforeSeq,
@@ -72,6 +75,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
 
   useEffect(() => {
     if (!threadId) {
+      setMetadataThreadId(null);
       setMessages([]);
       setNotices([]);
       setHasMore(false);
@@ -91,6 +95,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       return;
     }
     let cancelled = false;
+    setMetadataThreadId(null);
     setMessagesLoading(true);
     setMessages([]);
     setHasMore(false);
@@ -111,6 +116,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       setMessages(d.messages);
       setHasMore(d.has_more);
       applyThreadMeta(metaApplier, d);
+      setMetadataThreadId(threadId);
     }).catch((err) => { if (!cancelled) console.error(err); })
       .finally(() => {
         if (cancelled) return;
@@ -207,7 +213,10 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   return {
     messages, setMessages, messagesRef, notices, setNotices, addNotice,
     hasMore, setHasMore, loadingMore, messagesLoading,
-    hotSince, hotSinceSeq, warmSummary, warmSummaryBefore, warmSummaryBeforeSeq, warmSummaryComputedAt,
+    hotSince: metadataMatchesThread ? hotSince : null,
+    hotSinceSeq: metadataMatchesThread ? hotSinceSeq : null,
+    hotSinceSeqForRun: metadataMatchesThread ? hotSinceSeq : undefined,
+    warmSummary, warmSummaryBefore, warmSummaryBeforeSeq, warmSummaryComputedAt,
     warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending, compactionPending, contextWindowTokens,
     metaApplier, loadOlder, setContextPin,
   };

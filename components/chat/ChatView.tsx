@@ -133,7 +133,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       { filters: { include_tools: true, include_thinking: true }, ui_experience_mode: state.experienceMode },
       atts.length ? atts : undefined,
       activeChannels,
-      thread.hotSinceSeq,
+      thread.hotSinceSeqForRun,
     );
     if (!accepted) {
       // Server rejected because another run was in flight (second tab,
