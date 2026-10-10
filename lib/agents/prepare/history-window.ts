@@ -90,6 +90,17 @@ export function unwrapWarmSummary(summary: string): {
 // the tolerance gap sit at the hot/warm edge and were already visible in
 // the hot window the model saw a turn or two ago.
 const WARM_CACHE_STALE_MESSAGE_TOLERANCE = 4;
+export const DEFAULT_WARM_SUMMARY_LIMIT = 50;
+
+export function warmSummaryMessageLimit(limit?: number | null): number {
+  if (limit == null || !Number.isFinite(limit)) return DEFAULT_WARM_SUMMARY_LIMIT;
+  return Math.max(0, Math.floor(limit));
+}
+
+export function takeRecentWarmMessages<T>(messages: readonly T[], limit?: number | null): T[] {
+  const count = warmSummaryMessageLimit(limit);
+  return count === 0 ? [] : messages.slice(-count);
+}
 
 // Returns the cached warm summary content when it is safe to reuse this
 // turn, else null (summariser must rebuild). The hot path for threads
@@ -103,9 +114,11 @@ function resolveWarmCacheHit(
   scope: "foreground" | "bridge" | "all" | "none",
   cachedBoundarySeq: number | null,
   currentBoundarySeq: number | null,
+  maxWarmMessages: number,
 ): string | null {
   if (!cachedWarm) return null;
   if (cachedWarm.scope !== scope) return null;
+  if (cachedSourceMessages === null || cachedSourceMessages > maxWarmMessages) return null;
   if (cachedBoundarySeq === null || currentBoundarySeq === null) return null;
   if (cachedBoundarySeq === currentBoundarySeq) return cachedWarm.content;
   return isWarmCacheStaleBySeq(thread_id, cachedBoundarySeq, currentBoundarySeq, scope, cachedSourceMessages)
@@ -173,6 +186,7 @@ export async function buildHistoryWindow(
 ): Promise<ResolvedHistoryWindow> {
   const hotTurnLimit = agentCfg.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT;
   const configuredLimit = agentCfg.history_limit ?? 50;
+  const warmMessageLimit = warmSummaryMessageLimit(agentCfg.warm_summary_limit);
   const limit = configuredLimit > 0 && hotTurnLimit > 0
     ? Math.max(configuredLimit, hotTurnLimit * 2)
     : configuredLimit;
@@ -258,6 +272,11 @@ export async function buildHistoryWindow(
         ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, 0));
         continue;
       }
+      if (warmMessageLimit === 0) {
+        warmSummaryCtx = "";
+        ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, 0));
+        continue;
+      }
       const hotForSlice = hotMessages ?? (hotTurnLimit > 0
         ? takeRecentTurnsWithinBudget(allWindowMessages, budget.tierBudgets.hot, hotTurnLimit)
         : takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot));
@@ -272,6 +291,7 @@ export async function buildHistoryWindow(
         scope,
         cached?.warm_summary_before_seq ?? null,
         boundaryKeySeq,
+        warmMessageLimit,
       );
       if (cacheResult !== null) {
         // Boundary-stable or small-slide turn: don't pay the summariser tax again.
@@ -285,9 +305,14 @@ export async function buildHistoryWindow(
         // exactly the leak ADR-0044 exists to close. Pass hotCount=0 since
         // the boundary filter has already excluded the hot portion.
         const chatSourceMessages = multiChannel
-          ? allWindowMessages.filter((m) => m.category == null && (boundaryKeySeq === null || m.seq < boundaryKeySeq))
-          : allWindowMessages;
-        const chatHotCount = multiChannel ? 0 : hotForSlice.length;
+          ? takeRecentWarmMessages(
+              allWindowMessages.filter((m) => m.category == null && (boundaryKeySeq === null || m.seq < boundaryKeySeq)),
+              warmMessageLimit,
+            )
+          : takeRecentWarmMessages(
+              allWindowMessages.slice(0, Math.max(0, allWindowMessages.length - hotForSlice.length)),
+              warmMessageLimit,
+            );
         // Race the summariser against a wall-clock budget so a slow or hung
         // provider call cannot permanently stall the chat session. On
         // timeout we fall back to no warm summary — the hot-message truncate
@@ -295,7 +320,7 @@ export async function buildHistoryWindow(
         warmSummaryCtx = await raceWithBudget(
           buildWarmSummary(
             chatSourceMessages,
-            chatHotCount,
+            0,
             modelInfo.providerName,
             modelInfo.modelId,
             providerParams,

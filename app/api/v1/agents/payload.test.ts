@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toCreateAgentInput, toUpdateAgentInput } from "./payload";
+import { toCreateAgentInput, toUpdateAgentInput, WarmSummaryLimitSchema } from "./payload";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 
 const baseRow: AgentConfigRow = {
@@ -13,6 +13,7 @@ const baseRow: AgentConfigRow = {
   is_default: 0,
   history_limit: 50,
   history_window_hours: 8,
+  warm_summary_limit: 50,
   never_reply: 0,
   adaptive_persona_enabled: 0,
   adaptive_persona_strength: 50,
@@ -41,6 +42,18 @@ const baseRow: AgentConfigRow = {
 };
 
 describe("agent payload mapping", () => {
+  it("accepts only nonnegative integer warm summary limits", () => {
+    expect(WarmSummaryLimitSchema.safeParse(0).success).toBe(true);
+    expect(WarmSummaryLimitSchema.safeParse(128).success).toBe(true);
+    expect(WarmSummaryLimitSchema.safeParse(-1).success).toBe(false);
+    expect(WarmSummaryLimitSchema.safeParse(1.5).success).toBe(false);
+  });
+
+  it("passes warm_summary_limit through create and update payloads", () => {
+    expect(toCreateAgentInput("agent-1", { name: "Agent One", warm_summary_limit: 0 }).warm_summary_limit).toBe(0);
+    expect(toUpdateAgentInput("agent-1", { warm_summary_limit: 128 }, baseRow).warm_summary_limit).toBe(128);
+  });
+
   it("passes router fields through on create", () => {
     const out = toCreateAgentInput("agent-1", {
       name: " Agent One ",

@@ -80,6 +80,7 @@ export const readAgentConfigTool = tool(
       history_limit: cfg.history_limit,
       history_window_hours: cfg.history_window_hours,
       hot_turn_limit: cfg.hot_turn_limit,
+      warm_summary_limit: cfg.warm_summary_limit,
       never_reply: cfg.never_reply === 1,
       harness_id: cfg.harness_id,
       delegate_targets: parseDelegateTargets(cfg.delegate_targets),
@@ -157,6 +158,7 @@ export const updateAgentInstructionTool = tool(
         model_config_name: cfg.model_config_name,
         history_limit: cfg.history_limit,
         history_window_hours: cfg.history_window_hours,
+        warm_summary_limit: cfg.warm_summary_limit,
         harness_id: cfg.harness_id,
       });
     }

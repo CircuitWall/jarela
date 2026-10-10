@@ -64,5 +64,6 @@ It's the only option that decouples re-reading from context cost. Users scroll f
 ## Implementation notes
 
 * Initial persistence used four nullable `threads` columns (`hot_since`, `warm_summary`, `warm_summary_before`, `warm_summary_computed_at`) for the single chat summary. ADR-0044 added per-channel summaries; ADR-0096 made exact `seq` cursors authoritative. See those ADRs for the current schema and migration behavior.
+* The warm summary is a rolling window of `warm_summary_limit` messages (default 50) immediately before the topic-aligned hot boundary. Older transcript remains available through message embedding recall instead of being carried forward in an ever-growing summary.
 * API: `POST /threads/:id/run` carries `hot_since_seq`; `PATCH /threads/:id/context-pin` accepts the exact seq and lets the UI move the boundary without sending a turn.
 * Cross-references: ADR-0039 (history-window decomposition), ADR-0008 (run command/query split), and ADR-0096 (seq-only cursor and warm-context service).

@@ -111,7 +111,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   // they're handled below by gating the inline ToolList / ThinkingLine.
   const visibleMessages = useMemo(() => {
     return messages.filter((m) => {
-      if (m.transcript_status === "in_progress" && (streaming || !!streamingContent)) return false;
+      if (m.role === "assistant" && m.transcript_status === "in_progress" && (streaming || !!streamingContent)) return false;
       const cat = m.category;
       if (!cat) return true;
       if (cat === "scheduled_task") return filters.scheduled_task;

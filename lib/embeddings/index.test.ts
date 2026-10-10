@@ -456,6 +456,27 @@ describe("message embedding queue", () => {
     });
   });
 
+  it("does not recall a queued in-progress user message before its turn starts", async () => {
+    const { addMessage, createThread, updateMessageContent } = await import("@/lib/stores/threads");
+    const { searchMemory } = await import("./index");
+    const thread = createThread("pending-message-recall");
+    const message = addMessage(
+      thread.thread_id,
+      "user",
+      "pending-only-queue-needle",
+      undefined,
+      null,
+      null,
+      "in_progress",
+    );
+
+    expect(await searchMemory("pending-only-queue-needle", { sources: "messages", literal: true })).toEqual([]);
+
+    updateMessageContent(message.msg_id, message.content, { transcriptStatus: "completed" });
+    expect(await searchMemory("pending-only-queue-needle", { sources: "messages", literal: true }))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ content: message.content })]));
+  });
+
   it("does not repopulate the message cache when deletion wins an in-flight embedding", async () => {
     const { addMessage, createThread, deleteThread } = await import("@/lib/stores/threads");
     const { processMessageEmbeddingJobs, searchMemory } = await import("./index");

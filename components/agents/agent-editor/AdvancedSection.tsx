@@ -64,7 +64,7 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
       <Divider />
       <div className="space-y-2">
         <p className="text-[11px] text-fg-subtle leading-snug font-medium">Conversation history</p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <HistoryNumberField
             id="hot-turn-limit"
             label="Hot turns"
@@ -73,19 +73,25 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
           />
           <HistoryNumberField
             id="history-limit"
-            label="History messages"
+            label="Raw history"
             value={form.historyLimit}
             onChange={form.setHistoryLimit}
           />
           <HistoryNumberField
             id="history-window-hours"
-            label="Window hours"
+            label="Max age (hours)"
             value={form.historyWindowHours}
             onChange={form.setHistoryWindowHours}
           />
+          <HistoryNumberField
+            id="warm-summary-limit"
+            label="Warm messages"
+            value={form.warmSummaryLimit}
+            onChange={form.setWarmSummaryLimit}
+          />
         </div>
         <p className="text-[10px] text-fg-faint leading-snug">
-          Hot turns controls recent verbatim context. History messages limits the raw rows available for compaction; window hours limits their age. Set History messages or Window hours to 0 for unlimited.
+          Hot turns caps recent verbatim turns (0 = token budget only). Raw history caps rows considered for context; 0 removes that count cap. Max age limits row age; 0 removes that age cap. Warm messages sets the recent recap size (default 50); 0 disables warm summaries. Older messages can be retrieved through embeddings when recall is enabled.
         </p>
       </div>
       <Divider />

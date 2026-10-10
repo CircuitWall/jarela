@@ -19,6 +19,7 @@ export interface AgentConfig {
   history_limit: number;
   history_window_hours: number;
   hot_turn_limit: number;
+  warm_summary_limit: number;
   never_reply: boolean;
   adaptive_persona_enabled: boolean;
   adaptive_persona_strength: number;
@@ -111,6 +112,7 @@ export interface AgentConfigIn {
   history_limit?: number;
   history_window_hours?: number;
   hot_turn_limit?: number;
+  warm_summary_limit?: number;
   never_reply?: boolean;
   adaptive_persona_enabled?: boolean;
   adaptive_persona_strength?: number;
@@ -1238,7 +1240,7 @@ export interface HarnessPatch {
 export type SSEEventType =
   | { type: "text_delta"; delta: string }
   | { type: "thinking_delta"; delta: string }
-  | { type: "status"; phase: "starting" | "preparing" | "thinking"; label: string }
+  | { type: "status"; phase: "starting" | "preparing" | "compacting" | "thinking"; label: string }
   | { type: "tool_call"; id: string; name: string; arguments: Record<string, unknown> }
   | { type: "tool_result"; id: string; name: string; result: unknown }
   // Zero or more of these can arrive between a call's "tool_call" and

@@ -10,10 +10,10 @@ import { registeredCapability } from "@/lib/tools/runtime/registry";
 import { spillAttachments } from "@/lib/attachments/spill";
 import { fileReferenceFromContentPart, isFileReferenceMetadata, type AttachmentHandlingMetadata, type FileReferenceMetadata } from "@/lib/attachments/reference";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
-import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
+import { kickBoundaryCompaction, kickWarmSummaryRefresh } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
-import { addMessage, capToolEventPayload, getMessagesPage, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, capToolEventPayload, countThreadMessagesFromSeq, getMessagesPage, pruneThreadMessages, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -29,6 +29,7 @@ import {
   buildSurroundingsContext,
   buildConversationGapContext,
   resolveExperienceMode,
+  warmSummaryMessageLimit,
   type ThreadRunRequest,
 } from "@/lib/agents/prepare";
 import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores/message-usage";
@@ -161,16 +162,31 @@ function hotTurnBoundary(
   return boundary?.seq ?? null;
 }
 
-async function maybeAutoCompactOversizedThread(agentId: string, threadId: string, messageCount: number): Promise<void> {
+async function maybeAutoCompactOversizedThread(
+  agentId: string,
+  threadId: string,
+  messageCount: number,
+  onCompacting?: () => void,
+  preserveNewestMessages = 0,
+): Promise<void> {
   const cap = getConfig().maxThreadMessages;
   const keepLast = autoCompactionKeepLast(cap);
+  const retainedMessages = keepLast + preserveNewestMessages;
   const triggerAt = cap + (cap - keepLast);
   if (!Number.isFinite(cap) || cap <= 0 || messageCount < triggerAt) return;
   try {
-    const result = await compactAgentThread(agentId, keepLast);
+    // A pin that already keeps the hot tier within the retained range must not
+    // be pulled back to the cutoff, nor re-summarised by an LLM on every turn.
+    const pinSeq = getThread(threadId)?.hot_since_seq ?? null;
+    if (pinSeq !== null && countThreadMessagesFromSeq(threadId, pinSeq) <= retainedMessages) {
+      pruneThreadMessages(threadId, retainedMessages, pinSeq);
+      return;
+    }
+    onCompacting?.();
+    const result = await compactAgentThread(agentId, retainedMessages);
     if (result.compacted) {
       console.info(
-        `[thread-compaction:auto] thread=${threadId} messages=${messageCount} keep_last=${keepLast} pruned=${result.pruned}`,
+        `[thread-compaction:auto] thread=${threadId} messages=${messageCount} keep_last=${retainedMessages} pruned=${result.pruned}`,
       );
     }
   } catch (err) {
@@ -188,6 +204,12 @@ function conversationIdleMs(
   return Number.isFinite(lastMs) ? Date.now() - lastMs : null;
 }
 
+function hasPendingQueuedUserMessage(thread_id: string): boolean {
+  return getMessagesPage(thread_id, 64).messages.some(
+    (message) => message.role === "user" && message.transcript_status === "in_progress",
+  );
+}
+
 export class RunThreadError extends Error {
   status: number;
   code: string;
@@ -197,6 +219,65 @@ export class RunThreadError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+export interface PersistedThreadRunUserMessage {
+  attachments?: ContentPart[];
+  messageCountBefore: number;
+  idleMsBefore: number | null;
+  userMessageId: string;
+  storedContent: string;
+}
+
+export async function persistThreadRunUserMessage(
+  req: Pick<ThreadRunRequest,
+    "thread_id" | "message" | "attachments" | "user_category" | "message_metadata"
+    | "history_bridge_key" | "context_profile" | "_onTranscriptUserPersisted">,
+): Promise<PersistedThreadRunUserMessage> {
+  const thread = getThread(req.thread_id);
+  if (!thread) throw new RunThreadError(404, "Thread not found", "thread_not_found");
+
+  const trimmed = req.message.trim();
+  if (!trimmed && !req.attachments?.length) {
+    throw new RunThreadError(400, "message required", "message_required");
+  }
+
+  const messageCountBefore = thread.message_count;
+  const autoBoundaryScope = req.context_profile?.history_scope
+    ?? (req.user_category === "bridge" ? "bridge" : "foreground");
+  const idleMsBefore = isAutoBoundaryEligibleCategory(req.user_category)
+    ? conversationIdleMs(req.thread_id, autoBoundaryScope, req.history_bridge_key ?? undefined)
+    : null;
+  const spilledAttachments = req.attachments?.length
+    ? await spillAttachments(req.attachments)
+    : undefined;
+  const content: string | ContentPart[] = spilledAttachments?.length
+    ? [{ type: "text", text: trimmed }, ...spilledAttachments]
+    : trimmed;
+  const stored = typeof content === "string" ? content : JSON.stringify(content);
+
+  const userMessage = withDbTransaction(() => {
+    const insertedUserMessage = addMessage(
+      req.thread_id,
+      "user",
+      stored,
+      undefined,
+      req.user_category ?? null,
+      req.message_metadata ?? null,
+      "in_progress",
+    );
+    touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+    req._onTranscriptUserPersisted?.();
+    return insertedUserMessage;
+  });
+
+  return {
+    attachments: spilledAttachments,
+    messageCountBefore,
+    idleMsBefore,
+    userMessageId: userMessage.msg_id,
+    storedContent: stored,
+  };
 }
 
 // Hard cap on how long we wait for the embedding-based recall pass before
@@ -351,8 +432,8 @@ export function appendHistoryMessage(
 }
 
 /**
- * Per-turn entry point. Validates the request, persists the user message,
- * builds the history window + system prompt, kicks off the LLM stream, and
+ * Per-turn entry point. Validates the request, persists the user message if
+ * admission has not already done so, builds context, and starts the LLM stream
  * wraps the result in `stallRetryStream` so flagged turns can auto-retry.
  *
  * The 7-positional-arg version was refactored into the `ThreadRunRequest`
@@ -381,8 +462,18 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   let toolPermissionMap = baseToolPermissionMap;
   let allowedTools = requestedAllowedTools;
 
-  if (!req._skip_persist_message && isAutoBoundaryEligibleCategory(req.user_category)) {
-    await maybeAutoCompactOversizedThread(agentCfg.id, req.thread_id, thread.message_count);
+  if (
+    !req._skip_persist_message
+    && isAutoBoundaryEligibleCategory(req.user_category)
+    && !hasPendingQueuedUserMessage(req.thread_id)
+  ) {
+    await maybeAutoCompactOversizedThread(
+      agentCfg.id,
+      req.thread_id,
+      req._message_count_before_user ?? thread.message_count,
+      req._onCompacting,
+      req._user_message_persisted ? 2 : 0,
+    );
   }
 
   // Persist the user turn (including any attachments) before the LLM stream
@@ -407,23 +498,29 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const autoBoundaryScope = req.context_profile?.history_scope
     ?? (req.user_category === "bridge" ? "bridge" : "foreground");
   // Measured before the new user row lands, otherwise the gap is always ~0.
-  const idleMsBeforeTurn = !req._skip_persist_message && isAutoBoundaryEligibleCategory(req.user_category)
-    ? conversationIdleMs(req.thread_id, autoBoundaryScope, req.history_bridge_key ?? undefined)
-    : null;
+  const idleMsBeforeTurn = req._skip_persist_message
+    ? null
+    : req._idle_ms_before_user !== undefined
+      ? req._idle_ms_before_user
+      : isAutoBoundaryEligibleCategory(req.user_category)
+        ? conversationIdleMs(req.thread_id, autoBoundaryScope, req.history_bridge_key ?? undefined)
+        : null;
 
   if (!req._skip_persist_message) {
-    withDbTransaction(() => {
-      addMessage(
-        req.thread_id,
-        "user",
-        stored,
-        undefined,
-        req.user_category ?? null,
-        req.message_metadata ?? null,
-      );
-      touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
-      req._onTranscriptUserPersisted?.();
-    });
+    if (!req._user_message_persisted) {
+      withDbTransaction(() => {
+        addMessage(
+          req.thread_id,
+          "user",
+          stored,
+          undefined,
+          req.user_category ?? null,
+          req.message_metadata ?? null,
+        );
+        touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+        req._onTranscriptUserPersisted?.();
+      });
+    }
 
     // Once the configured hot-turn count is exceeded, prepare a topic-aware
     // warm summary in the background. The boundary is committed only after
@@ -432,6 +529,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       req.hot_since_seq === undefined
       && isAutoBoundaryEligibleCategory(req.user_category)
       && autoBoundaryScope === "foreground"
+      && !hasPendingQueuedUserMessage(req.thread_id)
     ) {
       const latestThread = getThread(req.thread_id);
       const locked = !!latestThread
@@ -639,6 +737,15 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   if (requestedHotSinceDiffers) {
     if (req.hot_since_seq === null) moveThreadContextBoundary(req.thread_id, null);
     else if (typeof req.hot_since_seq === "number") kickBoundaryCompaction(req.thread_id, req.hot_since_seq);
+  }
+  const currentThread = getThread(req.thread_id);
+  if (
+    currentThread?.hot_since_seq
+    && currentThread.warm_summary
+    && (currentThread.warm_summary_source_messages == null
+      || currentThread.warm_summary_source_messages > warmSummaryMessageLimit(agentCfg.warm_summary_limit))
+  ) {
+    kickWarmSummaryRefresh(req.thread_id);
   }
   const historyWindow = await buildHistoryWindow(
     req.thread_id,

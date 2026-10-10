@@ -115,6 +115,31 @@ function chatHangs() {
   });
 }
 
+describe("warm summary message limit", () => {
+  it("defaults to 50 but honors configured values, including zero", async () => {
+    const { warmSummaryMessageLimit } = await import("./history-window");
+    expect(warmSummaryMessageLimit(4)).toBe(4);
+    expect(warmSummaryMessageLimit(1_000)).toBe(1_000);
+    expect(warmSummaryMessageLimit(0)).toBe(0);
+    expect(warmSummaryMessageLimit()).toBe(50);
+  });
+
+  it("does not generate a warm recap when the configured limit is zero", async () => {
+    const thread_id = seedWarmThread();
+    chatSpy.mockClear();
+    const result = await buildHistoryWindow(
+      thread_id,
+      agentCfg({ warm_summary_limit: 0 }),
+      providerParams,
+      "next question",
+      modelInfo,
+    );
+
+    expect(result.warmSummaryCtx).toBe("");
+    expect(chatSpy).not.toHaveBeenCalled();
+  });
+});
+
 function seedWarmThread(): string {
   const t = createThread("test-agent", "warm-cache");
   // ~4000 chars per message ≈ 1000 tokens. 8 messages ≈ 8k tokens, which
@@ -454,6 +479,36 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(result.warmSummaryCtx).toContain("CACHED-RECAP");
     expect(result.warmSummaryCtx).not.toContain("REBUILD-RECAP");
     expect(chatSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects a legacy oversized warm summary even when its boundary exactly matches", async () => {
+    const thread_id = seedWarmThread();
+    const stamped = await reseedMessageTimestamps(thread_id, "2026-10-01T00:00:00.000Z");
+    const boundary = stamped[1];
+    setThreadContextPin(thread_id, boundary.created_at, boundary.seq);
+    setThreadWarmSummary(
+      thread_id,
+      wrapWarmSummary("OVERSIZED-OLD-RECAP", "all"),
+      boundary.created_at,
+      1_000,
+      undefined,
+      undefined,
+      boundary.seq,
+    );
+
+    chatReturns("BOUNDED-RECAP");
+    const result = await buildHistoryWindow(
+      thread_id,
+      agentCfg({ history_limit: 4 }),
+      providerParams,
+      "next question",
+      modelInfo,
+      boundary.created_at,
+      { hotSinceSeq: boundary.seq },
+    );
+
+    expect(result.warmSummaryCtx).not.toContain("OVERSIZED-OLD-RECAP");
+    expect(result.warmSummaryCtx).toContain("BOUNDED-RECAP");
   });
 
   it("rebuilds the warm summary when the boundary slid past the near-miss tolerance", async () => {

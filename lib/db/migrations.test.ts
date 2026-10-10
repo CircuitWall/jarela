@@ -17,6 +17,25 @@ const { listCredentials, getCredentialParams } = await import("@/lib/stores/cred
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
+
+describe("warm summary limit migration", () => {
+  it("adds the default limit to existing agents", async () => {
+    const db = getDb();
+    const id = `warm-limit-${randomUUID()}`;
+    const timestamp = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO agent_configs (id, name, identity, instructions, tools, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+    ).run(id, "Warm limit migration", "", "", "[]", timestamp, timestamp);
+
+    db.exec("ALTER TABLE agent_configs DROP COLUMN warm_summary_limit");
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    const row = db.prepare("SELECT warm_summary_limit FROM agent_configs WHERE id=?").get(id) as { warm_summary_limit: number };
+    expect(row.warm_summary_limit).toBe(50);
+  });
+});
+
 describe("backfillMailSendTools", () => {
   it("adds send tools to existing agents that already have draft tools", async () => {
     const db = getDb();

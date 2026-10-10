@@ -27,6 +27,7 @@ export interface AgentConfigRow {
   history_limit: number;        // 0 = unlimited
   history_window_hours: number; // 0 = no time bound
   hot_turn_limit?: number;      // 0 = token budget only
+  warm_summary_limit: number;   // 0 = disable warm summaries
   never_reply: number;          // 1 = run the agent but don't auto-send replies via bridges
   adaptive_persona_enabled: number;  // 1 = use runtime mood/tone adaptation hints
   adaptive_persona_strength: number; // 0..100, how strongly to adapt to cues
@@ -149,6 +150,7 @@ export interface UpsertAgentInput {
   history_limit?: number;
   history_window_hours?: number;
   hot_turn_limit?: number;
+  warm_summary_limit?: number;
   never_reply?: boolean;
   adaptive_persona_enabled?: boolean;
   adaptive_persona_strength?: number;
@@ -323,10 +325,14 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
       : input.usage_strategy !== null && VALID_USAGE_STRATEGIES.has(input.usage_strategy)
         ? input.usage_strategy
         : null;
+  const requestedWarmSummaryLimit = input.warm_summary_limit ?? existing?.warm_summary_limit ?? 50;
+  const warmSummaryLimit = Number.isFinite(requestedWarmSummaryLimit)
+    ? Math.max(0, Math.floor(requestedWarmSummaryLimit))
+    : existing?.warm_summary_limit ?? 50;
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
-         history_limit, history_window_hours, never_reply,
+         history_limit, history_window_hours, warm_summary_limit, never_reply,
          hot_turn_limit,
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
@@ -334,7 +340,7 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
          anti_hallucination_mode, anti_hallucination_model_config, citation_strictness,
         tool_credentials, router_policy, router_enabled, usage_strategy,
          created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -347,6 +353,7 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
       input.is_default ? 1 : (existing?.is_default ?? 0),
       input.history_limit ?? existing?.history_limit ?? 50,
       input.history_window_hours ?? existing?.history_window_hours ?? 8,
+      warmSummaryLimit,
       // never_reply is a boolean toggle — explicit `undefined` means "keep existing"
       // (important for PATCH-style updates that omit the field).
       input.never_reply === undefined

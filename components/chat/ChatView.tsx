@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ContentPart } from "@/api/types";
 import { useSSE } from "@/hooks/useSSE";
@@ -10,7 +10,7 @@ import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { AuthErrorBanner } from "./AuthErrorBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
-import { makeQueuedId, parseWarmSummaryTopics } from "./chat-helpers";
+import { applyThreadMeta, makeQueuedId, parseWarmSummaryTopics } from "./chat-helpers";
 import { useChatErrorReporting } from "./useChatErrorReporting";
 import { useChatQueue, type ChatQueueApi } from "./useChatQueue";
 import { useThreadCrossDeviceSync } from "./useThreadCrossDeviceSync";
@@ -89,6 +89,22 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
 
   const streamingRef = useRef(false);
   streamingRef.current = sse.streaming;
+
+  // Auto compaction starts server-side during a run; poll so the banner shows live.
+  useEffect(() => {
+    if (!threadId || !sse.streaming) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void api.threads.get(threadId, { limit: 1 }).then((d) => {
+        if (!cancelled) applyThreadMeta(thread.metaApplier, d);
+      }).catch(() => { /* best-effort */ });
+    }, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, sse.streaming]);
 
   useThreadCrossDeviceSync({
     threadId,

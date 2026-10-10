@@ -38,10 +38,10 @@ vi.mock("@/lib/embeddings", () => ({
   resetMessageEmbedCache: () => {},
 }));
 
-const { prepareThreadRun } = await import("./run-thread");
+const { persistThreadRunUserMessage, prepareThreadRun } = await import("./run-thread");
 const { upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
-const { addMessage, createThread, getMessages, getThread, setThreadContextPin } = await import("@/lib/stores/threads");
+const { addMessage, createThread, getMessages, getThread, setThreadContextPin, updateMessageContent } = await import("@/lib/stores/threads");
 const { getDb } = await import("@/lib/db");
 
 afterAll(() => {
@@ -130,9 +130,13 @@ describe("prepareThreadRun auto context boundary", () => {
       history_window_hours: 0,
     });
     const thread = createThread("agent-transcript-order");
+    for (let i = 0; i < 4; i += 1) {
+      addMessage(thread.thread_id, "user", `older question ${i}`);
+      addMessage(thread.thread_id, "assistant", `older answer ${i}`);
+    }
     let hookSawUserRow = false;
 
-    await prepareThreadRun({
+    const persisted = await persistThreadRunUserMessage({
       thread_id: thread.thread_id,
       message: "Persist this before the assistant draft.",
       context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
@@ -143,6 +147,19 @@ describe("prepareThreadRun auto context boundary", () => {
       },
     });
 
+    expect(getMessages(thread.thread_id).find((row) => row.msg_id === persisted.userMessageId)?.transcript_status)
+      .toBe("in_progress");
+    updateMessageContent(persisted.userMessageId, persisted.storedContent, { transcriptStatus: "completed" });
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Persist this before the assistant draft.",
+      _user_message_persisted: true,
+      _message_count_before_user: persisted.messageCountBefore,
+      _idle_ms_before_user: persisted.idleMsBefore,
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+
     const rows = getMessages(thread.thread_id);
     expect(hookSawUserRow).toBe(true);
     expect(rows.slice(-2).map((row) => [row.role, row.transcript_status])).toEqual([
@@ -150,6 +167,37 @@ describe("prepareThreadRun auto context boundary", () => {
       ["assistant", "in_progress"],
     ]);
     expect(rows.at(-1)!.seq).toBeGreaterThan(rows.at(-2)!.seq);
+    expect(JSON.stringify(streamWithConfigMock.mock.calls.at(-1)?.[1]))
+      .toContain("Persist this before the assistant draft.");
+  });
+
+  it("keeps a later queued user prompt out of the active turn's history", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-queued-context",
+      name: "Queued Context",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 0,
+    });
+    const thread = createThread("agent-queued-context");
+    addMessage(thread.thread_id, "user", "active prompt");
+    addMessage(thread.thread_id, "assistant", "", null, null, null, "in_progress");
+    addMessage(thread.thread_id, "user", "later queued prompt", undefined, null, null, "in_progress");
+    addMessage(thread.thread_id, "assistant", "", null, null, null, "in_progress");
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "active prompt",
+      _user_message_persisted: true,
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    const history = streamWithConfigMock.mock.calls.at(-1)?.[1];
+
+    expect(JSON.stringify(history)).toContain("active prompt");
+    expect(JSON.stringify(history)).not.toContain("later queued prompt");
   });
 
   it("hints the agent to ask when the thread was idle for 3h or more", async () => {

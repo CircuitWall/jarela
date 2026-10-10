@@ -13,6 +13,7 @@ import type { StreamOptions, StreamChunk } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import {
   prepareThreadRun,
+  persistThreadRunUserMessage,
   persistAssistantMessage,
   withInterruptMarker,
   RunThreadError,
@@ -104,7 +105,8 @@ const RunBody = z.object({
 
 // POST is the *command* half of the run lifecycle (ADR-0008). It accepts the
 // new user message, registers a run in the in-memory registry, kicks the
-// agent loop off in a detached async task, and returns 202 immediately. The
+// agent loop off in a detached async task, and returns 202 after the user
+// transcript is durable. The
 // caller must follow up with a GET on this same path (as an `EventSource`)
 // to subscribe to the chunk stream — see GET below.
 //
@@ -134,11 +136,23 @@ export async function POST(req: NextRequest, { params }: Params) {
   // If the queue is already at the soft cap, reject with 503 so the
   // caller can back off rather than pin yet more work in memory.
   const thread = getThread(thread_id);
+  if (!thread) {
+    return NextResponse.json({ error: "Thread not found", code: "thread_not_found" }, { status: 404 });
+  }
   const pinnedModelConfigName = snapshotThreadModelConfigName(thread_id);
+  const contextProfile = resolveTurnProfile("user");
   const enqueuedAt = Date.now();
   let position: number;
+  let releaseAdmission!: (persisted: boolean) => void;
+  const admission = new Promise<boolean>((resolve) => { releaseAdmission = resolve; });
+  let persistedTurn: Awaited<ReturnType<typeof persistThreadRunUserMessage>> | null = null;
+  const assistantDraftState: { current: AssistantTranscriptDraft | null } = { current: null };
   try {
     ({ position } = enqueueThreadRun(thread_id, "user", async () => {
+      if (!(await admission)) return;
+      const admittedTurn = persistedTurn;
+      if (!admittedTurn) return;
+
       // startRun is called once it's our turn so the registry only ever
       // holds one active entry per thread at a time. Subscribers that
       // attach via GET before our turn comes will see no run yet and the
@@ -153,24 +167,30 @@ export async function POST(req: NextRequest, { params }: Params) {
       let ttftMs: number | null = null;
       let streamDurationMs = 0;
       const toolsUsed = new Set<string>();
-      const assistantDraftState: { current: AssistantTranscriptDraft | null } = { current: null };
       let prepared;
       try {
+        const activatedUserMessage = updateMessageContent(
+          admittedTurn.userMessageId,
+          admittedTurn.storedContent,
+          { transcriptStatus: "completed" },
+        );
+        if (!activatedUserMessage) throw new Error("Submitted user message no longer exists");
         broadcast(active, { type: "status", data: { phase: "preparing", label: "Preparing context…" } });
         const prepStartedAt = Date.now();
         prepared = await prepareThreadRun({
           thread_id,
           message,
           options: stream_options,
-          attachments,
+          attachments: admittedTurn.attachments,
           signal: active.abort.signal,
           hot_since_seq,
           channels,
-          context_profile: resolveTurnProfile("user"),
+          context_profile: contextProfile,
           _pinned_model_config_name: pinnedModelConfigName,
-          _onTranscriptUserPersisted: () => {
-            assistantDraftState.current = createAssistantTranscriptDraft(thread_id);
-          },
+          _onCompacting: () => broadcast(active, { type: "status", data: { phase: "compacting", label: "Compacting earlier messages…" } }),
+          _user_message_persisted: true,
+          _message_count_before_user: admittedTurn.messageCountBefore,
+          _idle_ms_before_user: admittedTurn.idleMsBefore,
         });
         prepDurationMs = Date.now() - prepStartedAt;
       } catch (err) {
@@ -433,6 +453,29 @@ export async function POST(req: NextRequest, { params }: Params) {
       );
     }
     throw err;
+  }
+
+  try {
+    persistedTurn = await persistThreadRunUserMessage({
+      thread_id,
+      message,
+      attachments,
+      context_profile: contextProfile,
+      _onTranscriptUserPersisted: () => {
+        assistantDraftState.current = createAssistantTranscriptDraft(thread_id);
+      },
+    });
+    releaseAdmission(true);
+  } catch (err) {
+    releaseAdmission(false);
+    if (err instanceof RunThreadError) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    }
+    console.error("[run] failed to persist submitted user message", err);
+    return NextResponse.json(
+      { error: "Failed to persist submitted user message", code: "transcript_persist_failed" },
+      { status: 500 },
+    );
   }
 
   return new Response(

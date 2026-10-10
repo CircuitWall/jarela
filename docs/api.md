@@ -71,8 +71,9 @@ Drop the thread, its messages, and its checkpoint state.
 
 ### `POST /api/v1/threads/[thread_id]/run`
 
-Submit a run. Returns immediately with the run id; output is streamed via
-the GET on the same path.
+Submit a run. Returns `202 { accepted, thread_id, queue_position }` after the
+user message and assistant draft are committed; output is streamed via the GET
+on the same path.
 
 ### `GET /api/v1/threads/[thread_id]/run`
 
@@ -107,6 +108,9 @@ List configured agents.
 Upsert an agent config. The full schema (identity, instructions, tools,
 model_config_name, harness_id, delegation, etc.) lives in
 [`lib/stores/agent-configs.ts`](../lib/stores/agent-configs.ts).
+`warm_summary_limit` controls recent summarized context (default 50 messages;
+0 disables warm summaries) independently from `history_limit`'s raw history
+cap.
 `usage_strategy` may be `cost_saving`, `balanced`, or `high_reasoning`; pass
 `null` to inherit the global `JARELA_USAGE_STRATEGY` setting.
 

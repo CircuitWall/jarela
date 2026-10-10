@@ -15,13 +15,14 @@ import {
 import { agentToResponse } from "@/lib/api/serializers";
 import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
 import type { AgentConfigIn } from "@/api/types";
-import { toCreateAgentInput } from "./payload";
+import { toCreateAgentInput, WarmSummaryLimitSchema } from "./payload";
 
 // Permissive schema: only enforce that `name` is a non-empty string at the
 // boundary. The payload handler does field-by-field coercion for the rest,
 // so additional unknown fields pass through unchanged via `.loose()`.
 const CreateBody = z.looseObject({
   name: z.string().trim().min(1, "name is required"),
+  warm_summary_limit: WarmSummaryLimitSchema,
 });
 
 export function GET() {

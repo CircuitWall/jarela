@@ -34,6 +34,33 @@ const seedAgent = (id: string) =>
     tools: [],
   });
 
+describe("warm summary limit", () => {
+  it("defaults to 50 and persists custom values including zero", () => {
+    const created = seedAgent("warm-summary-default");
+    expect(created.warm_summary_limit).toBe(50);
+
+    const updated = upsertAgentConfig({
+      id: created.id,
+      name: created.name,
+      identity: created.identity,
+      instructions: created.instructions,
+      tools: [],
+      warm_summary_limit: 0,
+    });
+    expect(updated.warm_summary_limit).toBe(0);
+
+    const custom = upsertAgentConfig({
+      id: created.id,
+      name: created.name,
+      identity: created.identity,
+      instructions: created.instructions,
+      tools: [],
+      warm_summary_limit: 1_000,
+    });
+    expect(custom.warm_summary_limit).toBe(1_000);
+  });
+});
+
 describe("agent display filters (ADR-0022)", () => {
   beforeEach(() => {
     seedAgent("filter-test");
