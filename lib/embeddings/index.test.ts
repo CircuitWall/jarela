@@ -442,7 +442,9 @@ describe("message embedding queue", () => {
     const thread = createThread("message-queue-short-automation");
     embedSpy.mockImplementation(async (_model: string, texts: string[]) => texts.map(() => [0.4, 0.6]));
 
-    const message = addMessage(thread.thread_id, "assistant", "ok", null, "watcher", { automation_activity: true });
+    const message = addMessage(thread.thread_id, "assistant", "ok", null, "watcher", {
+      automation_activity: { state: "complete" },
+    });
     await vi.waitFor(() => {
       expect(getDb().prepare("SELECT state FROM message_embedding_jobs WHERE message_id=?").get(message.msg_id)).toEqual({ state: "done" });
     });

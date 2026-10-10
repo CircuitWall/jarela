@@ -47,6 +47,20 @@ interrupted, failed, and recovered output is persisted in transcript order,
 with a durable status and a user-safe reason when applicable. Hard-crash
 recovery must be driven by durable run state, not a `finally` block alone.
 
+Persisted rows use `transcript_status` (`in_progress`, `completed`,
+`interrupted`, or `failed`) and an optional safe `status_reason`. For an
+interactive run, insert the user row and its assistant draft in one transaction;
+the draft receives the next `seq`. Commit each visible text update and tool
+call/result event before broadcasting it to the UI. A `reset_text` event
+replaces the draft text. Finalization updates that same row with its final text,
+events, metadata, and terminal status. On startup, leftover `in_progress` rows
+become `interrupted` and are queued for embedding.
+
+Only finalized searchable text is embedded. User submissions and captures are
+final immediately; assistant drafts wait for a terminal transition, and
+automation activity waits until its state is complete. Status fields and
+failure reasons stay structured and are not part of embedding input.
+
 After a transcript commit, the existing process may schedule per-thread
 maintenance. The transcript item limit is configurable with a default of 2,000
 and remains independent of LLM context message/token caps. Before active rows

@@ -97,6 +97,51 @@ describe("MessageBubble image attachments", () => {
   });
 });
 
+describe("MessageBubble transcript status", () => {
+  it("shows the persisted interruption reason below the partial reply", () => {
+    render(
+      <AppProvider>
+        <MessageBubble
+          message={{
+            id: "assistant-interrupted",
+            role: "assistant",
+            content: "The partial response",
+            created_at: "2026-08-15T12:00:00.000Z",
+            transcript_status: "interrupted",
+            status_reason: "Stopped by user.",
+          }}
+          showAvatar={false}
+        />
+      </AppProvider>,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain("Response interrupted");
+    expect(screen.getByRole("status").textContent).toContain("Stopped by user.");
+  });
+
+  it("shows a safe status reason for a failed run with no response text", () => {
+    render(
+      <AppProvider>
+        <MessageBubble
+          message={{
+            id: "assistant-failed",
+            role: "assistant",
+            content: "",
+            created_at: "2026-08-15T12:00:00.000Z",
+            category: "run_error",
+            transcript_status: "failed",
+            status_reason: "The response could not be prepared.",
+          }}
+          showAvatar={false}
+        />
+      </AppProvider>,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain("Run failed");
+    expect(screen.getByRole("status").textContent).toContain("The response could not be prepared.");
+  });
+});
+
 describe("MessageBubble local file links", () => {
   it("renders a local markdown link as an inline snippet instead of a localhost anchor", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({

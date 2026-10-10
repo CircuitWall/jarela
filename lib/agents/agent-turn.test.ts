@@ -9,6 +9,8 @@ const startRunMock = vi.fn();
 const finishRunMock = vi.fn();
 const broadcastMock = vi.fn();
 const getThreadMock = vi.fn();
+const addMessageMock = vi.fn();
+const updateMessageContentMock = vi.fn();
 
 vi.mock("@/lib/agents/run-queue", () => ({
   enqueueThreadRun: (...args: unknown[]) => enqueueThreadRunMock(...args),
@@ -36,6 +38,12 @@ vi.mock("@/lib/agents/run-registry", () => ({
 
 vi.mock("@/lib/stores/threads", () => ({
   getThread: (...args: unknown[]) => getThreadMock(...args),
+  addMessage: (...args: unknown[]) => addMessageMock(...args),
+  appendMessageDraft: () => true,
+  appendMessageDraftToolEvent: () => true,
+  replaceMessageDraft: () => true,
+  updateMessageContent: (...args: unknown[]) => updateMessageContentMock(...args),
+  capToolEventPayload: (event: unknown) => event,
 }));
 
 const { runAgentTurn } = await import("./agent-turn");
@@ -51,6 +59,8 @@ describe("runAgentTurn", () => {
     finishRunMock.mockReset();
     broadcastMock.mockReset();
     getThreadMock.mockReset();
+    addMessageMock.mockReset();
+    updateMessageContentMock.mockReset();
 
     enqueueThreadRunMock.mockImplementation((thread_id: string, _source: string, runner: () => Promise<unknown>) => ({
       position: 0,
@@ -70,6 +80,11 @@ describe("runAgentTurn", () => {
       abort: new AbortController(),
     }));
     getThreadMock.mockReturnValue({ thread_id: "t-1", agent_id: "agent-x" });
+    addMessageMock.mockImplementation((_threadId: string, _role: string, content: string) => ({
+      msg_id: "assistant-draft",
+      seq: 2,
+      content,
+    }));
   });
 
   it("queues, prepares, collects, and persists by default", async () => {
@@ -256,8 +271,10 @@ describe("runAgentTurn", () => {
     expect(persistedContent).toContain("Interrupted by user");
   });
 
-  it("throws generic terminal stream errors without persisting partial output", async () => {
-    collectStreamMock.mockResolvedValue({
+  it("preserves partial output as a failed transcript row before propagating stream errors", async () => {
+    collectStreamMock.mockImplementation(async (_stream: unknown, options: { onChunk?: (chunk: unknown) => void }) => {
+      options.onChunk?.({ type: "text_delta", data: { delta: "Partial reply that must not escape" } });
+      return {
       assistantContent: "Partial reply that must not escape",
       usedTools: [],
       toolEvents: [],
@@ -266,6 +283,7 @@ describe("runAgentTurn", () => {
       errorMessage: "Provider connection failed",
       errorCode: "provider_error",
       errorProvider: "example",
+      };
     });
 
     await expect(runAgentTurn({
@@ -279,7 +297,10 @@ describe("runAgentTurn", () => {
       provider: "example",
     });
 
-    expect(persistAssistantMessageMock).not.toHaveBeenCalled();
+    expect(updateMessageContentMock).toHaveBeenCalledWith("assistant-draft", "Partial reply that must not escape", expect.objectContaining({
+      transcriptStatus: "failed",
+      statusReason: "The response could not be completed.",
+    }));
     expect(finishRunMock).toHaveBeenCalledWith(expect.anything(), "error");
   });
 

@@ -23,7 +23,7 @@ import { broadcast, finishRun, startRun, subscribe, abortRun, pushSteering, drai
 import { runAgentTurn } from "@/lib/agents/agent-turn";
 import { enqueueThreadRun, QueueFullError, getQueueDepth } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
-import { getThread, getThreadMessageBySeq, addMessage } from "@/lib/stores/threads";
+import { getThread, getThreadMessageBySeq, addMessage, updateMessageContent } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { sseResponse } from "@/lib/api/sse";
 import { validateBody } from "@/lib/api/responses";
@@ -32,6 +32,8 @@ import type { RouteDecisionMetadata } from "@/api/types";
 import { finalizeRouteDecision } from "@/lib/agents/model-router";
 import { getConfig } from "@/lib/env/config";
 import { parseToolResultReferenceEnvelope } from "@/lib/tools/support/result-refs";
+import { safeTranscriptFailureReason } from "@/api/message-content";
+import { createAssistantTranscriptDraft, persistAssistantDraftChunk, type AssistantTranscriptDraft } from "@/lib/agents/transcript-draft";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -79,7 +81,7 @@ function persistRunErrorMarker(thread_id: string, src: RunErrorSource): void {
   if (src.errorProvider) metadata.provider = src.errorProvider;
   if (src.routeDecision) metadata.routing = src.routeDecision;
   try {
-    addMessage(thread_id, "assistant", truncated, null, "run_error", metadata);
+    addMessage(thread_id, "assistant", truncated, null, "run_error", metadata, "failed", safeTranscriptFailureReason(src.errorCode));
   } catch (err) {
     console.error("[run] failed to persist run_error marker", err);
   }
@@ -154,6 +156,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       let ttftMs: number | null = null;
       let streamDurationMs = 0;
       const toolsUsed = new Set<string>();
+      const assistantDraftState: { current: AssistantTranscriptDraft | null } = { current: null };
       let prepared;
       try {
         broadcast(active, { type: "status", data: { phase: "preparing", label: "Preparing context…" } });
@@ -168,6 +171,9 @@ export async function POST(req: NextRequest, { params }: Params) {
           channels,
           context_profile: resolveTurnProfile("user"),
           _pinned_model_config_name: pinnedModelConfigName,
+          _onTranscriptUserPersisted: () => {
+            assistantDraftState.current = createAssistantTranscriptDraft(thread_id);
+          },
         });
         prepDurationMs = Date.now() - prepStartedAt;
       } catch (err) {
@@ -179,6 +185,16 @@ export async function POST(req: NextRequest, { params }: Params) {
         const message_ = err instanceof RunThreadError ? err.message : String(err);
         const code = err instanceof RunThreadError ? err.code : "run_prepare_error";
         broadcast(active, { type: "error", data: { message: message_, code } });
+        const draft = assistantDraftState.current;
+        if (draft) {
+          updateMessageContent(draft.msg_id, draft.visibleContent, {
+            category: "run_error",
+            transcriptStatus: "failed",
+            statusReason: safeTranscriptFailureReason(code),
+          });
+        } else {
+          persistRunErrorMarker(thread_id, { errorMessage: message_, errorCode: code });
+        }
         finishRun(active, "error");
         return;
       }
@@ -217,6 +233,8 @@ export async function POST(req: NextRequest, { params }: Params) {
                 : "";
               if (toolName) toolsUsed.add(toolName);
             }
+            const draft = assistantDraftState.current;
+            if (draft) persistAssistantDraftChunk(draft, chunk);
             broadcast(active, chunk);
           },
         });
@@ -264,7 +282,33 @@ export async function POST(req: NextRequest, { params }: Params) {
           const contentToPersist = collected.aborted
             ? withInterruptMarker(collected.assistantContent)
             : collected.assistantContent;
-          persistAssistantMessage(thread_id, contentToPersist, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null, routeDecision, prepared.memory_recall ? { memory_recall: prepared.memory_recall } : null, collected.terminal === "done" && !collected.aborted ? prepared.signal_delivery : undefined);
+          const noResponse = collected.terminal === "done"
+            && !collected.aborted
+            && !contentToPersist.trim()
+            && !collected.toolEvents.length
+            && !prepared.signal_delivery?.signals.length;
+          const transcriptStatus = collected.aborted
+            ? "interrupted"
+            : collected.terminal === "done" && !noResponse ? "completed" : "failed";
+          const statusReason = transcriptStatus === "interrupted"
+            ? "Stopped by user."
+            : noResponse ? "The model completed without producing a response."
+            : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null;
+          const draft = assistantDraftState.current;
+          persistAssistantMessage(
+            thread_id,
+            contentToPersist,
+            collected.usedTools,
+            collected.toolEvents,
+            null,
+            collected.usage ?? null,
+            prepared.context_snapshot ?? null,
+            prepared.source_manifest ?? null,
+            routeDecision,
+            prepared.memory_recall ? { memory_recall: prepared.memory_recall } : null,
+            collected.terminal === "done" && !collected.aborted ? prepared.signal_delivery : undefined,
+            draft ? { draftMessageId: draft.msg_id, transcriptStatus, statusReason } : undefined,
+          );
           // If the turn failed AND persistAssistantMessage skipped writing
           // a row (no content + no tool events + not aborted), persist a
           // synthetic `run_error` marker so the failure survives reload
@@ -276,6 +320,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             && !collected.aborted
             && !collected.assistantContent.trim()
             && (!collected.toolEvents || collected.toolEvents.length === 0)
+            && !assistantDraftState.current
           ) {
             persistRunErrorMarker(thread_id, { ...collected, routeDecision });
           }
@@ -298,6 +343,14 @@ export async function POST(req: NextRequest, { params }: Params) {
           }
         } catch (persistErr) {
           terminal = "error";
+          const draft = assistantDraftState.current;
+          if (draft
+            && getThreadMessageBySeq(thread_id, draft.seq)?.transcript_status === "in_progress") {
+            updateMessageContent(draft.msg_id, draft.visibleContent, {
+              transcriptStatus: "failed",
+              statusReason: safeTranscriptFailureReason("persist_error"),
+            });
+          }
           broadcast(active, {
             type: "error",
             data: { message: `persist failed: ${(persistErr as Error).message}`, code: "persist_error" },
@@ -313,7 +366,17 @@ export async function POST(req: NextRequest, { params }: Params) {
         // Same marker semantics as above but for the outer crash path — the
         // stream threw before collectStream could emit an error chunk.
         try {
-          persistRunErrorMarker(thread_id, { errorMessage: errMsg, errorCode: "run_crashed", routeDecision: prepared.route_decision ?? null });
+          const draft = assistantDraftState.current;
+          if (draft
+            && getThreadMessageBySeq(thread_id, draft.seq)?.transcript_status === "in_progress") {
+            updateMessageContent(draft.msg_id, draft.visibleContent, {
+              category: draft.visibleContent ? null : "run_error",
+              transcriptStatus: "failed",
+              statusReason: safeTranscriptFailureReason("run_crashed"),
+            });
+          } else if (!draft) {
+            persistRunErrorMarker(thread_id, { errorMessage: errMsg, errorCode: "run_crashed", routeDecision: prepared.route_decision ?? null });
+          }
         } catch (persistErr) {
           console.error("[run] failed to persist run_error marker", persistErr);
         }

@@ -42,6 +42,23 @@ function installPointerCapture(button: HTMLButtonElement) {
 }
 
 describe("MessageList conversation focus", () => {
+  it("uses the live stream bubble instead of duplicating a persisted draft", () => {
+    const draft: Message = {
+      id: "draft-1",
+      role: "assistant",
+      content: "persisted partial",
+      created_at: "2026-08-09T10:00:00.000Z",
+      transcript_status: "in_progress",
+    };
+    const { rerender } = render(
+      <MessageList threadId="thread-draft" messages={[draft]} streaming streamingContent="live partial" />,
+    );
+
+    expect(screen.queryByText("persisted partial")).toBeNull();
+    rerender(<MessageList threadId="thread-draft" messages={[draft]} />);
+    expect(screen.getByText("persisted partial")).toBeTruthy();
+  });
+
   it("shows a fast scroll-to-latest button when scrolled away from bottom", () => {
     const messages = [
       mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),

@@ -441,3 +441,44 @@ describe("message embedding jobs migration", () => {
     expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining(["model_signature", "attempted_signature"]));
   });
 });
+
+describe("message transcript status migration", () => {
+  it("adds completed defaults to legacy messages and reruns idempotently", async () => {
+    const db = getDb();
+    const timestamp = new Date().toISOString();
+    const messageId = "transcript-status-migration-test";
+    db.prepare(
+      "INSERT OR REPLACE INTO messages (msg_id,thread_id,role,content,created_at) VALUES (?,?,?,?,?)",
+    ).run(messageId, "transcript-status-thread", "assistant", "legacy response", timestamp);
+    db.exec("ALTER TABLE messages DROP COLUMN status_reason; ALTER TABLE messages DROP COLUMN transcript_status;");
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+    runMigrations(db);
+
+    expect(db.prepare("SELECT transcript_status, status_reason FROM messages WHERE msg_id=?").get(messageId)).toEqual({
+      transcript_status: "completed",
+      status_reason: null,
+    });
+  });
+});
+
+describe("message transcript status migration", () => {
+  it("adds completed defaults to legacy message rows and is idempotent", async () => {
+    const db = getDb();
+    const timestamp = new Date().toISOString();
+    db.prepare(
+      "INSERT OR REPLACE INTO messages (msg_id,thread_id,role,content,created_at) VALUES (?,?,?,?,?)",
+    ).run("transcript-status-migration-test", "transcript-status-thread", "assistant", "legacy response", timestamp);
+    db.exec("ALTER TABLE messages DROP COLUMN status_reason; ALTER TABLE messages DROP COLUMN transcript_status;");
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+    runMigrations(db);
+
+    const row = db.prepare(
+      "SELECT transcript_status, status_reason FROM messages WHERE msg_id='transcript-status-migration-test'",
+    ).get();
+    expect(row).toEqual({ transcript_status: "completed", status_reason: null });
+  });
+});

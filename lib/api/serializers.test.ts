@@ -196,6 +196,8 @@ function makeMessageRow(overrides: Partial<MessageRow> = {}): MessageRow {
     role: "assistant",
     content: "hello",
     created_at: "2026-05-30T00:00:00Z",
+    transcript_status: "completed",
+    status_reason: null,
     tool_events: null,
     category: null,
     metadata: null,
@@ -304,6 +306,15 @@ describe("messageToResponse", () => {
     expect(out.role).toBe("assistant");
     expect(out.usage?.hot_tokens).toBe(700);
     expect(out.usage?.context_window_tokens).toBe(100_000);
+    expect(out.transcript_status).toBe("completed");
+    expect(out.status_reason).toBeNull();
+  });
+
+  it("preserves interrupted and failed transcript states", () => {
+    const interrupted = messageToResponse(makeMessageRow({ transcript_status: "interrupted", status_reason: "Stopped by user." }), new Map());
+    const failed = messageToResponse(makeMessageRow({ transcript_status: "failed", status_reason: "The provider stream ended unexpectedly." }), new Map());
+    expect(interrupted).toMatchObject({ transcript_status: "interrupted", status_reason: "Stopped by user." });
+    expect(failed).toMatchObject({ transcript_status: "failed", status_reason: "The provider stream ended unexpectedly." });
   });
 
   it("sets usage=null for messages with no snapshot (user turns)", () => {

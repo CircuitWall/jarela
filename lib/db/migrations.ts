@@ -27,7 +27,9 @@ export function runMigrations(db: DatabaseSync): void {
       thread_id  TEXT NOT NULL,
       role       TEXT NOT NULL,
       content    TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      transcript_status TEXT NOT NULL DEFAULT 'completed',
+      status_reason TEXT
     );
     -- thread_id is the dominant filter on every messages query
     -- (getMessages, getRecentMessagesWindow, getMessagesPage, clear).
@@ -451,6 +453,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureThreadsAgentIdUnique(db);
   ensureMessagesCategoryColumn(db);
   ensureMessagesMetadataColumn(db);
+  ensureMessageTranscriptStatusColumns(db);
   ensureScheduledTasksSilentColumn(db);
   ensureAgentDisplayFiltersColumn(db);
   ensureDocumentSourceRemoteColumns(db);
@@ -757,6 +760,17 @@ function ensureMessagesMetadataColumn(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "metadata")) {
     db.exec("ALTER TABLE messages ADD COLUMN metadata TEXT");
+  }
+}
+
+function ensureMessageTranscriptStatusColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((column) => column.name));
+  if (!names.has("transcript_status")) {
+    db.exec("ALTER TABLE messages ADD COLUMN transcript_status TEXT NOT NULL DEFAULT 'completed'");
+  }
+  if (!names.has("status_reason")) {
+    db.exec("ALTER TABLE messages ADD COLUMN status_reason TEXT");
   }
 }
 

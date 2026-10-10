@@ -12,6 +12,9 @@ const { runMigrations } = await import("@/lib/db/migrations");
 
 const {
   addMessage,
+  appendMessageDraft,
+  appendMessageDraftToolEvent,
+  recoverAbandonedMessageDrafts,
   updateMessageContent,
   createThread,
   listThreadsByAgent,
@@ -238,6 +241,42 @@ describe("addMessage embedding scheduling (issue: image attachments break embedd
 
     expect(getDb().prepare("SELECT embedding FROM messages WHERE msg_id=?").get(message.msg_id)).toEqual({ embedding: null });
     expect(getDb().prepare("SELECT source_hash FROM message_embedding_jobs WHERE message_id=?").get(message.msg_id)).not.toEqual(previousHash);
+  });
+
+  it("defers embeddings until a transcript draft is finalized", () => {
+    const t = createThread("agent-draft-embedding");
+    const draft = addMessage(t.thread_id, "assistant", "", null, null, null, "in_progress");
+    expect(appendMessageDraft(draft.msg_id, "Visible partial")).toBe(true);
+    expect(appendMessageDraftToolEvent(draft.msg_id, {
+      id: "call-1",
+      phase: "call",
+      name: "web_search",
+      payload: { query: "status" },
+    })).toBe(true);
+    expect(getDb().prepare("SELECT message_id FROM message_embedding_jobs WHERE message_id=?").get(draft.msg_id)).toBeUndefined();
+    expect(getMessages(t.thread_id)[0].tool_events).toContain('"name":"web_search"');
+
+    const finalized = updateMessageContent(draft.msg_id, "Visible partial reply", {
+      transcriptStatus: "completed",
+    });
+
+    expect(finalized).toMatchObject({ msg_id: draft.msg_id, transcript_status: "completed", status_reason: null });
+    expect(getThread(t.thread_id)?.message_count).toBe(1);
+    expect(getDb().prepare("SELECT source_hash FROM message_embedding_jobs WHERE message_id=?").get(draft.msg_id)).toBeDefined();
+  });
+
+  it("recovers abandoned drafts as interrupted transcript entries", () => {
+    const t = createThread("agent-draft-recovery");
+    const draft = addMessage(t.thread_id, "assistant", "", null, null, null, "in_progress");
+    appendMessageDraft(draft.msg_id, "Saved partial response");
+
+    expect(recoverAbandonedMessageDrafts()).toBe(1);
+    expect(getMessages(t.thread_id)[0]).toMatchObject({
+      content: "Saved partial response",
+      transcript_status: "interrupted",
+      status_reason: "The server restarted before this response completed.",
+    });
+    expect(getDb().prepare("SELECT source_hash FROM message_embedding_jobs WHERE message_id=?").get(draft.msg_id)).toBeDefined();
   });
 });
 
@@ -510,6 +549,15 @@ describe("getRecentMessagesWindow (ADR-0069)", () => {
     expect(getMessages(t.thread_id)).toHaveLength(4);
     const window = getRecentMessagesWindow(t.thread_id, 100);
     expect(window.map((m) => m.content)).toEqual(["hi", "hi back", "again"]);
+  });
+
+  it("keeps an in-progress assistant draft out of model history while retaining it in the transcript", () => {
+    const t = createThread("agent-draft-history");
+    addMessage(t.thread_id, "user", "question");
+    addMessage(t.thread_id, "assistant", "partial answer", null, null, null, "in_progress");
+
+    expect(getMessages(t.thread_id)).toHaveLength(2);
+    expect(getRecentMessagesWindow(t.thread_id, 100).map((message) => message.content)).toEqual(["question"]);
   });
 });
 
