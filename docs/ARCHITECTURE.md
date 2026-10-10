@@ -149,6 +149,11 @@ flowchart LR
     B --> HR[Harness Resolver<br/>lib/agents/harness]
     HR --> K
     B --> PR[Prepare<br/>lib/agents/prepare<br/>system prompt + history window]
+    G0 --> WC[Warm Context Coordinator<br/>lib/agents/context-boundary<br/>+ warm-summary-background]
+    B --> WC
+    WC --> C
+    WC --> TS[Thread Store<br/>lib/stores/threads]
+    TS --> J
     SG[System signal outbox and delivery leases<br/>lib/stores/system-signals] --> PR
     G --> SG
     SC --> SG
@@ -211,6 +216,7 @@ sequenceDiagram
     participant G as Origin Guard
     participant ATT as /api/v1/attachments
     participant API as /api/v1/threads/:id/run
+    participant THREAD as /api/v1/threads/:id
     participant PIN as /api/v1/threads/:id/context-pin
     participant AG as Agent Runtime
     participant DB as SQLite
@@ -218,13 +224,29 @@ sequenceDiagram
 
     U->>UI: drags context boundary line
     UI->>PIN: PATCH { hot_since_seq } (ADR-0096)
-    PIN->>DB: validate seq belongs to thread; read source timestamp
-    PIN->>AG: prepare chat + channel summaries for seq
-    AG->>LLM: summarize warm rows per channel
-    LLM-->>AG: channel summaries
-    AG->>DB: atomically commit hot_since_seq + matching summaries
-    PIN-->>UI: committed cursor or pending cursor
-    Note over UI: Divider and Locate target the source seq id
+    PIN->>DB: validate seq belongs to thread
+    alt clear pin
+      PIN->>DB: clear hot_since_seq immediately
+      PIN-->>UI: cleared committed state
+    else move pin
+      PIN->>AG: enqueue background boundary compaction
+      PIN-->>UI: committed state + pending_hot_since_seq
+      AG->>AG: optionally align to a nearby topic start
+      AG->>DB: read chat and automation rows before boundary
+      AG->>LLM: build chat + automation summaries
+      LLM-->>AG: summaries
+      AG->>DB: compare-and-set transaction writes cursor + coverage
+      alt summary or commit fails
+        Note over AG,DB: Do not publish this candidate; retain current committed state
+      else compaction commits
+        DB-->>AG: committed hot_since_seq
+      end
+    end
+    loop while a cursor is pending
+      UI->>THREAD: GET /threads/:id
+      THREAD-->>UI: committed state + pending_hot_since_seq
+    end
+    Note over UI: Divider and Locate target the committed source seq
 
     U->>UI: types message + adds attachments
     opt image / binary file attachment
@@ -232,20 +254,25 @@ sequenceDiagram
       ATT->>DB: persist metadata in message refs later
       ATT-->>UI: image_ref / file_ref
     end
-    UI->>G: POST /threads/:id/run (submit, hot_since_seq)
+    UI->>G: POST /threads/:id/run (message, hot_since_seq?, channels?)
     G->>G: check Origin / Sec-Fetch-Site
     G->>API: forward if same-origin
-    API->>AG: startRun + invoke(threadId, msg, hot_since_seq)
+    API->>API: enqueue per-thread run
+    API-->>UI: 202 Accepted + queue position
+    API->>AG: startRun when the thread slot is available
+    opt non-null requested cursor differs from committed cursor
+      AG->>AG: schedule compaction; use committed cursor for this turn
+    end
     AG->>DB: load checkpoint + thread.hot_since_seq
-    AG->>DB: buildHistoryWindow selects rowid >= hot_since_seq
+    AG->>DB: select candidate rows where rowid >= committed hot_since_seq
+    Note over AG,DB: Message, hot-turn, and token budgets may narrow eligible rows
     AG->>ATT: materialize refs for the newest turn only (ADR-0090)
     Note over AG: Older image_ref/file_ref in the window become a<br/>placeholder; model calls view_attachment to re-read one
-    opt warm_summary_before_seq ≠ hot_since_seq
+    opt no matching chat summary for the effective boundary
       AG->>LLM: build bounded ephemeral chat fallback if needed
       LLM-->>AG: summary for this prompt
-      Note over AG: Durable channel summaries are committed by the boundary coordinator
+      Note over AG: Automation summaries are included only on an exact coverage-seq match
     end
-    API-->>UI: 202 Accepted
     UI->>API: GET /threads/:id/run (EventSource subscribe)
     AG->>LLM: stream completion
     LLM-->>AG: tokens
@@ -253,7 +280,8 @@ sequenceDiagram
     API-->>UI: SSE: text_delta / tool_call / done
     UI-->>U: render
     AG->>DB: save checkpoint
-    UI->>API: GET /threads/:id (refetch incl. warm_summary)
+    UI->>THREAD: GET /threads/:id (refetch incl. warm_summary)
+    THREAD-->>UI: committed summary metadata
     UI-->>U: warm summary card hydrates
 ```
 
