@@ -5,8 +5,12 @@ import { MessageList } from "./MessageList";
 import type { Message } from "@/api/types";
 
 vi.mock("./MessageBubble", () => ({
-  MessageBubble: ({ message }: { message: Pick<Message, "content"> }) => (
-    <div>{message.content}</div>
+  MessageBubble: ({ message, attachedActivity, showAvatar }: {
+    message: Pick<Message, "content">;
+    attachedActivity?: { source_kind: string };
+    showAvatar?: boolean;
+  }) => (
+    <div data-activity-kind={attachedActivity?.source_kind} data-show-avatar={String(showAvatar)}>{message.content}</div>
   ),
 }));
 
@@ -16,6 +20,25 @@ vi.mock("./ToolList", () => ({
 
 function mkMessage(id: string, role: "user" | "assistant", content: string, created_at: string): Message {
   return { id, role, content, created_at, seq: Number(id.replace(/\D/g, "")), status: "confirmed" };
+}
+
+function mkActivity(sourceKind: "bridge" | "scheduled_task" | "watcher", sourceId: string): Message {
+  const message = mkMessage(`activity-${sourceKind}`, "assistant", "activity", "2026-08-09T10:00:00.000Z");
+  message.category = sourceKind;
+  message.metadata = {
+    automation_activity: {
+      version: 1,
+      source_kind: sourceKind,
+      source_id: sourceId,
+      label: "Automated check",
+      state: "complete",
+      disposition: "action",
+      occurrence_count: 1,
+      first_at: "2026-08-09T10:00:00.000Z",
+      last_at: "2026-08-09T10:00:00.000Z",
+    },
+  };
+  return message;
 }
 
 function setRect(el: Element, top: number, height = 24) {
@@ -42,6 +65,61 @@ function installPointerCapture(button: HTMLButtonElement) {
 }
 
 describe("MessageList conversation focus", () => {
+  it.each([
+    ["bridge", "bridge-1:chat-1", "user", "bridge", { bridge_conversation: { key: "bridge-1:chat-1" } }],
+    ["scheduled_task", "task-1", "assistant", "scheduled_task", undefined],
+    ["watcher", "watcher-1", "assistant", "watcher", undefined],
+  ] as const)("attaches %s activity to its related message", (sourceKind, sourceId, role, category, metadata) => {
+    const activity = mkActivity(sourceKind, sourceId);
+    const related = mkMessage("m2", role, "related message", "2026-08-09T10:00:01.000Z");
+    related.category = category;
+    related.metadata = metadata;
+
+    const { container } = render(<MessageList threadId="thread-1" messages={[activity, related]} />);
+
+    expect(container.querySelectorAll("[data-activity-kind]")).toHaveLength(1);
+    expect(container.querySelector("[data-activity-kind]")?.getAttribute("data-activity-kind")).toBe(sourceKind);
+    expect(container.querySelector("[data-activity-kind]")?.getAttribute("data-show-avatar")).toBe("true");
+    expect(screen.queryByText("activity")).toBeNull();
+  });
+
+  it("keeps the context boundary when it targets an activity attached to a message", () => {
+    const activity = mkActivity("watcher", "watcher-1");
+    activity.seq = 1;
+    const related = mkMessage("m2", "assistant", "watcher result", "2026-08-09T10:00:01.000Z");
+    related.seq = 2;
+    related.category = "watcher";
+
+    const { container } = render(
+      <MessageList threadId="thread-1" messages={[activity, related]} hotSinceSeq={1} />,
+    );
+
+    const boundary = container.querySelector("[data-focus-boundary='1']");
+    const relatedMessage = container.querySelector('[data-message-id="m2"]');
+    expect(boundary).toBeTruthy();
+    expect(relatedMessage).toBeTruthy();
+    expect(boundary!.compareDocumentPosition(relatedMessage!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("does not pair consecutive activity records with each other", () => {
+    const firstActivity = mkActivity("watcher", "watcher-1");
+    firstActivity.id = "activity-watcher-1";
+    firstActivity.seq = 1;
+    const nextActivity = mkActivity("watcher", "watcher-2");
+    nextActivity.id = "activity-watcher-2";
+    nextActivity.seq = 2;
+    const related = mkMessage("m3", "assistant", "watcher result", "2026-08-09T10:00:02.000Z");
+    related.seq = 3;
+    related.category = "watcher";
+
+    const { container } = render(
+      <MessageList threadId="thread-1" messages={[firstActivity, nextActivity, related]} />,
+    );
+
+    expect(screen.getAllByText("activity")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-activity-kind='watcher']")).toHaveLength(1);
+  });
+
   it("uses the live stream bubble instead of duplicating a persisted draft", () => {
     const draft: Message = {
       id: "draft-1",

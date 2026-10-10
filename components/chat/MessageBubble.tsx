@@ -304,13 +304,17 @@ const AUTOMATION_ACTIVITY_STATUS = {
   complete: { copy: "Complete", cls: "border-border/50 bg-surface-2/60 text-fg-muted" },
 } as const;
 
-function AutomationActivityRow({ activity }: { activity: AutomationActivityMetadata }) {
-  const [open, setOpen] = useState(false);
-  const source = AUTOMATION_ACTIVITY_SOURCE[activity.source_kind];
+function activityStatus(activity: AutomationActivityMetadata) {
   const statusKey = activity.state === "complete"
     ? (activity.disposition ?? "complete")
     : activity.state;
-  const status = AUTOMATION_ACTIVITY_STATUS[statusKey];
+  return AUTOMATION_ACTIVITY_STATUS[statusKey];
+}
+
+function AutomationActivityRow({ activity }: { activity: AutomationActivityMetadata }) {
+  const [open, setOpen] = useState(false);
+  const source = AUTOMATION_ACTIVITY_SOURCE[activity.source_kind];
+  const status = activityStatus(activity);
   const details = [
     activity.detail ? { label: "Detail", value: activity.detail } : null,
     activity.preview ? { label: "Preview", value: activity.preview } : null,
@@ -629,6 +633,7 @@ function reactChildrenToText(children: ReactNode): string {
 
 type Props = {
   message: Message | { role: "assistant"; content: string; streaming?: boolean };
+  attachedActivity?: AutomationActivityMetadata;
   agentConfig?: AgentConfig | null;
   userProfile?: UserProfile | null;
   showAvatar?: boolean;
@@ -826,14 +831,25 @@ function TriggerMessageCard({ data }: { data: TriggerCardData }) {
 // WhatsApp DM looks like "Alice • DM\n<text>" and a group message looks
 // like "Alice in Family Chat • Group\n<text>". Always on the user-bubble
 // (accent) side because bridge messages are persisted with role=user.
-function BridgeMessageCard({ ctx }: { ctx: BridgePromptContext }) {
+function BridgeMessageCard({ ctx, activity }: {
+  ctx: BridgePromptContext;
+  activity?: AutomationActivityMetadata;
+}) {
   const showChat = ctx.isGroup && ctx.chatName && ctx.chatName !== ctx.senderName;
   const title = showChat ? `${ctx.senderName} in ${ctx.chatName}` : ctx.senderName;
   const Icon = ctx.isGroup ? Users : MessageCircle;
   const chips = (
-    <span className="px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0">
-      {ctx.isGroup ? "group" : "dm"}
-    </span>
+    <>
+      <span className="px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0">
+        {ctx.isGroup ? "group" : "dm"}
+      </span>
+      {activity ? (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] shrink-0">
+          {activityStatus(activity).copy}
+          {activity.occurrence_count > 1 ? ` · ${activity.occurrence_count} checks` : ""}
+        </span>
+      ) : null}
+    </>
   );
   const sections: Array<{ label: string; content: ReactNode; defaultOpen?: boolean; hint?: string }> = [
     {
@@ -1727,7 +1743,7 @@ function messageTextForCopy(content: string | ContentPart[]): string {
 // reconciliations per character. Props are pure data (no callbacks), and
 // `messages` array preserves identity for unchanged rows after the
 // `concat` in handleDone, so default shallow-equality is enough.
-export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null, isLatest = false, onRetry }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, attachedActivity, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null, isLatest = false, onRetry }: Props) {
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
@@ -2066,13 +2082,33 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             isUser ? "glass-bubble-accent text-white rounded-br-sm" : "glass-bubble text-fg rounded-bl-sm"
           }`}
         >
+          {attachedActivity && !isUser ? (
+            <div className="mb-2 rounded-md border border-border/50 bg-surface-2/50 px-2 py-1.5 text-[11px] text-fg-muted">
+              <div className="flex flex-wrap items-center gap-1.5" role="status">
+                <span className="font-medium">{AUTOMATION_ACTIVITY_SOURCE[attachedActivity.source_kind].label}</span>
+                <span aria-hidden>·</span>
+                <span className="truncate" title={attachedActivity.label}>{attachedActivity.label}</span>
+                <span aria-hidden>·</span>
+                <span>{activityStatus(attachedActivity).copy}</span>
+                {attachedActivity.occurrence_count > 1 ? (
+                  <span className="opacity-70">· {attachedActivity.occurrence_count} checks</span>
+                ) : null}
+              </div>
+              {attachedActivity.detail ? (
+                <details className="mt-1 border-t border-border/40 pt-1">
+                  <summary className="cursor-pointer text-[10px] uppercase tracking-wide text-fg-faint">Trigger</summary>
+                  <div className="mt-1 whitespace-pre-wrap break-words text-fg-muted">{attachedActivity.detail}</div>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
           {typeof parsed === "string" ? (
             isUser ? (
               (() => {
                 const trigger = parseTriggerMessage(category, parsed);
                 if (trigger) return <TriggerMessageCard data={trigger} />;
                 const bridge = parseBridgeContext(parsed);
-                if (bridge) return <BridgeMessageCard ctx={bridge} />;
+                if (bridge) return <BridgeMessageCard ctx={bridge} activity={attachedActivity} />;
                 const ext = parseExtensionTurn(parsed);
                 if (ext) return <ExtensionTurnCard ctx={ext} accent={true} />;
                 const ctx = parseCapturedContext(parsed);
@@ -2106,7 +2142,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 if (bridge) {
                   return (
                     <>
-                      <BridgeMessageCard ctx={bridge} />
+                      <BridgeMessageCard ctx={bridge} activity={attachedActivity} />
                       {parsed.slice(1).map((part, i) => (
                         <ContentPartView key={i + 1} part={part} isUser={isUser} onInAppLink={handleInAppLink} threadId={threadId} />
                       ))}

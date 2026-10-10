@@ -180,6 +180,78 @@ describe("MessageBubble local file links", () => {
 });
 
 describe("MessageBubble automation activity", () => {
+  it("shows bridge listener outcome on the original inbound message card", () => {
+    const message: Message = {
+      id: "bridge-message-1",
+      role: "user",
+      category: "bridge",
+      content: "[bridge:b1]\n[chat_id:chat-1]\n[chat_name:Family]\n[chat_type:group]\n[message_role:counterpart]\n[sender_id:diana]\n[sender_name:Diana]\n\nCompetition invitation",
+      created_at: "2026-08-16T12:34:00.000Z",
+      status: "confirmed",
+      metadata: { bridge_conversation: { key: "b1:chat-1", bridge_id: "b1", chat_id: "chat-1" } },
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble
+          message={message}
+          attachedActivity={{
+            version: 1,
+            source_kind: "bridge",
+            source_id: "b1:chat-1",
+            label: "Message from Diana",
+            state: "complete",
+            disposition: "no_action",
+            occurrence_count: 2,
+            first_at: "2026-08-16T12:00:00.000Z",
+            last_at: "2026-08-16T12:34:00.000Z",
+          }}
+          showAvatar={false}
+        />
+      </AppProvider>,
+    );
+
+    expect(screen.getByText("No action needed · 2 checks")).toBeTruthy();
+    expect(screen.getByText("Competition invitation")).toBeTruthy();
+  });
+
+  it("shows scheduled-task and watcher context inside the related assistant response", () => {
+    const message: Message = {
+      id: "watcher-response-1",
+      role: "assistant",
+      category: "watcher",
+      content: "The watched value changed.",
+      created_at: "2026-08-16T12:34:00.000Z",
+      status: "confirmed",
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble
+          message={message}
+          attachedActivity={{
+            version: 1,
+            source_kind: "watcher",
+            source_id: "watcher-1",
+            label: "Temperature watcher",
+            state: "complete",
+            disposition: "action",
+            occurrence_count: 1,
+            first_at: "2026-08-16T12:00:00.000Z",
+            last_at: "2026-08-16T12:34:00.000Z",
+            detail: "The temperature changed from 18 to 22.",
+          }}
+          showAvatar={false}
+        />
+      </AppProvider>,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain("Action taken");
+    expect(screen.getByText("The watched value changed.")).toBeTruthy();
+    fireEvent.click(screen.getByText("Trigger"));
+    expect(screen.getByText("The temperature changed from 18 to 22.")).toBeTruthy();
+  });
+
   it("renders a centered activity row and expands available details", () => {
     const lastAt = "2026-08-16T12:34:00.000Z";
     const message: Message = {
