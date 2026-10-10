@@ -7,6 +7,16 @@ import {
 import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
 import { CHAT_ARCHIVE_NAMESPACE, parseChatArchiveKey } from "@/lib/stores/chat-archive-key";
+import {
+  claimMessageEmbeddingJobs,
+  completeMessageEmbeddingJob,
+  enqueueMessageEmbeddingJob,
+  failMessageEmbeddingJob,
+  getMessageEmbeddingJob,
+  messageEmbeddingSourceHash,
+  nextMessageEmbeddingDelayMs,
+  skipMessageEmbeddingJob,
+} from "@/lib/stores/message-embedding-jobs";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
 import { createContentCache } from "@/lib/cache/keyed-cache";
@@ -225,6 +235,8 @@ export interface EmbedBestEffortResult {
    * errors, short-response padding, or no provider configured).
    */
   terminal: boolean[];
+  /** Model identity needed to associate durable message vectors with their producer. */
+  modelSignature: string | null;
 }
 
 /**
@@ -238,7 +250,7 @@ export interface EmbedBestEffortResult {
  * row instead of swallowing the error.
  */
 export async function embedBestEffort(texts: string[]): Promise<EmbedBestEffortResult> {
-  if (texts.length === 0) return { vectors: [], error: null, failed: 0, terminal: [] };
+  if (texts.length === 0) return { vectors: [], error: null, failed: 0, terminal: [], modelSignature: null };
   const client = await resolveEmbeddingClient("passage");
   if (!client) {
     // Missing config, not bad content — fixing the config should let these
@@ -248,9 +260,10 @@ export async function embedBestEffort(texts: string[]): Promise<EmbedBestEffortR
       error: "no embedding provider configured",
       failed: texts.length,
       terminal: texts.map(() => false),
+      modelSignature: null,
     };
   }
-  return embedBestEffortInternal(client, texts);
+  return { ...(await embedBestEffortInternal(client, texts)), modelSignature: client.signature };
 }
 
 async function embedBestEffortInternal(
@@ -260,7 +273,7 @@ async function embedBestEffortInternal(
   try {
     const vectors = await callEmbedWithRetry(client, texts);
     if (vectors.length === texts.length) {
-      return { vectors, error: null, failed: 0, terminal: texts.map(() => false) };
+      return { vectors, error: null, failed: 0, terminal: texts.map(() => false), modelSignature: client.signature };
     }
     // Provider returned a short array — pad with nulls so indices line up.
     // Which input the provider dropped is not knowable here, so treat this
@@ -272,12 +285,13 @@ async function embedBestEffortInternal(
       error: `embedding provider returned ${vectors.length}/${texts.length} vectors`,
       failed,
       terminal: padded.map(() => false),
+      modelSignature: client.signature,
     };
   } catch (err) {
     const msg = errorMessage(err);
     if (texts.length === 1) {
       console.warn("[embeddings] failed:", msg);
-      return { vectors: [null], error: msg, failed: 1, terminal: [!isTransient(err)] };
+      return { vectors: [null], error: msg, failed: 1, terminal: [!isTransient(err)], modelSignature: client.signature };
     }
     // Halve and recurse: a single oversized input shouldn't poison its
     // batchmates. The two halves run sequentially because the typical
@@ -290,6 +304,7 @@ async function embedBestEffortInternal(
       error: left.error ?? right.error,
       failed: left.failed + right.failed,
       terminal: [...left.terminal, ...right.terminal],
+      modelSignature: client.signature,
     };
   }
 }
@@ -602,13 +617,88 @@ export interface ReembedStatus {
 const reembedStatus: ReembedStatus = { running: false, total: 0, done: 0, error: null };
 let reembedBlockedUntil = 0;
 let nullScanAt = 0;
-// Rows already rewritten under `reembedDoneSignature`, so a retry after a
-// failure resumes instead of starting over.
-const reembedDone = new Set<string>();
-let reembedDoneSignature: string | null = null;
+// Memory rows already rewritten under this model signature are skipped when
+// a retry resumes after a partial failure.
+const memoryReembedDone = new Set<string>();
+let memoryReembedDoneSignature: string | null = null;
 
 export function getReembedStatus(): ReembedStatus {
   return { ...reembedStatus };
+}
+
+let messageEmbeddingQueuePromise: Promise<number> | null = null;
+let messageEmbeddingRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleMessageEmbeddingRetry(): void {
+  if (messageEmbeddingRetryTimer) clearTimeout(messageEmbeddingRetryTimer);
+  const delayMs = nextMessageEmbeddingDelayMs();
+  if (delayMs === null) return;
+  messageEmbeddingRetryTimer = setTimeout(() => {
+    messageEmbeddingRetryTimer = null;
+    void processMessageEmbeddingJobs().catch((err) => console.warn("[embeddings] message retry failed:", err));
+  }, delayMs);
+  messageEmbeddingRetryTimer.unref?.();
+}
+
+export function processMessageEmbeddingJobs(): Promise<number> {
+  if (messageEmbeddingQueuePromise) return messageEmbeddingQueuePromise;
+  if (messageEmbeddingRetryTimer) clearTimeout(messageEmbeddingRetryTimer);
+  messageEmbeddingRetryTimer = null;
+  const drain = async () => {
+    let completed = 0;
+    while (true) {
+      const jobs = claimMessageEmbeddingJobs();
+      if (jobs.length === 0) {
+        scheduleMessageEmbeddingRetry();
+        break;
+      }
+      const currentJobs = jobs.filter((job) => {
+        if (messageEmbeddingSourceHash(job.content) === job.source_hash) return true;
+        enqueueMessageEmbeddingJob(job.message_id, job.content, true);
+        return false;
+      });
+      const embeddable = currentJobs.filter((job) => extractEmbeddableText(job.content).trim().length > 0);
+      for (const job of currentJobs) {
+        if (!embeddable.includes(job)) skipMessageEmbeddingJob(job);
+      }
+      if (embeddable.length === 0) continue;
+
+      const result = await embedBestEffort(embeddable.map((job) => extractEmbeddableText(job.content)));
+      for (let index = 0; index < embeddable.length; index++) {
+        const job = embeddable[index];
+        const vector = result.vectors[index];
+        if (vector && result.modelSignature) {
+          const message = completeMessageEmbeddingJob(job, vector, result.modelSignature);
+          if (message) {
+            upsertMessageEmbedCache(
+              message.message_id,
+              message.thread_id,
+              message.role,
+              message.content,
+              vector,
+              message.created_at,
+            );
+            completed++;
+          }
+        } else {
+          failMessageEmbeddingJob(
+            job,
+            result.error ?? "embedding failed",
+            result.terminal[index] ?? false,
+            result.modelSignature,
+          );
+        }
+      }
+    }
+    return completed;
+  };
+  messageEmbeddingQueuePromise = drain().catch((err) => {
+    scheduleMessageEmbeddingRetry();
+    throw err;
+  }).finally(() => {
+    messageEmbeddingQueuePromise = null;
+  });
+  return messageEmbeddingQueuePromise;
 }
 
 /** @internal — test-only. */
@@ -619,8 +709,8 @@ export function _resetReembedState(): void {
   reembedStatus.error = null;
   reembedBlockedUntil = 0;
   nullScanAt = 0;
-  reembedDone.clear();
-  reembedDoneSignature = null;
+  memoryReembedDone.clear();
+  memoryReembedDoneSignature = null;
 }
 
 function memoryEmbedText(r: { namespace: string; key: string; value: string }): string {
@@ -631,7 +721,7 @@ function memoryEmbedText(r: { namespace: string; key: string; value: string }): 
   return `${r.namespace}/${r.key}: ${memorySearchText(r.namespace, r.key, parsed)}`;
 }
 
-type MessageRowLike = { msg_id: string; thread_id: string; role: string; content: string; created_at: string };
+type MessageRowLike = { msg_id: string; thread_id: string; role: string; content: string; created_at: string; embedding: number[] };
 
 /**
  * Re-embeds memory and message vectors that don't belong to the active model
@@ -650,18 +740,29 @@ export async function reembedStaleVectors(dim?: number): Promise<void> {
     // First run after upgrade: adopt the current model rather than rewriting everything.
     if (stored === null) setEmbeddingVectorsSignature(signature);
     const changed = stored !== null && stored !== signature;
-    if (reembedDoneSignature !== signature) {
-      reembedDone.clear();
-      reembedDoneSignature = signature;
+    if (memoryReembedDoneSignature !== signature) {
+      memoryReembedDone.clear();
+      memoryReembedDoneSignature = signature;
     }
     const stale = (key: string, vec: number[]) =>
-      !reembedDone.has(key) && (changed || (dim !== undefined && vec.length !== dim));
+      !memoryReembedDone.has(key) && (changed || (dim !== undefined && vec.length !== dim));
     const memTargets: MemoryRowLike[] = [...loadMemEmbedCache().values()]
       .filter((r) => stale(`m\0${r.namespace}\0${r.key}`, r.embedding));
-    const msgTargets: MessageRowLike[] = [...loadMsgEmbedCache().values()]
-      .filter((r) => stale(`g\0${r.msg_id}`, r.embedding));
+    const msgTargets: MessageRowLike[] = [];
+    for (const row of loadMsgEmbedCache().values()) {
+      const job = getMessageEmbeddingJob(row.msg_id);
+      const vectorStale = job?.model_signature !== signature
+        || (dim !== undefined && row.embedding.length !== dim);
+      const alreadyAttempted = job?.attempted_signature === signature
+        && (job.state === "pending" || job.state === "processing" || job.state === "failed");
+      if (vectorStale && !alreadyAttempted) msgTargets.push(row);
+    }
 
     const db = getDb();
+    for (const message of msgTargets) {
+      const current = db.prepare("SELECT content FROM messages WHERE msg_id=?").get(message.msg_id) as { content: string } | undefined;
+      if (current) enqueueMessageEmbeddingJob(message.msg_id, current.content, true, signature);
+    }
     if (Date.now() - nullScanAt >= NULL_SCAN_INTERVAL_MS) {
       nullScanAt = Date.now();
       const skip = NULL_BACKFILL_SKIP_NS.map(() => "?").join(",");
@@ -669,16 +770,9 @@ export async function reembedStaleVectors(dim?: number): Promise<void> {
         `SELECT namespace, key, value, created_at FROM memory_store
           WHERE embedding IS NULL AND namespace NOT IN (${skip}) ORDER BY updated_at DESC LIMIT ?`,
       ).all(...NULL_BACKFILL_SKIP_NS, NULL_BACKFILL_LIMIT) as MemoryRowLike[];
-      const nullMsg = db.prepare(
-        `SELECT msg_id, thread_id, role, content, created_at FROM messages
-          WHERE embedding IS NULL AND length(content) >= 12
-            AND (metadata IS NULL OR metadata NOT LIKE '%automation_activity%')
-          ORDER BY created_at DESC LIMIT ?`,
-      ).all(NULL_BACKFILL_LIMIT) as MessageRowLike[];
-      memTargets.push(...nullMem.filter((r) => !reembedDone.has(`m\0${r.namespace}\0${r.key}`)));
-      msgTargets.push(...nullMsg.filter((r) => extractEmbeddableText(r.content).trim().length >= 12 && !reembedDone.has(`g\0${r.msg_id}`)));
+      memTargets.push(...nullMem.filter((r) => !memoryReembedDone.has(`m\0${r.namespace}\0${r.key}`)));
       // A full page means more may be waiting; scan again on the next call.
-      if (nullMem.length === NULL_BACKFILL_LIMIT || nullMsg.length === NULL_BACKFILL_LIMIT) nullScanAt = 0;
+      if (nullMem.length === NULL_BACKFILL_LIMIT) nullScanAt = 0;
     }
 
     reembedStatus.total = memTargets.length + msgTargets.length;
@@ -693,21 +787,11 @@ export async function reembedStaleVectors(dim?: number): Promise<void> {
         const rows = db.prepare("UPDATE memory_store SET embedding=? WHERE namespace=? AND key=? AND value=?")
           .run(JSON.stringify(vecs[j]), r.namespace, r.key, r.value).changes;
         if (rows > 0) upsertMemoryEmbedCache(r.namespace, r.key, r.value, vecs[j], r.created_at);
-        reembedDone.add(`m\0${r.namespace}\0${r.key}`);
+        memoryReembedDone.add(`m\0${r.namespace}\0${r.key}`);
       });
       reembedStatus.done += batch.length;
     }
-    for (let i = 0; i < msgTargets.length; i += REEMBED_BATCH) {
-      const batch = msgTargets.slice(i, i + REEMBED_BATCH);
-      const vecs = await embed(batch.map((r) => extractEmbeddableText(r.content)));
-      if (!vecs) throw new Error("embedding provider unavailable");
-      batch.forEach((r, j) => {
-        db.prepare("UPDATE messages SET embedding=? WHERE msg_id=?").run(JSON.stringify(vecs[j]), r.msg_id);
-        upsertMessageEmbedCache(r.msg_id, r.thread_id, r.role, r.content, vecs[j], r.created_at);
-        reembedDone.add(`g\0${r.msg_id}`);
-      });
-      reembedStatus.done += batch.length;
-    }
+    reembedStatus.done += Math.min(msgTargets.length, await processMessageEmbeddingJobs());
     if (changed) setEmbeddingVectorsSignature(signature);
   } catch (err) {
     reembedStatus.error = errorMessage(err);

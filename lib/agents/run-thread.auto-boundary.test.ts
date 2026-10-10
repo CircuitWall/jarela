@@ -29,6 +29,7 @@ vi.mock("@/lib/providers", () => ({
 
 vi.mock("@/lib/embeddings", () => ({
   embedOne: async () => null,
+  processMessageEmbeddingJobs: async () => 0,
   cosine: () => 0,
   recall: async () => [],
   upsertMemoryEmbedCache: () => {},

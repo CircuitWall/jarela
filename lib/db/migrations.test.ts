@@ -415,3 +415,29 @@ describe("document_chunks terminal-failure columns migration", () => {
     expect(after.some((c) => c.name === "embed_error")).toBe(true);
   });
 });
+
+describe("message embedding jobs migration", () => {
+  it("creates the durable queue, backfills unembedded messages, and is idempotent", async () => {
+    const db = getDb();
+    const messageId = "embedding-job-migration-test";
+    const timestamp = new Date().toISOString();
+    db.prepare(
+      "INSERT OR REPLACE INTO messages (msg_id,thread_id,role,content,created_at,embedding) VALUES (?,?,?,?,?,NULL)",
+    ).run(messageId, "embedding-job-migration-thread", "user", "migration backfill", timestamp);
+    db.exec("DROP TABLE message_embedding_jobs");
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+    runMigrations(db);
+
+    const job = db.prepare(
+      "SELECT state, source_hash, model_signature, attempted_signature, attempts FROM message_embedding_jobs WHERE message_id=?",
+    ).get(messageId) as { state: string; source_hash: string; model_signature: string | null; attempted_signature: string | null; attempts: number } | undefined;
+    expect(job).toEqual({ state: "pending", source_hash: "", model_signature: null, attempted_signature: null, attempts: 0 });
+
+    db.exec("ALTER TABLE message_embedding_jobs DROP COLUMN model_signature; ALTER TABLE message_embedding_jobs DROP COLUMN attempted_signature;");
+    runMigrations(db);
+    const columns = db.prepare("PRAGMA table_info(message_embedding_jobs)").all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining(["model_signature", "attempted_signature"]));
+  });
+});

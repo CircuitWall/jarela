@@ -68,6 +68,11 @@ export async function bootNode(): Promise<void> {
   const { startSystemSignalLifecycle } = await import("@/lib/lifecycle/system-signals");
   startSystemSignalLifecycle();
 
+  const { processMessageEmbeddingJobs } = await import("@/lib/embeddings");
+  void processMessageEmbeddingJobs().catch((err) =>
+    console.warn("[embeddings] startup message queue failed:", err),
+  );
+
   warnIfExposedBind();
 }
 

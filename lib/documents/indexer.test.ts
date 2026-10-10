@@ -23,6 +23,7 @@ const embedBestEffortSpy = vi.fn(async (texts: string[]) => embedImpl(texts));
 vi.mock("@/lib/embeddings", () => ({
   embed: vi.fn().mockResolvedValue(null),
   embedBestEffort: (texts: string[]) => embedBestEffortSpy(texts),
+  processMessageEmbeddingJobs: vi.fn(async () => 0),
   upsertMemoryEmbedCache: () => {},
   evictMemoryEmbedCache: () => {},
   upsertMessageEmbedCache: () => {},

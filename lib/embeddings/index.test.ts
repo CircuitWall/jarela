@@ -410,13 +410,15 @@ describe("searchMemory", () => {
     expect(storedVector("app-settings", "some_setting")).toBeNull();
   });
 
-  it("embeds chat messages that never had a vector, skipping short and automation rows", async () => {
+  it("embeds every message with searchable text, including short and automation rows", async () => {
     const { reembedStaleVectors } = await import("./index");
+    const { runMigrations } = await import("@/lib/db/migrations");
     const t = new Date().toISOString();
     const insert = getDb().prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,metadata) VALUES (?,?,?,?,?,?)");
     insert.run("m-long", "thread-1", "user", "what did we decide about billing retries", t, null);
     insert.run("m-short", "thread-1", "user", "ok", t, null);
     insert.run("m-auto", "thread-1", "assistant", "scheduled run output that is long enough", t, JSON.stringify({ automation_activity: true }));
+    runMigrations(getDb());
     setLocalEmbeddingsEnabled(true);
     localEmbedSpy.mockImplementation(async (texts: string[]) => texts.map(() => [0.5, 0.5, 0.5]));
 
@@ -424,7 +426,85 @@ describe("searchMemory", () => {
 
     const state = (id: string) => (getDb().prepare("SELECT embedding FROM messages WHERE msg_id=?").get(id) as { embedding: string | null }).embedding;
     expect(state("m-long")).not.toBeNull();
-    expect(state("m-short")).toBeNull();
-    expect(state("m-auto")).toBeNull();
+    expect(state("m-short")).not.toBeNull();
+    expect(state("m-auto")).not.toBeNull();
+  });
+});
+
+describe("message embedding queue", () => {
+  beforeEach(() => {
+    getDb().exec("DELETE FROM message_embedding_jobs; DELETE FROM messages; DELETE FROM threads;");
+    _resetEmbedCaches();
+  });
+
+  it("embeds short automation transcript text through the normal message writer", async () => {
+    const { addMessage, createThread } = await import("@/lib/stores/threads");
+    const thread = createThread("message-queue-short-automation");
+    embedSpy.mockImplementation(async (_model: string, texts: string[]) => texts.map(() => [0.4, 0.6]));
+
+    const message = addMessage(thread.thread_id, "assistant", "ok", null, "watcher", { automation_activity: true });
+    await vi.waitFor(() => {
+      expect(getDb().prepare("SELECT state FROM message_embedding_jobs WHERE message_id=?").get(message.msg_id)).toEqual({ state: "done" });
+    });
+
+    expect(embedSpy).toHaveBeenCalledWith("text-embedding-3-small", ["ok"], {});
+    expect(getDb().prepare("SELECT embedding FROM messages WHERE msg_id=?").get(message.msg_id)).toEqual({ embedding: "[0.4,0.6]" });
+    expect(getDb().prepare("SELECT model_signature FROM message_embedding_jobs WHERE message_id=?").get(message.msg_id)).toEqual({
+      model_signature: "openai:text-embedding-3-small",
+    });
+  });
+
+  it("does not repopulate the message cache when deletion wins an in-flight embedding", async () => {
+    const { addMessage, createThread, deleteThread } = await import("@/lib/stores/threads");
+    const { processMessageEmbeddingJobs, searchMemory } = await import("./index");
+    const thread = createThread("message-queue-delete-race");
+    let finishEmbedding: ((vectors: number[][]) => void) | undefined;
+    embedSpy.mockImplementationOnce(() => new Promise<number[][]>((resolve) => { finishEmbedding = resolve; }));
+    const message = addMessage(thread.thread_id, "user", "text that is being embedded during deletion");
+    await vi.waitFor(() => expect(finishEmbedding).toBeTypeOf("function"));
+
+    deleteThread(thread.thread_id);
+    finishEmbedding?.([[1, 0]]);
+    await processMessageEmbeddingJobs();
+
+    embedSpy.mockImplementation(async (_model: string, texts: string[]) => texts.map(() => [1, 0]));
+    expect(await searchMemory("being embedded during deletion", { sources: "messages" })).toEqual([]);
+    expect(getDb().prepare("SELECT message_id FROM message_embedding_jobs WHERE message_id=?").get(message.msg_id)).toBeUndefined();
+  });
+
+  it("retains stale-vector identity after a terminal failure on a same-dimension model swap", async () => {
+    const {
+      claimMessageEmbeddingJobs,
+      completeMessageEmbeddingJob,
+      enqueueMessageEmbeddingJob,
+    } = await import("@/lib/stores/message-embedding-jobs");
+    const { getEmbeddingVectorsSignature, setEmbeddingVectorsSignature } = await import("@/lib/stores/app-settings");
+    const timestamp = new Date().toISOString();
+    getDb().prepare(
+      "INSERT INTO messages (msg_id,thread_id,role,content,created_at,embedding) VALUES (?,?,?,?,?,?)",
+    ).run("msg-model-swap", "thread-model-swap", "user", "a message with an old vector", timestamp, "[0.5,0.5]");
+    enqueueMessageEmbeddingJob("msg-model-swap", "a message with an old vector");
+    const [oldJob] = claimMessageEmbeddingJobs();
+    completeMessageEmbeddingJob(oldJob, [0.5, 0.5], "old-provider:old-model");
+    setEmbeddingVectorsSignature("old-provider:old-model");
+    _resetEmbedCaches();
+    setLocalEmbeddingsEnabled(true);
+    localEmbedSpy.mockRejectedValue(new Error("HTTP 401 Unauthorized"));
+
+    const { reembedStaleVectors } = await import("./index");
+    await reembedStaleVectors();
+    const attempted = getDb().prepare(
+      "SELECT state, model_signature, attempted_signature FROM message_embedding_jobs WHERE message_id='msg-model-swap'",
+    ).get();
+    expect(attempted).toEqual({
+      state: "failed",
+      model_signature: "old-provider:old-model",
+      attempted_signature: "Xenova/multilingual-e5-small",
+    });
+    const calls = localEmbedSpy.mock.calls.length;
+
+    await reembedStaleVectors();
+    expect(localEmbedSpy.mock.calls.length).toBe(calls);
+    expect(getEmbeddingVectorsSignature()).toBe("Xenova/multilingual-e5-small");
   });
 });

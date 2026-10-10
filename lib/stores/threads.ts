@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { withDbTransaction } from "@/lib/db/transaction";
-import { embedOne, upsertMessageEmbedCache, resetMessageEmbedCache, resetMemoryEmbedCache } from "@/lib/embeddings";
-import { extractEmbeddableText } from "@/lib/memory/record";
+import { processMessageEmbeddingJobs, resetMessageEmbedCache, resetMemoryEmbedCache } from "@/lib/embeddings";
+import { enqueueMessageEmbeddingJob } from "./message-embedding-jobs";
 import { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey } from "./chat-archive-key";
 export { CHAT_ARCHIVE_NAMESPACE, makeChatArchiveKey, parseChatArchiveKey } from "./chat-archive-key";
 
@@ -303,22 +303,56 @@ export function addMessage(
   const t = now();
   const toolEventsJson = toolEvents && toolEvents.length > 0 ? JSON.stringify(toolEvents) : null;
   const metadataJson = metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null;
-  const info = db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category,metadata) VALUES (?,?,?,?,?,?,?,?)")
-    .run(msg_id, thread_id, role, content, t, toolEventsJson, category, metadataJson);
-  const seq = Number(info.lastInsertRowid);
-  db.prepare("UPDATE threads SET message_count=message_count+1 WHERE thread_id=?").run(thread_id);
-  // Best-effort: embed the message so semantic recall can pull it back later.
-  // Skip empty / very short content (greetings have no useful signal).
-  const embeddableText = extractEmbeddableText(content);
-  if (embeddableText.trim().length >= 12 && !metadata?.automation_activity) {
-    embedOne(embeddableText).then((vec) => {
-      if (vec) {
-        getDb().prepare("UPDATE messages SET embedding=? WHERE msg_id=?").run(JSON.stringify(vec), msg_id);
-        upsertMessageEmbedCache(msg_id, thread_id, role, content, vec, t);
-      }
-    }).catch(() => { /* logged in embeddings module */ });
-  }
+  const seq = withDbTransaction(() => {
+    const info = db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category,metadata) VALUES (?,?,?,?,?,?,?,?)")
+      .run(msg_id, thread_id, role, content, t, toolEventsJson, category, metadataJson);
+    db.prepare("UPDATE threads SET message_count=message_count+1 WHERE thread_id=?").run(thread_id);
+    enqueueMessageEmbeddingJob(msg_id, content);
+    return Number(info.lastInsertRowid);
+  });
+  scheduleMessageEmbeddingWorker();
   return { seq, msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson, category, metadata: metadataJson };
+}
+
+function scheduleMessageEmbeddingWorker(): void {
+  queueMicrotask(() => {
+    void processMessageEmbeddingJobs().catch((err) => console.warn("[embeddings] message queue failed:", err));
+  });
+}
+
+export function updateMessageContent(
+  msg_id: string,
+  content: string,
+  options: { metadata?: Record<string, unknown> | null; created_at?: string } = {},
+): MessageRow | null {
+  const db = getDb();
+  let contentChanged = false;
+  const updated = withDbTransaction(() => {
+    const current = db.prepare("SELECT content FROM messages WHERE msg_id=?").get(msg_id) as { content: string } | undefined;
+    if (!current) return null;
+    contentChanged = current.content !== content;
+    const assignments = ["content=?"];
+    const values: Array<string | null> = [content];
+    if (contentChanged) assignments.push("embedding=NULL");
+    if (Object.hasOwn(options, "metadata")) {
+      assignments.push("metadata=?");
+      const metadata = options.metadata;
+      values.push(metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null);
+    }
+    if (options.created_at !== undefined) {
+      assignments.push("created_at=?");
+      values.push(options.created_at);
+    }
+    values.push(msg_id);
+    db.prepare(`UPDATE messages SET ${assignments.join(", ")} WHERE msg_id=?`).run(...values);
+    if (contentChanged) enqueueMessageEmbeddingJob(msg_id, content, true);
+    return db.prepare(MSG_COLS_SQL + " WHERE msg_id=?").get(msg_id) as unknown as MessageRow;
+  });
+  if (contentChanged) {
+    resetMessageEmbedCache();
+    scheduleMessageEmbeddingWorker();
+  }
+  return updated;
 }
 
 // Shallow-merge `partial` into a message's existing metadata. Use this

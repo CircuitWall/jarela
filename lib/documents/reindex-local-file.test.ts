@@ -25,6 +25,7 @@ vi.mock("@/lib/embeddings", () => ({
     failed: texts.length,
     terminal: texts.map(() => false),
   })),
+  processMessageEmbeddingJobs: vi.fn(async () => 0),
   upsertMemoryEmbedCache: () => {},
   evictMemoryEmbedCache: () => {},
   upsertMessageEmbedCache: () => {},

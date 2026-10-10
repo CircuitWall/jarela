@@ -24,6 +24,7 @@ vi.mock("@/lib/embeddings", () => ({
   recall: (query: string, k: number) => recallSpy(query, k),
   embed: vi.fn(async () => null),
   embedOne: vi.fn(async () => null),
+  processMessageEmbeddingJobs: vi.fn(async () => 0),
   embedBestEffort: vi.fn(async () => ({ vectors: [], error: null, failed: 0, terminal: [] })),
   cosine: () => 0,
   upsertMemoryEmbedCache: () => {},
