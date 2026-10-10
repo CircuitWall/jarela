@@ -13,7 +13,7 @@ import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-
 import { kickBoundaryCompaction, kickWarmSummaryRefresh } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
-import { addMessage, capToolEventPayload, countThreadMessagesFromSeq, getMessagesPage, pruneThreadMessages, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, capToolEventPayload, countThreadMessagesFromSeq, getMessagesPage, isValidThreadContextCursor, pruneThreadMessages, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -548,10 +548,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   const requestedHotSinceDiffers = req.hot_since_seq !== undefined
     && req.hot_since_seq !== (thread.hot_since_seq ?? null);
-  const requestedBoundaryMessage = typeof req.hot_since_seq === "number"
-    ? getThreadMessageBySeq(req.thread_id, req.hot_since_seq)
-    : null;
-  if (typeof req.hot_since_seq === "number" && !requestedBoundaryMessage) {
+  if (typeof req.hot_since_seq === "number" && !isValidThreadContextCursor(req.thread_id, req.hot_since_seq)) {
     throw new RunThreadError(400, "Boundary seq does not belong to this thread", "invalid_boundary");
   }
   const effectiveHotSinceSeq = req.context_profile?.history_scope === "bridge"

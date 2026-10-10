@@ -41,7 +41,7 @@ vi.mock("@/lib/embeddings", () => ({
 const { persistThreadRunUserMessage, prepareThreadRun } = await import("./run-thread");
 const { upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
-const { addMessage, createThread, getMessages, getThread, setThreadContextPin, updateMessageContent } = await import("@/lib/stores/threads");
+const { addMessage, createThread, getMessages, getThread, pruneThreadMessages, setThreadContextPin, updateMessageContent } = await import("@/lib/stores/threads");
 const { getDb } = await import("@/lib/db");
 
 afterAll(() => {
@@ -198,6 +198,33 @@ describe("prepareThreadRun auto context boundary", () => {
 
     expect(JSON.stringify(history)).toContain("active prompt");
     expect(JSON.stringify(history)).not.toContain("later queued prompt");
+  });
+
+  it("accepts the committed reset cursor after its boundary row has been pruned", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-reset-cursor-run",
+      name: "Reset Cursor Run",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 0,
+    });
+    const thread = createThread("agent-reset-cursor-run");
+    addMessage(thread.thread_id, "user", "old prompt");
+    const last = addMessage(thread.thread_id, "assistant", "old response");
+    const resetCursor = last.seq + 1;
+    setThreadContextPin(thread.thread_id, last.created_at, resetCursor);
+    pruneThreadMessages(thread.thread_id, 1, resetCursor);
+
+    await expect(prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "new prompt after reset",
+      hot_since_seq: resetCursor,
+      _user_message_persisted: true,
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    })).resolves.toBeDefined();
   });
 
   it("hints the agent to ask when the thread was idle for 3h or more", async () => {
