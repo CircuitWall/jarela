@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Context compaction now validates topic boundaries and summarizes prior topics within the warm budget.** Hot-turn and near-budget triggers share the topic-aware coordinator; older transcript remains cold and embedding-retrievable.
 - **Submitted chat prompts persist before context preparation, and warm-summary size is configurable per agent.** The warm limit defaults to 50 messages; zero disables summaries while older chat remains available to embedding recall.
 - **Agents can track complex tasks with visible workflow checklists.** Built-in
   skills define when to use them; updates are verified snapshots, with

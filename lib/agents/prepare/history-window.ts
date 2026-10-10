@@ -34,6 +34,7 @@ import { formatAttachmentHandlingContext } from "@/lib/attachments/reference";
 
 export interface ResolvedHistoryWindow {
   history: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>;
+  hotSinceSeqCandidate: number | null;
   budget: ContextBudget;
   warmSummaryCtx: string;
   factsCtx: string;
@@ -404,6 +405,7 @@ export async function buildHistoryWindow(
 
   return {
     history,
+    hotSinceSeqCandidate: hotMessagesForPrompt[0]?.seq ?? null,
     budget,
     warmSummaryCtx,
     factsCtx,

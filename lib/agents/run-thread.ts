@@ -10,7 +10,7 @@ import { registeredCapability } from "@/lib/tools/runtime/registry";
 import { spillAttachments } from "@/lib/attachments/spill";
 import { fileReferenceFromContentPart, isFileReferenceMetadata, type AttachmentHandlingMetadata, type FileReferenceMetadata } from "@/lib/attachments/reference";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
-import { kickBoundaryCompaction, kickWarmSummaryRefresh } from "@/lib/agents/warm-summary-background";
+import { kickBoundaryCompaction, kickWarmSummaryRefresh, pendingCompactionBoundarySeq } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
 import { addMessage, capToolEventPayload, countThreadMessagesFromSeq, getMessagesPage, isValidThreadContextCursor, pruneThreadMessages, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
@@ -192,6 +192,12 @@ async function maybeAutoCompactOversizedThread(
   } catch (err) {
     console.warn(`[thread-compaction:auto] thread=${threadId} failed: ${String(err)}`);
   }
+}
+
+const HOT_CONTEXT_COMPACTION_THRESHOLD = 0.85;
+
+export function isHotContextNearBudget(usedTokens: number, hotBudgetTokens: number): boolean {
+  return hotBudgetTokens > 0 && usedTokens >= hotBudgetTokens * HOT_CONTEXT_COMPACTION_THRESHOLD;
 }
 
 function conversationIdleMs(
@@ -760,6 +766,18 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       hotSinceSeq: effectiveHotSinceSeq,
     },
   );
+
+  const hotBudget = historyWindow.budget.tierBudgets.hot;
+  const currentHotSinceSeq = getThread(req.thread_id)?.hot_since_seq ?? null;
+  if (
+    autoBoundaryScope !== "bridge"
+    && currentHotSinceSeq === null
+    && pendingCompactionBoundarySeq(req.thread_id) === null
+    && isHotContextNearBudget(historyWindow.tierUsage.hot_tokens, hotBudget)
+    && historyWindow.hotSinceSeqCandidate !== null
+  ) {
+    kickBoundaryCompaction(req.thread_id, historyWindow.hotSinceSeqCandidate);
+  }
 
   const delegateRosterLines = buildDelegateRoster(agentCfg, allowedTools);
 

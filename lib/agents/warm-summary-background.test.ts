@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   rows: [] as unknown[],
   automationRows: {} as Record<string, unknown[]>,
   channelSummaries: {} as Record<string, { thread_id: string; channel: string; summary: string; summary_before: string | null; summary_before_seq: number | null; computed_at: string }>,
+  topicSegments: [] as unknown[],
 }));
 state.rows = DEFAULT_ROWS;
 
@@ -79,15 +80,20 @@ vi.mock("@/lib/stores/memory", () => ({ putMemory: () => {} }));
 vi.mock("@/lib/agents/prepare/history-window", () => ({
   unwrapWarmSummary: (s: string) => ({ scope: "foreground", content: s }),
   wrapWarmSummary: (s: string) => s,
+  warmSummaryMessageLimit: (limit?: number | null) => limit == null ? 50 : Math.max(0, Math.floor(limit)),
   takeRecentWarmMessages: <T>(messages: readonly T[], warmSummaryLimit?: number | null) =>
     warmSummaryLimit === 0 ? [] : messages.slice(-(warmSummaryLimit ?? 50)),
   AUTOMATION_CHANNEL_ORDER: ["scheduled_task", "watcher", "bridge"],
 }));
-vi.mock("@/lib/agents/conversation-summary", () => ({
-  summarizeTranscript: vi.fn(async () => ""),
-  transcriptText: (c: unknown) => String(c),
-  extractTopicSegments: (raw: string) => ({ body: raw, topics: [] }),
-}));
+vi.mock("@/lib/agents/conversation-summary", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/agents/conversation-summary")>();
+  return {
+    ...actual,
+    summarizeTranscript: vi.fn(async () => ""),
+    transcriptText: (c: unknown) => String(c),
+    extractTopicSegments: (raw: string) => ({ body: raw, topics: state.topicSegments }),
+  };
+});
 
 import { kickBoundaryCompaction, compactThreadWarmContext, pendingCompactionBoundary, pendingCompactionBoundarySeq, compactAutomationChannelWarmContext, isChannelSummaryFresh } from "./warm-summary-background";
 import { summarizeTranscript } from "@/lib/agents/conversation-summary";
@@ -136,6 +142,15 @@ describe("compactThreadWarmContext — seq-exact boundary (ADR-0088)", () => {
     state.commits = [];
     state.automationRows = {};
     state.channelSummaries = {};
+    state.topicSegments = [{
+      title: "recent topic",
+      start_seq: 3,
+      end_seq: 4,
+      start_at: "2026-09-25T09:01:00.000Z",
+      end_at: "2026-09-25T09:01:01.000Z",
+      recap: "topic recap only",
+      facts: [],
+    }];
     state.rows = [
       { seq: 1, role: "user", content: "old embedding-only question", created_at: "2026-09-25T09:00:00.000Z" },
       { seq: 2, role: "assistant", content: "old embedding-only answer", created_at: "2026-09-25T09:00:01.000Z" },
@@ -149,11 +164,12 @@ describe("compactThreadWarmContext — seq-exact boundary (ADR-0088)", () => {
     const transcript = vi.mocked(summarizeTranscript).mock.calls.at(-1)?.[3] as string;
 
     expect(context?.sourceMessages).toBe(2);
-    expect(transcript).toContain("recent warm question");
-    expect(transcript).toContain("recent warm answer");
+    expect(context?.summary).toContain("recent topic");
+    expect(context?.summary).toContain("topic recap only");
+    expect(context?.summary).not.toContain("old embedding-only");
+    expect(context?.summary).not.toContain("stale recap of the entire transcript");
+    expect(context?.summary).not.toContain("hot boundary question");
     expect(transcript).not.toContain("old embedding-only");
-    expect(transcript).not.toContain("stale recap of the entire transcript");
-    expect(transcript).not.toContain("hot boundary question");
   });
 
   it("disables persistent chat and automation summaries when the limit is zero", async () => {
@@ -205,6 +221,35 @@ describe("kickBoundaryCompaction", () => {
     expect(state.thread.hot_since).toBe("2026-09-25T10:00:00.000Z");
   });
 
+  it("does not move the boundary when the model returns an unverifiable topic range", async () => {
+    state.thread = {
+      thread_id: "thread-1",
+      hot_since: null,
+      hot_since_seq: null,
+      warm_summary: null,
+      warm_summary_before: null,
+      warm_summary_before_seq: null,
+      message_count: 2,
+    };
+    state.commits = [];
+    state.rows = DEFAULT_ROWS;
+    state.topicSegments = [{
+      title: "forged topic",
+      start_seq: 900,
+      end_seq: 11,
+      start_at: "2026-09-25T10:00:00.000Z",
+      end_at: "2026-09-25T10:00:01.000Z",
+      recap: "not grounded in source rows",
+      facts: [],
+    }];
+
+    kickBoundaryCompaction("thread-1", 11);
+    await vi.waitFor(() => expect(pendingCompactionBoundarySeq("thread-1")).toBeNull());
+
+    expect(state.commits).toHaveLength(0);
+    expect(state.thread.hot_since_seq).toBeNull();
+  });
+
   // A second boundary request arriving while the first is still in flight
   // used to be silently dropped (the activeRefreshes/pendingBoundaries guard
   // just returned early) — the thread would settle on whichever boundary
@@ -222,6 +267,15 @@ describe("kickBoundaryCompaction", () => {
     };
     state.commits = [];
     state.rows = DEFAULT_ROWS;
+    state.topicSegments = [{
+      title: "same topic",
+      start_seq: 10,
+      end_seq: 11,
+      start_at: DEFAULT_ROWS[0].created_at,
+      end_at: DEFAULT_ROWS[1].created_at,
+      recap: "same topic recap",
+      facts: [],
+    }];
 
     kickBoundaryCompaction("thread-1", 10);
     // Second request arrives synchronously, before the first's queued
@@ -235,13 +289,11 @@ describe("kickBoundaryCompaction", () => {
     expect(pendingCompactionBoundarySeq("thread-1")).toBe(11);
     expect(pendingCompactionBoundary("thread-1")).toBe("2026-09-25T10:00:01.000Z");
 
-    await vi.waitFor(() => expect(state.commits).toHaveLength(2));
+    await vi.waitFor(() => expect(pendingCompactionBoundary("thread-1")).toBeNull());
 
-    expect(state.commits.map((c) => c.hotSince)).toEqual([
-      "2026-09-25T10:00:00.000Z",
-      "2026-09-25T10:00:01.000Z",
-    ]);
-    expect(state.thread.hot_since).toBe("2026-09-25T10:00:01.000Z");
+    expect(state.commits).toHaveLength(1);
+    expect(state.commits[0].hotSince).toBe("2026-09-25T10:00:00.000Z");
+    expect(state.thread.hot_since).toBe("2026-09-25T10:00:00.000Z");
     expect(pendingCompactionBoundary("thread-1")).toBeNull();
   });
 

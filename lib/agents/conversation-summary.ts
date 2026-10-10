@@ -85,11 +85,14 @@ export function buildConversationSummaryMessages(transcript: string): ProviderMe
         "the distinct topics/subjects it covers, in chronological order. Each",
         "message in the transcript below is prefixed with its exact SQLite seq and ISO timestamp.",
         "Copy the exact seq values for topic boundaries; never infer or estimate seq. Keep the",
-        "timestamps only as display labels. Each array",
+        "timestamps only as display labels. Topic ranges must be ordered, must not overlap,",
+        "and must refer only to messages in the supplied transcript. When its first topic",
+        "continues from before the supplied transcript window, mark `partial_start: true`.",
+        "Each array",
         "entry is:",
         '  {"title": short topic label, "start_seq": seq of that topic\'s first message,',
         '   "end_seq": seq of its last message, "start_at": ISO display timestamp of the first,',
-        '   "end_at": ISO display timestamp of the last, "recap":',
+        '   "end_at": ISO display timestamp of the last, "partial_start": boolean, "recap":',
         '   1-2 sentence recap of just this topic, "facts": [...]}.',
         "`facts` is usually empty — only include an entry when the topic produced",
         "a durable preference, decision, or constraint worth recalling in an",
@@ -140,8 +143,76 @@ export interface SummaryTopicSegment {
   end_seq?: number;
   start_at: string;
   end_at: string;
+  partial_start?: boolean;
   recap: string;
   facts: SummaryTopicFact[];
+}
+
+export interface SummarySourceMessage {
+  seq: number;
+  created_at: string;
+}
+
+export interface TopicSegmentValidationOptions {
+  boundarySeq: number;
+  crossesBoundary?: boolean;
+  allowPartialStart?: boolean;
+}
+
+export function validateTopicSegments(
+  topics: readonly SummaryTopicSegment[],
+  allRows: readonly SummarySourceMessage[],
+  sourceRows: readonly SummarySourceMessage[],
+  options: TopicSegmentValidationOptions,
+): SummaryTopicSegment[] {
+  if (sourceRows.length === 0) return [];
+  const allBySeq = new Map(allRows.map((row) => [row.seq, row]));
+  const sourceSeqs = new Set(sourceRows.map((row) => row.seq));
+  const firstSourceSeq = sourceRows[0].seq;
+  const ordered = [...topics].sort((a, b) => (a.start_seq ?? Number.MAX_SAFE_INTEGER) - (b.start_seq ?? Number.MAX_SAFE_INTEGER));
+  const valid: SummaryTopicSegment[] = [];
+  let previousEndSeq = -1;
+
+  for (const topic of ordered) {
+    const { start_seq: startSeq, end_seq: endSeq } = topic;
+    if (
+      !Number.isSafeInteger(startSeq)
+      || !Number.isSafeInteger(endSeq)
+      || startSeq! < 0
+      || endSeq! < startSeq!
+      || startSeq! <= previousEndSeq
+      || topic.title.length === 0
+      || topic.title.length > 160
+      || topic.recap.length === 0
+      || topic.recap.length > 4_000
+    ) continue;
+
+    const endRow = allBySeq.get(endSeq!);
+    const partialStart = !sourceSeqs.has(startSeq!);
+    if (partialStart && (!options.allowPartialStart || topic.partial_start !== true || startSeq! >= firstSourceSeq)) continue;
+    if (!endRow || !sourceSeqs.has(endSeq!)) continue;
+    const normalizedStartSeq = partialStart ? firstSourceSeq : startSeq!;
+    if (!sourceSeqs.has(normalizedStartSeq)) continue;
+    const startRow = allBySeq.get(normalizedStartSeq);
+    if (!startRow) continue;
+
+    const overlapsSource = sourceRows.some((row) => row.seq >= normalizedStartSeq && row.seq <= endSeq!);
+    if (!overlapsSource) continue;
+
+    const crossesBoundary = normalizedStartSeq < options.boundarySeq && endSeq! >= options.boundarySeq;
+    if (options.crossesBoundary ? !crossesBoundary : endSeq! >= options.boundarySeq) continue;
+
+    valid.push({
+      ...topic,
+      start_seq: normalizedStartSeq,
+      start_at: startRow.created_at,
+      end_at: endRow.created_at,
+      partial_start: partialStart || undefined,
+    });
+    previousEndSeq = endSeq!;
+  }
+
+  return valid;
 }
 
 export function extractTopicSegments(text: string): { body: string; topics: SummaryTopicSegment[] } {
@@ -168,16 +239,20 @@ export function extractTopicSegments(text: string): { body: string; topics: Summ
     const facts: SummaryTopicFact[] = [];
     if (Array.isArray(obj.facts)) {
       for (const f of obj.facts) {
+        if (facts.length >= 16) break;
         if (!f || typeof f !== "object") continue;
         const fo = f as Record<string, unknown>;
         const subject = typeof fo.subject === "string" ? fo.subject.trim() : "";
         const content = typeof fo.content === "string" ? fo.content.trim() : "";
-        if (!subject || !content) continue;
+        if (!subject || subject.length > 160 || !content || content.length > 1_000) continue;
+        if (fo.confidence !== "explicit" && fo.confidence !== "inferred" && fo.confidence !== "verified") continue;
         const tags = Array.isArray(fo.tags)
-          ? fo.tags.filter((t): t is string => typeof t === "string" && t.trim().length > 0).map((t) => t.trim())
+          ? fo.tags
+            .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+            .slice(0, 16)
+            .map((t) => t.trim().slice(0, 80))
           : [];
-        const confidence = fo.confidence === "verified" || fo.confidence === "inferred" ? fo.confidence : "explicit";
-        facts.push({ subject, content, tags, confidence });
+        facts.push({ subject, content, tags, confidence: fo.confidence });
       }
     }
     topics.push({ title, start_seq, end_seq, start_at, end_at, recap, facts });
