@@ -154,12 +154,15 @@ assembly time, not at persistence time. When the active set is exactly
 `{"chat"}` the output is byte-identical to today's (no labels).
 
 **Summary freshness.** Each `(thread_id, channel)` row caches its own
-`summary_before_seq` against `hot_since_seq` (ADR-0096). Timestamps remain
-display metadata; they never resolve the boundary row. A summary is fresh
-iff `summary_before_seq === hot_since_seq AND no new messages of that
-channel since computed_at`. Stale or missing summaries are computed
-lazily on the next turn that asks for that channel — so adding a new
-channel toggle is at most one extra summarisation, not N.
+`summary_before_seq` against the effective hot boundary (ADR-0096). This is
+`hot_since_seq` when pinned, or the first hot message's `seq` when unpinned.
+Timestamps remain display metadata; they never resolve the boundary row. An
+automation summary is usable only when its `summary_before_seq` matches that
+effective cursor. Boundary compaction prepares the chat recap and all
+automation-channel summaries together. Turn preparation does not generate a
+missing automation summary inline; it omits that warm block until a compaction
+refresh commits a matching coverage cursor. The selected channel's eligible
+hot rows can still be included in the turn.
 
 **UI ⇔ model parity.** `useMessageFilters` (per-agent display filters from
 ADR-0022) becomes the source of truth for the run submission's `channels`

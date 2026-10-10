@@ -36,23 +36,38 @@ cover it.
 Accepted: persist the exact boundary cursor on the thread and use one
 thread-context service for boundary transitions and warm-context retrieval.
 
-The boundary is the first message included in hot context. Persist its exact
-`seq` as `hot_since_seq`; retain `hot_since` as a display-only field. Persist matching `warm_summary_before_seq` and per-channel
-`summary_before_seq` values. The cursor is keyed by `thread_id`, not
-`agent_id`, so separate or future agent threads cannot share context state.
+The persisted cursor marks the earliest message eligible for hot context.
+Persist its exact `seq` as `hot_since_seq`; retain `hot_since` as a
+display-only field. The inclusive rowid lower bound does not bypass the
+configured message limit, hot-turn limit, or token budget, which can further
+narrow the messages actually sent to the model. When no pin is set, the
+configured history window supplies the time bound. Persist matching
+`warm_summary_before_seq` and per-channel `summary_before_seq` values. The
+cursor is keyed by `thread_id`, not `agent_id`, so separate or future agent
+threads cannot share context state.
 
 Timestamp-only boundary mutations are rejected. On upgrade, legacy pins whose
 exact cursor is unknowable are cleared and their old summary coverage is
 ignored; the configured history window applies until the user sets a new pin.
 Legacy timestamps are never converted back into row identities.
 
-The service validates that a requested cursor belongs to the thread, builds
-the applicable channel summaries, and atomically publishes the cursor and
-matching summaries after a compare-and-set check. On summary failure, the prior
-boundary remains active. Warm-context reads return only summaries whose exact
-coverage cursor matches the thread boundary and requested channels. Automatic,
-manual, and retention compaction use the same service; retention pruning uses
-the committed cursor.
+The route validates that a requested cursor belongs to the thread. For a
+non-null user move, it returns the current committed state and a pending cursor
+while background compaction runs. Compaction may align the requested cursor to
+a nearby topic start, then builds the chat recap and automation channel
+summaries. A compare-and-set transaction publishes the chosen cursor and
+matching coverage cursors together. A failed preparation leaves the current
+committed boundary unchanged; a compare-and-set rejection leaves any newer
+committed state intact. Overlapping requests are queued with the latest
+request taking precedence. Clearing the pin is immediate because it broadens
+context and needs no replacement recap. The UI polls thread metadata until the
+pending cursor settles.
+
+Warm-context reads return only summaries whose exact coverage cursor matches
+the effective boundary and requested channels. Missing automation summaries
+are omitted from that turn rather than generated inline. Automatic, manual,
+and retention compaction use the same service; retention pruning uses the
+committed cursor.
 
 The chat divider and message DOM ids use the source message's `seq`. Drag
 selection, counts, anchor relocation, and Locate resolve that same source row;
