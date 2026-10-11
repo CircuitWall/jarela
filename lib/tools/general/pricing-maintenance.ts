@@ -51,27 +51,28 @@ function changedRates(
   return changes.slice(0, 100);
 }
 
-function removedRates(
+function ratesNotReturnedByExtraction(
   previous: Awaited<ReturnType<typeof readPricingSnapshot>>,
   current: NonNullable<Awaited<ReturnType<typeof readPricingSnapshot>>>,
-): Array<{ provider: string; model_id: string; input_per_1m_usd: number | null; output_per_1m_usd: number | null }> {
+): Array<{ provider: string; model_id: string; input_per_1m_usd: number | null; output_per_1m_usd: number | null; note: string }> {
   const currentIds = new Map(current.sources.map((source) => [source.id, source]));
-  const removed: Array<{ provider: string; model_id: string; input_per_1m_usd: number | null; output_per_1m_usd: number | null }> = [];
+  const missing: Array<{ provider: string; model_id: string; input_per_1m_usd: number | null; output_per_1m_usd: number | null; note: string }> = [];
   for (const source of previous?.sources ?? []) {
     const refreshed = currentIds.get(source.id);
     if (!refreshed?.ok) continue;
     const currentModels = new Set((refreshed.model_rates ?? []).map((rate) => rateKey(refreshed.id, rate.model_id)));
     for (const rate of source.model_rates ?? []) {
       if (currentModels.has(rateKey(source.id, rate.model_id))) continue;
-      removed.push({
+      missing.push({
         provider: source.id,
         model_id: rate.model_id,
         input_per_1m_usd: rate.input_per_1m_usd,
         output_per_1m_usd: rate.output_per_1m_usd,
+        note: "Not returned by the current extraction; this may be an extraction gap, not a confirmed provider removal.",
       });
     }
   }
-  return removed.slice(0, 100);
+  return missing.slice(0, 100);
 }
 
 export async function refreshModelPricing(): Promise<Record<string, unknown>> {
@@ -83,12 +84,17 @@ export async function refreshModelPricing(): Promise<Record<string, unknown>> {
     reason,
     generated_at: snapshot.generated_at,
     changed_rates: changedRates(previous, snapshot),
-    removed_rates: removedRates(previous, snapshot),
+    not_returned_rates: ratesNotReturnedByExtraction(previous, snapshot),
     sources: snapshot.sources.map((source) => ({
       id: source.id,
       ok: source.ok,
       fetched_at: source.fetched_at,
       model_rate_count: source.model_rates?.length ?? 0,
+      low_confidence_model_ids: (source.model_rates ?? [])
+        .filter((rate) => rate.confidence === "low")
+        .map((rate) => rate.model_id)
+        .slice(0, 30),
+      notes: source.notes,
       error: source.error,
     })),
     dashboard: {
