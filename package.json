@@ -48,6 +48,12 @@
   },
   "files": [
     ".next/standalone",
+    "!.next/standalone/**/*.map",
+    "!.next/standalone/node_modules/onnxruntime-web/dist/**/*.wasm",
+    "!.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/linux/**/libonnxruntime_providers_cuda.so",
+    "!.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/win32/**/DirectML.dll",
+    "!.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/win32/**/dxcompiler.dll",
+    "!.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/win32/**/dxil.dll",
     "!.next/standalone/public/sw.js",
     "!.next/standalone/public/swe-worker-*.js",
     "app",
