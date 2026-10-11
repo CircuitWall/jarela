@@ -181,7 +181,14 @@ function ModelPricingRow({ row, currencyInfo }: { row: DashboardMetrics["pricing
         <span className="rounded-full bg-[var(--bg-primary)]/60 px-1.5 py-0.5 text-[var(--text-secondary)]">
           {detectModelFunctionality(row.model_id)}
         </span>
-        {safeHttpUrl(row.source) ? (
+        {row.source === "jarela:known-rates" ? (
+          <span
+            title="Curated Jarela fallback rate; it may be older than the live vendor pricing snapshot."
+            className="ml-auto rounded-full bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-300"
+          >
+            curated fallback
+          </span>
+        ) : safeHttpUrl(row.source) ? (
           <a
             href={row.source}
             target="_blank"

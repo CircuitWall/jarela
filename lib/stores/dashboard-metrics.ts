@@ -5,6 +5,7 @@ import {
   getPricingTables,
   modelRatesFor,
   estimateCostUsd,
+  dashboardModelRates,
 } from "./pricing";
 
 const CHARS_PER_TOKEN = 4;
@@ -291,7 +292,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   }
 
   const tables = getPricingTables();
-  const { byProvider, byProviderModel, generatedAt } = tables;
+  const { byProvider, generatedAt } = tables;
   const dayMap = seedDayBuckets(now, boundedDays);
   const agentMap = new Map<string, AgentBucket>();
   const providerMap = new Map<string, ProviderBucket>();
@@ -651,28 +652,18 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
           error: rates.error,
         }))
         .sort((a, b) => a.provider.localeCompare(b.provider)),
-      model_rates: [...byProviderModel.entries()]
-        .map(([key, rates]) => {
-          const splitAt = key.indexOf("::");
-          const provider = splitAt > -1 ? key.slice(0, splitAt) : key;
-          const model_id = splitAt > -1 ? key.slice(splitAt + 2) : "unknown";
-          return {
-            provider,
-            model_id,
-            input_per_1m_usd: rates.inputPer1M,
-            output_per_1m_usd: rates.outputPer1M,
-            source: rates.source,
-            inferred: rates.inferred,
-            confidence: rates.confidence,
-            ok: rates.ok,
-            status: rates.status,
-            error: rates.error,
-          } satisfies DashboardModelRate;
-        })
-        .sort((a, b) => {
-          if (a.provider !== b.provider) return a.provider.localeCompare(b.provider);
-          return a.model_id.localeCompare(b.model_id);
-        }),
+      model_rates: dashboardModelRates(tables).map((rates) => ({
+        provider: rates.provider,
+        model_id: rates.model_id,
+        input_per_1m_usd: rates.inputPer1M,
+        output_per_1m_usd: rates.outputPer1M,
+        source: rates.source,
+        inferred: rates.inferred,
+        confidence: rates.confidence,
+        ok: rates.ok,
+        status: rates.status,
+        error: rates.error,
+      } satisfies DashboardModelRate)),
       notes: "Estimated costs are heuristic: token counts are content-length based and rates are inferred from pricing page signals (provider-model first, then provider fallback).",
     },
   };

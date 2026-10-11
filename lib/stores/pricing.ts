@@ -10,7 +10,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { knownRateFor } from "./known-rates";
+import { knownRateFor, knownRateModelIds } from "./known-rates";
 
 export type ProviderRates = {
   inputPer1M: number | null;
@@ -55,6 +55,11 @@ export interface PricingTables {
   // entries only overwrite when they improve confidence or fill a null.
   byModel: Map<string, ProviderRates>;
   generatedAt: string | null;
+}
+
+export interface ModelPricingRate extends ProviderRates {
+  provider: string;
+  model_id: string;
 }
 
 const EXPECTED_PROVIDERS = ["openai", "anthropic", "google", "deepseek", "cohere", "github-copilot", "moonshot", "qwen"];
@@ -238,6 +243,29 @@ export function modelRatesFor(
 
   // 4. Provider-level rate (or "no provider assigned" error).
   return providerRatesFor(tables, provider);
+}
+
+export function dashboardModelRates(tables: PricingTables): ModelPricingRate[] {
+  const rates = new Map<string, ModelPricingRate>();
+  for (const [key, rate] of tables.byProviderModel) {
+    const splitAt = key.indexOf("::");
+    const provider = splitAt > -1 ? key.slice(0, splitAt) : "unknown";
+    const model_id = splitAt > -1 ? key.slice(splitAt + 2) : "unknown";
+    rates.set(key, { ...rate, provider, model_id });
+  }
+
+  for (const model_id of knownRateModelIds()) {
+    const provider = inferProviderFromModelId(model_id);
+    if (!provider) continue;
+    const key = `${provider}::${model_id}`;
+    if (rates.has(key)) continue;
+    const fallback = knownRateFor(model_id);
+    if (fallback) rates.set(key, { ...fallback, provider, model_id });
+  }
+
+  return [...rates.values()].sort((a, b) => a.provider === b.provider
+    ? a.model_id.localeCompare(b.model_id)
+    : a.provider.localeCompare(b.provider));
 }
 
 // Tie-breaker for the byModel index when multiple sources rate the same id.
