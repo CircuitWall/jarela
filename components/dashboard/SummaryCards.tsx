@@ -31,7 +31,7 @@ export function SummaryStrip({ data, currencyInfo, windowTokenTotal, activeDays,
       <InsightChip
         label="Window cost"
         value={formatMoney(data.summary.estimated_cost_usd, currencyInfo)}
-        hint="Estimated from pricing snapshot"
+        hint={`Current-rate estimate · recorded snapshots ${formatMoney(data.summary.recorded_cost_usd, currencyInfo)}`}
       />
       <InsightChip
         label="Avg cost / day"

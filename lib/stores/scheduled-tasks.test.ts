@@ -39,6 +39,18 @@ describe("scheduled-tasks store (ADR-0032)", () => {
     expect(t.reaction_script_args).toBeNull();
   });
 
+  it("accepts a stable id for an idempotently managed task", () => {
+    const t = createScheduledTask({
+      id: "system:weekly-pricing-refresh",
+      agent_id: "a",
+      prompt: "refresh pricing",
+      kind: "cron",
+      schedule: "0 9 * * 1",
+    });
+
+    expect(getScheduledTask("system:weekly-pricing-refresh")?.id).toBe(t.id);
+  });
+
   it("creates a script-kind task with empty prompt sentinel", () => {
     const t = createScheduledTask({
       agent_id: "a",

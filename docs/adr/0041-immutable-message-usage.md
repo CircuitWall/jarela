@@ -86,15 +86,18 @@ Rows are written exactly once, immediately after the assistant turn is
 persisted to `messages`. Nothing in the app updates them after.
 
 The dashboard query `LEFT JOIN`s `message_usage` onto `messages`. For
-assistant rows that have a snapshot, the snapshot is authoritative
-(tokens, attribution, $ cost). For older rows without one, the current
-estimate path continues to apply.
+assistant rows that have a snapshot, the snapshot is authoritative for
+provider-reported tokens and attribution. `cost_usd` remains the immutable
+write-time estimate; the dashboard separately recalculates its displayed
+estimate from those tokens and the latest matching rates, and reports the
+original snapshot total alongside it. Older rows without a usage snapshot
+continue to use content-length token estimates and current rates.
 
 ### Consequences
 
 - Good: reassigning an agent's model, renaming a model config, or
-  refreshing the pricing snapshot has zero effect on rows already
-  recorded.
+  refreshing the pricing snapshot never changes recorded per-turn values;
+  the dashboard's current-rate estimate updates independently.
 - Good: dashboards become a pure `SUM(...) GROUP BY` over the snapshot
   table — no joins through `agent_configs` / `model_configs` for any
   data point that has a snapshot.

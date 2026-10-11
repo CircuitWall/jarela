@@ -6,6 +6,7 @@ import {
   modelRatesFor,
   estimateCostUsd,
   dashboardModelRates,
+  estimateProviderCostUsd,
 } from "./pricing";
 
 const CHARS_PER_TOKEN = 4;
@@ -133,6 +134,7 @@ export interface DashboardMetrics {
     input_tokens_est: number;
     output_tokens_est: number;
     estimated_cost_usd: number;
+    recorded_cost_usd: number;
     cache_read_tokens: number;
     cache_hit_rate: number;
     tool_calls: number;
@@ -230,6 +232,23 @@ type ModelBucket = {
   estimated_cost_usd: number;
 };
 
+export function recalculateSnapshotCost(input: {
+  provider: string;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number | null;
+  cacheReadTokens: number | null;
+  recordedCostUsd: number;
+}, tables: ReturnType<typeof getPricingTables>): number {
+  const rates = modelRatesFor(tables, input.provider, input.modelId);
+  if (rates.inputPer1M == null && rates.outputPer1M == null) return input.recordedCostUsd;
+  return estimateProviderCostUsd(input.provider, input.inputTokens, input.outputTokens, rates, {
+    cache_creation_input_tokens: input.cacheCreationTokens,
+    cache_read_input_tokens: input.cacheReadTokens,
+  });
+}
+
 export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<DashboardMetrics> {
   const now = new Date();
   const boundedDays = Number.isFinite(days) ? Math.min(120, Math.max(7, Math.floor(days))) : DEFAULT_WINDOW_DAYS;
@@ -318,6 +337,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   let totalInput = 0;
   let totalOutput = 0;
   let totalCost = 0;
+  let totalRecordedCost = 0;
   let totalCacheRead = 0;
   let totalCalls = 0;
   let totalSuccesses = 0;
@@ -333,10 +353,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     const dayBucket = dayMap.get(day);
     if (!dayBucket) continue;
 
-    // ADR-0041: prefer snapshot when present. Snapshot rows are
-    // authoritative for tokens, $, AND attribution (provider/model/agent
-    // name) for that assistant turn — they survive reassignment, rename,
-    // and pricing-snapshot refresh.
+    // ADR-0041: snapshots keep provider tokens and attribution stable;
+    // display cost is recalculated separately from current rates.
     const hasSnapshot = row.mu_input_tokens != null;
     const threadHasSnapshot = snapshotThreadIds.has(row.thread_id);
 
@@ -352,12 +370,22 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     if (hasSnapshot) {
       inputTokens = row.mu_input_tokens ?? 0;
       outputTokens = row.mu_output_tokens ?? 0;
-      estCost = row.mu_cost_usd ?? 0;
       attribProvider = row.mu_provider ?? attribProvider;
       attribModelId = row.mu_model_id ?? attribModelId;
       attribModelConfig = row.mu_model_config_name ?? attribModelConfig;
       attribAgentId = row.mu_agent_id ?? attribAgentId;
       attribAgentName = row.mu_agent_name ?? attribAgentName;
+      const recordedCost = row.mu_cost_usd ?? 0;
+      totalRecordedCost += recordedCost;
+      estCost = recalculateSnapshotCost({
+        provider: attribProvider ?? "",
+        modelId: attribModelId ?? "",
+        inputTokens,
+        outputTokens,
+        cacheCreationTokens: row.mu_cache_creation,
+        cacheReadTokens: row.mu_cache_read,
+        recordedCostUsd: recordedCost,
+      }, tables);
       if (row.role === "assistant") measuredAssistantMessages += 1;
       // Accumulate tier breakdown — null columns (legacy snapshots
       // before the tier wire-up) contribute zero, which is the right
@@ -621,6 +649,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: totalInput,
       output_tokens_est: totalOutput,
       estimated_cost_usd: totalCost,
+      recorded_cost_usd: totalRecordedCost,
       cache_read_tokens: totalCacheRead,
       cache_hit_rate: round4(totalCacheRead > 0 ? totalCacheRead / (totalInput + totalCacheRead) : 0),
       tool_calls: totalCalls,
@@ -664,7 +693,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
         status: rates.status,
         error: rates.error,
       } satisfies DashboardModelRate)),
-      notes: "Estimated costs are heuristic: token counts are content-length based and rates are inferred from pricing page signals (provider-model first, then provider fallback).",
+      notes: "Dashboard cost is recalculated from captured provider token usage and the latest matching rates. The original per-turn cost snapshots remain unchanged; legacy rows use content-length token estimates.",
     },
   };
 }

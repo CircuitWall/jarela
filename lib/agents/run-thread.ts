@@ -33,7 +33,7 @@ import {
   type ThreadRunRequest,
 } from "@/lib/agents/prepare";
 import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores/message-usage";
-import { getPricingTables, modelRatesFor, estimateCostUsd, CACHE_READ_INPUT_RATE_MULTIPLIER } from "@/lib/stores/pricing";
+import { getPricingTables, modelRatesFor, estimateProviderCostUsd } from "@/lib/stores/pricing";
 import { DEFAULT_CONTEXT_WINDOW_TOKENS, estimateTokens } from "@/lib/agents/context-budget";
 import { getUsageStrategyProfile, resolveOutputTokenCap, resolveUsageStrategy, shouldAutoRecall } from "@/lib/agents/usage-strategy";
 import { getKnownContextLength } from "@/lib/providers/known-context-windows";
@@ -1702,22 +1702,10 @@ export function persistAssistantMessage(
         const cacheCreation = hasProviderUsage ? (usage!.cache_creation_input_tokens ?? 0) : 0;
         const cacheRead = hasProviderUsage ? (usage!.cache_read_input_tokens ?? 0) : 0;
         const thinking = hasProviderUsage ? (usage!.thinking_tokens ?? 0) : 0;
-        // Anthropic: input_tokens is fresh-only; cache is additive at 0.1x.
-        // OpenAI/Gemini: input_tokens includes cached portion; subtract it
-        // and apply the provider-specific discount rate.
-        const provider = hasProviderUsage ? usage!.provider : "";
-        const isAnthropicCache = provider === "anthropic";
-        const cacheReadMultiplier = provider === "gemini" ? 0.25
-          : !isAnthropicCache && cacheRead > 0 ? 0.5
-          : CACHE_READ_INPUT_RATE_MULTIPLIER;
-        const freshInputTokens = hasProviderUsage
-          ? (isAnthropicCache ? usage!.input_tokens : Math.max(0, usage!.input_tokens - cacheRead))
-          : 0;
         const cost = hasProviderUsage
-          ? estimateCostUsd(freshInputTokens, usage!.output_tokens, rates, {
+          ? estimateProviderCostUsd(usage!.provider, usage!.input_tokens, usage!.output_tokens, rates, {
               cache_creation_input_tokens: cacheCreation,
               cache_read_input_tokens: cacheRead,
-              cache_read_rate_multiplier: cacheReadMultiplier,
             })
           : 0;
         recordMessageUsage({

@@ -8,6 +8,7 @@ import {
   modelRatesFor,
   dashboardModelRates,
   estimateCostUsd,
+  estimateProviderCostUsd,
   normalizeProvider,
 } from "./pricing";
 
@@ -139,6 +140,28 @@ describe("estimateCostUsd", () => {
         }),
       ).toBe(0);
     });
+  });
+});
+
+describe("estimateProviderCostUsd", () => {
+  const rates = { inputPer1M: 3, outputPer1M: 15 };
+
+  it("keeps Anthropic cache tokens additive at the 0.1x read rate", () => {
+    expect(estimateProviderCostUsd("anthropic", 1_000_000, 0, rates, {
+      cache_read_input_tokens: 1_000_000,
+    })).toBeCloseTo(3.3, 6);
+  });
+
+  it("subtracts cached input before pricing non-Anthropic usage", () => {
+    expect(estimateProviderCostUsd("openai", 1_000_000, 0, rates, {
+      cache_read_input_tokens: 200_000,
+    })).toBeCloseTo(2.4 + 0.3, 6);
+  });
+
+  it("uses Gemini's cache-read multiplier", () => {
+    expect(estimateProviderCostUsd("gemini", 1_000_000, 0, rates, {
+      cache_read_input_tokens: 1_000_000,
+    })).toBeCloseTo(0.75, 6);
   });
 });
 

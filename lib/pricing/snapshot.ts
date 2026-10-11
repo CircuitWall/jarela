@@ -203,7 +203,7 @@ export async function refreshPricingSnapshot(opts?: { force?: boolean; ttlDays?:
   };
 }
 
-async function readPricingSnapshot(): Promise<PricingSnapshot | null> {
+export async function readPricingSnapshot(): Promise<PricingSnapshot | null> {
   try {
     const raw = await readFile(SNAPSHOT_PATH, "utf8");
     return JSON.parse(raw) as PricingSnapshot;

@@ -765,6 +765,7 @@ export interface DashboardMetrics {
     input_tokens_est: number;
     output_tokens_est: number;
     estimated_cost_usd: number;
+    recorded_cost_usd: number;
     cache_read_tokens: number;
     cache_hit_rate: number;
     tool_calls: number;
@@ -803,6 +804,17 @@ export interface DashboardPricingRefreshResult {
   generated_at: string;
   ttl_days: number;
   source_count: number;
+}
+
+export interface DashboardPricingTaskStatus {
+  configured: boolean;
+  default_agent_configured: boolean;
+  default_agent_name: string | null;
+  task_agent_name: string | null;
+  next_run_at: string | null;
+  enabled: boolean;
+  schedule: string | null;
+  time_zone: string;
 }
 
 /** One built-in tool category with its current enable state. */

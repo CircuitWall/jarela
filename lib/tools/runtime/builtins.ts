@@ -17,6 +17,7 @@ import "../web/search";
 import "../web/fetch";
 import "../web/shopping";
 import "../general/location";
+import "../general/pricing-maintenance";
 import "../web/generate_image";
 import "../web/generate_voice";
 import "../general/schedule";

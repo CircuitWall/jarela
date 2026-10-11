@@ -409,3 +409,24 @@ export function estimateCostUsd(
   }
   return inCost + outCost + cacheCost;
 }
+
+export function estimateProviderCostUsd(
+  provider: string,
+  inputTokens: number,
+  outputTokens: number,
+  rates: Pick<ProviderRates, "inputPer1M" | "outputPer1M">,
+  cache?: Pick<CacheTokenBreakdown, "cache_creation_input_tokens" | "cache_read_input_tokens"> | null,
+): number {
+  const cacheCreation = cache?.cache_creation_input_tokens ?? 0;
+  const cacheRead = cache?.cache_read_input_tokens ?? 0;
+  const isAnthropic = provider === "anthropic";
+  const freshInput = isAnthropic ? inputTokens : Math.max(0, inputTokens - cacheRead);
+  const cacheReadMultiplier = provider === "gemini" ? 0.25
+    : !isAnthropic && cacheRead > 0 ? 0.5
+    : CACHE_READ_INPUT_RATE_MULTIPLIER;
+  return estimateCostUsd(freshInput, outputTokens, rates, {
+    cache_creation_input_tokens: cacheCreation,
+    cache_read_input_tokens: cacheRead,
+    cache_read_rate_multiplier: cacheReadMultiplier,
+  });
+}
