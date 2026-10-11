@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-10-11
+
 ### Fixed
 
 - **The npm package excludes server source maps under Next.js's nested standalone output.**
