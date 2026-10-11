@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The npm runtime package excludes browser-only and unused platform assets to stay below the registry upload limit.**
 - **Linux RPM packaging preserves bundled native addons for non-host architectures.**
 - **The dashboard vendor-pricing table now shows curated model-rate fallbacks when live pricing-page extraction returns no model rows.**
 - **The OAuth proxy release audit passes with patched `proxy-addr` and `uuid` dependencies.**

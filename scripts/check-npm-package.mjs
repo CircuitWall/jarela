@@ -48,12 +48,42 @@ try {
   }
   filename = pack.filename;
 
+  const maxTarballSize = 220 * 1024 * 1024;
+  if (pack.size > maxTarballSize) {
+    const largestFiles = pack.files
+      .slice()
+      .sort((left, right) => right.size - left.size)
+      .slice(0, 12)
+      .map(({ path, size }) => `${path} (${size} bytes)`)
+      .join("; ");
+    throw new Error(
+      `npm tarball is ${pack.size} bytes; maximum supported size is ${maxTarballSize} bytes. Largest entries: ${largestFiles}`,
+    );
+  }
+
+  const excludedStandaloneFiles = pack.files
+    .map(({ path }) => path)
+    .filter((path) => path.startsWith(".next/standalone/") && (
+      path.endsWith(".map") ||
+      path.endsWith(".wasm") ||
+      /onnxruntime-node\/bin\/napi-v6\/linux\/.+\/libonnxruntime_providers_cuda\.so$/.test(path) ||
+      /onnxruntime-node\/bin\/napi-v6\/win32\/(arm64|x64)\/(DirectML|dxcompiler|dxil)\.dll$/.test(path)
+    ));
+  if (excludedStandaloneFiles.length > 0) {
+    throw new Error(
+      `npm tarball contains excluded standalone assets: ${excludedStandaloneFiles.join(", ")}`,
+    );
+  }
+
   const listing = run("tar", ["-tf", filename])
     .split(/\r?\n/)
     .filter(Boolean);
 
   const required = [
     "package/.next/standalone/server.js",
+    "package/.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/linux/x64/onnxruntime_binding.node",
+    "package/.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
+    "package/.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/win32/x64/onnxruntime_binding.node",
     // The PWA manifest is a route now (ADR-0077), not a static public/ file.
     "package/.next/standalone/.next/server/app/manifest.webmanifest/route.js",
     "package/package.json",
