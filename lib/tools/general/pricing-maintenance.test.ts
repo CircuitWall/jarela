@@ -23,6 +23,7 @@ describe("refreshModelPricing", () => {
       sources: [{ id: "openai", model_rates: [
         { model_id: "gpt-5", input_per_1m_usd: 1, output_per_1m_usd: 2 },
         { model_id: "gpt-4", input_per_1m_usd: 2, output_per_1m_usd: 8 },
+        { model_id: "gpt-3.5", input_per_1m_usd: 0.5, output_per_1m_usd: 1.5, confidence: "low" },
       ] }],
     });
     mocks.refreshSnapshot.mockResolvedValue({
@@ -31,7 +32,10 @@ describe("refreshModelPricing", () => {
       snapshot: {
         generated_at: "2026-10-08T00:00:00.000Z",
         sources: [
-          { id: "openai", ok: true, fetched_at: "2026-10-08T00:00:00.000Z", error: null, model_rates: [{ model_id: "gpt-5", input_per_1m_usd: 1.5, output_per_1m_usd: 2, confidence: "high" }] },
+          { id: "openai", ok: true, fetched_at: "2026-10-08T00:00:00.000Z", error: null, model_rates: [
+            { model_id: "gpt-5", input_per_1m_usd: 1.5, output_per_1m_usd: 2, confidence: "high" },
+            { model_id: "gpt-3.5", input_per_1m_usd: 0.5, output_per_1m_usd: 1.5, confidence: "low" },
+          ] },
           { id: "anthropic", ok: false, fetched_at: "2026-10-08T00:00:00.000Z", error: "unavailable", model_rates: [] },
         ],
       },
@@ -57,14 +61,21 @@ describe("refreshModelPricing", () => {
       output_per_1m_usd: 2,
       confidence: "high",
     }]);
-    expect(result.removed_rates).toEqual([{
+    expect(result.not_returned_rates).toEqual([{
       provider: "openai",
       model_id: "gpt-4",
       input_per_1m_usd: 2,
       output_per_1m_usd: 8,
+      note: "Not returned by the current extraction; this may be an extraction gap, not a confirmed provider removal.",
     }]);
     expect(result.sources).toEqual([
-      expect.objectContaining({ id: "openai", ok: true, model_rate_count: 1 }),
+      expect.objectContaining({
+        id: "openai",
+        ok: true,
+        model_rate_count: 2,
+        low_confidence_model_ids: ["gpt-3.5"],
+        notes: undefined,
+      }),
       expect.objectContaining({ id: "anthropic", ok: false, error: "unavailable" }),
     ]);
     expect(result.dashboard).toMatchObject({
