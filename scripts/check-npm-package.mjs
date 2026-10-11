@@ -37,6 +37,7 @@ let filename = null;
 let extractDir = null;
 try {
   run("node", ["scripts/rewrite-workspace-deps.mjs"]);
+  run("node", ["scripts/prune-npm-source-maps.mjs"]);
 
   const packJson = run("npm", ["pack", "--json"]);
   const packResult = JSON.parse(packJson);
@@ -94,6 +95,7 @@ try {
     "package/scripts/start-prod.mjs",
     "package/scripts/prepare-local-embedding-model.mjs",
     "package/scripts/run-workspace-script-if-present.mjs",
+    "package/scripts/prune-npm-source-maps.mjs",
     // The extension rebranding step (ADR-0077) is only reachable by an
     // overlay if both the script and its source tree are published.
     "package/scripts/build-extension.mjs",
