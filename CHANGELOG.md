@@ -7,26 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **The dashboard can opt into weekly LLM pricing updates and recalculate current-rate cost estimates without rewriting recorded usage snapshots.**
+## [2.0.1] - 2026-10-11
 
 ### Fixed
 
 - **The npm runtime package excludes browser-only and unused platform assets to stay below the registry upload limit.**
-- **Linux RPM packaging preserves bundled native addons for non-host architectures.**
-- **The dashboard vendor-pricing table now shows curated model-rate fallbacks when live pricing-page extraction returns no model rows.**
-- **The OAuth proxy release audit passes with patched `proxy-addr` and `uuid` dependencies.**
 
 ## [2.0.0] - 2026-10-11
 
 ### Added
 
+- **The dashboard can opt into weekly LLM pricing updates and recalculate current-rate cost estimates without rewriting recorded usage snapshots.**
 - **Context compaction now validates topic boundaries and summarizes prior topics within the warm budget.** Hot-turn and near-budget triggers share the topic-aware coordinator; older transcript remains cold and embedding-retrievable.
 - **Submitted chat prompts persist before context preparation, and warm-summary size is configurable per agent.** The warm limit defaults to 50 messages; zero disables summaries while older chat remains available to embedding recall.
 - **Agents can track complex tasks with visible workflow checklists.** Built-in
   skills define when to use them; updates are verified snapshots, with
   approval blockers and secrets handled explicitly.
+
+### Fixed
+
+- **Linux RPM packaging preserves bundled native addons for non-host architectures.**
+- **The dashboard vendor-pricing table now shows curated model-rate fallbacks when live pricing-page extraction returns no model rows.**
+- **The OAuth proxy release audit passes with patched `proxy-addr` and `uuid` dependencies.**
 
 ### Breaking Changes
 
