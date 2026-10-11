@@ -84,6 +84,9 @@ Release: 1%{?dist}
 Summary: Local chat interface for LangGraph agents
 License: Apache-2.0
 URL: https://github.com/CircuitWall/jarela
+# The staged standalone payload contains prebuilt native addons for several
+# architectures. Preserve those binaries instead of running host strip on them.
+%global __strip /bin/true
 BuildArch: x86_64
 Source0: jarela-$VERSION.tar.gz
 
