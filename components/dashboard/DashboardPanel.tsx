@@ -16,6 +16,7 @@ export function DashboardPanel() {
   const {
     days, setDays, loading, error, data,
     refreshingPricing, refreshHint, onRefreshPricing,
+    pricingTask, settingUpPricingTask, pricingTaskHint, onSetupPricingTask,
   } = useDashboardData(30);
   const {
     currencyInfo, currencyMode, setCurrencyMode,
@@ -64,6 +65,10 @@ export function DashboardPanel() {
           refreshingPricing={refreshingPricing}
           refreshHint={refreshHint}
           onRefreshPricing={onRefreshPricing}
+          pricingTask={pricingTask}
+          settingUpPricingTask={settingUpPricingTask}
+          pricingTaskHint={pricingTaskHint}
+          onSetupPricingTask={onSetupPricingTask}
         />
 
         {!loading && !error && data ? (

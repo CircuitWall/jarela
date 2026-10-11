@@ -13,6 +13,7 @@ import type {
   DashboardCurrencyInfo,
   DashboardMetrics,
   DashboardPricingRefreshResult,
+  DashboardPricingTaskStatus,
   BrowserActivateResponse,
   BrowserHistoryResponse,
   BrowserExtensionStatus,
@@ -917,6 +918,11 @@ export const api = {
 
   dashboard: {
     metrics: (days = 30) => request<DashboardMetrics>(`/dashboard/metrics?days=${encodeURIComponent(String(days))}`),
+    pricingTask: () => request<DashboardPricingTaskStatus>("/dashboard/pricing-task"),
+    setupPricingTask: () => request<DashboardPricingTaskStatus>("/dashboard/pricing-task", {
+      method: "POST",
+      body: "{}",
+    }),
     refreshPricing: (opts?: { force?: boolean; ttlDays?: number }) => {
       const qs = new URLSearchParams();
       if (opts?.force === true) qs.set("force", "1");

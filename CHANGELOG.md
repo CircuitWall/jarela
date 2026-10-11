@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The dashboard can opt into weekly LLM pricing updates and recalculate current-rate cost estimates without rewriting recorded usage snapshots.**
+
 ### Fixed
 
 - **The dashboard vendor-pricing table now shows curated model-rate fallbacks when live pricing-page extraction returns no model rows.**

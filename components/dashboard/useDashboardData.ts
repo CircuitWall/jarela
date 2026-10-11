@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { DashboardMetrics } from "@/api/types";
+import type { DashboardMetrics, DashboardPricingTaskStatus } from "@/api/types";
 import type { WindowDays } from "./dashboard-constants";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -14,6 +14,10 @@ export interface UseDashboardDataResult {
   refreshingPricing: boolean;
   refreshHint: string | null;
   onRefreshPricing: () => Promise<void>;
+  pricingTask: DashboardPricingTaskStatus | null;
+  settingUpPricingTask: boolean;
+  pricingTaskHint: string | null;
+  onSetupPricingTask: () => Promise<void>;
 }
 
 export function useDashboardData(initialDays: WindowDays = 30): UseDashboardDataResult {
@@ -23,6 +27,9 @@ export function useDashboardData(initialDays: WindowDays = 30): UseDashboardData
   const [data, setData] = useState<DashboardMetrics | null>(null);
   const [refreshingPricing, setRefreshingPricing] = useState(false);
   const [refreshHint, setRefreshHint] = useState<string | null>(null);
+  const [pricingTask, setPricingTask] = useState<DashboardPricingTaskStatus | null>(null);
+  const [settingUpPricingTask, setSettingUpPricingTask] = useState(false);
+  const [pricingTaskHint, setPricingTaskHint] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +41,14 @@ export function useDashboardData(initialDays: WindowDays = 30): UseDashboardData
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [days]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.dashboard.pricingTask()
+      .then((status) => { if (!cancelled) setPricingTask(status); })
+      .catch((err: unknown) => { if (!cancelled) setPricingTaskHint(errorMessage(err)); });
+    return () => { cancelled = true; };
+  }, []);
 
   const onRefreshPricing = async () => {
     setRefreshingPricing(true);
@@ -55,5 +70,33 @@ export function useDashboardData(initialDays: WindowDays = 30): UseDashboardData
     }
   };
 
-  return { days, setDays, loading, error, data, refreshingPricing, refreshHint, onRefreshPricing };
+  const onSetupPricingTask = async () => {
+    setSettingUpPricingTask(true);
+    setPricingTaskHint(null);
+    try {
+      const status = await api.dashboard.setupPricingTask();
+      setPricingTask(status);
+      const nextRun = status.next_run_at
+        ? new Intl.DateTimeFormat(undefined, {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            timeZone: status.time_zone,
+          }).format(new Date(status.next_run_at))
+        : "next week";
+      setPricingTaskHint(`Weekly pricing updates are scheduled for ${nextRun} (${status.time_zone}).`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to set up weekly pricing updates.";
+      setPricingTaskHint(message);
+    } finally {
+      setSettingUpPricingTask(false);
+    }
+  };
+
+  return {
+    days, setDays, loading, error, data, refreshingPricing, refreshHint, onRefreshPricing,
+    pricingTask, settingUpPricingTask, pricingTaskHint, onSetupPricingTask,
+  };
 }

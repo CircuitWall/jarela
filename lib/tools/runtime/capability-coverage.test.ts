@@ -11,7 +11,7 @@ afterAll(() => {
 });
 
 await import("./builtins");
-const { registeredTools, registeredCapability } = await import("./registry");
+const { registeredTools, registeredCapability, registeredCategory } = await import("./registry");
 
 // Ensures every built-in tool was registered with a capability. The
 // registerTools signature already enforces this at compile time
@@ -38,6 +38,11 @@ describe("capability coverage", () => {
       const cap = registeredCapability(t.name);
       expect(allowed.has(cap as string), `${t.name} has invalid capability: ${cap}`).toBe(true);
     }
+  });
+
+  it("registers weekly pricing refresh as a Config write tool", () => {
+    expect(registeredCategory("refresh_model_pricing")).toBe("Config");
+    expect(registeredCapability("refresh_model_pricing")).toBe("write");
   });
 
   it("read/write/execute distribution sanity (every bucket non-empty)", () => {

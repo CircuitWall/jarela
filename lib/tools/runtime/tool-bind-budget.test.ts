@@ -1,5 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { applyToolBindBudget } from "./catalog";
+import { afterAll, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-tool-bind-budget-"));
+process.env.JARELA_DB_DIR = tmpRoot;
+
+const { applyToolBindBudget } = await import("./catalog");
+const { closeDb } = await import("@/lib/db");
+
+afterAll(() => {
+  closeDb();
+  try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+});
 
 const names = ["a", "b", "c", "d", "e", "f"];
 

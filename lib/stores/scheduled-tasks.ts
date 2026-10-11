@@ -52,6 +52,7 @@ export function computeNextRun(kind: ScheduleKind, schedule: string, after: Date
 }
 
 export interface CreateScheduledTaskInput {
+  id?: string;
   agent_id: string;
   // Required for kind='agent_prompt'; ignored (stored as "") for kind='script'.
   prompt?: string;
@@ -66,7 +67,7 @@ export interface CreateScheduledTaskInput {
 }
 
 export function createScheduledTask(input: CreateScheduledTaskInput): ScheduledTaskRow {
-  const id = randomUUID();
+  const id = input.id ?? randomUUID();
   const t = now();
   const next = computeNextRun(input.kind, input.schedule).toISOString();
   const silent = input.silent ? 1 : 0;
