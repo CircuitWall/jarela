@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-11
+
 ### Added
 
 - **Context compaction now validates topic boundaries and summarizes prior topics within the warm budget.** Hot-turn and near-budget triggers share the topic-aware coordinator; older transcript remains cold and embedding-retrievable.
@@ -14,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agents can track complex tasks with visible workflow checklists.** Built-in
   skills define when to use them; updates are verified snapshots, with
   approval blockers and secrets handled explicitly.
+
+### Breaking Changes
+
+- **Context-boundary cursors now use message sequence numbers.** Timestamp-only
+  pins are cleared during migration. API clients must send `hot_since_seq` for
+  context-pin and run requests; timestamps are display metadata only.
 
 ## [1.43.2] - 2026-10-09
 
