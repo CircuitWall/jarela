@@ -104,6 +104,10 @@ const KNOWN_MODEL_RATES: Record<string, KnownRate> = {
   "qwq-32b": { inputPer1M: 0.15, outputPer1M: 0.60 },
 };
 
+export function knownRateModelIds(): string[] {
+  return Object.keys(KNOWN_MODEL_RATES);
+}
+
 export function knownRateFor(modelId: string): ProviderRates | null {
   const key = modelId.trim().toLowerCase();
   if (!key) return null;

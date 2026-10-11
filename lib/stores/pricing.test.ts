@@ -6,6 +6,7 @@ import {
   getPricingTables,
   providerRatesFor,
   modelRatesFor,
+  dashboardModelRates,
   estimateCostUsd,
   normalizeProvider,
 } from "./pricing";
@@ -279,6 +280,36 @@ describe("providerRatesFor", () => {
     const r = providerRatesFor(tables, "made-up");
     expect(r.inputPer1M).toBeNull();
     expect(r.error).toContain("missing");
+  });
+});
+
+describe("dashboardModelRates", () => {
+  it("lists curated fallback models when live model extraction returns no rows", () => {
+    seedSnapshot({ generated_at: "2026-10-11T00:00:00Z", sources: [] });
+
+    const rows = dashboardModelRates(getPricingTables());
+    const openai = rows.find((row) => row.provider === "openai" && row.model_id === "gpt-4o");
+    const anthropic = rows.find((row) => row.provider === "anthropic" && row.model_id === "claude-sonnet-4-6");
+
+    expect(openai).toMatchObject({ inputPer1M: 2.5, outputPer1M: 10, source: "jarela:known-rates", confidence: "medium" });
+    expect(anthropic).toMatchObject({ inputPer1M: 3, outputPer1M: 15, source: "jarela:known-rates" });
+  });
+
+  it("keeps live snapshot rates ahead of curated fallbacks", () => {
+    seedSnapshot({
+      generated_at: "2026-10-11T00:00:00Z",
+      sources: [{
+        id: "openai",
+        pricing_url: "https://openai.com/api/pricing/",
+        resolved_url: "https://platform.openai.com/docs/pricing",
+        ok: true,
+        model_rates: [{ model_id: "gpt-4o", input_per_1m_usd: 5, output_per_1m_usd: 20, inferred: false, confidence: "high" }],
+      }],
+    });
+
+    const matches = dashboardModelRates(getPricingTables()).filter((row) => row.provider === "openai" && row.model_id === "gpt-4o");
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ inputPer1M: 5, outputPer1M: 20, source: "https://platform.openai.com/docs/pricing" });
   });
 });
 
