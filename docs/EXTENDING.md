@@ -75,6 +75,27 @@ Capability flags (`vision`, `tools`, `streaming`, `json_mode`,
 `web_search`, `audio`, `files`) come from `listModels()` if you implement
 it; otherwise the runtime infers from which methods are present.
 
+To make a declared credential testable from Credentials, add an optional
+`credentialProbe` descriptor. It supports HTTPS GET probes with bearer,
+custom-header, or query-parameter auth; common 401/403 and 429 classification
+is handled by Jarela. `credentialField` must name one of the plugin's declared
+credential fields. Keep the endpoint read-only and do not put secrets in static
+headers or the endpoint URL:
+
+```js
+credentialProbe: {
+  endpoint: "https://api.example.com/v1/models",
+  credentialField: "api_key",
+  auth: { type: "bearer" },
+  responseDetails: { models: { path: "data", count: true } },
+},
+```
+
+Probe descriptors must use HTTPS and are checked when the plugin is loaded.
+`credentialField` must refer to a declared secret field.
+Providers without a safe read-only auth endpoint can omit the descriptor; they
+remain available, but the integration test route will not claim to verify them.
+
 ADR: [0013](../docs/adr/0013-external-providers-and-tools.md).
 
 ---
@@ -364,6 +385,14 @@ Steps:
    `scripts/check-integration-manifests.mjs` (runs on lint).
 
 ADR: [0010](../docs/adr/0010-agent-led-setup-and-integration-manifests.md).
+
+Credential tests for built-in integrations are declared next to their fields
+in [`lib/stores/integrations.ts`](../lib/stores/integrations.ts). A read-only
+HTTPS endpoint can use `probe` metadata (credential field, bearer/header/query
+auth, optional environment fallback, status overrides, and allowlisted response
+summaries) without adding a probe function. Keep custom code in
+[`lib/health/probes.ts`](../lib/health/probes.ts) for multi-step OAuth, local
+CLI, or non-HTTP authentication flows.
 
 ---
 

@@ -23,6 +23,7 @@ const { refreshExternalProviderIntegrations } = await import("./provider-integra
 const {
   isAnyKnownIntegration,
   clearDynamicIntegrations,
+  getDynamicIntegration,
   listIntegrations,
   getIntegrationStatus,
 } = await import("@/lib/stores/integrations");
@@ -46,6 +47,61 @@ describe("refreshExternalProviderIntegrations", () => {
     `);
     refreshExternalProviderIntegrations();
     expect(isAnyKnownIntegration("bridge-llm")).toBe(true);
+  });
+
+  it("registers the provider's validated credential probe descriptor", () => {
+    writeProvider("probed-llm", `
+      module.exports = {
+        name: "probed-llm",
+        credentials: [{ key: "api_key", label: "API key", secret: true, required: true }],
+        credentialProbe: {
+          endpoint: "https://api.example.com/v1/models",
+          credentialField: "api_key",
+          auth: { type: "bearer" },
+        },
+        async chat() { return { stream: (async function*(){})() }; },
+      };
+    `);
+    refreshExternalProviderIntegrations();
+    expect(getDynamicIntegration("probed-llm")?.probe).toMatchObject({
+      endpoint: "https://api.example.com/v1/models",
+      credentialField: "api_key",
+      auth: { type: "bearer" },
+    });
+  });
+
+  it("rejects non-HTTPS external credential probes", () => {
+    writeProvider("http-probe-llm", `
+      module.exports = {
+        name: "http-probe-llm",
+        credentials: [{ key: "api_key", label: "API key", secret: true, required: true }],
+        credentialProbe: {
+          endpoint: "http://api.example.com/v1/models",
+          credentialField: "api_key",
+          auth: { type: "bearer" },
+        },
+        async chat() { return { stream: (async function*(){})() }; },
+      };
+    `);
+    refreshExternalProviderIntegrations();
+    expect(isAnyKnownIntegration("http-probe-llm")).toBe(false);
+  });
+
+  it("rejects a probe that points at a non-secret credential field", () => {
+    writeProvider("public-field-probe-llm", `
+      module.exports = {
+        name: "public-field-probe-llm",
+        credentials: [{ key: "base_url", label: "Base URL", secret: false, required: true }],
+        credentialProbe: {
+          endpoint: "https://api.example.com/v1/models",
+          credentialField: "base_url",
+          auth: { type: "bearer" },
+        },
+        async chat() { return { stream: (async function*(){})() }; },
+      };
+    `);
+    refreshExternalProviderIntegrations();
+    expect(isAnyKnownIntegration("public-field-probe-llm")).toBe(false);
   });
 
   it("does not register a provider that declares no credentials", () => {

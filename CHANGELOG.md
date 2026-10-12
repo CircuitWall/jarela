@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Built-in and drop-in provider integrations can declare read-only HTTPS credential probes instead of hand-written probe code.
+
+### Fixed
+
+- Firecrawl Search credentials can be tested from the Credentials panel.
+
 ### Security
 
 - Upgrade Next.js and its ESLint config to 16.4.2 and enable security-upgrade reminders.
