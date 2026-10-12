@@ -25,6 +25,7 @@ export function refreshExternalProviderIntegrations(): void {
       description: result.descriptions.get(name) ?? `Drop-in provider: ${name}`,
       category: "llm" as IntegrationCategory,
       fields,
+      ...(result.providers[name].credentialProbe ? { probe: result.providers[name].credentialProbe } : {}),
     });
   }
 }

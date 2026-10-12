@@ -13,7 +13,6 @@ import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import { spawnSync } from "node:child_process";
 
 type AtlassianAuth = { url: string; email: string; apiToken: string; cloudId?: string };
-type GitHubAuth = { token: string };
 type JiraAlignAuth = { url: string; apiToken: string };
 // Trigger registration of the default LangChain package auth resolvers
 // before the first probe runs. Health probes can be invoked from the
@@ -28,11 +27,20 @@ import { _resolveGmailAuth } from "@/lib/tools/communications/gmail";
 import { _resolveOutlookAuth } from "@/lib/tools/communications/outlook";
 import { resolveGoogleTokenEndpoint } from "@/lib/integrations/gmail-oauth";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
-import { getIntegrationRaw, INTEGRATIONS, type IntegrationName } from "@/lib/stores/integrations";
+import {
+  DYNAMIC_INTEGRATIONS_SNAPSHOT,
+  getDynamicIntegration,
+  getIntegrationRaw,
+  INTEGRATIONS,
+  isKnownIntegration,
+  type HttpCredentialProbeDefinition,
+  type IntegrationCategory,
+} from "@/lib/stores/integrations";
 import { getStoredOAuthToken as getStoredCopilotOAuthToken } from "@/lib/providers/github-copilot-auth";
 import { getClaudeCodeConfig } from "@/lib/tools/delegation/claude-code-config";
 import { getCodexConfig, resolveCodexLaunch } from "@/lib/tools/delegation/codex-delegate";
 import { readJsonResponse } from "@/lib/utils/http-json";
+import { runHttpCredentialProbe } from "./http-credential-probe";
 
 export const __testing = {
   spawnClaudeCodeVersion(bin: string, env: NodeJS.ProcessEnv) {
@@ -97,7 +105,7 @@ function probeSignal(timeoutMs: number): AbortSignal {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Integration probes (six configured services)
+// Integration probes
 // ────────────────────────────────────────────────────────────────────
 
 export async function probeAtlassian(): Promise<HealthResult> {
@@ -161,55 +169,6 @@ export async function probeJiraAlign(): Promise<HealthResult> {
     }
     const data = await readJsonResponse<{ items?: unknown[] }>(res);
     return ok({ url: auth.url, sample_programs: Array.isArray(data.items) ? data.items.length : 0 });
-  } catch (err) {
-    return transient(describeError(err));
-  }
-}
-
-export async function probeGithub(): Promise<HealthResult> {
-  const auth = resolvePackageAuth<GitHubAuth>("github");
-  if ("error" in auth) return unconfigured(auth.error);
-  try {
-    const res = await fetch("https://api.github.com/user", {
-      headers: {
-        Authorization: `Bearer ${auth.token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "Jarela",
-      },
-      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
-    });
-    if (res.status === 401 || res.status === 403) {
-      return authFailed(`GitHub rejected the Personal Access Token (${res.status}). Regenerate at github.com/settings/tokens.`);
-    }
-    if (res.status === 429) return transient(`GitHub rate-limited the probe (429).`);
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return probeError(`GitHub ${res.status}: ${body.slice(0, 200)}`);
-    }
-    const me = await readJsonResponse<{ login?: string; name?: string | null; type?: string }>(res);
-    return ok({ login: me.login, name: me.name ?? null, type: me.type });
-  } catch (err) {
-    return transient(describeError(err));
-  }
-}
-
-export async function probeGoogle(): Promise<HealthResult> {
-  const raw = getIntegrationRaw("google");
-  const apiKey = raw?.api_key?.trim();
-  if (!apiKey) return unconfigured("API key not configured");
-  try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}&pageSize=1`;
-    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS) });
-    if (res.status === 400 || res.status === 401 || res.status === 403) {
-      return authFailed(`Google AI rejected the API key (${res.status}). Regenerate at aistudio.google.com → API keys.`);
-    }
-    if (res.status === 429) return transient(`Google AI rate-limited the probe (429).`);
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return probeError(`Google AI ${res.status}: ${body.slice(0, 200)}`);
-    }
-    return ok({ displayName: "Google AI" });
   } catch (err) {
     return transient(describeError(err));
   }
@@ -333,97 +292,6 @@ export async function probeICloud(): Promise<HealthResult> {
   }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// LLM-provider key probes (anthropic / openai / google / deepseek)
-// ────────────────────────────────────────────────────────────────────
-
-export async function probeAnthropic(): Promise<HealthResult> {
-  const key = getIntegrationRaw("anthropic")?.api_key?.trim();
-  if (!key) return unconfigured("API key not configured");
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/models", {
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
-      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
-    });
-    if (res.status === 401 || res.status === 403) {
-      return authFailed("Anthropic rejected the API key (401/403). Regenerate at console.anthropic.com.");
-    }
-    if (res.status === 429) return transient("Anthropic rate-limited the probe (429).");
-    if (!res.ok) return probeError(`Anthropic returned ${res.status}`);
-    const data = await readJsonResponse<{ data?: Array<{ id: string }> }>(res);
-    return ok({ models: (data.data ?? []).map((m) => m.id).length });
-  } catch (err) {
-    return transient(describeError(err));
-  }
-}
-
-export async function probeOpenAI(): Promise<HealthResult> {
-  // Prefer the integration store (set via the Integrations panel) and
-  // fall back to OPENAI_API_KEY for setups that only export the env var.
-  const key = getIntegrationRaw("openai")?.api_key?.trim() || process.env.OPENAI_API_KEY?.trim();
-  if (!key) return unconfigured("API key not configured");
-  try {
-    const res = await fetch("https://api.openai.com/v1/models", {
-      headers: { Authorization: `Bearer ${key}` },
-      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
-    });
-    if (res.status === 401 || res.status === 403) {
-      return authFailed("OpenAI rejected the API key (401). Verify at platform.openai.com/api-keys.");
-    }
-    if (res.status === 429) return transient("OpenAI rate-limited the probe (429).");
-    if (!res.ok) return probeError(`OpenAI returned ${res.status}`);
-    const data = await readJsonResponse<{ data?: Array<{ id: string }> }>(res);
-    return ok({ models: (data.data ?? []).length });
-  } catch (err) {
-    return transient(describeError(err));
-  }
-}
-
-export async function probeDeepseek(): Promise<HealthResult> {
-  const key = getIntegrationRaw("deepseek")?.api_key?.trim() || process.env.DEEPSEEK_API_KEY?.trim();
-  if (!key) return unconfigured("API key not configured");
-  try {
-    const res = await fetch("https://api.deepseek.com/v1/models", {
-      headers: { Authorization: `Bearer ${key}` },
-      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
-    });
-    if (res.status === 401 || res.status === 403) {
-      return authFailed(`DeepSeek rejected the request (${res.status}). Check the API key and account access.`);
-    }
-    if (res.status === 429) return transient("DeepSeek rate-limited the probe (429).");
-    if (!res.ok) return probeError(`DeepSeek returned ${res.status}`);
-    let data: { data?: Array<{ id: string }> };
-    try {
-      data = await readJsonResponse<{ data?: Array<{ id: string }> }>(res);
-    } catch {
-      return transient(`DeepSeek returned an unreadable response (${res.status}); expected JSON.`);
-    }
-    return ok({ models: (data.data ?? []).length });
-  } catch (err) {
-    return transient(describeError(err));
-  }
-}
-
-export async function probeCohere(): Promise<HealthResult> {
-  const key = getIntegrationRaw("cohere")?.api_key?.trim() || process.env.COHERE_API_KEY?.trim();
-  if (!key) return unconfigured("API key not configured");
-  try {
-    const res = await fetch("https://api.cohere.com/v1/models", {
-      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
-      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
-    });
-    if (res.status === 401 || res.status === 403) {
-      return authFailed("Cohere rejected the API key (401). Regenerate at dashboard.cohere.com → API keys.");
-    }
-    if (res.status === 429) return transient("Cohere rate-limited the probe (429).");
-    if (!res.ok) return probeError(`Cohere returned ${res.status}`);
-    const data = await readJsonResponse<{ models?: Array<{ name: string }> }>(res);
-    return ok({ models: (data.models ?? []).length });
-  } catch (err) {
-    return transient(describeError(err));
-  }
-}
-
 export async function probeGithubCopilot(): Promise<HealthResult> {
   // Device-flow OAuth token stored under the github-copilot-auth namespace.
   // Legacy PAT credentials used GitHub Models, which has been retired.
@@ -527,80 +395,56 @@ export async function probeOpenAICodex(): Promise<HealthResult> {
 // Routing helpers
 // ────────────────────────────────────────────────────────────────────
 
-export type ProbeName =
-  | "atlassian" | "jira_align" | "github" | "google" | "gmail" | "outlook" | "icloud"
-  | "anthropic" | "openai" | "deepseek" | "cohere" | "github-copilot" | "claude-code"
-  | "openai-codex";
+export type ProbeName = string;
 
-const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
+type ProbeIntegrationDefinition = {
+  label: string;
+  category: IntegrationCategory;
+  probe?: HttpCredentialProbeDefinition;
+};
+
+function probeDefinition(name: string): ProbeIntegrationDefinition | undefined {
+  if (isKnownIntegration(name)) return INTEGRATIONS[name] as ProbeIntegrationDefinition;
+  return getDynamicIntegration(name);
+}
+
+const SPECIAL_PROBES: Partial<Record<ProbeName, () => Promise<HealthResult>>> = {
   atlassian: probeAtlassian,
   jira_align: probeJiraAlign,
-  github: probeGithub,
-  google: probeGoogle,
   gmail: probeGmail,
   outlook: probeOutlook,
   icloud: probeICloud,
-  anthropic: probeAnthropic,
-  openai: probeOpenAI,
-  deepseek: probeDeepseek,
-  cohere: probeCohere,
   "github-copilot": probeGithubCopilot,
   "claude-code": probeClaudeCode,
   "openai-codex": probeOpenAICodex,
 };
 
-const PROBE_LABELS: Record<ProbeName, string> = {
-  atlassian: "Atlassian (Jira + Confluence)",
-  jira_align: "Jira Align",
-  github: "GitHub",
-  google: "Google AI (Gemini + Imagen)",
-  gmail: "Gmail + Calendar",
-  outlook: "Outlook + Calendar",
-  icloud: "iCloud Mail + Calendar + Reminders",
-  anthropic: "Anthropic (Claude)",
-  openai: "OpenAI",
-  deepseek: "DeepSeek",
-  cohere: "Cohere",
-  "github-copilot": "GitHub Copilot",
-  "claude-code": "Claude Code",
-  "openai-codex": "OpenAI Codex (ChatGPT)",
-};
-
-const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
-  atlassian: "integration",
-  jira_align: "integration",
-  github: "integration",
-  google: "llm",
-  gmail: "integration",
-  outlook: "integration",
-  icloud: "integration",
-  anthropic: "llm",
-  openai: "llm",
-  deepseek: "llm",
-  cohere: "llm",
-  "github-copilot": "llm",
-  "claude-code": "integration",
-  "openai-codex": "integration",
-};
-
-export function listProbes(): ProbeName[] {
-  return Object.keys(ALL_PROBES) as ProbeName[];
+export function listProbes(): string[] {
+  const builtIn = Object.keys(INTEGRATIONS).filter(isIntegrationProbe);
+  const dynamic = DYNAMIC_INTEGRATIONS_SNAPSHOT()
+    .filter(([, definition]) => Boolean(definition.probe))
+    .map(([name]) => name);
+  return [...builtIn, ...dynamic];
 }
 
-export function probeLabel(name: ProbeName): string {
-  return PROBE_LABELS[name];
+export function probeLabel(name: string): string {
+  return probeDefinition(name)?.label ?? name;
 }
 
-export function probeCategory(name: ProbeName): HealthCategory {
-  return PROBE_CATEGORY[name];
+export function probeCategory(name: string): HealthCategory {
+  const category = probeDefinition(name)?.category;
+  return category === "llm" ? "llm" : "integration";
 }
 
-export async function runProbe(name: ProbeName): Promise<HealthResult> {
-  return ALL_PROBES[name]();
+export async function runProbe(name: string): Promise<HealthResult> {
+  const specialized = isKnownIntegration(name) ? SPECIAL_PROBES[name] : undefined;
+  if (specialized) return specialized();
+  const definition = probeDefinition(name);
+  if (definition?.probe) return runHttpCredentialProbe(name, definition.probe);
+  return { ok: false, status: "error", error: `No credential probe is registered for ${name}.` };
 }
 
-// Convenience: only known integration probes (used by the existing
-// /api/v1/integrations/[name]/test route which is keyed by integration name).
-export function isIntegrationProbe(name: string): name is IntegrationName & ProbeName {
-  return Object.prototype.hasOwnProperty.call(INTEGRATIONS, name) && Object.prototype.hasOwnProperty.call(ALL_PROBES, name);
+export function isIntegrationProbe(name: string): boolean {
+  if (isKnownIntegration(name) && SPECIAL_PROBES[name]) return true;
+  return Boolean(probeDefinition(name)?.probe);
 }

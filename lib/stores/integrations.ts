@@ -50,6 +50,64 @@ export type IntegrationCategory =
   | "infrastructure"
   | "other";
 
+export type CredentialProbeAuth =
+  | { type: "bearer" }
+  | { type: "header"; name: string; prefix?: string }
+  | { type: "query"; name: string };
+
+export interface HttpCredentialProbeDefinition {
+  endpoint: string;
+  credentialField: string;
+  auth: CredentialProbeAuth;
+  env?: string | readonly string[];
+  headers?: Readonly<Record<string, string>>;
+  authFailureStatuses?: readonly number[];
+  rateLimitStatuses?: readonly number[];
+  acceptedStatuses?: readonly number[];
+  successField?: string;
+  responseDetails?: Readonly<Record<string, { path: string; count?: boolean }>>;
+}
+
+export function isValidHttpCredentialProbe(value: unknown): value is HttpCredentialProbeDefinition {
+  if (!value || typeof value !== "object") return false;
+  const probe = value as Record<string, unknown>;
+  if (typeof probe.endpoint !== "string" || typeof probe.credentialField !== "string") return false;
+  try {
+    const endpoint = new URL(probe.endpoint);
+    if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.hash) return false;
+  } catch {
+    return false;
+  }
+  if (!/^[a-z0-9_-]+$/i.test(probe.credentialField)) return false;
+  if (!probe.auth || typeof probe.auth !== "object") return false;
+  const auth = probe.auth as Record<string, unknown>;
+  if (auth.type !== "bearer" && auth.type !== "header" && auth.type !== "query") return false;
+  if (auth.type !== "bearer" && (typeof auth.name !== "string" || !/^[a-z0-9_-]+$/i.test(auth.name))) return false;
+  if (auth.type === "header" && auth.prefix !== undefined && typeof auth.prefix !== "string") return false;
+  if (probe.env !== undefined && typeof probe.env !== "string" &&
+      (!Array.isArray(probe.env) || !probe.env.every((name) => typeof name === "string"))) return false;
+  if (probe.headers !== undefined && (!probe.headers || typeof probe.headers !== "object" ||
+      Object.entries(probe.headers as Record<string, unknown>).some(([name, value]) =>
+        typeof value !== "string" || !/^[-!#$%&'*+.^_`|~0-9a-z]+$/i.test(name) ||
+        /^(authorization|cookie|host|proxy-authorization)$/i.test(name)))) return false;
+  for (const key of ["authFailureStatuses", "rateLimitStatuses", "acceptedStatuses"] as const) {
+    const statuses = probe[key];
+    if (statuses !== undefined && (!Array.isArray(statuses) || !statuses.every((status) =>
+      typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599))) return false;
+  }
+  const validPath = (path: unknown): path is string => typeof path === "string" && path.length > 0 &&
+    path.split(".").every((part) => /^[a-z0-9_-]+$/i.test(part) && !["__proto__", "constructor", "prototype"].includes(part));
+  if (probe.successField !== undefined && !validPath(probe.successField)) return false;
+  if (probe.responseDetails !== undefined && (!probe.responseDetails || typeof probe.responseDetails !== "object" ||
+      Object.entries(probe.responseDetails as Record<string, unknown>).some(([key, field]) => {
+        if (!/^[a-z0-9_-]+$/i.test(key) || ["__proto__", "constructor", "prototype"].includes(key)) return true;
+        if (!field || typeof field !== "object") return true;
+        const detail = field as Record<string, unknown>;
+        return !validPath(detail.path) || (detail.count !== undefined && typeof detail.count !== "boolean");
+      }))) return false;
+  return true;
+}
+
 // Per-integration shape. Adding a new integration means:
 //   1. Add an entry here naming its fields and which are secrets.
 //   2. The Atlassian tool (or a future tool) reads via getIntegration().
@@ -61,6 +119,13 @@ export const INTEGRATIONS = {
     fields: [
       { key: "api_key", label: "API key", placeholder: "sk-ant-…", secret: true, required: true },
     ],
+    probe: {
+      endpoint: "https://api.anthropic.com/v1/models",
+      credentialField: "api_key",
+      auth: { type: "header", name: "x-api-key" },
+      headers: { "anthropic-version": "2023-06-01" },
+      responseDetails: { models: { path: "data", count: true } },
+    },
   },
   "claude-code": {
     label: "Claude Code",
@@ -119,6 +184,12 @@ export const INTEGRATIONS = {
     fields: [
       { key: "api_key", label: "API key", placeholder: "AIza…", secret: true, required: true },
     ],
+    probe: {
+      endpoint: "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1",
+      credentialField: "api_key",
+      auth: { type: "query", name: "key" },
+      authFailureStatuses: [400, 401, 403],
+    },
   },
   firecrawl: {
     label: "Firecrawl Search",
@@ -127,6 +198,19 @@ export const INTEGRATIONS = {
     fields: [
       { key: "api_key", label: "API key", placeholder: "fc-…", secret: true, required: true },
     ],
+    probe: {
+      endpoint: "https://api.firecrawl.dev/v2/team/credit-usage",
+      credentialField: "api_key",
+      auth: { type: "bearer" },
+      env: "FIRECRAWL_API_KEY",
+      headers: { Accept: "application/json" },
+      acceptedStatuses: [404],
+      successField: "success",
+      responseDetails: {
+        remainingCredits: { path: "data.remainingCredits" },
+        planCredits: { path: "data.planCredits" },
+      },
+    },
   },
   openai: {
     label: "OpenAI",
@@ -137,6 +221,13 @@ export const INTEGRATIONS = {
     fields: [
       { key: "api_key", label: "API key", placeholder: "sk-… or sk-proj-…", secret: true, required: true },
     ],
+    probe: {
+      endpoint: "https://api.openai.com/v1/models",
+      credentialField: "api_key",
+      auth: { type: "bearer" },
+      env: "OPENAI_API_KEY",
+      responseDetails: { models: { path: "data", count: true } },
+    },
   },
   "openai-codex": {
     label: "OpenAI Codex (ChatGPT)",
@@ -162,6 +253,13 @@ export const INTEGRATIONS = {
     fields: [
       { key: "api_key", label: "API key", placeholder: "sk-…", secret: true, required: true },
     ],
+    probe: {
+      endpoint: "https://api.deepseek.com/v1/models",
+      credentialField: "api_key",
+      auth: { type: "bearer" },
+      env: "DEEPSEEK_API_KEY",
+      responseDetails: { models: { path: "data", count: true } },
+    },
   },
   cohere: {
     label: "Cohere",
@@ -172,6 +270,14 @@ export const INTEGRATIONS = {
     fields: [
       { key: "api_key", label: "API key", placeholder: "co_…", secret: true, required: true },
     ],
+    probe: {
+      endpoint: "https://api.cohere.com/v1/models",
+      credentialField: "api_key",
+      auth: { type: "bearer" },
+      env: "COHERE_API_KEY",
+      headers: { Accept: "application/json" },
+      responseDetails: { models: { path: "models", count: true } },
+    },
   },
   "github-copilot": {
     label: "GitHub Copilot",
@@ -207,6 +313,22 @@ export const INTEGRATIONS = {
     fields: [
       { key: "token", label: "Personal Access Token", placeholder: "ghp_… or github_pat_…", secret: true, required: true },
     ],
+    probe: {
+      endpoint: "https://api.github.com/user",
+      credentialField: "token",
+      auth: { type: "header", name: "Authorization", prefix: "Bearer " },
+      env: ["GITHUB_TOKEN", "GH_TOKEN"],
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Jarela",
+      },
+      responseDetails: {
+        login: { path: "login" },
+        name: { path: "name" },
+        type: { path: "type" },
+      },
+    },
   },
   outlook: {
     label: "Outlook + Calendar + To Do",
@@ -257,6 +379,7 @@ export interface DynamicIntegrationDef {
   category: IntegrationCategory;
   description: string;
   fields: ReadonlyArray<{ key: string; label: string; placeholder?: string; secret: boolean; required: boolean }>;
+  probe?: HttpCredentialProbeDefinition;
 }
 
 const DYNAMIC_INTEGRATIONS = new Map<string, DynamicIntegrationDef>();
@@ -267,6 +390,10 @@ export function registerDynamicIntegration(name: string, def: DynamicIntegration
 
 export function clearDynamicIntegrations(): void {
   DYNAMIC_INTEGRATIONS.clear();
+}
+
+export function getDynamicIntegration(name: string): DynamicIntegrationDef | undefined {
+  return DYNAMIC_INTEGRATIONS.get(name);
 }
 
 // True for both static INTEGRATIONS entries AND dynamically-registered

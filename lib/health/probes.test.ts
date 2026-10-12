@@ -9,14 +9,21 @@ process.on("exit", () => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* */ }
 });
 
-const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
+const { saveIntegration, deleteIntegration, clearDynamicIntegrations } = await import("@/lib/stores/integrations");
 const { storeOAuthToken, clearStoredOAuthToken } = await import("@/lib/providers/github-copilot-auth");
 const {
-  probeAtlassian, probeJiraAlign, probeGithub, probeGoogle, probeGmail,
-  probeOutlook, probeICloud, probeAnthropic, probeOpenAI, probeDeepseek,
-  probeCohere, probeGithubCopilot, probeClaudeCode, probeOpenAICodex, __testing,
+  probeAtlassian, probeJiraAlign, probeGmail,
+  probeOutlook, probeICloud, probeGithubCopilot, probeClaudeCode, probeOpenAICodex, __testing,
   listProbes, probeLabel, probeCategory, isIntegrationProbe, runProbe,
 } = await import("./probes");
+
+const probeFirecrawl = () => runProbe("firecrawl");
+const probeGithub = () => runProbe("github");
+const probeGoogle = () => runProbe("google");
+const probeAnthropic = () => runProbe("anthropic");
+const probeOpenAI = () => runProbe("openai");
+const probeDeepseek = () => runProbe("deepseek");
+const probeCohere = () => runProbe("cohere");
 
 type FetchHandler = (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>;
 
@@ -29,7 +36,8 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function wipe(): void {
-  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "icloud", "anthropic", "openai", "deepseek", "cohere", "github-copilot", "claude-code", "openai-codex"]) {
+  clearDynamicIntegrations();
+  for (const k of ["atlassian", "jira_align", "firecrawl", "github", "google", "gmail", "outlook", "icloud", "anthropic", "openai", "deepseek", "cohere", "github-copilot", "claude-code", "openai-codex"]) {
     deleteIntegration(k);
   }
   clearStoredOAuthToken();
@@ -49,6 +57,7 @@ function wipe(): void {
   delete process.env.ATLASSIAN_CLOUD_ID;
   delete process.env.GITHUB_TOKEN;
   delete process.env.GH_TOKEN;
+  delete process.env.FIRECRAWL_API_KEY;
   delete process.env.JIRA_ALIGN_URL;
   delete process.env.JIRA_ALIGN_TOKEN;
   delete process.env.OUTLOOK_CLIENT_ID;
@@ -85,7 +94,7 @@ describe("health probes", () => {
     const r = await probeGithub();
     expect(r.ok).toBe(false);
     expect(r.status).toBe("transient");
-    expect(String(r.error)).toMatch(/ECONNRESET/);
+    expect(String(r.error)).toMatch(/could not reach its endpoint/i);
   });
 
   it("ok on a 200 from the vendor", async () => {
@@ -223,6 +232,54 @@ describe("health probes", () => {
       saveIntegration("github", { token: "ghp" });
       mockFetch(() => new Response("boom", { status: 500 }));
       expect((await probeGithub()).status).toBe("error");
+    });
+  });
+
+  describe("firecrawl", () => {
+    it("unconfigured", async () => {
+      expect((await probeFirecrawl()).status).toBe("unconfigured");
+    });
+    it("checks the read-only team credit endpoint using the stored key", async () => {
+      saveIntegration("firecrawl", { api_key: "fc-test" });
+      const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+      mockFetch((input, init) => {
+        calls.push({ input, init });
+        return jsonResponse({ success: true, data: { remainingCredits: 12, planCredits: 100 } });
+      });
+
+      const result = await probeFirecrawl();
+      expect(result).toMatchObject({ ok: true, status: "ok", detail: { remainingCredits: 12, planCredits: 100 } });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].input).toBe("https://api.firecrawl.dev/v2/team/credit-usage");
+      expect(calls[0].init).toMatchObject({
+        headers: { Authorization: "Bearer fc-test", Accept: "application/json" },
+      });
+    });
+    it("uses FIRECRAWL_API_KEY when no stored key is present", async () => {
+      process.env.FIRECRAWL_API_KEY = "fc-env-test";
+      let authorization = "";
+      mockFetch((_input, init) => {
+        authorization = (init?.headers as Record<string, string> | undefined)?.Authorization ?? "";
+        return jsonResponse({ success: true, data: { remainingCredits: 3 } });
+      });
+
+      expect((await probeFirecrawl()).status).toBe("ok");
+      expect(authorization).toBe("Bearer fc-env-test");
+    });
+    it("classifies rejected keys, rate limits, and missing credit records safely", async () => {
+      saveIntegration("firecrawl", { api_key: "fc-test" });
+      mockFetch(() => new Response("invalid", { status: 401 }));
+      expect((await probeFirecrawl()).status).toBe("auth_failed");
+
+      mockFetch(() => new Response("rate limited", { status: 429 }));
+      expect((await probeFirecrawl()).status).toBe("transient");
+
+      mockFetch(() => new Response("not found", { status: 404 }));
+      expect(await probeFirecrawl()).toMatchObject({
+        ok: true,
+        status: "ok",
+        detail: { httpStatus: 404 },
+      });
     });
   });
 
@@ -705,7 +762,7 @@ describe("health probes", () => {
   describe("registry helpers", () => {
     it("lists every probe with a label and category", () => {
       const names = listProbes();
-      expect(names.length).toBe(14);
+      expect(names.length).toBe(15);
       for (const n of names) {
         expect(typeof probeLabel(n)).toBe("string");
         expect(["integration", "llm"]).toContain(probeCategory(n));
@@ -714,6 +771,7 @@ describe("health probes", () => {
     it("isIntegrationProbe is true for known integration names", () => {
       expect(isIntegrationProbe("github")).toBe(true);
       expect(isIntegrationProbe("atlassian")).toBe(true);
+      expect(isIntegrationProbe("firecrawl")).toBe(true);
       expect(isIntegrationProbe("cohere")).toBe(true);
       expect(isIntegrationProbe("github-copilot")).toBe(true);
       expect(isIntegrationProbe("claude-code")).toBe(true);

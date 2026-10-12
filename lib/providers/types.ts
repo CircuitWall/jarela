@@ -12,6 +12,8 @@
  */
 
 import type { ContentPart, InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/runtime/types";
+import type { HttpCredentialProbeDefinition } from "@/lib/stores/integrations";
+export type { HttpCredentialProbeDefinition } from "@/lib/stores/integrations";
 export type { InvokeMessage, InvokeResult, OpenAITool };
 
 export interface ProviderMessage {
@@ -75,6 +77,7 @@ export type ProviderStreamEvent =
 
 export interface ModelProvider {
   readonly name: string;
+  readonly credentialProbe?: HttpCredentialProbeDefinition;
   // `signal`, when supplied, aborts the underlying SDK/fetch call — not just
   // the caller's own consumption of the result. Optional and trailing so
   // existing external `~/.jarela/providers/*.cjs` plugins that don't accept

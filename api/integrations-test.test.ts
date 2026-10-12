@@ -7,12 +7,12 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-integrations-test-route-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
+const { saveIntegration, deleteIntegration, clearDynamicIntegrations, registerDynamicIntegration } = await import("@/lib/stores/integrations");
 const { listCredentials } = await import("@/lib/stores/credentials");
 const { POST } = await import("@/app/api/v1/integrations/[name]/test/route");
 
-function makeRequest(body?: unknown): NextRequest {
-  return new NextRequest("http://localhost/api/v1/integrations/github/test", {
+function makeRequest(body?: unknown, name = "github"): NextRequest {
+  return new NextRequest(`http://localhost/api/v1/integrations/${name}/test`, {
     method: "POST",
     body: body === undefined ? "{}" : JSON.stringify(body),
     headers: { "content-type": "application/json" },
@@ -25,9 +25,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  clearDynamicIntegrations();
   deleteIntegration("github");
+  deleteIntegration("firecrawl");
   delete process.env.GITHUB_TOKEN;
   delete process.env.GH_TOKEN;
+  delete process.env.FIRECRAWL_API_KEY;
 });
 
 afterAll(() => {
@@ -54,6 +57,48 @@ describe("POST /api/v1/integrations/[name]/test", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true });
     expect(calls).toEqual(["Bearer ghp_default"]);
+  });
+
+  it("tests Firecrawl instead of returning unknown integration", async () => {
+    saveIntegration("firecrawl", { api_key: "fc-test" });
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ input, init });
+      return jsonResponse({ success: true, data: { remainingCredits: 12 } });
+    }));
+
+    const res = await POST(makeRequest(undefined, "firecrawl"), { params: Promise.resolve({ name: "firecrawl" }) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, detail: { remainingCredits: 12 } });
+    expect(calls[0].input).toBe("https://api.firecrawl.dev/v2/team/credit-usage");
+    expect(calls[0].init).toMatchObject({ headers: { Authorization: "Bearer fc-test" } });
+  });
+
+  it("tests a dynamically registered provider from its probe descriptor", async () => {
+    registerDynamicIntegration("custom-llm", {
+      label: "Custom LLM",
+      category: "llm",
+      description: "Test provider",
+      fields: [{ key: "api_key", label: "API key", secret: true, required: true }],
+      probe: {
+        endpoint: "https://api.example.test/v1/models",
+        credentialField: "api_key",
+        auth: { type: "bearer" },
+        responseDetails: { models: { path: "data", count: true } },
+      },
+    });
+    saveIntegration("custom-llm", { api_key: "custom-test" });
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ input, init });
+      return jsonResponse({ data: [{ id: "model-a" }] });
+    }));
+
+    const res = await POST(makeRequest(undefined, "custom-llm"), { params: Promise.resolve({ name: "custom-llm" }) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, detail: { httpStatus: 200, models: 1 } });
+    expect(calls[0].input).toBe("https://api.example.test/v1/models");
+    expect(calls[0].init).toMatchObject({ headers: { Authorization: "Bearer custom-test" } });
   });
 
   it("routes the probe to the supplied credentialId", async () => {

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { ModelProvider } from "./types";
+import { isValidHttpCredentialProbe } from "@/lib/stores/integrations";
 import { getDataDir } from "@/lib/db/data-dir";
 import {
   scanCjsPlugins,
@@ -56,6 +57,12 @@ function isValid(p: unknown): p is ModelProvider {
   if (o.credentials !== undefined) {
     if (!Array.isArray(o.credentials)) return false;
     if (!o.credentials.every(isValidCredentialField)) return false;
+  }
+  const credentialProbe = o.credentialProbe;
+  if (credentialProbe !== undefined) {
+    if (!isValidHttpCredentialProbe(credentialProbe) || !Array.isArray(o.credentials) ||
+        !o.credentials.some((field) => isValidCredentialField(field) &&
+          field.key === credentialProbe.credentialField && field.secret)) return false;
   }
   return true;
 }
