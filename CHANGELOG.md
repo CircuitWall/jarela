@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **The npm publish lifecycle removes generated standalone source maps before packing.**
+- **The npm package resolves ONNX runtimes from installed dependencies instead of bundling duplicate native packages.**
 
 ## [2.0.1] - 2026-10-11
 

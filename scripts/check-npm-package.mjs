@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -67,8 +67,8 @@ try {
     .filter((path) => path.startsWith(".next/standalone/") && (
       path.endsWith(".map") ||
       path.endsWith(".wasm") ||
-      /onnxruntime-node\/bin\/napi-v6\/linux\/.+\/libonnxruntime_providers_cuda\.so$/.test(path) ||
-      /onnxruntime-node\/bin\/napi-v6\/win32\/(arm64|x64)\/(DirectML|dxcompiler|dxil)\.dll$/.test(path)
+      path.startsWith(".next/standalone/node_modules/onnxruntime-node/") ||
+      path.startsWith(".next/standalone/node_modules/onnxruntime-web/")
     ));
   if (excludedStandaloneFiles.length > 0) {
     throw new Error(
@@ -82,9 +82,7 @@ try {
 
   const required = [
     "package/.next/standalone/server.js",
-    "package/.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/linux/x64/onnxruntime_binding.node",
-    "package/.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
-    "package/.next/standalone/node_modules/onnxruntime-node/bin/napi-v6/win32/x64/onnxruntime_binding.node",
+    "package/.next/standalone/node_modules/@huggingface/transformers/package.json",
     // The PWA manifest is a route now (ADR-0077), not a static public/ file.
     "package/.next/standalone/.next/server/app/manifest.webmanifest/route.js",
     "package/package.json",
@@ -134,9 +132,45 @@ try {
   }
 
   const packedPackage = JSON.parse(packedManifest);
+  if (!packedPackage.dependencies?.["@huggingface/transformers"]) {
+    throw new Error("npm package must install @huggingface/transformers and its Node ONNX runtime dependencies");
+  }
+
   extractDir = mkdtempSync(join(tmpdir(), "jarela-package-"));
+  const extractedPackageRoot = join(extractDir, "package");
   run("tar", ["-xf", filename, "-C", extractDir]);
-  run("npm", ["run", "packages:build", "--silent"], { cwd: join(extractDir, "package") });
+  symlinkSync(
+    resolve(repoRoot, "node_modules"),
+    join(extractedPackageRoot, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  run("node", ["-e", [
+    'const { createRequire } = require("node:module");',
+    'const { resolve, sep } = require("node:path");',
+    'const root = process.cwd();',
+    'const fromServer = createRequire(resolve(root, ".next/standalone/server.js"));',
+    'const transformers = fromServer.resolve("@huggingface/transformers");',
+    'const onnxRuntime = createRequire(transformers).resolve("onnxruntime-node");',
+    'const bundledModules = `${resolve(root, ".next/standalone/node_modules")}${sep}`;',
+    'if (onnxRuntime.startsWith(bundledModules)) {',
+    '  throw new Error(`ONNX runtime resolved from standalone instead of installed dependencies: ${onnxRuntime}`);',
+    '}',
+    'require(onnxRuntime);',
+  ].join("\n")], { cwd: extractedPackageRoot });
+  run("node", ["-e", [
+    '(async () => {',
+    '  const { resolve } = require("node:path");',
+    '  const { env, pipeline } = await import("@huggingface/transformers");',
+    '  env.localModelPath = resolve(process.cwd(), ".next/standalone/.jarela-assets/local-embedding");',
+    '  env.allowRemoteModels = false;',
+    '  env.allowLocalModels = true;',
+    '  const extractor = await pipeline("feature-extraction", "Xenova/multilingual-e5-small", { dtype: "q8" });',
+    '  const result = await extractor(["passage: npm package runtime smoke test"], { pooling: "mean", normalize: true });',
+    '  const vector = result.tolist()[0];',
+    '  if (vector.length !== 384 || !vector.every(Number.isFinite)) throw new Error("local embedding smoke test returned an invalid vector");',
+  '})().catch((error) => { console.error(error); process.exitCode = 1; });',
+  ].join("\n")], { cwd: extractedPackageRoot });
+  run("npm", ["run", "packages:build", "--silent"], { cwd: extractedPackageRoot });
 
   console.log(`[npm-package] ok: ${filename} contains runnable standalone bundle`);
 } finally {
