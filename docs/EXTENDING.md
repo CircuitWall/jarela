@@ -26,8 +26,10 @@ same map this document is built around.
 ## Adding an LLM provider (built-in)
 
 In-tree provider adapters (Anthropic, OpenAI, Gemini, DeepSeek, GitHub
-Copilot, …) live under `lib/providers/<name>.ts` and are wired in via the
-static `BUILTINS` map in `lib/providers/index.ts`.
+Copilot, …) live under `lib/providers/<name>.ts` and export a `ModelProvider`.
+`lib/providers/builtins.ts` imports and registers those objects with
+`lib/providers/registry.ts`, which derives provider names from each module.
+The static imports keep modules visible to Next's server bundler.
 
 Steps:
 
@@ -35,7 +37,8 @@ Steps:
    `@circuitwall/jarela/lib/providers/types`. Implement at least `chat`;
    add `invoke` and `streamInvoke` if the provider supports tools, and
    `embed` / `listModels` if it supports those.
-2. Add an entry to `BUILTINS` in `lib/providers/index.ts`.
+2. Add the exported provider object to the `PROVIDER_MODULES` list in
+  `lib/providers/builtins.ts`. No separate provider-name map is needed.
 3. If the provider has known model context windows that the live API
    doesn't surface, register them in `lib/providers/known-context-windows.ts`.
 4. Document the new provider in the README "Providers" section.

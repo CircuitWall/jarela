@@ -1,290 +1,25 @@
 /**
- * Default LangChain tool packages that ship with Jarela.
- *
- * These packages are bundled as
- * regular dependencies. Each one used to be hardwired at module load via
- * `lib/tools/builtin-langchain-packages.ts` so operators could not turn
- * them off; this module replaces that wiring with a runtime registry
- * that honours the `disabled_packages` SQLite store. Operators can now
- * disable any default the same way they manage user-installed manifests.
- *
- * The `register()` call returns an unregister handle so the API layer
- * can flip a package off without restarting the process. Re-enabling
- * after a disable invokes `register()` again on the same descriptor.
+ * Composition root and lifecycle manager for bundled LangChain packages.
+ * Package-specific tools and auth wiring live in ./default-packages/<id>.ts.
  */
-import { isOptionalPackageInstalled, optionalFunction, optionalTools } from "./optional-package";
-import type { StructuredToolInterface } from "@langchain/core/tools";
-
-const atlassianReadTools = optionalTools<StructuredToolInterface>("@circuitwall/atlassian-langchain", "atlassianReadTools");
-const atlassianWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/atlassian-langchain", "atlassianWriteTools");
-const atlassianExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/atlassian-langchain", "atlassianExecuteTools");
-const setAtlassianAuthResolver = optionalFunction("@circuitwall/atlassian-langchain", "setAuthResolver", () => undefined);
-const resolveAtlassianAuthFromEnv = optionalFunction("@circuitwall/atlassian-langchain", "resolveAtlassianAuthFromEnv", () => ({ error: "Atlassian package is not installed." }));
-const githubReadTools = optionalTools<StructuredToolInterface>("@circuitwall/github-langchain", "githubReadTools");
-const githubWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/github-langchain", "githubWriteTools");
-const githubExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/github-langchain", "githubExecuteTools");
-const setGithubAuthResolver = optionalFunction("@circuitwall/github-langchain", "setAuthResolver", () => undefined);
-const resolveGithubAuthFromEnv = optionalFunction("@circuitwall/github-langchain", "resolveGithubAuthFromEnv", () => ({ error: "GitHub package is not installed." }));
-const jiraAlignReadTools = optionalTools<StructuredToolInterface>("@circuitwall/jira-align-langchain", "jiraAlignReadTools");
-const jiraAlignWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/jira-align-langchain", "jiraAlignWriteTools");
-const jiraAlignExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/jira-align-langchain", "jiraAlignExecuteTools");
-const setJiraAlignAuthResolver = optionalFunction("@circuitwall/jira-align-langchain", "setAuthResolver", () => undefined);
-const resolveJiraAlignAuthFromEnv = optionalFunction("@circuitwall/jira-align-langchain", "resolveJiraAlignAuthFromEnv", () => ({ error: "Jira Align package is not installed." }));
-const icloudReadTools = optionalTools<StructuredToolInterface>("@circuitwall/icloud-langchain", "icloudReadTools");
-const icloudWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/icloud-langchain", "icloudWriteTools");
-const icloudExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/icloud-langchain", "icloudExecuteTools");
-const setICloudAuthResolver = optionalFunction("@circuitwall/icloud-langchain", "setAuthResolver", () => undefined);
-const resolveICloudAuthFromEnv = optionalFunction("@circuitwall/icloud-langchain", "resolveICloudAuthFromEnv", () => ({ error: "iCloud package is not installed." }));
-
-import {
-  registerLangChainPackage,
-  type RegisteredPackage,
-} from "./langchain-package";
+import { isOptionalPackageInstalled } from "./optional-package";
+import type { RegisteredPackage } from "./langchain-package";
 import { setPackageAuthResolver } from "../runtime/auth-registry";
 import { isPackageDisabled } from "@/lib/stores/disabled-packages";
-import type { BuiltinCategory } from "../runtime/registry";
+import type { DefaultPackageDescriptor, DefaultPackageInfo } from "./default-packages/types";
+import { atlassianDefaultPackage } from "./default-packages/atlassian";
+import { githubDefaultPackage } from "./default-packages/github";
+import { icloudDefaultPackages } from "./default-packages/icloud";
+import { jiraAlignDefaultPackage } from "./default-packages/jira-align";
 
-export interface DefaultPackageDescriptor {
-  /** Stable id used in the disable store and API surface. */
-  id: string;
-  /** Display name for the UI. */
-  label: string;
-  /** Category this package fills in the Agent editor. */
-  category: BuiltinCategory;
-  /** Integration id used for credentials lookup. */
-  integrationId: string;
-  /** npm package name, surfaced for transparency. */
-  npmPackage: string;
-  /** Per-capability tool counts surfaced in the UI. */
-  toolCounts: { read: number; write: number; execute: number };
-  /** Human-readable summary of what this package brings. */
-  description: string;
-  /**
-   * Wire the package up. Each descriptor holds its own typed call so the
-   * generic TAuth never has to escape into a shared union.
-   */
-  register: () => RegisteredPackage<unknown>;
-}
+export type { DefaultPackageDescriptor, DefaultPackageInfo } from "./default-packages/types";
 
 const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
-  {
-    id: "atlassian",
-    label: "Atlassian",
-    category: "Atlassian",
-    integrationId: "atlassian",
-    npmPackage: "@circuitwall/atlassian-langchain",
-    toolCounts: {
-      read: atlassianReadTools.length,
-      write: atlassianWriteTools.length,
-      execute: atlassianExecuteTools.length,
-    },
-    description: "Jira issues + Confluence pages: search, read, comment, update.",
-    register: () =>
-      registerLangChainPackage({
-        category: "Atlassian",
-        tools: {
-          read: atlassianReadTools,
-          write: atlassianWriteTools,
-          execute: atlassianExecuteTools,
-        },
-        auth: {
-          integrationId: "atlassian",
-          setAuthResolver: setAtlassianAuthResolver,
-          resolveAuthFromEnv: resolveAtlassianAuthFromEnv,
-          mapStoreFields: (raw) =>
-            raw.url && raw.email && raw.api_token
-              ? {
-                  url: raw.url.replace(/\/+$/, ""),
-                  email: raw.email,
-                  apiToken: raw.api_token,
-                }
-              : null,
-          notConfiguredError:
-            "Atlassian not configured. Open Settings → Credentials and add your Atlassian site URL, " +
-            "email, and API token. (Or set ATLASSIAN_URL / ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN env vars.)",
-        },
-      }),
-  },
-  {
-    id: "github",
-    label: "GitHub",
-    category: "GitHub",
-    integrationId: "github",
-    npmPackage: "@circuitwall/github-langchain",
-    toolCounts: {
-      read: githubReadTools.length,
-      write: githubWriteTools.length,
-      execute: githubExecuteTools.length,
-    },
-    description: "Issues, pull requests, commits, code search via the GitHub REST API.",
-    register: () =>
-      registerLangChainPackage({
-        category: "GitHub",
-        tools: {
-          read: githubReadTools,
-          write: githubWriteTools,
-          execute: githubExecuteTools,
-        },
-        auth: {
-          integrationId: "github",
-          setAuthResolver: setGithubAuthResolver,
-          resolveAuthFromEnv: resolveGithubAuthFromEnv,
-          mapStoreFields: (raw) =>
-            raw.token ? { token: raw.token } : null,
-          notConfiguredError:
-            "GitHub not configured. Open Settings → Credentials and add a Personal Access Token. " +
-            "Create one at github.com/settings/tokens with scopes: repo, read:org. " +
-            "(Or set GITHUB_TOKEN / GH_TOKEN as an env var.)",
-        },
-      }),
-  },
-  {
-    id: "jira_align",
-    label: "Jira Align",
-    category: "JiraAlign",
-    integrationId: "jira_align",
-    npmPackage: "@circuitwall/jira-align-langchain",
-    toolCounts: {
-      read: jiraAlignReadTools.length,
-      write: jiraAlignWriteTools.length,
-      execute: jiraAlignExecuteTools.length,
-    },
-    description: "Jira Align portfolio-level reads/writes for roadmaps and initiatives.",
-    register: () =>
-      registerLangChainPackage({
-        category: "JiraAlign",
-        tools: {
-          read: jiraAlignReadTools,
-          write: jiraAlignWriteTools,
-          execute: jiraAlignExecuteTools,
-        },
-        auth: {
-          integrationId: "jira_align",
-          setAuthResolver: setJiraAlignAuthResolver,
-          resolveAuthFromEnv: resolveJiraAlignAuthFromEnv,
-          mapStoreFields: (raw) =>
-            raw.url && raw.api_token
-              ? {
-                  url: raw.url.replace(/\/+$/, ""),
-                  apiToken: raw.api_token,
-                }
-              : null,
-          notConfiguredError:
-            "Jira Align not configured. Open Settings → Credentials and add your Jira Align " +
-            "instance URL and API token. (Or set JIRA_ALIGN_URL / JIRA_ALIGN_TOKEN env vars.)",
-        },
-      }),
-  },
-  ...buildICloudDescriptors(),
+  atlassianDefaultPackage,
+  githubDefaultPackage,
+  jiraAlignDefaultPackage,
+  ...icloudDefaultPackages,
 ];
-
-// iCloud ships one npm package that spans three domains (Mail / Calendar
-// / Reminders). Rather than one catch-all "iCloud" category, expose one
-// descriptor per domain so the tools land under their functional category
-// (Mail, Calendar, Tasks) next to Gmail / Outlook / MS To-Do. All three
-// share the same auth bridge — the credential resolver just gets set
-// three times with the same closure, which is idempotent.
-//
-// Capability-tier note: the iCloud package classifies hard-delete tools
-// (`icloud_mail_delete_message`, `icloud_calendar_delete_event`) as
-// `execute` — matching iCloud's server semantics (CalDAV delete is
-// irreversible; Mail delete moves to Trash but the tool has no undo).
-// Gmail / Outlook classify their `_trash_message` / `_delete_event`
-// counterparts as `write` because those APIs auto-recover from Trash.
-// Agents granted "write on Mail" for Gmail/Outlook therefore CANNOT
-// hard-delete iCloud mail; that requires `execute` on Mail. Intentional.
-function buildICloudDescriptors(): readonly DefaultPackageDescriptor[] {
-  const byDomain = (
-    prefix: "icloud_mail_" | "icloud_calendar_" | "icloud_reminders_",
-  ) => ({
-    read: icloudReadTools.filter((t) => t.name.startsWith(prefix)),
-    write: icloudWriteTools.filter((t) => t.name.startsWith(prefix)),
-    execute: icloudExecuteTools.filter((t) => t.name.startsWith(prefix)),
-  });
-
-  const icloudAuth = {
-    integrationId: "icloud",
-    setAuthResolver: setICloudAuthResolver,
-    resolveAuthFromEnv: resolveICloudAuthFromEnv,
-    mapStoreFields: (raw: Record<string, string>) =>
-      raw.apple_id && raw.app_password
-        ? { appleId: raw.apple_id, appPassword: raw.app_password }
-        : null,
-    notConfiguredError:
-      "iCloud not configured. Open Settings → Credentials and add your Apple ID + " +
-      "app-specific password (generate one at appleid.apple.com — requires 2FA). " +
-      "(Or set ICLOUD_APPLE_ID / ICLOUD_APP_PASSWORD env vars.)",
-  } as const;
-
-  const mail = byDomain("icloud_mail_");
-  const calendar = byDomain("icloud_calendar_");
-  const reminders = byDomain("icloud_reminders_");
-
-  return [
-    {
-      id: "icloud_mail",
-      label: "iCloud Mail",
-      category: "Mail",
-      integrationId: "icloud",
-      npmPackage: "@circuitwall/icloud-langchain",
-      toolCounts: {
-        read: mail.read.length,
-        write: mail.write.length,
-        execute: mail.execute.length,
-      },
-      description:
-        "iCloud Mail (IMAP): list folders and messages, read message bodies, draft, " +
-        "move, flag, and trash mail. Drafts only — cannot send mail.",
-      register: () =>
-        registerLangChainPackage({
-          category: "Mail",
-          tools: mail,
-          auth: icloudAuth,
-        }),
-    },
-    {
-      id: "icloud_calendar",
-      label: "iCloud Calendar",
-      category: "Calendar",
-      integrationId: "icloud",
-      npmPackage: "@circuitwall/icloud-langchain",
-      toolCounts: {
-        read: calendar.read.length,
-        write: calendar.write.length,
-        execute: calendar.execute.length,
-      },
-      description:
-        "iCloud Calendar (CalDAV): list calendars and events, and create / update / delete events.",
-      register: () =>
-        registerLangChainPackage({
-          category: "Calendar",
-          tools: calendar,
-          auth: icloudAuth,
-        }),
-    },
-    {
-      id: "icloud_tasks",
-      label: "iCloud Reminders",
-      category: "Tasks",
-      integrationId: "icloud",
-      npmPackage: "@circuitwall/icloud-langchain",
-      toolCounts: {
-        read: reminders.read.length,
-        write: reminders.write.length,
-        execute: reminders.execute.length,
-      },
-      description:
-        "iCloud Reminders (VTODO): list reminder lists and reminders, create new " +
-        "reminders, and mark them complete.",
-      register: () =>
-        registerLangChainPackage({
-          category: "Tasks",
-          tools: reminders,
-          auth: icloudAuth,
-        }),
-    },
-  ];
-}
 
 const handles = new Map<string, RegisteredPackage<unknown>>();
 
@@ -298,34 +33,22 @@ export function registerDefaultPackages(): void {
 }
 
 /** Catalogue used by the API + UI; status reflects the live registry. */
-export interface DefaultPackageInfo {
-  id: string;
-  label: string;
-  category: BuiltinCategory;
-  integrationId: string;
-  npmPackage: string;
-  toolCounts: { read: number; write: number; execute: number };
-  description: string;
-  enabled: boolean;
-  installed: boolean;
-}
-
 export function listDefaultPackages(): DefaultPackageInfo[] {
-  return DESCRIPTORS.map((d) => ({
-    id: d.id,
-    label: d.label,
-    category: d.category,
-    integrationId: d.integrationId,
-    npmPackage: d.npmPackage,
-    toolCounts: d.toolCounts,
-    description: d.description,
-    enabled: !isPackageDisabled(d.id),
-    installed: isOptionalPackageInstalled(d.npmPackage),
+  return DESCRIPTORS.map((descriptor) => ({
+    id: descriptor.id,
+    label: descriptor.label,
+    category: descriptor.category,
+    integrationId: descriptor.integrationId,
+    npmPackage: descriptor.npmPackage,
+    toolCounts: descriptor.toolCounts,
+    description: descriptor.description,
+    enabled: !isPackageDisabled(descriptor.id),
+    installed: isOptionalPackageInstalled(descriptor.npmPackage),
   }));
 }
 
 export function findDefaultPackage(id: string): DefaultPackageDescriptor | null {
-  return DESCRIPTORS.find((d) => d.id === id) ?? null;
+  return DESCRIPTORS.find((descriptor) => descriptor.id === id) ?? null;
 }
 
 /**

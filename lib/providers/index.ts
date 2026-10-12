@@ -1,11 +1,6 @@
+import "./builtins";
 import type { ModelProvider } from "./types";
-import { openaiProvider } from "./openai";
-import { anthropicProvider } from "./anthropic";
-import { githubCopilotProvider } from "./github-copilot";
-import { deepseekProvider } from "./deepseek";
-import { geminiProvider } from "./gemini";
-import { langchainProvider } from "./langchain";
-import { mockProvider } from "./mock";
+import { getBuiltinProviderNames, getBuiltinProviders } from "./registry";
 import { loadExternalProviders } from "./external";
 import { getConfig } from "@/lib/env/config";
 import { parseRateLimitOverrides, ProviderRateLimiter, withProviderRateLimits } from "./rate-limit";
@@ -15,32 +10,20 @@ const providerGlobals = globalThis as typeof globalThis & {
   __jarelaProviderRateLimiter?: ProviderRateLimiter;
 };
 
-const BUILTINS: Record<string, ModelProvider> = {
-  openai: openaiProvider,
-  anthropic: anthropicProvider,
-  "github-copilot": githubCopilotProvider,
-  deepseek: deepseekProvider,
-  gemini: geminiProvider,
-  langchain: langchainProvider,
-};
-
 // The mock provider is opt-in via env so production deployments never
 // expose it as a selectable backend. Tests / offline dev set the flag.
 function isMockEnabled(): boolean {
   return getConfig().enableMockProvider;
 }
 
-export const BUILTIN_PROVIDER_NAMES: ReadonlySet<string> = new Set([
-  ...Object.keys(BUILTINS),
-  "mock",
-]);
+export const BUILTIN_PROVIDER_NAMES = getBuiltinProviderNames();
 
 // Recompute on every call so external providers dropped into ~/.jarela/providers/
 // are picked up without a process restart. loadExternalProviders cache-busts
 // require() per file, so edits are reflected immediately too.
 function getProviders(): Record<string, ModelProvider> {
-  const base: Record<string, ModelProvider> = { ...BUILTINS };
-  if (isMockEnabled()) base.mock = mockProvider;
+  const base = getBuiltinProviders();
+  if (!isMockEnabled()) delete base.mock;
   return { ...base, ...loadExternalProviders(BUILTIN_PROVIDER_NAMES) };
 }
 
