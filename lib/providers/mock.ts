@@ -16,8 +16,8 @@
 // Default behaviour (no directives): streams back "Hello from the mock
 // provider. You said: <last user message>".
 //
-// Registration is gated by JARELA_ENABLE_MOCK_PROVIDER=1 in index.ts so the
-// provider can't be accidentally enabled in production.
+// The provider is always registered but exposed only when the environment flag
+// is enabled, so it cannot be selected in production.
 
 import { createHash } from "node:crypto";
 import type {

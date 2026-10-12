@@ -30,9 +30,9 @@ const SURFACES: readonly ExtensionSurface[] = [
     name: "Built-in LLM provider",
     summary:
       "Add a new in-tree adapter (Anthropic, OpenAI, Gemini, … pattern). " +
-      "Implements the ModelProvider interface and is registered via the static " +
-      "BUILTINS map in lib/providers/index.ts.",
-    registration_entrypoint: "lib/providers/index.ts (BUILTINS map)",
+      "Implements ModelProvider and adds its exported object to the " +
+      "provider-module list in lib/providers/builtins.ts.",
+    registration_entrypoint: "lib/providers/<name>.ts + PROVIDER_MODULES in lib/providers/builtins.ts",
     doc_section: "docs/EXTENDING.md#adding-an-llm-provider-built-in",
     example_path: "lib/providers/anthropic.ts",
     introspection_tool: "list_providers",
