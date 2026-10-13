@@ -468,10 +468,13 @@ describe("health probes", () => {
       mockFetch(() => jsonResponse({ data: [{ id: "deepseek-chat" }] }));
       expect((await probeDeepseek()).status).toBe("ok");
     });
-    it("401 auth_failed", async () => {
+    it("reports the actual 403 status as auth_failed", async () => {
       process.env.DEEPSEEK_API_KEY = "ds";
-      mockFetch(() => new Response("", { status: 401 }));
-      expect((await probeDeepseek()).status).toBe("auth_failed");
+      mockFetch(() => new Response("", { status: 403 }));
+      const result = await probeDeepseek();
+      expect(result.status).toBe("auth_failed");
+      expect(result.error).toContain("403");
+      expect(result.error).not.toContain("401");
     });
     it("429 transient", async () => {
       process.env.DEEPSEEK_API_KEY = "ds";
@@ -487,6 +490,14 @@ describe("health probes", () => {
       process.env.DEEPSEEK_API_KEY = "ds";
       mockFetch(() => jsonResponse({ data: [{ id: "deepseek-chat" }] }));
       expect((await probeDeepseek()).status).toBe("ok");
+    });
+    it("does not expose parser details for a non-JSON success response", async () => {
+      process.env.DEEPSEEK_API_KEY = "ds";
+      mockFetch(() => new Response("\u0000\u0001proxy payload", { status: 200 }));
+      const result = await probeDeepseek();
+      expect(result.status).toBe("transient");
+      expect(result.error).toMatch(/unreadable response \(200\)/);
+      expect(result.error).not.toMatch(/Unexpected token/);
     });
     it("network throw transient", async () => {
       process.env.DEEPSEEK_API_KEY = "ds";

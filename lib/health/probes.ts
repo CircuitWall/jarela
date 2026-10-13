@@ -373,11 +373,16 @@ export async function probeDeepseek(): Promise<HealthResult> {
       signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
     });
     if (res.status === 401 || res.status === 403) {
-      return authFailed("DeepSeek rejected the API key (401).");
+      return authFailed(`DeepSeek rejected the request (${res.status}). Check the API key and account access.`);
     }
     if (res.status === 429) return transient("DeepSeek rate-limited the probe (429).");
     if (!res.ok) return probeError(`DeepSeek returned ${res.status}`);
-    const data = await readJsonResponse<{ data?: Array<{ id: string }> }>(res);
+    let data: { data?: Array<{ id: string }> };
+    try {
+      data = await readJsonResponse<{ data?: Array<{ id: string }> }>(res);
+    } catch {
+      return transient(`DeepSeek returned an unreadable response (${res.status}); expected JSON.`);
+    }
     return ok({ models: (data.data ?? []).length });
   } catch (err) {
     return transient(describeError(err));

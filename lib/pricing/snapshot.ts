@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { llmExtractModelRates, type LlmModelRate } from "./llm-extract";
 import { getConfig } from "@/lib/env/config";
 import { errorMessage } from "@/lib/utils/error";
+import { readResponseText } from "@/lib/utils/http-json";
 
 const SNAPSHOT_PATH = resolve("docs", "journal", "pricing-snapshot.json");
 const DEFAULT_TTL_DAYS = 3;
@@ -356,7 +357,7 @@ async function fetchHtml(url: string): Promise<FetchAttempt> {
       },
     });
 
-    const body = await res.text();
+    const body = await readResponseText(res);
     return {
       url,
       ok: res.ok,

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { gzipSync } from "node:zlib";
 import { googleFetch } from "@/lib/integrations/gmail-oauth";
 
 const { buildRawMessage, gmailCreateDraftTool, gmailModifyMessageTool, gmailSendEmailTool } = await import("./gmail");
@@ -8,6 +9,23 @@ afterEach(() => {
 });
 
 describe("gmail tools", () => {
+  it("decodes gzip Google API responses without a Content-Encoding header", async () => {
+    const baseUrl = "https://gmail.googleapis.com/gmail/v1/users/me";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "access-token" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(gzipSync(Buffer.from('{"messages":[{"id":"message-1"}]}')), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await googleFetch(
+      { client_id: "test-client", client_secret: "test-secret", refresh_token: "gzip-test-refresh-token" },
+      "Gmail",
+      baseUrl,
+      "/messages",
+    );
+
+    expect(result).toEqual({ messages: [{ id: "message-1" }] });
+  });
+
   it("returns a structured error for a successful non-JSON Google API response", async () => {
     const baseUrl = "https://gmail.googleapis.com/gmail/v1/users/me";
     const fetchMock = vi.fn()
