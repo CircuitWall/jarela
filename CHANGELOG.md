@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-10-13
+
 ### Fixed
 
 - **Update Baileys' media metadata parser to address malformed-media denial-of-service advisories.**
+- **Decode gzip responses when upstreams omit `Content-Encoding`, fixing web fetch, Gmail, and pricing imports.**
+- **Retry provider streams that end without sending events instead of recording blank completed turns.**
+- **Report accurate DeepSeek probe statuses and avoid exposing malformed-response parser errors.**
 
 ## [2.0.4] - 2026-10-12
 
