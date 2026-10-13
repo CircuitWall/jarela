@@ -87,6 +87,37 @@ C4Container
     Rel(browserext, routes, "POST /api/v1/page-capture (loopback)")
 ```
 
+## Module map
+
+The C4 diagrams show runtime connections; this map describes source ownership
+and the boundaries new code should use.
+
+| Module | Responsibility |
+| --- | --- |
+| `app/` | App Router screens and HTTP adapters; guard and validate requests before calling `lib/`. |
+| `components/`, `hooks/`, `contexts/` | Domain UI and browser state; consume API contracts rather than persistence internals. |
+| `api/` | Shared API client, response types, and request contracts. |
+| `lib/agents/` | Agent construction, turn execution, prompt preparation, validation, and run lifecycle. |
+| `lib/providers/` | Provider adapters, model routing, pacing, and vendor-specific SDK behavior. |
+| `lib/tools/`, `lib/mcp/` | Capability-aware tool registry and domains; MCP discovery and invocation. |
+| `lib/stores/`, `lib/db/`, `lib/crypto/` | Persistent state, SQLite access, checkpoints, and encryption. |
+| `lib/scheduler/`, `lib/bridges/`, `lib/streaming/`, `lib/notifications/` | Background triggers, inbound transports, run updates, and alerts. |
+| `packages/` | Separately scoped npm workspace packages. |
+
+**Dependency direction:** UI → API routes → runtime modules → registries,
+adapters, and stores → local persistence or configured external services.
+
+- Keep API routes focused on transport, origin checks, and request validation.
+- Let `lib/agents/` coordinate providers and tools; connect those capabilities
+  through their adapters and registries rather than importing private internals.
+- Keep persistent state in stores and database modules; route sensitive values
+  through `lib/crypto/`.
+- Reuse the existing process and agent queues for background work. Do not add a
+  second runtime or broker for a feature-specific module.
+
+For tool folder placement and registration rules, see the
+[development guide](DEVELOPMENT.md#tool-directory-standard).
+
 ### Shared utilities
 
 Two cross-cutting helper layers sit underneath every container above. They
@@ -236,9 +267,8 @@ sequenceDiagram
       AG->>LLM: build chat + automation summaries
       LLM-->>AG: summaries
       AG->>DB: compare-and-set transaction writes cursor + coverage
-      alt summary or commit fails
-        Note over AG,DB: Do not publish this candidate; retain current committed state
-      else compaction commits
+      Note over AG,DB: On failure, keep committed state and do not publish the candidate
+      opt summary and commit succeed
         DB-->>AG: committed hot_since_seq
       end
     end
@@ -261,13 +291,13 @@ sequenceDiagram
     API-->>UI: 202 Accepted + queue position
     API->>AG: startRun when the thread slot is available
     opt non-null requested cursor differs from committed cursor
-      AG->>AG: schedule compaction; use committed cursor for this turn
+      AG->>AG: schedule compaction, use committed cursor for this turn
     end
     AG->>DB: load checkpoint + thread.hot_since_seq
     AG->>DB: select candidate rows where rowid >= committed hot_since_seq
     Note over AG,DB: Message, hot-turn, and token budgets may narrow eligible rows
     AG->>ATT: materialize refs for the newest turn only (ADR-0090)
-    Note over AG: Older image_ref/file_ref in the window become a<br/>placeholder; model calls view_attachment to re-read one
+    Note over AG: Older image_ref/file_ref in the window become a<br/>placeholder, model calls view_attachment to re-read one
     opt no matching chat summary for the effective boundary
       AG->>LLM: build bounded ephemeral chat fallback if needed
       LLM-->>AG: summary for this prompt
@@ -497,9 +527,9 @@ sequenceDiagram
     CS->>CS: crop to element bounding rect (OffscreenCanvas, devicePixelRatio)
     CS->>SW: runtime.sendMessage(jarela-capture, {text, selector, screenshot})
     SW->>PR: POST /api/v1/page-capture (Origin: chrome-extension://…)
-    PR->>PR: Loopback Host check ✓; carve-out skips Origin check
+    PR->>PR: Loopback Host check ✓, carve-out skips Origin check
     PR->>API: forward
-    API->>API: Truncate text to 100KB UTF-8; validate screenshot ≤ 4MB base64
+    API->>API: Truncate text to 100KB UTF-8, validate screenshot ≤ 4MB base64
     API->>DB: addMessage(thread, "user", [text, image] when screenshot present)
     API->>BUS: publish(thread_message_added)
     API-->>SW: 200 {thread_id, msg_id, truncated, originalBytes}
