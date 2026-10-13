@@ -1,12 +1,39 @@
 :root {
+  --md-typeset-font-size: 0.92rem;
+  --md-code-font-size: 0.8rem;
+}
+
+[data-md-color-scheme="default"] {
   --md-primary-fg-color: #0f766e;
   --md-primary-fg-color--light: #14b8a6;
   --md-primary-fg-color--dark: #115e59;
-  --md-accent-fg-color: #d97706;
-  --md-default-bg-color: #f8fafc;
+  --md-accent-fg-color: #9a4e00;
+  --md-default-bg-color: #ffffff;
   --md-default-fg-color: #172033;
-  --md-typeset-font-size: 0.86rem;
-  --md-code-font-size: 0.78rem;
+  --md-typeset-color: #172033;
+  --md-typeset-a-color: #075e57;
+}
+
+[data-md-color-scheme="default"] .md-typeset {
+  --md-typeset-color: #172033;
+  --md-typeset-a-color: #075e57;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #176c66;
+  --md-primary-fg-color--light: #41a89c;
+  --md-primary-fg-color--dark: #0f4c48;
+  --md-accent-fg-color: #ffd166;
+  --md-default-bg-color: #111820;
+  --md-default-fg-color: #e8eef3;
+  --md-typeset-color: #e8eef3;
+  --md-typeset-a-color: #80dfd2;
+  --md-hue: 200;
+}
+
+[data-md-color-scheme="slate"] .md-typeset {
+  --md-typeset-color: #e8eef3;
+  --md-typeset-a-color: #80dfd2;
 }
 
 .md-typeset {
@@ -16,11 +43,12 @@
 .md-typeset h1,
 .md-typeset h2,
 .md-typeset h3 {
-  color: #102a43;
+  color: var(--md-default-fg-color);
   font-weight: 700;
 }
 
 .md-typeset a {
+  color: var(--md-typeset-a-color);
   text-decoration: none;
 }
 
@@ -48,6 +76,11 @@
 .md-typeset table:not([class]) th {
   background: #e6f4f1;
   color: #12343b;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background: #25403d;
+  color: #effcf9;
 }
 
 .md-typeset table:not([class]) td,
