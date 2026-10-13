@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { gzipSync } from "node:zlib";
 
 const readFileMock = vi.fn();
 const mkdirMock = vi.fn();
@@ -43,6 +44,22 @@ describe("pricing snapshot refresh", () => {
     expect(res.snapshot.ttl_days).toBe(2);
     expect(fetchMock).toHaveBeenCalled();
     expect(writeFileMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("extracts pricing from a gzip body without a Content-Encoding header", async () => {
+    readFileMock.mockRejectedValueOnce(new Error("ENOENT"));
+    const html = "<html>deepseek-v4-flash input $0.14 / 1M tokens output $0.28 / 1M tokens</html>";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(gzipSync(Buffer.from(html)), {
+      status: 200,
+      headers: { "content-type": "text/html" },
+    })));
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const result = await refreshPricingSnapshot({ force: true, providers: ["deepseek"] });
+    const deepseek = result.snapshot.sources.find((source) => source.id === "deepseek");
+
+    expect(deepseek?.ok).toBe(true);
+    expect((deepseek?.price_signals ?? []).length).toBeGreaterThan(0);
   });
 
   it("returns fresh cache without fetching when snapshot is within ttl", async () => {

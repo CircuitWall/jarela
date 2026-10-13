@@ -15,6 +15,7 @@ import { createOAuthFlowStore, type OAuthFlow } from "@/lib/utils/oauth-flow-sto
 import { parseJsonSafe } from "@/lib/utils/json";
 import { errorMessage } from "@/lib/utils/error";
 import { sanitizeOAuthInput, secretFingerprint } from "@/lib/utils/oauth-input";
+import { readResponseText } from "@/lib/utils/http-json";
 
 export type { OAuthFlow };
 
@@ -246,7 +247,7 @@ export async function getGoogleAccessToken(
       body: body.toString(),
       signal: AbortSignal.timeout(30_000),
     });
-    const text = await res.text();
+    const text = await readResponseText(res);
     if (!res.ok) {
       // Drop any stale cached token so a reconnected (broader-scope) refresh
       // re-exchanges cleanly on the next call.
@@ -300,7 +301,7 @@ export async function googleFetch(
       signal: AbortSignal.timeout(30_000),
     });
     if (res.status === 204) return { ok: true };
-    const text = await res.text();
+    const text = await readResponseText(res);
     if (!res.ok) {
       return { error: `${service} ${res.status}: ${text.slice(0, 500)}`, url };
     }

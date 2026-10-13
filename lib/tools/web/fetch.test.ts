@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vites
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 
 // The SSRF guard (lib/utils/private-ip.ts) resolves every hostname via a
 // real dns.lookup(). Stub it to a fixed public address so these tests don't
@@ -78,6 +79,19 @@ describe("web_fetch timeout reporting", () => {
     const out = parse(await webFetchTool.invoke({ url: "https://example.com/dead" }));
     expect(out.timed_out).toBeUndefined();
     expect(String(out.error)).toMatch(/ECONNREFUSED/);
+  });
+});
+
+describe("web_fetch gzip responses", () => {
+  it("decodes gzip bodies without a Content-Encoding header", async () => {
+    const html = "<html><body>Decoded pricing page</body></html>";
+    globalThis.fetch = vi.fn(async () => new Response(gzipSync(Buffer.from(html)), {
+      headers: { "content-type": "text/html" },
+    })) as unknown as typeof fetch;
+
+    const out = parse(await webFetchTool.invoke({ url: "https://example.com/gzip" }));
+    expect(out.content).toContain("Decoded pricing page");
+    expect(out.bytes_read).toBe(Buffer.byteLength(html));
   });
 });
 

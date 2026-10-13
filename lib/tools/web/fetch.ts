@@ -6,6 +6,7 @@ import { getCookieHeaderForUrl, isHostAllowed } from "@/lib/cookies/jar";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { getConfig } from "@/lib/env/config";
 import { errorMessage } from "@/lib/utils/error";
+import { readResponseTextCapped } from "@/lib/utils/http-json";
 
 // Whether the SSRF refusal for a private/loopback host should be
 // overridden because the user explicitly approved this host (with
@@ -134,32 +135,6 @@ async function followRedirectsWithSsrfCheck(
   return { res, finalUrl: res.url || currentUrl };
 }
 
-// Read up to maxBytes from the response body so a 5MB page doesn't blow
-// the agent's context. Returns the decoded text plus whether we hit the cap.
-async function readBodyCapped(
-  res: Response,
-  maxBytes: number,
-): Promise<{ raw: string; bytesRead: number; truncated: boolean }> {
-  const reader = res.body?.getReader();
-  const decoder = new TextDecoder();
-  let bytesRead = 0;
-  let raw = "";
-  if (reader) {
-    while (bytesRead < maxBytes) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      bytesRead += value.byteLength;
-      raw += decoder.decode(value, { stream: true });
-      if (bytesRead >= maxBytes) {
-        await reader.cancel();
-        break;
-      }
-    }
-    raw += decoder.decode();
-  }
-  return { raw, bytesRead, truncated: bytesRead >= maxBytes };
-}
-
 function formatFetchError(
   err: unknown,
   url: string,
@@ -210,7 +185,7 @@ export const webFetchTool = tool(
       const { res, finalUrl } = hopResult;
 
       const contentType = res.headers.get("content-type") ?? "";
-      const { raw, bytesRead, truncated } = await readBodyCapped(res, MAX_BYTES);
+      const { text: raw, bytesRead, truncated } = await readResponseTextCapped(res, MAX_BYTES);
       const cap = max_chars ?? 8000;
       const wantHtml = mode === "html";
       const title = extractTitle(raw);
