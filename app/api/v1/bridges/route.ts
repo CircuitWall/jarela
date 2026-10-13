@@ -3,13 +3,14 @@ import { z } from "zod";
 import { createBridge, listBridges } from "@/lib/stores/bridges";
 import { bridgeToResponse } from "@/lib/api/serializers";
 import { createdResponse, validateBody, cachedJson } from "@/lib/api/responses";
+import { isBridgeKind } from "@/lib/bridges/registry";
 
 export function GET() {
   return cachedJson(listBridges().map(bridgeToResponse), 15);
 }
 
 const CreateSchema = z.object({
-  kind: z.literal("whatsapp"),
+  kind: z.string().trim().min(1).refine(isBridgeKind, "Unknown bridge kind"),
   name: z.string().trim().min(1).max(120),
 });
 

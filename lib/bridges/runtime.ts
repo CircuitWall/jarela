@@ -18,7 +18,7 @@ import { getBridge, listBridges, updateBridge } from "@/lib/stores/bridges";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { handleInboundMessage } from "./dispatcher";
-import { WhatsAppBridgeAdapter } from "./whatsapp";
+import { getBridgeModule } from "./registry";
 import type { BridgeAdapter, StatusUpdate } from "./types";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -34,12 +34,15 @@ const state = getOrCreateGlobal<RuntimeState>("__jarela_bridges", () => ({
 }));
 
 function makeAdapter(bridge_id: string, kind: string): BridgeAdapter {
-  switch (kind) {
-    case "whatsapp":
-      return new WhatsAppBridgeAdapter(bridge_id);
-    default:
-      throw new Error(`Unknown bridge kind: ${kind}`);
-  }
+  const bridgeModule = getBridgeModule(kind);
+  if (!bridgeModule) throw new Error(`Unknown bridge kind: ${kind}`);
+  return bridgeModule.createAdapter(bridge_id);
+}
+
+export async function removeBridgeAuth(bridge_id: string): Promise<void> {
+  const bridge = getBridge(bridge_id);
+  if (!bridge) return;
+  await getBridgeModule(bridge.kind)?.removeAuth(bridge_id);
 }
 
 function wireAdapter(adapter: BridgeAdapter): void {
@@ -102,18 +105,12 @@ export async function restartBridge(bridge_id: string): Promise<void> {
 }
 
 export async function repairBridge(bridge_id: string): Promise<void> {
-  // Wipe creds on disk + restart. Adapter will produce a fresh QR.
-  const adapter = state.adapters.get(bridge_id);
-  if (adapter) {
-    try { await adapter.resetAuth(); } catch { /* ignore */ }
-    state.adapters.delete(bridge_id);
-    state.status.delete(bridge_id);
-  } else {
-    // Not running — wipe the dir directly via a temporary adapter so callers
-    // can re-pair an idle bridge without first enabling it.
-    const tmp = makeAdapter(bridge_id, getBridge(bridge_id)?.kind ?? "whatsapp");
-    await tmp.resetAuth();
-  }
+  const bridge = getBridge(bridge_id);
+  if (!bridge) throw new Error(`Bridge ${bridge_id} not found`);
+  const bridgeModule = getBridgeModule(bridge.kind);
+  if (!bridgeModule?.pairing) throw new Error(`Bridge kind "${bridge.kind}" does not support pairing`);
+  await stopBridge(bridge_id);
+  await bridgeModule.removeAuth(bridge_id);
   updateBridge(bridge_id, { status: "disconnected", qr: null, last_error: null, paired_id: null });
   await startBridge(bridge_id);
 }
@@ -133,10 +130,10 @@ export function isBridgeRunning(bridge_id: string): boolean {
  */
 export function listBridgeChats(bridge_id: string) {
   const adapter = state.adapters.get(bridge_id);
-  if (!adapter) return [];
+  if (!adapter?.listChats) return [];
   // Fire-and-forget — refreshChats hits a WS round-trip; HTTP shouldn't
   // wait. The next poll will pick up any new entries.
-  void adapter.refreshChats().catch(() => { /* logged inside */ });
+  void adapter.refreshChats?.().catch(() => { /* logged inside */ });
   return adapter.listChats();
 }
 
@@ -147,7 +144,7 @@ export function listBridgeChats(bridge_id: string) {
  */
 export async function lookupBridgeChat(bridge_id: string, input: string) {
   const adapter = state.adapters.get(bridge_id);
-  if (!adapter) return null;
+  if (!adapter?.lookupChat) return null;
   return adapter.lookupChat(input);
 }
 

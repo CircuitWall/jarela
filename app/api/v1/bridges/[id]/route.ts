@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { deleteBridge, getBridge, updateBridge, removeBridgeAuthDir } from "@/lib/stores/bridges";
-import { startBridge, stopBridge } from "@/lib/bridges/runtime";
+import { deleteBridge, getBridge, updateBridge } from "@/lib/stores/bridges";
+import { removeBridgeAuth, startBridge, stopBridge } from "@/lib/bridges/runtime";
 import { bridgeToResponse } from "@/lib/api/serializers";
 import { errorResponse, notFoundResponse, validateBody } from "@/lib/api/responses";
 import { withKeyedMutation } from "@/lib/utils/keyed-mutation";
@@ -48,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!updated) return errorResponse("update failed", 500);
 
     // Toggle adapter lifecycle when enabled changed. Fire-and-forget: HTTP
-    // shouldn't block on a long Baileys connect; the UI polls /status for
+    // shouldn't block on a long channel connect; the UI polls /status for
     // live state. Any start error is surfaced via the bridge row's status/
     // last_error fields (set inside runtime.ts).
     if (parsed.enabled !== undefined && parsed.enabled !== (existing.enabled === 1)) {
@@ -71,7 +71,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     const existing = getBridge(id);
     if (!existing) return NextResponse.json({ deleted: false }, { status: 404 });
     try { await stopBridge(id); } catch { /* logged inside */ }
-    removeBridgeAuthDir(id);
+    await removeBridgeAuth(id);
     const ok = deleteBridge(id);
     return NextResponse.json({ deleted: ok });
   });

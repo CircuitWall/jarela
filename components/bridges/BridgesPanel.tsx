@@ -3,7 +3,7 @@ import { AlertCircle, CheckCircle2, Loader2, Plus, RefreshCw, Smartphone, Trash2
 import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { Bridge, BridgeLiveStatus } from "@/api/types";
+import type { Bridge, BridgeLiveStatus, BridgeModuleInfo } from "@/api/types";
 import { useBridges } from "@/hooks/useBridges";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { pushErrorToast } from "@/lib/ui/error-report";
@@ -17,24 +17,30 @@ import { confirmAction } from "@/lib/ui/confirm";
 /**
  * Bridges panel.
  *
- * Lists configured bridges (WhatsApp adapters via Baileys). Each row shows
- * status + pair button. Clicking a row opens BridgeEditor with the routing
- * table for that bridge.
- *
- * The first WhatsApp account a user pairs is usually a throwaway / business
- * line — re-pair is destructive (wipes auth state on disk and forces a new
- * QR), so we put it behind an explicit button rather than a row toggle.
+ * Lists configured bridge modules. Each row shows status; selecting it opens
+ * the shared BridgeEditor and the capabilities declared by its module.
  */
 export function BridgesPanel() {
   const { bridges, loading, refresh, create, update, remove } = useBridges();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newKind, setNewKind] = useState("");
+  const [bridgeModules, setBridgeModules] = useState<BridgeModuleInfo[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("bridges", "bridge", containerRef);
 
-  // Poll the list every 5s so status pills flip from pairing → connected as
-  // Baileys' connection.update events drive the runtime status writeback.
+  useEffect(() => {
+    let active = true;
+    void api.bridges.kinds().then((modules) => {
+      if (!active) return;
+      setBridgeModules(modules);
+      setNewKind((current) => current || modules[0]?.kind || "");
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  // Poll the list so status pills reflect asynchronous adapter updates.
   useEffect(() => {
     const t = setInterval(() => void refresh(), 5_000);
     return () => clearInterval(t);
@@ -42,15 +48,15 @@ export function BridgesPanel() {
 
   async function onCreate() {
     const name = newName.trim();
-    if (!name) return;
-    const b = await create({ kind: "whatsapp", name });
+    if (!name || !newKind) return;
+    const b = await create({ kind: newKind, name });
     setNewName("");
     setCreating(false);
     setSelectedId(b.id);
   }
 
   async function onDelete(b: Bridge) {
-    if (!(await confirmAction({ message: `Delete bridge "${b.name}"? This also removes its WhatsApp auth and all routes.`, destructive: true }))) return;
+    if (!(await confirmAction({ message: `Delete bridge "${b.name}"? This removes its saved connection data and all routes.`, destructive: true }))) return;
     if (selectedId === b.id) setSelectedId(null);
     try {
       await remove(b.id);
@@ -90,9 +96,12 @@ export function BridgesPanel() {
   if (selectedId) {
     const b = bridges.find((x) => x.id === selectedId);
     if (!b) { setSelectedId(null); return null; }
+    const bridgeModule = bridgeModules.find((candidate) => candidate.kind === b.kind);
+    if (!bridgeModule) return <PanelMessage>Loading bridge module…</PanelMessage>;
     return (
       <BridgeEditor
         bridge={b}
+        module={bridgeModule}
         onBack={() => { setSelectedId(null); void refresh(); }}
         onRename={(name) => update(b.id, { name })}
         onToggleEnabled={() => onToggleEnabled(b)}
@@ -110,9 +119,20 @@ export function BridgesPanel() {
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-3">
         {creating && (
           <div className="mb-3 rounded-lg border border-accent/30 bg-surface-2 p-3 space-y-2">
-            <p className="text-xs text-fg-subtle">
-              Create a WhatsApp bridge. After creating, enable it and scan the QR with WhatsApp → Linked Devices.
-            </p>
+            {bridgeModules.length > 1 && (
+              <label className="block space-y-1 text-xs text-fg-subtle">
+                <span>Channel</span>
+                <select value={newKind} onChange={(event) => setNewKind(event.target.value)} className="w-full px-2 py-1.5 bg-surface-3 rounded border border-border">
+                  {bridgeModules.map((module) => <option key={module.kind} value={module.kind}>{module.label}</option>)}
+                </select>
+              </label>
+            )}
+            {bridgeModules.find((module) => module.kind === newKind) && (
+              <p className="text-xs text-fg-subtle">
+                {bridgeModules.find((module) => module.kind === newKind)?.description}{" "}
+                {bridgeModules.find((module) => module.kind === newKind)?.setupInstructions}
+              </p>
+            )}
             <input
               autoFocus
               value={newName}
@@ -122,7 +142,7 @@ export function BridgesPanel() {
               onKeyDown={(e) => { if (e.key === "Enter") void onCreate(); if (e.key === "Escape") setCreating(false); }}
             />
             <div className="flex gap-2">
-              <button onClick={onCreate} className="px-3 py-1 text-xs rounded bg-accent hover:bg-accent/90 text-white">
+              <button onClick={onCreate} disabled={!newKind} className="px-3 py-1 text-xs rounded bg-accent hover:bg-accent/90 text-white disabled:opacity-50">
                 Create
               </button>
               <button onClick={() => { setCreating(false); setNewName(""); }} className="px-3 py-1 text-xs rounded text-fg-subtle hover:bg-surface-3">
@@ -139,8 +159,7 @@ export function BridgesPanel() {
           <div className="text-fg-faint text-sm py-8 text-center space-y-2">
             <p>No bridges yet.</p>
             <p className="text-xs text-fg-faint leading-relaxed">
-              A bridge connects an external comm channel (WhatsApp) to one of your agents.
-              Each WhatsApp chat is routed to exactly one agent — unrouted messages are silently ignored.
+              A bridge connects an external communication channel to your agents. Chats are routed to one agent; unrouted messages are ignored.
             </p>
           </div>
         )}

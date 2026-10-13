@@ -7,19 +7,15 @@ import { validateBody } from "@/lib/api/responses";
 interface Params { params: Promise<{ id: string }> }
 
 const Schema = z.object({
-  /** Freeform phone number — country code + number, separators allowed. */
-  phone: z.string().trim().min(3).max(40),
-});
+  input: z.string().trim().min(1).max(160).optional(),
+  /** @deprecated Use `input`; retained for existing WhatsApp clients. */
+  phone: z.string().trim().min(3).max(40).optional(),
+}).refine((value) => Boolean(value.input || value.phone), "input is required");
 
 /**
- * Verify a phone number is on WhatsApp and return its routable JID.
+ * Resolve a channel-specific identifier to a chat on the selected bridge.
  *
- * Wraps Baileys' `onWhatsApp()` call. Used by the route editor's "search"
- * UI so users can pin a DM that hasn't surfaced via history sync (Baileys
- * delivers only recent chats when `syncFullHistory` is off, which is our
- * default for cost/RAM reasons).
- *
- * 200 + `{ chat: null }` means the number isn't on WhatsApp — distinct
+ * 200 + `{ chat: null }` means no matching chat exists — distinct
  * from a 404 (bridge not found) or 409 (bridge not connected).
  */
 export async function POST(req: NextRequest, { params }: Params) {
@@ -29,6 +25,6 @@ export async function POST(req: NextRequest, { params }: Params) {
   const parsed = await validateBody(req, Schema);
   if (parsed instanceof NextResponse) return parsed;
 
-  const chat = await lookupBridgeChat(id, parsed.phone);
+  const chat = await lookupBridgeChat(id, parsed.input ?? parsed.phone!);
   return NextResponse.json({ chat });
 }

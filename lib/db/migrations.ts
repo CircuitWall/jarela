@@ -216,7 +216,7 @@ export function runMigrations(db: DatabaseSync): void {
     );
     CREATE TABLE IF NOT EXISTS bridges (
       id          TEXT PRIMARY KEY,
-      kind        TEXT NOT NULL,                       -- 'whatsapp' (only kind in v1)
+      kind        TEXT NOT NULL,                       -- registered bridge module kind
       name        TEXT NOT NULL,
       status      TEXT NOT NULL DEFAULT 'disconnected',-- disconnected | pairing | connected | error
       qr          TEXT,                                -- base64 data URL while status='pairing'

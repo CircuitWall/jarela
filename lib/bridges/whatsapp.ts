@@ -20,19 +20,18 @@
  *    participant-change updates are forwarded as structured synthetic events.
  *    Reactions, polls and other protocol-only messages are still dropped.
  *  - `stop()` closes the WS without wiping auth.
- *  - `resetAuth()` removes the auth dir on disk; the next `start()` will
- *    fall into pairing mode again.
+ *  - Auth cleanup is owned by the WhatsApp bridge module; the runtime stops
+ *    the socket, clears auth, then starts it again for re-pairing.
  */
 
 import { createRequire } from "node:module";
 import {
   bumpRouteLastSeenTs,
-  ensureBridgeAuthDir,
   findRoute,
   getBridge,
   getMaxRouteLastSeenTs,
-  removeBridgeAuthDir,
 } from "@/lib/stores/bridges";
+import { ensureWhatsAppAuthDir, removeWhatsAppAuth } from "./modules/whatsapp/auth-state";
 import type { BridgeAdapter, ChatInfo, InboundEvent, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import { storeCanonicalBridgeAttachment } from "./attachment-store";
@@ -165,7 +164,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       throw err;
     }
 
-    const authDir = ensureBridgeAuthDir(this.bridge_id);
+    const authDir = ensureWhatsAppAuthDir(this.bridge_id);
     const { state, saveCreds } = await baileys.useMultiFileAuthState(authDir);
 
     let version: [number, number, number] | undefined;
@@ -764,11 +763,6 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       // Don't let presence hiccups break the reply path — just log.
       console.warn(`[bridge ${this.bridge_id}] sendPresenceUpdate failed:`, err);
     }
-  }
-
-  async resetAuth(): Promise<void> {
-    await this.stop();
-    removeBridgeAuthDir(this.bridge_id);
   }
 
   listChats(): ChatInfo[] {

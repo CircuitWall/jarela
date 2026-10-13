@@ -12,6 +12,7 @@
  */
 
 import type { ContentPart } from "@/lib/tools/runtime/types";
+import type { BridgeModuleInfo } from "@/api/types";
 import type { MessageRole } from "./message-role";
 
 export type BridgeStatus = "disconnected" | "pairing" | "connected" | "error";
@@ -120,8 +121,6 @@ export interface BridgeAdapter {
    * don't support presence may no-op. Errors are swallowed by the caller.
    */
   sendTyping(remote_jid: string, typing: boolean): Promise<void>;
-  /** Wipe auth state on disk and force re-pair on next start. */
-  resetAuth(): Promise<void>;
   /** Register handlers. Must be called BEFORE start(). */
   onInboundMessage(handler: InboundHandler): void;
   onStatusChange(handler: StatusHandler): void;
@@ -129,12 +128,12 @@ export interface BridgeAdapter {
    * Snapshot of chats the adapter has observed since connecting. Returns
    * an empty array if the adapter isn't connected or hasn't synced yet.
    */
-  listChats(): ChatInfo[];
+  listChats?(): ChatInfo[];
   /**
    * Refresh the chat list on demand (e.g. fetch group metadata). Optional —
    * adapters that have no out-of-band way to enumerate chats may no-op.
    */
-  refreshChats(): Promise<void>;
+  refreshChats?(): Promise<void>;
   /**
    * Verify a freeform user input (typically a phone number) maps to a
    * chat on this channel and return its ChatInfo. Returns null if the
@@ -142,5 +141,10 @@ export interface BridgeAdapter {
    * phone" search so users can route to a 1:1 chat that hasn't synced
    * via history yet.
    */
-  lookupChat(input: string): Promise<ChatInfo | null>;
+  lookupChat?(input: string): Promise<ChatInfo | null>;
+}
+
+export interface BridgeModule extends BridgeModuleInfo {
+  createAdapter(bridgeId: string): BridgeAdapter;
+  removeAuth(bridgeId: string): void | Promise<void>;
 }

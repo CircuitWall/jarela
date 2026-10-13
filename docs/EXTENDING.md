@@ -1,7 +1,7 @@
 # Extending Jarela
 
 This is the single integration guide for everything you can plug into,
-hook on top of, or layer around Jarela. It covers seven extension surfaces.
+hook on top of, or layer around Jarela. It covers eight extension surfaces.
 Inside the running app, the agent-callable
 [`describe_extension_surfaces`](#agent-introspection-tools) tool returns the
 same map this document is built around.
@@ -15,6 +15,7 @@ same map this document is built around.
 - [Adding an LLM provider (built-in)](#adding-an-llm-provider-built-in)
 - [Adding an LLM provider (external `.cjs` plugin)](#adding-an-llm-provider-external)
 - [Adding a built-in tool](#adding-a-built-in-tool)
+- [Adding a bridge module](#adding-a-bridge-module)
 - [Adding an MCP server](#adding-an-mcp-server)
 - [Adding a custom harness](#adding-a-custom-harness)
 - [Adding an integration manifest](#adding-an-integration-manifest)
@@ -161,6 +162,37 @@ for the pattern.
 Reference contract: [`lib/tools/runtime/types.ts`](../lib/tools/runtime/types.ts)
 and [`lib/tools/runtime/registry.ts`](../lib/tools/runtime/registry.ts).
 Worked example: [`lib/tools/runtime/template.ts`](../lib/tools/runtime/template.ts).
+
+---
+
+## Adding a bridge module
+
+Bridge modules adapt a messaging channel to Jarela's shared inbound message,
+chat-routing, and lifecycle contracts. The runtime and editor consume module
+metadata for connection setup, pairing, chat discovery, lookup, event controls,
+and attachment guidance.
+
+1. Create `lib/bridges/modules/<kind>/` and implement a `BridgeAdapter` in a
+  platform-specific file.
+2. Export a `BridgeModule` from the module entrypoint. Provide `kind`, labels
+  and instructions, `createAdapter`, and `removeAuth`. Declare `pairing`,
+  `chatDirectory`, `chatLookup`, `groupEventSubscriptions`, and attachment
+  guidance only when the adapter supports them.
+3. Add the module to `BRIDGE_MODULES` in
+  [`lib/bridges/registry.ts`](../lib/bridges/registry.ts). This is the one
+  static registration point needed for Next's server bundler. The registry
+  validates bridge kinds for creation and publishes serializable metadata at
+  `GET /api/v1/bridges/kinds`.
+4. Add adapter and registry tests. The common UI uses the metadata; only add
+  UI/API capabilities when the channel needs a connection flow that the
+  descriptor cannot express.
+
+Bridge remote IDs are opaque channel identifiers. The current route store and
+wire contract retain the legacy `remote_jid` field name for compatibility, so
+adapters should place their native chat ID there without relying on WhatsApp
+JID syntax in shared routing logic. For an OAuth or credential-entry flow,
+extend the module capability contract rather than adding kind checks to the
+runtime or editor.
 
 ### Message content and attachments
 
