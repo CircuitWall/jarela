@@ -105,12 +105,10 @@ describe("JarelaChatModel — empty stream handling", () => {
     await expect(collectChunks(model)).rejects.toThrow(/max_tokens/i);
   });
 
-  it("yields a sentinel empty chunk when provider emits no events at all", async () => {
+  it("throws a retryable error when provider emits no events or stop reason", async () => {
     const provider = makeProvider([]);
     const model = new JarelaChatModel({ provider, modelId: "m", params: {} });
-    const chunks = await collectChunks(model);
-    expect(chunks.length).toBe(1);
-    expect((chunks[0].message as AIMessageChunk).content).toBe("");
+    await expect(collectChunks(model)).rejects.toThrow(/request ended without sending any chunks/i);
   });
 
   it("does NOT inject a sentinel when the provider produced text", async () => {

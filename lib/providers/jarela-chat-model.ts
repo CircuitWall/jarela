@@ -250,6 +250,9 @@ export class JarelaChatModel extends BaseChatModel {
     // model call." — opaque to users. Translate the underlying stop reason
     // into something actionable.
     if (!emittedAny) {
+      if (stopReason === undefined) {
+        throw new Error("Provider request ended without sending any chunks.");
+      }
       if (stopReason === "length") {
         throw new Error(
           "Model returned no content before hitting max_tokens. " +
