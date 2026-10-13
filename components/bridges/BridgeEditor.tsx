@@ -2,7 +2,7 @@
 import { ArrowLeft, Camera, Plus, QrCode, RefreshCw, Search, Trash2, Users, VolumeX } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
-import type { AgentConfig, Bridge, BridgeChat, BridgeLiveStatus, BridgeRoute, ModelConfig } from "@/api/types";
+import type { AgentConfig, Bridge, BridgeChat, BridgeLiveStatus, BridgeModuleInfo, BridgeRoute, ModelConfig } from "@/api/types";
 import { useBridgeIgnores, useBridgeRoutes } from "@/hooks/useBridges";
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
 import { resolveAgentModel } from "@/lib/agents/effective-model";
@@ -14,19 +14,19 @@ import { errorMessage } from "@/lib/utils/error";
 import { confirmAction } from "@/lib/ui/confirm";
 
 /**
- * Single-bridge editor: shows live status (QR while pairing, paired ID once
- * connected), exposes the re-pair button, and embeds the routing table that
- * binds WhatsApp chats (JIDs) to agents.
+ * Single-bridge editor: shows connection status and module-declared controls,
+ * then routes remote chat identifiers to agents.
  *
  * Routes have a `UNIQUE(agent_id)` constraint server-side — each agent is
  * the target of at most one route across all bridges. A route can be a
- * specific chat JID or `*` (catch-all for otherwise-unrouted chats). In both
+ * specific remote chat ID or `*` (catch-all for otherwise-unrouted chats). In both
  * cases inbound text is enqueued into that agent's existing thread.
  */
 export function BridgeEditor({
-  bridge, onBack, onRename, onToggleEnabled, onPatch,
+  bridge, module, onBack, onRename, onToggleEnabled, onPatch,
 }: {
   bridge: Bridge;
+  module: BridgeModuleInfo;
   onBack: () => void;
   onRename: (name: string) => Promise<unknown>;
   onToggleEnabled: () => Promise<unknown> | unknown;
@@ -66,7 +66,8 @@ export function BridgeEditor({
   }
 
   async function rePair() {
-    if (!(await confirmAction({ message: "Re-pair this bridge? This wipes the current WhatsApp session and shows a new QR code.", destructive: true, confirmLabel: "Re-pair" }))) return;
+    if (!module.pairing) return;
+    if (!(await confirmAction({ message: module.pairing.confirmMessage, destructive: true, confirmLabel: module.pairing.actionLabel }))) return;
     setRepairing(true);
     try {
       await api.bridges.pair(bridge.id);
@@ -125,14 +126,14 @@ export function BridgeEditor({
             </span>
           </header>
 
-          {(live?.status === "pairing" || (!live && bridge.status === "pairing")) && live?.qr_data_url && (
+          {module.pairing && (live?.status === "pairing" || (!live && bridge.status === "pairing")) && live?.qr_data_url && (
             <div className="flex flex-col items-center gap-2 py-2">
               <div className="bg-white p-3 rounded-lg">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={live.qr_data_url} alt="WhatsApp pairing QR" className="w-48 h-48 block" />
+                <img src={live.qr_data_url} alt={module.pairing.qrAlt} className="w-48 h-48 block" />
               </div>
               <p className="text-[11px] text-fg-faint text-center max-w-xs">
-                Open WhatsApp on your phone → Settings → Linked Devices → Link a device → scan this code.
+                {module.pairing.qrInstructions}
               </p>
             </div>
           )}
@@ -153,23 +154,23 @@ export function BridgeEditor({
               />
               Enabled
             </label>
-            <button
+            {module.pairing && <button
               onClick={rePair}
               disabled={repairing}
               className="ml-auto px-2 py-1 text-xs rounded bg-surface-3 hover:bg-surface-3/70 text-fg-muted flex items-center gap-1 disabled:opacity-50"
             >
               {repairing ? <RefreshCw size={11} className="animate-spin" /> : <QrCode size={11} />}
-              Re-pair
-            </button>
+              {module.pairing.actionLabel}
+            </button>}
           </div>
         </section>
 
-        <section className="rounded-lg border border-border bg-surface-2 p-3 space-y-2">
+        {module.groupEventSubscriptions && <section className="rounded-lg border border-border bg-surface-2 p-3 space-y-2">
           <header className="flex items-center gap-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Event forwarding</h3>
           </header>
           <p className="text-[11px] text-fg-faint leading-relaxed">
-            Choose which WhatsApp group update types are forwarded to agents. Event payloads use the same
+            Choose which group update types are forwarded to agents. Event payloads use the same
             unified bridge message envelope as chat messages, with explicit event metadata so agents can
             distinguish system updates from participant text.
           </p>
@@ -203,16 +204,16 @@ export function BridgeEditor({
               </span>
             </span>
           </label>
-        </section>
+        </section>}
 
-        <RouteTable bridge_id={bridge.id} />
+        <RouteTable bridge_id={bridge.id} module={module} />
 
-        <IgnoreList bridge_id={bridge.id} />
+        <IgnoreList bridge_id={bridge.id} module={module} />
 
         <section className="rounded-lg border border-border bg-surface-2 p-3 text-[11px] text-fg-faint leading-relaxed space-y-2">
           <p>
             <strong className="text-fg-muted">Unrouted messages are ignored (unless catch-all exists).</strong>{" "}
-            If a WhatsApp chat isn&apos;t mapped to an agent below, incoming messages are silently dropped
+            If a {module.label} chat isn&apos;t mapped to an agent below, incoming messages are silently dropped
             unless you add a <em>catch-all</em> route (`*`). Each agent can still have only one route,
             but a catch-all route can intentionally aggregate many chats into one agent thread.
           </p>
@@ -224,12 +225,8 @@ export function BridgeEditor({
           </p>
           <p>
             <strong className="text-fg-muted">What gets forwarded.</strong>{" "}
-            Text, image captions, and image / sticker payloads (as vision input) reach the agent.
-            Voice notes, audio, video and documents are forwarded as attachments — agents can see
-            their filename and mime type, but only models with native audio / video / PDF support
-            interpret the contents. Location and contact-card messages are flattened into the text
-            body. The <Camera className="inline -mt-0.5" size={11} /> badge above marks agents whose
-            model can read images.
+            {module.attachmentDescription ?? "Messages from this channel are forwarded as text."}
+            {module.attachmentDescription?.includes("image") && <> The <Camera className="inline -mt-0.5" size={11} /> badge marks agents whose model can read images.</>}
           </p>
         </section>
       </div>
@@ -237,7 +234,7 @@ export function BridgeEditor({
   );
 }
 
-function RouteTable({ bridge_id }: { bridge_id: string }) {
+function RouteTable({ bridge_id, module }: { bridge_id: string; module: BridgeModuleInfo }) {
   const { routes, create, update, remove } = useBridgeRoutes(bridge_id);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [chats, setChats] = useState<BridgeChat[]>([]);
@@ -250,7 +247,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   });
   const [error, setError] = useState<string | null>(null);
 
-  // Inline lookup state — phone number → WhatsApp JID via /lookup.
+  // Inline lookup state for modules that expose a remote-identity lookup.
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
@@ -259,8 +256,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   // chat cache drops it later.
   const [extraChats, setExtraChats] = useState<BridgeChat[]>([]);
   // Resolved model config per agent — used to badge agents as vision-capable
-  // so the user can pick one that will actually interpret WhatsApp images,
-  // stickers and image-captioned messages forwarded through this bridge.
+  // so the user can pick one that can interpret images forwarded by this bridge.
   const [models, setModels] = useState<ModelConfig[]>([]);
 
   useEffect(() => { api.agents.list().then(setAgents).catch(() => {}); }, []);
@@ -282,7 +278,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   // needing to close+reopen the dialog. Re-pair / first-time pair often
   // takes several seconds before history-sync delivers the chat list.
   useEffect(() => {
-    if (!adding) return;
+    if (!adding || !module.chatDirectory) return;
     let alive = true;
     async function load() {
       setChatsLoading(true);
@@ -297,7 +293,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
     void load();
     const t = setInterval(() => void load(), 4000);
     return () => { alive = false; clearInterval(t); };
-  }, [adding, bridge_id]);
+  }, [adding, bridge_id, module.chatDirectory]);
 
   // Agents already targeted by other routes are unavailable in the picker.
   const usedAgents = new Set(routes.map((r) => r.agent_id));
@@ -332,6 +328,8 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   }
 
   async function onSearch() {
+    const lookup = module.chatLookup;
+    if (!lookup) return;
     setSearchMsg(null);
     const q = searchQuery.trim();
     if (!q) return;
@@ -339,7 +337,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
     try {
       const r = await api.bridges.lookup(bridge_id, q);
       if (!r.chat) {
-        setSearchMsg("That number isn't on WhatsApp.");
+        setSearchMsg(lookup.notFoundMessage);
         return;
       }
       if (routedJids.has(r.chat.remote_jid)) {
@@ -425,12 +423,12 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
           {creatingCatchAll && (
             <p className="text-[11px] text-fg-faint leading-snug">
               This route matches any inbound chat without an explicit route. The agent will receive
-              chat metadata (name + JID) in each message so it can distinguish sources.
+              chat metadata (name + remote ID) in each message so it can distinguish sources.
             </p>
           )}
 
           {!creatingCatchAll && (
-            !manualMode ? (
+            module.chatDirectory && !manualMode ? (
               <>
               <div className="flex items-center gap-2">
                 <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">Chat</label>
@@ -440,23 +438,23 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                   onClick={() => setManualMode(true)}
                   className="ml-auto text-[10px] text-fg-faint hover:text-accent underline-offset-2 hover:underline"
                 >
-                  Enter JID manually
+                  Enter {module.remoteIdLabel} manually
                 </button>
               </div>
               {!chatsRunning && (
                 <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
-                  Bridge isn&apos;t running — enable it to load your WhatsApp chats.
+                  Bridge isn&apos;t running — enable it to load chats.
                 </p>
               )}
               {chatsRunning && (
                 <>
-                  <div className="flex items-center gap-1.5">
+                  {module.chatLookup && <div className="flex items-center gap-1.5">
                     <div className="flex-1 flex items-center gap-1.5 rounded border border-border bg-surface-3/60 px-2 py-1 focus-within:border-accent/60">
                       <Search size={11} className="text-fg-faint shrink-0" />
                       <input
-                        type="tel"
-                        inputMode="tel"
-                        placeholder="Find by phone (e.g. +1 555 123 4567)"
+                        type={module.chatLookup.inputType}
+                        inputMode={module.chatLookup.inputType === "tel" ? "tel" : undefined}
+                        placeholder={module.chatLookup.placeholder}
                         value={searchQuery}
                         onChange={(e) => { setSearchQuery(e.target.value); setSearchMsg(null); }}
                         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void onSearch(); } }}
@@ -472,11 +470,8 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                     >
                       {searching ? "…" : "Find"}
                     </button>
-                  </div>
-                  <p className="text-[10px] text-fg-faint leading-snug">
-                    WhatsApp only auto-syncs your recent chats. Use search to find any contact (including
-                    yourself) by phone number — country code + digits, no spaces required.
-                  </p>
+                  </div>}
+                  {module.chatLookup && <p className="text-[10px] text-fg-faint leading-snug">{module.chatLookup.description}</p>}
                   {searchMsg && (
                     <p className="text-[11px] text-amber-700 dark:text-amber-300">{searchMsg}</p>
                   )}
@@ -484,14 +479,13 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
               )}
               {chatsRunning && availableChats.length === 0 && !chatsLoading && (
                 <p className="text-[11px] text-fg-faint px-1 py-2 leading-relaxed">
-                  No chats synced yet. WhatsApp delivers your chat list a few seconds after pairing, and any
-                  chat you receive a message in will also appear here. If you can&apos;t wait, you can{" "}
+                  No chats synced yet. Recent chats appear after the bridge connects. If you can&apos;t wait, you can{" "}
                   <button
                     type="button"
                     onClick={() => setManualMode(true)}
                     className="text-accent hover:underline"
                   >
-                    enter the JID manually
+                    enter the {module.remoteIdLabel} manually
                   </button>.
                 </p>
               )}
@@ -528,20 +522,20 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
             ) : (
               <>
               <div className="flex items-center gap-2">
-                <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">JID</label>
-                <button
+                <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">{module.remoteIdLabel}</label>
+                {module.chatDirectory && <button
                   type="button"
                   onClick={() => setManualMode(false)}
                   className="ml-auto text-[10px] text-fg-faint hover:text-accent underline-offset-2 hover:underline"
                 >
                   Pick from chat list
-                </button>
+                </button>}
               </div>
               <input
                 autoFocus
                 value={draft.remote_jid}
                 onChange={(e) => setDraft((d) => ({ ...d, remote_jid: e.target.value }))}
-                placeholder="5511999990000@s.whatsapp.net or <group-id>@g.us"
+                placeholder={module.remoteIdPlaceholder}
                 className="w-full px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none font-mono"
               />
               </>
@@ -576,7 +570,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
               if (v.supported) {
                 return (
                   <p className="text-[10px] text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
-                    <Camera size={10} /> Vision-capable — WhatsApp images, stickers and image captions will be read by this agent.
+                    <Camera size={10} /> Vision-capable — images forwarded by this bridge can be read by this agent.
                   </p>
                 );
               }
@@ -700,13 +694,11 @@ function RouteRow({
   onChangeRespondTo: (respond_to: "user" | "counterpart") => Promise<void>;
   onDelete: () => Promise<void> | void;
 }) {
-  // Prefer the route's user-set label, fall back to the live chat name from
-  // the picker, then the JID itself. Always show the JID as the small
-  // monospaced subline so the user can verify the binding.
+  // Prefer the route's user-set label, then the live chat name, then the
+  // module's opaque remote identifier.
   const headline = route.label?.trim() || chatName || route.remote_jid;
   const isCatchAll = route.remote_jid === "*";
-  const showJidSubline = headline !== route.remote_jid;
-  const isGroup = route.remote_jid.endsWith("@g.us");
+  const showRemoteIdSubline = headline !== route.remote_jid;
   return (
     <div className="py-1.5 border-t border-border first:border-t-0">
       <div className="flex items-center gap-2">
@@ -714,7 +706,7 @@ function RouteRow({
           <p className="text-xs text-fg truncate">
             {isCatchAll ? "Catch-all (everything else)" : headline}
           </p>
-          {showJidSubline && (
+          {showRemoteIdSubline && (
             <p className="text-[10px] font-mono text-fg-faint truncate">{route.remote_jid}</p>
           )}
           {isCatchAll && (
@@ -771,7 +763,7 @@ function RouteRow({
         <span className="text-[11px] text-fg-subtle leading-snug">
           <span className="text-fg-muted font-medium">Silent mode</span> — listen only, never auto-reply.
           <span className="block text-[10px] text-fg-faint">
-            The agent still receives every message and can run tools / update memory{isGroup ? " (with the sender's name prepended so it can tell group members apart)" : ""}, but nothing is sent back to {isGroup ? "the group" : "this chat"}. Overrides the reply-trigger below.
+            The agent still receives every message and can run tools / update memory, but nothing is sent back to the channel. Overrides the reply-trigger below.
           </span>
         </span>
       </label>
@@ -780,9 +772,7 @@ function RouteRow({
           <span className="text-fg-muted font-medium">Reply trigger</span> — auto-reply when…
           <span className="block text-[10px] text-fg-faint">
             {route.respond_to === "counterpart"
-              ? isGroup
-                ? "Another group member sends a message. The agent stays quiet on your own messages."
-                : "Your counterpart sends a message. The agent stays quiet on your own messages."
+              ? "Another participant sends a message. The agent stays quiet on your own messages."
               : "You send a message yourself (e.g. expand-my-draft assistant). The agent stays quiet on others'."}
           </span>
         </span>
@@ -792,7 +782,7 @@ function RouteRow({
           onChange={(e) => void onChangeRespondTo(e.target.value as "user" | "counterpart")}
           className="px-1.5 py-0.5 text-[11px] bg-surface-3 rounded border border-border focus:border-accent outline-none disabled:cursor-not-allowed"
         >
-          <option value="counterpart">{isGroup ? "Group members" : "Counterpart"}</option>
+          <option value="counterpart">Other participants</option>
           <option value="user">Me</option>
         </select>
       </div>
@@ -815,7 +805,7 @@ function formatRelative(ms: number): string {
  * entry can coexist with an explicit route (the ignore always wins), so
  * temporarily muting a routed chat doesn't require deleting the route.
  */
-function IgnoreList({ bridge_id }: { bridge_id: string }) {
+function IgnoreList({ bridge_id, module }: { bridge_id: string; module: BridgeModuleInfo }) {
   const { ignores, add, remove } = useBridgeIgnores(bridge_id);
   const [chats, setChats] = useState<BridgeChat[]>([]);
   const [chatsRunning, setChatsRunning] = useState(true);
@@ -829,7 +819,7 @@ function IgnoreList({ bridge_id }: { bridge_id: string }) {
   // Routes picker's polling cadence — the same chat may show up in the
   // adapter cache seconds after pairing.
   useEffect(() => {
-    if (!adding) return;
+    if (!adding || !module.chatDirectory) return;
     let alive = true;
     async function load() {
       setChatsLoading(true);
@@ -844,7 +834,7 @@ function IgnoreList({ bridge_id }: { bridge_id: string }) {
     void load();
     const t = setInterval(() => void load(), 4000);
     return () => { alive = false; clearInterval(t); };
-  }, [adding, bridge_id]);
+  }, [adding, bridge_id, module.chatDirectory]);
 
   const ignoredJids = useMemo(() => new Set(ignores.map((i) => i.remote_jid)), [ignores]);
   const availableChats = useMemo(
@@ -855,7 +845,7 @@ function IgnoreList({ bridge_id }: { bridge_id: string }) {
   async function onAdd(remote_jid: string, label: string | null) {
     setError(null);
     const jid = remote_jid.trim();
-    if (!jid) { setError("Enter a chat JID"); return; }
+    if (!jid) { setError(`Enter a ${module.remoteIdLabel}`); return; }
     try {
       await add({ remote_jid: jid, label });
       setManualJid("");
@@ -900,15 +890,15 @@ function IgnoreList({ bridge_id }: { bridge_id: string }) {
       {adding && (
         <div className="rounded border border-accent/30 bg-surface-3/30 p-2 space-y-2">
           <div className="flex items-center gap-2">
-            <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">Pick a chat</label>
+            <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">{module.chatDirectory ? "Pick a chat" : module.remoteIdLabel}</label>
             {chatsLoading && <RefreshCw size={10} className="animate-spin text-fg-faint" />}
           </div>
-          {!chatsRunning && (
+          {module.chatDirectory && !chatsRunning && (
             <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
-              Bridge isn&apos;t running — enable it to load your WhatsApp chats, or add a JID manually below.
+              Bridge isn&apos;t running — enable it to load chats, or enter an ID manually below.
             </p>
           )}
-          {chatsRunning && availableChats.length > 0 && (
+          {module.chatDirectory && chatsRunning && availableChats.length > 0 && (
             <div className="max-h-48 overflow-y-auto rounded border border-border bg-surface-3/40 divide-y divide-border">
               {availableChats.map((c) => (
                 <button
@@ -934,9 +924,9 @@ function IgnoreList({ bridge_id }: { bridge_id: string }) {
               ))}
             </div>
           )}
-          {chatsRunning && availableChats.length === 0 && !chatsLoading && (
+          {module.chatDirectory && chatsRunning && availableChats.length === 0 && !chatsLoading && (
             <p className="text-[11px] text-fg-faint px-1 py-1 leading-relaxed">
-              No unignored chats synced yet. Enter a JID manually below.
+              No unignored chats synced yet. Enter an ID manually below.
             </p>
           )}
           <div className="flex items-center gap-1.5">
@@ -944,7 +934,7 @@ function IgnoreList({ bridge_id }: { bridge_id: string }) {
               value={manualJid}
               onChange={(e) => setManualJid(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void onAdd(manualJid, null); } }}
-              placeholder="5511999990000@s.whatsapp.net or <group-id>@g.us"
+              placeholder={module.remoteIdPlaceholder}
               className="flex-1 px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none font-mono"
             />
             <button

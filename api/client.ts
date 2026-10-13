@@ -6,6 +6,7 @@ import type {
   BridgeChatsResponse,
   BridgeIn,
   BridgeLiveStatus,
+  BridgeModuleInfo,
   BridgePatch,
   BridgeRoute,
   BridgeRouteIn,
@@ -1195,6 +1196,7 @@ export const api = {
   },
 
   bridges: {
+    kinds: () => request<BridgeModuleInfo[]>("/bridges/kinds"),
     list: () => request<Bridge[]>("/bridges"),
     get: (id: string) => request<Bridge>(`/bridges/${encodeURIComponent(id)}`),
     create: (data: BridgeIn) =>
@@ -1207,10 +1209,10 @@ export const api = {
     pair: (id: string) =>
       request<{ accepted: boolean }>(`/bridges/${encodeURIComponent(id)}/pair`, { method: "POST", body: "{}" }),
     chats: (id: string) => request<BridgeChatsResponse>(`/bridges/${encodeURIComponent(id)}/chats`),
-    lookup: (id: string, phone: string) =>
+    lookup: (id: string, input: string) =>
       request<{ chat: import("./types").BridgeChat | null }>(
         `/bridges/${encodeURIComponent(id)}/lookup`,
-        { method: "POST", body: JSON.stringify({ phone }) },
+        { method: "POST", body: JSON.stringify({ input }) },
       ),
 
     routes: {

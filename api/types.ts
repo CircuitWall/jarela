@@ -1278,8 +1278,32 @@ export type SSEEventType =
 // Bridges (external comm channels: WhatsApp via Baileys, …)
 // ---------------------------------------------------------------------------
 
-export type BridgeKind = "whatsapp";
+export type BridgeKind = string;
 export type BridgeStatus = "disconnected" | "pairing" | "connected" | "error";
+
+export interface BridgeModuleInfo {
+  kind: BridgeKind;
+  label: string;
+  description: string;
+  setupInstructions: string;
+  remoteIdLabel: string;
+  remoteIdPlaceholder: string;
+  chatDirectory: boolean;
+  chatLookup?: {
+    inputType: "text" | "tel";
+    placeholder: string;
+    notFoundMessage: string;
+    description: string;
+  };
+  pairing?: {
+    actionLabel: string;
+    confirmMessage: string;
+    qrAlt: string;
+    qrInstructions: string;
+  };
+  groupEventSubscriptions: boolean;
+  attachmentDescription?: string;
+}
 
 export interface Bridge {
   id: string;

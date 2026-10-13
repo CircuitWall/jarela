@@ -65,6 +65,19 @@ const SURFACES: readonly ExtensionSurface[] = [
     related_adrs: ["ADR-0038"],
   },
   {
+    id: "bridge_module",
+    name: "Bridge module",
+    summary:
+      "Add a channel adapter that implements BridgeAdapter and exports its " +
+      "metadata, adapter factory, and auth cleanup hook as a BridgeModule. " +
+      "Register it once in lib/bridges/registry.ts; the runtime and editor " +
+      "consume declared capabilities.",
+    registration_entrypoint: "lib/bridges/modules/<kind>/ + lib/bridges/registry.ts",
+    doc_section: "docs/EXTENDING.md#adding-a-bridge-module",
+    example_path: "lib/bridges/modules/whatsapp/index.ts",
+    related_adrs: ["ADR-0004"],
+  },
+  {
     id: "mcp_server",
     name: "MCP server",
     summary:

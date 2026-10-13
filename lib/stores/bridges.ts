@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { mkdirSync, rmSync } from "node:fs";
 import { getDb } from "@/lib/db";
 import { withDbTransaction } from "@/lib/db/transaction";
 
@@ -8,7 +6,7 @@ import { withDbTransaction } from "@/lib/db/transaction";
 // Types
 // ---------------------------------------------------------------------------
 
-export type BridgeKind = "whatsapp";
+export type BridgeKind = string;
 export type BridgeStatus = "disconnected" | "pairing" | "connected" | "error";
 
 export interface BridgeRow {
@@ -71,29 +69,6 @@ export interface BridgeIgnoreRow {
 }
 
 const now = () => new Date().toISOString();
-
-// ---------------------------------------------------------------------------
-// Auth dir on disk (Baileys multi-file auth state)
-// ---------------------------------------------------------------------------
-
-// Mirror lib/db/index.ts so we don't depend on importing it for a directory
-// path — keeps the store free of side-effects on import.
-import { getDataDir } from "@/lib/db/data-dir";
-
-export function bridgeAuthDir(bridgeId: string): string {
-  return join(getDataDir(), "baileys", bridgeId);
-}
-
-export function ensureBridgeAuthDir(bridgeId: string): string {
-  const dir = bridgeAuthDir(bridgeId);
-  mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
-export function removeBridgeAuthDir(bridgeId: string): void {
-  try { rmSync(bridgeAuthDir(bridgeId), { recursive: true, force: true }); }
-  catch { /* dir didn't exist, fine */ }
-}
 
 // ---------------------------------------------------------------------------
 // Bridge CRUD
