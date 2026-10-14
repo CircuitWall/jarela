@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-14
+
+### Added
+
+- **Require verified workflow steps: every agent checklist item declares its input, output, and validation, and cannot be marked done without recorded validation evidence.**
+- **Show third-party pricing aggregator quotes as separate comparison signals alongside direct provider rates.**
+- **Group the earlier-messages summary by topic, with short recap previews that expand to the full recap and saved facts.**
+
+### Fixed
+
+- **Show pending state while a manual context compaction is running.**
+- **Treat legacy completed checklist entries without evidence as needing attention instead of silently passing.**
+- **Retry transient model-download failures and cache the verified embedding model so upstream outages no longer block releases.**
+
 ## [2.0.5] - 2026-10-13
+
+The v2.0.5 release build failed before publishing; these fixes first ship in 2.1.0.
 
 ### Fixed
 
