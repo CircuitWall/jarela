@@ -81,7 +81,7 @@ export function completeWorkflow<State extends WorkflowState, Phase extends stri
     ...state,
     phase,
     checklist: state.checklist.map((item) => (
-      item.status === "pending" || item.status === "checking"
+      item.status === "pending" || item.status === "checking" || item.status === "needs_attention"
         ? { ...item, status: "done" as const, validation_evidence: validationEvidence }
         : item
     )),

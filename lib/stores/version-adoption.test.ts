@@ -7,6 +7,7 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-version-adoption-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
 const { getDb } = await import("@/lib/db");
+const { putMemory } = await import("@/lib/stores/memory");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 const {
   getVersionAdoptionState,
@@ -77,6 +78,26 @@ describe("version adoption state", () => {
       is_first_adoption: false,
       status: "pending",
     });
+  });
+
+  it("requires review for legacy completed items that have no validation evidence", () => {
+    const initial = getVersionAdoptionState("1.29.5");
+    const legacyState = {
+      ...initial,
+      checklist: initial.checklist.map(({ input: _input, output: _output, validation: _validation, validation_evidence: _evidence, ...item }) => ({
+        ...item,
+        status: "done",
+      })),
+      last_adopted_version: null,
+    };
+    putMemory("app-lifecycle", "version_adoption_state", legacyState);
+
+    const recovered = getVersionAdoptionState("1.29.5");
+    expect(recovered.checklist.every((item) => item.status === "needs_attention")).toBe(true);
+    expect(recovered.checklist[0].reason).toContain("no validation evidence");
+
+    const confirmed = updateVersionAdoptionState("mark_done", "1.29.5");
+    expect(confirmed.checklist.every((item) => item.status === "done" && item.validation_evidence)).toBe(true);
   });
 
   it("starts an agent-driven adoption run with explicit two-phase instructions", () => {

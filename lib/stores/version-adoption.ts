@@ -171,11 +171,18 @@ function normalizeChecklistItem(value: unknown): VersionAdoptionChecklistItem | 
   if (!value || typeof value !== "object") return null;
   const item = value as Partial<VersionAdoptionChecklistItem>;
   if (typeof item.id !== "string" || typeof item.label !== "string" || typeof item.reason !== "string") return null;
+  const validationEvidence = typeof item.validation_evidence === "string" && item.validation_evidence.trim()
+    ? item.validation_evidence
+    : undefined;
+  const storedStatus = isChecklistStatus(item.status) ? item.status : "pending";
+  const legacyCompletionNeedsReview = storedStatus === "done" && !validationEvidence;
   return {
     id: item.id,
     label: item.label,
-    status: isChecklistStatus(item.status) ? item.status : "pending",
-    reason: item.reason,
+    status: legacyCompletionNeedsReview ? "needs_attention" : storedStatus,
+    reason: legacyCompletionNeedsReview
+      ? `${item.reason} Previously stored completion had no validation evidence; review this step again.`
+      : item.reason,
     affected_files: Array.isArray(item.affected_files)
       ? item.affected_files.filter((file): file is string => typeof file === "string")
       : [],
@@ -184,7 +191,7 @@ function normalizeChecklistItem(value: unknown): VersionAdoptionChecklistItem | 
     validation: typeof item.validation === "string"
       ? item.validation
       : "Verify findings against the affected files; report unavailable evidence instead of inferring.",
-    ...(typeof item.validation_evidence === "string" ? { validation_evidence: item.validation_evidence } : {}),
+    ...(validationEvidence ? { validation_evidence: validationEvidence } : {}),
     ...(isVersionAdoptionAction(item.action) ? { action: item.action } : {}),
   };
 }
