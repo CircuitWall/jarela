@@ -41,9 +41,7 @@ export function WarmSummaryCard({
   const fresh = !!summary && hotSinceSeq != null && summaryBeforeSeq === hotSinceSeq;
   const stale = !!summary && !fresh;
   const computing = stale && streaming;
-  // Topics cover the same range as the prose (persisted together); only
-  // show them when that range is the one currently in effect.
-  const freshTopics = fresh && topics && topics.length > 0 ? topics : null;
+  const summaryTopics = summary && topics && topics.length > 0 ? topics : null;
 
   return (
     <div
@@ -67,14 +65,14 @@ export function WarmSummaryCard({
       </div>
 
       <div className="px-4 pb-3">
-        {freshTopics && (
+        {summaryTopics && (
           <div className="mb-3 flex flex-col gap-1">
-            {freshTopics.map((topic, i) => (
+            {summaryTopics.map((topic, i) => (
               <TopicSegmentRow key={`${topic.title}-${i}`} topic={topic} />
             ))}
           </div>
         )}
-        {!!summary ? (
+        {!!summary && !summaryTopics ? (
           <div
             className={[
               "prose prose-sm dark:prose-invert max-w-none text-fg-muted",
@@ -84,7 +82,7 @@ export function WarmSummaryCard({
           >
             <ReactMarkdown>{stripWarmHeader(summary!)}</ReactMarkdown>
           </div>
-        ) : (
+        ) : !summary ? (
           <div className="flex items-center gap-2 text-xs text-fg-faint italic">
             {computing && (
               <StatusDot tone="accent" size="sm" pulse />
@@ -95,7 +93,7 @@ export function WarmSummaryCard({
                 : "Summary will appear after your next reply."}
             </span>
           </div>
-        )}
+        ) : null}
 
         {stale && (
           <div className="mt-2 inline-flex items-center gap-2 text-[11px] text-fg-faint">
@@ -109,7 +107,7 @@ export function WarmSummaryCard({
         )}
       </div>
 
-      {fresh && summaryLong(summary!) && (
+      {fresh && !summaryTopics && summaryLong(summary!) && (
         <button
           type="button"
           onClick={() => setExpanded((x) => !x)}
@@ -123,11 +121,6 @@ export function WarmSummaryCard({
   );
 }
 
-// One row per topic the summarizer segmented the warm range into (ADR-0042
-// extension: timeline → subject separation). Collapsed by default — title,
-// time range, and a fact-uplift note if this topic produced any durable
-// facts (already written to long-term memory by the background compaction
-// job, not just displayed here). Expands to the topic's own recap + facts.
 function TopicSegmentRow({ topic }: { topic: SummaryTopicSegment }) {
   const [open, setOpen] = useState(false);
   const range = formatTopicRange(topic.start_at, topic.end_at);
@@ -143,9 +136,18 @@ function TopicSegmentRow({ topic }: { topic: SummaryTopicSegment }) {
           </span>
         )}
       </MetaRow>
+      {!open && topic.recap && (
+        <div className="mt-1 ml-4 text-[11px] text-fg-muted line-clamp-2">
+          <ReactMarkdown>{topic.recap}</ReactMarkdown>
+        </div>
+      )}
       {open && (
         <div className="mt-1 ml-4 space-y-1.5">
-          {topic.recap && <p className="text-[11px] text-fg-muted">{topic.recap}</p>}
+          {topic.recap && (
+            <div className="text-[11px] text-fg-muted">
+              <ReactMarkdown>{topic.recap}</ReactMarkdown>
+            </div>
+          )}
           {topic.facts.length > 0 && (
             <ul className="space-y-0.5">
               {topic.facts.map((fact, i) => (
