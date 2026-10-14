@@ -207,6 +207,15 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      - name: Cache local embedding model
+        # Populates the cache on main so tagged release runs can restore it
+        # instead of depending on Hugging Face availability.
+        uses: actions/cache@v5
+        with:
+          path: .jarela-assets/local-embedding
+          key: local-embedding-${{ hashFiles('scripts/prepare-local-embedding-model.mjs') }}
+          enableCrossOsArchive: true
+
       - name: Build (next build)
         run: npm run build
 
