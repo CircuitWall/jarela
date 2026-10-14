@@ -47,6 +47,11 @@ export function ModelPricingSection({
   const grouped = groupModelRatesByVendor(filtered);
   const vendors = [...new Set(data.pricing.model_rates.map((r) => r.provider))].sort();
   const functionalities = [...new Set(data.pricing.model_rates.map((r) => detectModelFunctionality(r.model_id)))].sort();
+  const aggregatorRates = data.pricing.aggregator_model_rates
+    .filter((row) => modelVendorFilter === "all" || row.provider === modelVendorFilter)
+    .filter((row) => modelFunctionFilter === "all" || detectModelFunctionality(row.model_id) === modelFunctionFilter)
+    .filter((row) => !modelSearch.trim()
+      || `${row.provider} ${row.model_id} ${row.aggregator_model_id}`.toLowerCase().includes(modelSearch.trim().toLowerCase()));
 
   return (
     <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 space-y-2 shadow-sm">
@@ -120,9 +125,68 @@ export function ModelPricingSection({
           )}
         </div>
       </div>
+      <div className="rounded-lg bg-[var(--bg-primary)]/25 overflow-hidden">
+        <div className="px-3 pt-3 text-xs font-medium text-[var(--text-primary)]">
+          Aggregator reference rates
+        </div>
+        <p className="px-3 pt-1 text-[11px] text-[var(--text-secondary)]">
+          Route-price signals only. They are not used for direct-provider cost estimates.
+        </p>
+        <div className="flex flex-wrap gap-1.5 px-3 py-2">
+          {data.pricing.aggregator_sources.map((source) => (
+            <span
+              key={source.id}
+              title={source.error ?? (source.ok ? `Last checked ${source.fetched_at}` : `Last successful fetch ${source.last_successful_at ?? "never"}`)}
+              className={`rounded-full px-2 py-0.5 text-[10px] ${source.ok
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                : "bg-amber-500/15 text-amber-700 dark:text-amber-300"}`}
+            >
+              {source.name}: {source.model_rate_count}{source.ok ? " rates" : " stale"}
+            </span>
+          ))}
+        </div>
+        <div className="max-h-56 overflow-auto">
+          {aggregatorRates.length === 0 ? (
+            <p className="px-3 pb-3 text-xs text-[var(--text-secondary)]">No comparable aggregator rates for these filters.</p>
+          ) : (
+            aggregatorRates.slice(0, 100).map((row) => {
+              const direct = data.pricing.model_rates.find((rate) => rate.provider === row.provider && rate.model_id === row.model_id);
+              const inputDelta = priceDelta(row.input_per_1m_usd, direct?.input_per_1m_usd ?? null);
+              const outputDelta = priceDelta(row.output_per_1m_usd, direct?.output_per_1m_usd ?? null);
+              return (
+                <div key={`${row.aggregator_id}:${row.provider}:${row.aggregator_model_id}`} className="border-t border-[var(--border)]/40 px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <span className="text-xs text-[var(--text-primary)]">{row.provider} / {row.model_id}</span>
+                    <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">
+                      in {row.input_per_1m_usd == null ? "n/a" : formatMoney(row.input_per_1m_usd, currencyInfo)}
+                      {" · "}out {row.output_per_1m_usd == null ? "n/a" : formatMoney(row.output_per_1m_usd, currencyInfo)} / 1M
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-secondary)]">
+                    <span>{row.aggregator_name} · {row.route}</span>
+                    {inputDelta || outputDelta ? <span>vs direct: in {inputDelta ?? "n/a"}, out {outputDelta ?? "n/a"}</span> : null}
+                    {row.has_conditional_pricing ? <span className="text-amber-700 dark:text-amber-300">conditional pricing</span> : null}
+                    {!row.ok ? <span className="text-amber-700 dark:text-amber-300">stale</span> : null}
+                    <a href={row.source_url} target="_blank" rel="noreferrer" className="ml-auto text-cyan-700 hover:underline dark:text-cyan-300">source ↗</a>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        {aggregatorRates.length > 100 ? (
+          <p className="px-3 pb-2 text-[10px] text-[var(--text-secondary)]">Showing 100 of {aggregatorRates.length}; narrow the model filter to inspect more.</p>
+        ) : null}
+      </div>
       <p className="text-[11px] text-[var(--text-secondary)]">{data.pricing.notes}</p>
     </section>
   );
+}
+
+function priceDelta(aggregator: number | null, direct: number | null): string | null {
+  if (aggregator == null || direct == null || direct === 0) return null;
+  const percent = ((aggregator - direct) / direct) * 100;
+  return `${percent > 0 ? "+" : ""}${Math.round(percent)}%`;
 }
 
 function ModelPricingGroup({ provider, rows, currencyInfo }: { provider: string; rows: DashboardMetrics["pricing"]["model_rates"]; currencyInfo: DashboardCurrencyInfo }) {

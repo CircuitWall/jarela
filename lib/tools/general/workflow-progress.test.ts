@@ -60,9 +60,17 @@ describe("workflow_progress tool", () => {
     }));
 
     expect(out.ok).toBe(true);
-    const state = out.state as { phase: string; checklist: Array<{ id: string }> };
+    const state = out.state as {
+      phase: string;
+      checklist: Array<{ id: string; input: string; output: string; validation: string }>;
+    };
     expect(state.phase).toBe("adoption");
     expect(state.checklist.map((item) => item.id)).toEqual(["instructions", "tools", "scheduled-work"]);
+    for (const item of state.checklist) {
+      expect(item.input).toBeTruthy();
+      expect(item.output).toBeTruthy();
+      expect(item.validation).toBeTruthy();
+    }
   });
 
   it("automatically starts Phase 2 when the Phase 1 todo list is built", async () => {
@@ -71,6 +79,7 @@ describe("workflow_progress tool", () => {
       phase: "impact_radius",
       item_id: "build-todo-list",
       status: "done",
+      validation_evidence: "Every changed path is included or explicitly handled by the fallback.",
     }));
 
     expect(out.ok).toBe(true);
@@ -85,9 +94,30 @@ describe("workflow_progress tool", () => {
       phase: "verification",
       summary: "Connect and verify the provider",
       items: [
-        { id: "check-prerequisites", label: "Check prerequisites", status: "done" },
-        { id: "configure-provider", label: "Configure provider", status: "checking" },
-        { id: "verify-connection", label: "Verify connection" },
+        {
+          id: "check-prerequisites",
+          label: "Check prerequisites",
+          input: "Configured provider credentials",
+          output: "Prerequisites report",
+          validation: "Check required settings are present",
+          validation_evidence: "Required settings were present",
+          status: "done",
+        },
+        {
+          id: "configure-provider",
+          label: "Configure provider",
+          input: "Prerequisites report",
+          output: "Saved provider configuration",
+          validation: "Read the saved configuration back",
+          status: "checking",
+        },
+        {
+          id: "verify-connection",
+          label: "Verify connection",
+          input: "Saved provider configuration",
+          output: "Connection result",
+          validation: "Run a provider health check and inspect its result",
+        },
       ],
     }));
 
@@ -97,11 +127,46 @@ describe("workflow_progress tool", () => {
       phase: "verification",
       summary: "Connect and verify the provider",
       checklist: [
-        { id: "check-prerequisites", status: "done" },
+        { id: "check-prerequisites", status: "done", validation_evidence: "Required settings were present" },
         { id: "configure-provider", status: "checking" },
         { id: "verify-connection", status: "pending" },
       ],
     });
+  });
+
+  it("requires observed validation evidence before marking an item done", async () => {
+    const out = parse(await workflowProgressTool.invoke({
+      workflow_id: "migration",
+      items: [{
+        id: "verify",
+        label: "Verify migration",
+        input: "Current database",
+        output: "Migrated database",
+        validation: "Run migration tests",
+        status: "done",
+      }],
+    }));
+
+    expect(out.ok).toBe(false);
+    expect(String(out.error)).toContain("observed validation_evidence");
+
+    const systemWorkflow = parse(await workflowProgressTool.invoke({
+      workflow_id: "version_adoption",
+      item_id: "build-todo-list",
+      status: "done",
+    }));
+    expect(systemWorkflow.ok).toBe(false);
+    expect(String(systemWorkflow.error)).toContain("observed validation_evidence");
+  });
+
+  it("refuses to complete version adoption while checklist items are unverified", async () => {
+    const out = parse(await workflowProgressTool.invoke({
+      workflow_id: "version_adoption",
+      phase: "complete",
+    }));
+
+    expect(out.ok).toBe(false);
+    expect(String(out.error)).toContain("every checklist item is validated or skipped");
   });
 
   it("requires full snapshots and refuses completion while items are open", async () => {
@@ -112,7 +177,14 @@ describe("workflow_progress tool", () => {
     const openItems = parse(await workflowProgressTool.invoke({
       workflow_id: "migration",
       phase: "complete",
-      items: [{ id: "verify", label: "Verify migration", status: "checking" }],
+      items: [{
+        id: "verify",
+        label: "Verify migration",
+        input: "Current database",
+        output: "Migrated database",
+        validation: "Run migration tests",
+        status: "checking",
+      }],
     }));
     expect(openItems.ok).toBe(false);
     expect(String(openItems.error)).toContain("items remain open");
@@ -121,7 +193,14 @@ describe("workflow_progress tool", () => {
       workflow_id: "migration",
       item_id: "verify",
       status: "done",
-      items: [{ id: "verify", label: "Verify migration", status: "checking" }],
+      items: [{
+        id: "verify",
+        label: "Verify migration",
+        input: "Current database",
+        output: "Migrated database",
+        validation: "Run migration tests",
+        status: "checking",
+      }],
     }));
     expect(partialItemUpdate.ok).toBe(false);
     expect(String(partialItemUpdate.error)).toContain("complete items checklist");
@@ -132,6 +211,7 @@ describe("workflow_progress tool", () => {
       workflow_id: "version_adoption",
       item_id: "missing",
       status: "done",
+      validation_evidence: "Attempted lookup returned no item.",
     }));
 
     expect(out.ok).toBe(false);

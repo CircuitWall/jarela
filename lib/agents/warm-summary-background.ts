@@ -58,7 +58,27 @@ export function pendingCompactionBoundary(threadId: string): string | null {
 }
 
 export function pendingCompactionBoundarySeq(threadId: string): number | null {
-  return queuedBoundaries.get(threadId)?.boundarySeq ?? pendingBoundaries.get(threadId) ?? null;
+  return queuedBoundaries.get(threadId)?.boundarySeq
+    ?? pendingBoundaries.get(threadId)
+    ?? manualBoundaries.get(threadId)
+    ?? null;
+}
+
+// Manual /compact runs outside the auto-compaction queue; track it so a
+// client that reloads the thread mid-compaction still sees it pending.
+const manualBoundaries = new Map<string, number>();
+
+export async function trackManualCompaction<T>(
+  threadId: string,
+  boundarySeq: number,
+  run: () => Promise<T>,
+): Promise<T> {
+  manualBoundaries.set(threadId, boundarySeq);
+  try {
+    return await run();
+  } finally {
+    if (manualBoundaries.get(threadId) === boundarySeq) manualBoundaries.delete(threadId);
+  }
 }
 
 /**

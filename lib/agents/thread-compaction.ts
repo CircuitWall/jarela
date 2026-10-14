@@ -6,7 +6,7 @@ import {
   pruneThreadMessages,
 } from "@/lib/stores/threads";
 import { putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
-import { compactThreadWarmContext } from "@/lib/agents/warm-summary-background";
+import { compactThreadWarmContext, trackManualCompaction } from "@/lib/agents/warm-summary-background";
 import { getConfig } from "@/lib/env/config";
 
 export type ThreadCompactionResult =
@@ -73,10 +73,11 @@ export async function compactAgentThread(
   const lastRow = rows[rows.length - 1];
   const boundaryRow = fullSessionReset ? null : rows[Math.max(0, rows.length - keepLast)] ?? lastRow;
   const boundarySeq = fullSessionReset ? lastRow.seq + 1 : boundaryRow!.seq;
-  const context = await compactThreadWarmContext(thread.thread_id, boundarySeq, {
-    expectedHotSinceSeq: thread.hot_since_seq ?? null,
-    alignTopicBoundary: !fullSessionReset,
-  });
+  const context = await trackManualCompaction(thread.thread_id, boundarySeq, () =>
+    compactThreadWarmContext(thread.thread_id, boundarySeq, {
+      expectedHotSinceSeq: thread.hot_since_seq ?? null,
+      alignTopicBoundary: !fullSessionReset,
+    }));
   if (!context) return { compacted: false, reason: "summary was not committed" };
 
   putMemory("sessions", `${agentId}/${Date.now()}`, {

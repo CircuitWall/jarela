@@ -21,6 +21,7 @@ export interface VersionAdoptionWorkflowProgressInput {
   phase?: VersionAdoptionPhase;
   item_id?: string;
   status?: VersionAdoptionChecklistStatus;
+  validation_evidence?: string;
   summary?: string;
   error?: string | null;
 }
@@ -28,7 +29,11 @@ export interface VersionAdoptionWorkflowProgressInput {
 export interface VersionAdoptionChecklistItem {
   id: string;
   label: string;
+  input: string;
+  output: string;
+  validation: string;
   status: VersionAdoptionChecklistStatus;
+  validation_evidence?: string;
   reason: string;
   affected_files: string[];
   action?: VersionAdoptionAction;
@@ -61,6 +66,9 @@ const DEFAULT_CHECKLIST: VersionAdoptionChecklistItem[] = [
   {
     id: "instructions",
     label: "Review instructions and skills",
+    input: "Changed instruction, skill, and harness files, plus the current agent behavior they define.",
+    output: "Findings and any required instruction or skill updates.",
+    validation: "Read each affected file and verify findings against the active prompt/skill loading path.",
     status: "pending",
     reason: "Agent behavior may depend on changed repo instructions, built-in skills, or prompt guidance.",
     affected_files: [],
@@ -69,6 +77,9 @@ const DEFAULT_CHECKLIST: VersionAdoptionChecklistItem[] = [
   {
     id: "tools",
     label: "Review tool and permission changes",
+    input: "Changed tool implementations, registrations, descriptions, and permission rules.",
+    output: "Findings and required tool or permission adoption actions.",
+    validation: "Trace affected tools through registration and permission checks; run focused tests when available.",
     status: "pending",
     reason: "Tool descriptions, permissions, or package registrations can change how agents should act.",
     affected_files: [],
@@ -77,6 +88,9 @@ const DEFAULT_CHECKLIST: VersionAdoptionChecklistItem[] = [
   {
     id: "scheduled-work",
     label: "Review scheduled tasks and watchers",
+    input: "Changed scheduler, watcher, trigger, and long-lived prompt behavior.",
+    output: "Findings and required scheduled-work prompt updates.",
+    validation: "Inspect affected scheduling paths and run relevant tests; report any unchecked behavior as unknown.",
     status: "pending",
     reason: "Long-lived prompts for scheduled tasks and watchers can become stale after runtime or tool changes.",
     affected_files: [],
@@ -88,6 +102,9 @@ const PHASE_1_CHECKLIST: VersionAdoptionChecklistItem[] = [
   {
     id: "fetch-changes",
     label: "Fetch changes",
+    input: "Previously adopted version tag and current repository HEAD.",
+    output: "The changed-file list between the baseline and current version.",
+    validation: "Use the system-computed git diff result; if no baseline is available, explicitly identify first-adoption status.",
     status: "pending",
     reason: "Compare the current version with the previously adopted version or baseline.",
     affected_files: [],
@@ -95,6 +112,9 @@ const PHASE_1_CHECKLIST: VersionAdoptionChecklistItem[] = [
   {
     id: "build-todo-list",
     label: "Build todo list",
+    input: "System-computed changed-file list and classified adoption surfaces.",
+    output: "A Phase 2 checklist covering all matched changes and a fallback review for unmatched changes.",
+    validation: "Check that every changed path is represented by an adoption item or explicitly covered by the fallback.",
     status: "pending",
     reason: "Turn detected version changes into the concrete Phase 2 adoption checklist.",
     affected_files: [],
@@ -125,7 +145,9 @@ function parseStored(): StoredVersionAdoptionState | null {
       completed_at: typeof parsed.completed_at === "string" ? parsed.completed_at : null,
       dismissed_at: typeof parsed.dismissed_at === "string" ? parsed.dismissed_at : null,
       summary: typeof parsed.summary === "string" ? parsed.summary : "",
-      checklist: Array.isArray(parsed.checklist) ? parsed.checklist.filter(isChecklistItem) : [],
+      checklist: Array.isArray(parsed.checklist)
+        ? parsed.checklist.map(normalizeChecklistItem).filter((item): item is VersionAdoptionChecklistItem => item !== null)
+        : [],
       stale_prompt_risks: Array.isArray(parsed.stale_prompt_risks)
         ? parsed.stale_prompt_risks.filter((item): item is string => typeof item === "string")
         : [],
@@ -145,10 +167,36 @@ function isPhase(value: unknown): value is VersionAdoptionPhase {
   return value === "impact_radius" || value === "adoption" || value === "complete" || value === null;
 }
 
-function isChecklistItem(value: unknown): value is VersionAdoptionChecklistItem {
-  if (!value || typeof value !== "object") return false;
+function normalizeChecklistItem(value: unknown): VersionAdoptionChecklistItem | null {
+  if (!value || typeof value !== "object") return null;
   const item = value as Partial<VersionAdoptionChecklistItem>;
-  return typeof item.id === "string" && typeof item.label === "string" && typeof item.reason === "string";
+  if (typeof item.id !== "string" || typeof item.label !== "string" || typeof item.reason !== "string") return null;
+  return {
+    id: item.id,
+    label: item.label,
+    status: isChecklistStatus(item.status) ? item.status : "pending",
+    reason: item.reason,
+    affected_files: Array.isArray(item.affected_files)
+      ? item.affected_files.filter((file): file is string => typeof file === "string")
+      : [],
+    input: typeof item.input === "string" ? item.input : "Previously stored workflow context and affected files.",
+    output: typeof item.output === "string" ? item.output : "Review findings and any required adoption actions.",
+    validation: typeof item.validation === "string"
+      ? item.validation
+      : "Verify findings against the affected files; report unavailable evidence instead of inferring.",
+    ...(typeof item.validation_evidence === "string" ? { validation_evidence: item.validation_evidence } : {}),
+    ...(isVersionAdoptionAction(item.action) ? { action: item.action } : {}),
+  };
+}
+
+function isChecklistStatus(value: unknown): value is VersionAdoptionChecklistStatus {
+  return value === "pending" || value === "checking" || value === "done" || value === "needs_attention" || value === "skipped";
+}
+
+function isVersionAdoptionAction(value: unknown): value is VersionAdoptionAction {
+  return value === "read_skill" || value === "review_permissions" || value === "review_schedule"
+    || value === "review_watcher" || value === "read_instructions" || value === "review_tools"
+    || value === "review_api" || value === "review_persistence" || value === "review_release";
 }
 
 function persist(state: StoredVersionAdoptionState): VersionAdoptionState {
@@ -187,11 +235,24 @@ function item(
   id: string,
   label: string,
   reason: string,
+  input: string,
+  output: string,
+  validation: string,
   files: string[],
   action: VersionAdoptionAction,
 ): VersionAdoptionChecklistItem | null {
   if (files.length === 0) return null;
-  return { id, label, status: "pending", reason, affected_files: files.slice(0, 12), action };
+  return {
+    id,
+    label,
+    input,
+    output,
+    validation,
+    status: "pending",
+    reason,
+    affected_files: files.slice(0, 12),
+    action,
+  };
 }
 
 function buildChecklist(previousVersion: string | null, currentVersion: string): VersionAdoptionChecklistItem[] {
@@ -205,6 +266,9 @@ function buildChecklist(previousVersion: string | null, currentVersion: string):
       "permissions",
       "Review permissions and tool access",
       "Tool registration, category, package, or permission files changed since the last adopted version.",
+      "Changed tool registration and permission files.",
+      "Validated findings about capability exposure and any required permission changes.",
+      "Inspect each affected file, trace the permission path, and run relevant tool/permission tests.",
       filesMatching(files, [/^lib\/tools\//, /^packages\/[^/]+-langchain\//, /^lib\/stores\/agent-configs\./, /^lib\/stores\/builtin-tools\./]),
       "review_permissions",
     ),
@@ -212,6 +276,9 @@ function buildChecklist(previousVersion: string | null, currentVersion: string):
       "skills-instructions",
       "Review changed skills and instructions",
       "Agent instructions, skill files, or harness prompts changed and may affect behavior.",
+      "Changed instruction, skill, and harness files plus their loading paths.",
+      "Validated behavior impact and any required instruction or skill updates.",
+      "Read each affected file and verify changes against the prompt/skill loading path.",
       filesMatching(files, [/^\.github\/skills\//, /^\.github\/instructions\//, /^\.github\/copilot-instructions\.md$/, /^lib\/skills\//, /^lib\/agents\/harness\//]),
       "read_skill",
     ),
@@ -219,6 +286,9 @@ function buildChecklist(previousVersion: string | null, currentVersion: string):
       "scheduled-work",
       "Review scheduled tasks and watchers",
       "Scheduler, trigger, or watcher behavior changed and long-lived prompts may need review.",
+      "Changed scheduler, trigger, watcher, and long-lived prompt files.",
+      "Validated findings and any required scheduled-work prompt updates.",
+      "Inspect each affected scheduling path and run its focused tests when available.",
       filesMatching(files, [/^lib\/scheduler\//, /^lib\/triggers\//, /^lib\/tools\/(schedule|watcher)\.ts$/]),
       "review_schedule",
     ),
@@ -226,6 +296,9 @@ function buildChecklist(previousVersion: string | null, currentVersion: string):
       "stale-prompts",
       "Check stale prompt risks",
       "Agent prompt assembly or runtime policy changed since the last adopted version.",
+      "Changed prompt assembly, harness, and runtime-policy files.",
+      "Validated stale-prompt risks and specific corrective actions.",
+      "Trace changed prompt code into the assembled prompt and test the affected behavior.",
       filesMatching(files, [/^lib\/agents\//, /^lib\/agents\/prepare\/system-prompt\.ts$/]),
       "read_instructions",
     ),
@@ -233,6 +306,9 @@ function buildChecklist(previousVersion: string | null, currentVersion: string):
       "api-persistence",
       "Review API and persistence contracts",
       "API, database, or store changes can require migrations, docs, or client updates.",
+      "Changed API schemas, database migrations, stores, and their clients.",
+      "Validated contract impact and any required migration, client, or documentation actions.",
+      "Check schema and migration compatibility, then run focused contract and persistence tests.",
       filesMatching(files, [/^app\/api\//, /^api\//, /^lib\/api\//, /^lib\/db\//, /^lib\/stores\//]),
       "review_api",
     ),
@@ -240,6 +316,9 @@ function buildChecklist(previousVersion: string | null, currentVersion: string):
       "release-notes",
       "Review release notes and package metadata",
       "Release metadata changed and should describe user-visible behavior.",
+      "Changed changelog, package metadata, and release configuration.",
+      "Validated release notes and package/version metadata.",
+      "Compare release notes with the actual diff and verify package metadata consistency.",
       filesMatching(files, [/^CHANGELOG\.md$/, /^package\.json$/, /^package-lock\.json$/, /^packages\/[^/]+\/package\.json$/, /^packages\/[^/]+\/CHANGELOG\.md$/]),
       "review_release",
     ),
@@ -249,6 +328,9 @@ function buildChecklist(previousVersion: string | null, currentVersion: string):
     return [{
       id: "version-diff",
       label: "Review version changes",
+      input: "System-computed changed-file list and available changelog.",
+      output: "Findings for unclassified changes and any required adoption actions.",
+      validation: "Compare findings with the available changed-file list and changelog; state explicitly if either is unavailable.",
       status: files.length === 0 ? "skipped" : "pending",
       reason: files.length === 0
         ? "No git diff was available for the stored version; use the changelog as the fallback briefing."
@@ -278,6 +360,9 @@ function resolvedPhase1Checklist(
     {
       ...fetchChanges,
       status: "done",
+      validation_evidence: isFirst
+        ? "System confirmed that this is the first adoption and no prior baseline exists."
+        : `System computed the changed-file surface against the prior version; ${affectedCount} affected file(s) were counted.`,
       reason: isFirst
         ? "First adoption — no previously adopted version to diff against."
         : `Computed deterministically via git diff against the previously adopted version: ${affectedCount} affected file(s) across ${adoptionChecklist.length} area(s).`,
@@ -308,9 +393,11 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
     "",
     "Phase 1 — impact radius analysis:",
     "- The changed-file surface (`fetch-changes`) was already computed deterministically by the system via git diff against the previously adopted version — see each Phase 2 checklist item below with its affected_files. Do not independently fetch or guess at what changed; that item is already marked done in the UI.",
+    "- Every checklist item provides its input, expected output, and validation criteria. Work from the stated inputs, validate the output using those criteria, and report observed evidence before marking the item done.",
+    "- Prefer executable checks for code-verifiable behavior. If a check cannot run, say why and leave the result unverified or mark the item needs_attention.",
     "- Call `workflow_progress` with `workflow_id: \"version_adoption\"`, `phase: \"impact_radius\"`, `item_id: \"build-todo-list\"`, and `status: \"checking\"`.",
     "- Build the Phase 2 todo list from the adoption checklist below, deciding which items are actionable, skipped, or need attention.",
-    "- Then call `workflow_progress` for `item_id: \"build-todo-list\"` with `status: \"done\"`.",
+    "- Then call `workflow_progress` for `item_id: \"build-todo-list\"` with `status: \"done\"` and `validation_evidence` containing the observed coverage check.",
     "",
     "Phase 2 — adoption:",
     "- Start Phase 2 by calling `workflow_progress` with `workflow_id: \"version_adoption\"` and `phase: \"adoption\"`; the UI will swap from the Phase 1 checklist to the generated adoption todo list.",
@@ -318,7 +405,7 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
     "- If Phase 1 finds actionable adoption work, complete safe local updates directly when your available tools allow it.",
     "- For risky or external side effects, propose an approval flow instead of acting silently.",
     "- If Phase 1 finds no adoption work, explicitly say that Phase 2 is skipped and why.",
-    "- After each Phase 2 item, call `workflow_progress` with `status: \"done\"`, `status: \"skipped\"`, or `status: \"needs_attention\"`.",
+    "- After each Phase 2 item, call `workflow_progress` with `status: \"done\"` and observed `validation_evidence`, or `status: \"skipped\"` / `status: \"needs_attention\"` as appropriate.",
     "- Before your final response, call `workflow_progress` with `workflow_id: \"version_adoption\"`, `phase: \"complete\"`, and a concise `summary`.",
     "",
     "Constraints:",
@@ -327,9 +414,9 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
     "",
     `Summary: ${state.summary}`,
     "Phase 1 checklist:",
-    ...PHASE_1_CHECKLIST.map((item) => `- ${item.id}: ${item.label} — ${item.reason}`),
+    ...PHASE_1_CHECKLIST.map((item) => `- ${item.id}: ${item.label} — Input: ${item.input} Output: ${item.output} Validation: ${item.validation} Reason: ${item.reason}`),
     "Phase 2 adoption checklist:",
-    ...buildChecklist(state.previous_version, state.current_version).map((item) => `- ${item.id}: ${item.label}: ${item.reason}${item.affected_files.length > 0 ? ` Affected files: ${item.affected_files.join(", ")}.` : ""}`),
+    ...buildChecklist(state.previous_version, state.current_version).map((item) => `- ${item.id}: ${item.label}: Input: ${item.input} Output: ${item.output} Validation: ${item.validation} Reason: ${item.reason}${item.affected_files.length > 0 ? ` Affected files: ${item.affected_files.join(", ")}.` : ""}`),
     state.stale_prompt_risks.length > 0 ? `Stale-prompt risks: ${state.stale_prompt_risks.join(", ")}.` : "Stale-prompt risks: none detected in the checklist.",
   ].join("\n");
 }
@@ -419,7 +506,11 @@ export function updateVersionAdoptionState(
   }
 
   if (action === "mark_done") {
-    const completed = completeWorkflow({ ...state, checklist: nextChecklist }, "complete");
+    const completed = completeWorkflow(
+      { ...state, checklist: nextChecklist },
+      "complete",
+      "The user explicitly confirmed completion through the adoption checklist.",
+    );
     return persist({
       ...completed,
       status: "done",
@@ -456,6 +547,11 @@ export function recordVersionAdoptionWorkflowProgress(
     ? { ...state, phase: "adoption" as const, checklist: buildChecklist(state.previous_version, currentVersion) }
     : state;
   const result = mergeWorkflowProgress(baseState, update);
+  if (result.state.phase === "complete" && result.state.checklist.some((entry) => (
+    entry.status !== "done" && entry.status !== "skipped"
+  ) || (entry.status === "done" && !entry.validation_evidence))) {
+    throw new Error("Version adoption cannot be completed until every checklist item is validated or skipped.");
+  }
   const completedPhase1Todo =
     result.state.phase === "impact_radius" &&
     update.item_id === "build-todo-list" &&

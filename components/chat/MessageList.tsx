@@ -156,9 +156,15 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
 
   const boundaryIndexFor = useCallback((seq: number | null = effectiveHotSinceSeq): number => {
     if (seq === null || visibleMessages.length === 0) return -1;
-    const i = visibleMessages.findIndex((m) => typeof m.seq === "number" && m.seq >= seq);
-    if (i !== -1) return i;
-    return visibleMessages.length;
+    // Warm is inclusive: everything with seq < hot_since_seq. The line sits
+    // directly below the last warm message, so anything after it — including
+    // optimistic rows that have no seq yet — is always rendered as hot.
+    let lastWarm = -1;
+    for (let i = 0; i < visibleMessages.length; i++) {
+      const s = visibleMessages[i].seq;
+      if (typeof s === "number" && s < seq) lastWarm = i;
+    }
+    return lastWarm + 1;
   }, [effectiveHotSinceSeq, visibleMessages]);
 
   function countOlderForHotSince(seq: number | null = effectiveHotSinceSeq): number {

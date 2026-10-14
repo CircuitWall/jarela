@@ -492,6 +492,21 @@ describe("MessageList conversation focus", () => {
     expect(scrollIntoView).toHaveBeenCalled();
   });
 
+  it("renders the boundary directly below the last warm message so new turns land in hot", () => {
+    const messages: Message[] = [
+      mkMessage("m1", "user", "one", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "two", "2026-08-09T10:00:01.000Z"),
+      // Optimistic bubble sent right after /compact: no seq yet.
+      { id: "opt-x", role: "user", content: "new", created_at: "2026-08-09T10:00:02.000Z", status: "pending" },
+    ];
+    const { container } = render(
+      <MessageList threadId="thread-1" messages={messages} hotSinceSeq={3} />,
+    );
+    const order = Array.from(container.querySelectorAll("[data-message-id], [data-focus-boundary='1']"))
+      .map((el) => el.getAttribute("data-message-id") ?? "boundary");
+    expect(order).toEqual(["m1", "m2", "boundary", "opt-x"]);
+  });
+
   it("keeps the anchor message on screen when hot_since relocates the boundary line", () => {
     const messages = [
       mkMessage("m1", "user", "one", "2026-08-09T10:00:00.000Z"),

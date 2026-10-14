@@ -62,6 +62,56 @@ describe("pricing snapshot refresh", () => {
     expect((deepseek?.price_signals ?? []).length).toBeGreaterThan(0);
   });
 
+  it("stores aggregator rates separately from official provider rates", async () => {
+    readFileMock.mockRejectedValueOnce(new Error("ENOENT"));
+    const deepseekHtml = "<html>deepseek-v4-pro input $1.00 / 1M tokens output $3.00 / 1M tokens</html>";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("openrouter.ai")) {
+        return new Response(JSON.stringify({ data: [{
+          id: "deepseek/deepseek-v4-pro",
+          pricing: { prompt: "0.00000132", completion: "0.00000396" },
+        }] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.includes("raw.githubusercontent.com/BerriAI/litellm")) {
+        return new Response(JSON.stringify({
+          "deepseek/deepseek-v4-pro": {
+            litellm_provider: "deepseek",
+            input_cost_per_token: 0.00000132,
+            output_cost_per_token: 0.00000396,
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.includes("platform.deepseek.com")) {
+        return new Response("blocked", { status: 403 });
+      }
+      if (url.includes("api-docs.deepseek.com")) {
+        return new Response(deepseekHtml, { status: 200, headers: { "content-type": "text/html" } });
+      }
+      return new Response("not found", { status: 404 });
+    }));
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const result = await refreshPricingSnapshot({ force: true, providers: ["deepseek"] });
+    const deepseek = result.snapshot.sources.find((source) => source.id === "deepseek");
+
+    expect(deepseek?.ok).toBe(true);
+    expect(deepseek?.model_rates?.[0]).toMatchObject({
+      input_per_1m_usd: 1,
+      output_per_1m_usd: 3,
+    });
+    expect(result.snapshot.aggregators).toHaveLength(2);
+    for (const source of result.snapshot.aggregators ?? []) {
+      expect(source.ok).toBe(true);
+      expect(source.model_rates).toEqual([expect.objectContaining({
+        provider: "deepseek",
+        model_id: "deepseek-v4-pro",
+        input_per_1m_usd: 1.32,
+        output_per_1m_usd: 3.96,
+      })]);
+    }
+  });
+
   it("returns fresh cache without fetching when snapshot is within ttl", async () => {
     const fresh = {
       generated_at: new Date().toISOString(),
@@ -120,7 +170,7 @@ describe("pricing snapshot refresh", () => {
     const res = await refreshPricingSnapshot({ force: false, ttlDays: 3, providers: ["deepseek"] });
 
     expect(res.refreshed).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     const firstFetchUrl = (fetchMock as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0];
     expect(firstFetchUrl).toBeDefined();
     expect(String(firstFetchUrl)).toContain("deepseek");

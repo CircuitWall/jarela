@@ -38,18 +38,41 @@ describe("workflow progress helpers", () => {
   });
 
   it("does not regress completed items back to checking", () => {
-    const done = updateWorkflowItem(baseState(), "one", "done");
+    const done = updateWorkflowItem(baseState(), "one", "done", "The focused test passed");
     const next = updateWorkflowItem(done, "one", "checking");
 
     expect(next.checklist[0].status).toBe("done");
+    expect(next.checklist[0].validation_evidence).toBe("The focused test passed");
+  });
+
+  it("requires validation evidence when completing an item", () => {
+    expect(() => updateWorkflowItem(baseState(), "one", "done")).toThrow(/validation evidence/);
+    expect(mergeWorkflowProgress(baseState(), {
+      item_id: "one",
+      status: "done",
+      validation_evidence: "The focused test passed",
+    }).state.checklist[0]).toMatchObject({
+      status: "done",
+      validation_evidence: "The focused test passed",
+    });
   });
 
   it("marks pending and checking items done when completing", () => {
     const running = updateWorkflowItem(baseState(), "one", "checking");
-    const next = completeWorkflow(running, "complete");
+    const next = completeWorkflow(running, "complete", "User confirmed the checklist after reviewing each result");
 
     expect(next.phase).toBe("complete");
     expect(next.checklist.every((item) => item.status === "done")).toBe(true);
+    expect(next.checklist.every((item) => Boolean(item.validation_evidence))).toBe(true);
+  });
+
+  it("refuses completion without evidence for already-completed checklist items", () => {
+    const doneWithoutEvidence: WorkflowState<"phase_1" | "phase_2" | "complete"> = {
+      ...baseState(),
+      checklist: [{ ...baseState().checklist[0], status: "done" }],
+    };
+    expect(() => completeWorkflow(doneWithoutEvidence, "complete", "Checklist reviewed"))
+      .toThrow(/marked done without validation evidence/);
   });
 
   it("merges phase, item, summary, and error updates", () => {

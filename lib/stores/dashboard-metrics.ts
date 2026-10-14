@@ -7,6 +7,7 @@ import {
   estimateCostUsd,
   dashboardModelRates,
   estimateProviderCostUsd,
+  type PricingTables,
 } from "./pricing";
 
 const CHARS_PER_TOKEN = 4;
@@ -155,6 +156,8 @@ export interface DashboardMetrics {
     snapshot_generated_at: string | null;
     rates: DashboardProviderRate[];
     model_rates: DashboardModelRate[];
+    aggregator_sources: PricingTables["aggregatorSources"];
+    aggregator_model_rates: PricingTables["aggregatorModelRates"];
     notes: string;
   };
 }
@@ -693,6 +696,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
         status: rates.status,
         error: rates.error,
       } satisfies DashboardModelRate)),
+      aggregator_sources: tables.aggregatorSources,
+      aggregator_model_rates: tables.aggregatorModelRates,
       notes: "Dashboard cost is recalculated from captured provider token usage and the latest matching rates. The original per-turn cost snapshots remain unchanged; legacy rows use content-length token estimates.",
     },
   };

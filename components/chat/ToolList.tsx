@@ -687,7 +687,15 @@ function workflowItemsFrom(value: unknown): WorkflowChecklistItemView[] {
       || item.status === "skipped"
       ? item.status
       : "pending";
-    return [{ id: item.id, label: item.label, status }];
+    return [{
+      id: item.id,
+      label: item.label,
+      status,
+      input: typeof item.input === "string" ? item.input : undefined,
+      output: typeof item.output === "string" ? item.output : undefined,
+      validation: typeof item.validation === "string" ? item.validation : undefined,
+      validation_evidence: typeof item.validation_evidence === "string" ? item.validation_evidence : undefined,
+    }];
   });
 }
 

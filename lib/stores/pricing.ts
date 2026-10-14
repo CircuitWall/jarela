@@ -11,6 +11,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { knownRateFor, knownRateModelIds } from "./known-rates";
+import type { AggregatorPricingSource } from "@/lib/pricing/aggregators";
 
 export type ProviderRates = {
   inputPer1M: number | null;
@@ -43,7 +44,40 @@ type PricingSnapshotSource = {
 type PricingSnapshot = {
   generated_at?: string;
   sources?: PricingSnapshotSource[];
+  aggregators?: AggregatorPricingSource[];
 };
+
+export interface AggregatorPricingFeedStatus {
+  id: string;
+  name: string;
+  source_url: string;
+  fetched_at: string;
+  last_successful_at: string | null;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+  model_rate_count: number;
+}
+
+export interface AggregatorModelPricingSignal {
+  aggregator_id: string;
+  aggregator_name: string;
+  source_url: string;
+  fetched_at: string;
+  last_successful_at: string | null;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+  provider: string;
+  model_id: string;
+  aggregator_model_id: string;
+  route: string;
+  input_per_1m_usd: number | null;
+  output_per_1m_usd: number | null;
+  cache_read_per_1m_usd: number | null;
+  cache_write_per_1m_usd: number | null;
+  has_conditional_pricing: boolean;
+}
 
 export interface PricingTables {
   byProvider: Map<string, ProviderRates>;
@@ -54,6 +88,10 @@ export interface PricingTables {
   // model_rate by its model id. First-write wins; subsequent same-id
   // entries only overwrite when they improve confidence or fill a null.
   byModel: Map<string, ProviderRates>;
+  // Aggregator quotes are exposed as comparison signals only. They never
+  // enter byProvider/byProviderModel/byModel, which drive cost estimates.
+  aggregatorSources: AggregatorPricingFeedStatus[];
+  aggregatorModelRates: AggregatorModelPricingSignal[];
   generatedAt: string | null;
 }
 
@@ -88,6 +126,9 @@ export function getPricingTables(): PricingTables {
   const byProvider = new Map<string, ProviderRates>();
   const byProviderModel = new Map<string, ProviderRates>();
   const byModel = new Map<string, ProviderRates>();
+  const trackedModelIds = new Map<string, string>();
+  const aggregatorSources: AggregatorPricingFeedStatus[] = [];
+  const aggregatorModelRates: AggregatorModelPricingSignal[] = [];
 
   for (const provider of EXPECTED_PROVIDERS) {
     byProvider.set(provider, {
@@ -153,7 +194,60 @@ export function getPricingTables(): PricingTables {
         if (!existing || isBetterRate(entry, existing)) {
           byModel.set(normalizedModel, entry);
         }
+        for (const alias of comparisonModelAliases(key, normalizedModel)) {
+          trackedModelIds.set(`${key}::${alias}`, normalizedModel);
+        }
       }
+    }
+  }
+
+  for (const modelId of knownRateModelIds()) {
+    const provider = inferProviderFromModelId(modelId);
+    if (!provider) continue;
+    for (const alias of comparisonModelAliases(provider, modelId)) {
+      const key = `${provider}::${alias}`;
+      if (!trackedModelIds.has(key)) trackedModelIds.set(key, modelId);
+    }
+  }
+
+  for (const source of snapshot?.aggregators ?? []) {
+    aggregatorSources.push({
+      id: source.id,
+      name: source.name,
+      source_url: source.source_url,
+      fetched_at: source.fetched_at,
+      last_successful_at: source.last_successful_at,
+      ok: source.ok,
+      status: source.status,
+      error: source.error,
+      model_rate_count: source.model_rates.length,
+    });
+    for (const rate of source.model_rates) {
+      const provider = normalizeProvider(rate.provider);
+      if (!provider) continue;
+      const matchedModelId = comparisonModelAliases(provider, rate.model_id)
+        .map((alias) => trackedModelIds.get(`${provider}::${alias}`))
+        .find((candidate): candidate is string => candidate !== undefined);
+      if (!matchedModelId) continue;
+      aggregatorModelRates.push({
+        aggregator_id: source.id,
+        aggregator_name: source.name,
+        source_url: source.source_url,
+        fetched_at: source.fetched_at,
+        last_successful_at: source.last_successful_at,
+        ok: source.ok,
+        status: source.status,
+        error: source.error,
+        provider,
+        model_id: matchedModelId,
+        aggregator_model_id: rate.model_id,
+        route: rate.route,
+        input_per_1m_usd: rate.input_per_1m_usd,
+        output_per_1m_usd: rate.output_per_1m_usd,
+        cache_read_per_1m_usd: rate.cache_read_per_1m_usd,
+        cache_write_per_1m_usd: rate.cache_write_per_1m_usd,
+        has_conditional_pricing: rate.has_conditional_pricing,
+      });
     }
   }
 
@@ -161,6 +255,8 @@ export function getPricingTables(): PricingTables {
     byProvider,
     byProviderModel,
     byModel,
+    aggregatorSources,
+    aggregatorModelRates,
     generatedAt: snapshot?.generated_at ?? null,
   };
   cached = { path, mtimeMs, tables };
@@ -277,6 +373,17 @@ function isBetterRate(next: ProviderRates, prev: ProviderRates): boolean {
   if (!nextHas && prevHas) return false;
   const rank = { high: 2, medium: 1, low: 0 } as const;
   return rank[next.confidence] > rank[prev.confidence];
+}
+
+function comparisonModelAliases(provider: string, modelId: string): string[] {
+  const aliases = new Set(modelAliasCandidates(provider, modelId));
+  if (provider === "anthropic") {
+    for (const alias of aliases) {
+      const dottedVersion = /^(claude-(?:opus|sonnet|haiku)-\d+)\.(\d+)(?=$|-)(.*)$/.exec(alias);
+      if (dottedVersion) aliases.add(`${dottedVersion[1]}-${dottedVersion[2]}${dottedVersion[3]}`);
+    }
+  }
+  return [...aliases];
 }
 
 export function normalizeProvider(id: string): string | null {

@@ -318,6 +318,87 @@ describe("dashboardModelRates", () => {
     expect(anthropic).toMatchObject({ inputPer1M: 3, outputPer1M: 15, source: "jarela:known-rates" });
   });
 
+  it("exposes aggregator quotes separately and never uses them for direct cost rates", () => {
+    seedSnapshot({
+      generated_at: "2026-10-13T00:00:00Z",
+      sources: [{
+        id: "openai",
+        pricing_url: "https://openai.com/api/pricing/",
+        ok: true,
+        model_rates: [{ model_id: "gpt-5.4", input_per_1m_usd: 2, output_per_1m_usd: 10, inferred: false, confidence: "high" }],
+      }],
+      aggregators: [{
+        id: "openrouter",
+        name: "OpenRouter",
+        source_url: "https://openrouter.ai/api/v1/models",
+        fetched_at: "2026-10-13T00:00:00Z",
+        ok: true,
+        status: 200,
+        error: null,
+        etag: null,
+        model_rates: [{
+          provider: "openai",
+          model_id: "gpt-5.4",
+          route: "OpenRouter",
+          input_per_1m_usd: 2.5,
+          output_per_1m_usd: 15,
+          cache_read_per_1m_usd: null,
+          cache_write_per_1m_usd: null,
+          has_conditional_pricing: false,
+        }],
+      }],
+    });
+
+    const tables = getPricingTables();
+    expect(modelRatesFor(tables, "openai", "gpt-5.4").inputPer1M).toBe(2);
+    expect(tables.aggregatorModelRates).toMatchObject([{
+      aggregator_id: "openrouter",
+      provider: "openai",
+      model_id: "gpt-5.4",
+      input_per_1m_usd: 2.5,
+      output_per_1m_usd: 15,
+    }]);
+  });
+
+  it("matches known Anthropic dotted-version aliases without broad punctuation folding", () => {
+    seedSnapshot({
+      sources: [{
+        id: "anthropic",
+        pricing_url: "https://www.anthropic.com/pricing",
+        ok: true,
+        model_rates: [{ model_id: "claude-sonnet-4-5", input_per_1m_usd: 3, output_per_1m_usd: 15 }],
+      }],
+      aggregators: [{
+        id: "openrouter",
+        name: "OpenRouter",
+        source_url: "https://openrouter.ai/api/v1/models",
+        fetched_at: "2026-10-13T00:00:00Z",
+        last_successful_at: "2026-10-13T00:00:00Z",
+        ok: true,
+        status: 200,
+        error: null,
+        etag: null,
+        model_rates: [{
+          provider: "anthropic",
+          model_id: "claude-sonnet-4.5",
+          route: "OpenRouter",
+          input_per_1m_usd: 3,
+          output_per_1m_usd: 15,
+          cache_read_per_1m_usd: null,
+          cache_write_per_1m_usd: null,
+          has_conditional_pricing: false,
+        }],
+      }],
+    });
+
+    const tables = getPricingTables();
+    expect(tables.aggregatorModelRates).toMatchObject([{
+      provider: "anthropic",
+      model_id: "claude-sonnet-4-5",
+      aggregator_model_id: "claude-sonnet-4.5",
+    }]);
+  });
+
   it("keeps live snapshot rates ahead of curated fallbacks", () => {
     seedSnapshot({
       generated_at: "2026-10-11T00:00:00Z",

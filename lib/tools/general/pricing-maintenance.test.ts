@@ -38,6 +38,24 @@ describe("refreshModelPricing", () => {
           ] },
           { id: "anthropic", ok: false, fetched_at: "2026-10-08T00:00:00.000Z", error: "unavailable", model_rates: [] },
         ],
+        aggregators: [{
+          id: "openrouter",
+          ok: false,
+          status: 403,
+          fetched_at: "2026-10-08T00:00:00.000Z",
+          last_successful_at: "2026-10-01T00:00:00.000Z",
+          error: "HTTP 403",
+          model_rates: [{
+            provider: "openai",
+            model_id: "gpt-5",
+            route: "OpenRouter",
+            input_per_1m_usd: 2,
+            output_per_1m_usd: 10,
+            cache_read_per_1m_usd: null,
+            cache_write_per_1m_usd: null,
+            has_conditional_pricing: false,
+          }],
+        }],
       },
     });
     mocks.getDashboardMetrics.mockResolvedValue({
@@ -82,5 +100,13 @@ describe("refreshModelPricing", () => {
       current_rate_estimated_cost_usd: 4,
       recorded_snapshot_cost_usd: 3,
     });
+    expect(result.aggregators).toEqual([expect.objectContaining({
+      id: "openrouter",
+      ok: false,
+      status: 403,
+      last_successful_at: "2026-10-01T00:00:00.000Z",
+      model_rate_count: 1,
+    })]);
+    expect(result.aggregator_signal_count).toBe(1);
   });
 });

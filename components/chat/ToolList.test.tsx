@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { ToolList, type ToolEvent } from "./ToolList";
 
 const { codexJobGet, codexJobCancel } = vi.hoisted(() => ({
@@ -317,8 +317,23 @@ describe("ToolList — live progress (ADR-0073)", () => {
             phase: "impact_radius",
             summary: "Fetching changes",
             checklist: [
-              { id: "fetch-changes", label: "Fetch changes", status: "done" },
-              { id: "build-todo-list", label: "Build todo list", status: "checking" },
+              {
+                id: "fetch-changes",
+                label: "Fetch changes",
+                input: "Baseline tag and repository HEAD",
+                output: "Paths changed since baseline",
+                validation: "Inspect system-computed git diff result",
+                validation_evidence: "git diff returned the changed paths",
+                status: "done",
+              },
+              {
+                id: "build-todo-list",
+                label: "Build todo list",
+                input: "Paths changed since baseline",
+                output: "Categorized adoption checklist",
+                validation: "Account for all changed paths",
+                status: "checking",
+              },
             ],
           },
         },
@@ -334,6 +349,15 @@ describe("ToolList — live progress (ADR-0073)", () => {
     expect(screen.getAllByText("Build todo list").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("done")).toBeTruthy();
     expect(screen.getByLabelText("checking")).toBeTruthy();
+    const firstContract = screen.getAllByText("Step contract")[0];
+    fireEvent.click(firstContract);
+    const contract = firstContract.closest("details");
+    expect(contract).toBeTruthy();
+    if (!contract) throw new Error("Workflow step contract details were not rendered");
+    expect(within(contract).getByText("Baseline tag and repository HEAD")).toBeTruthy();
+    expect(within(contract).getByText("Paths changed since baseline")).toBeTruthy();
+    expect(within(contract).getByText("Inspect system-computed git diff result")).toBeTruthy();
+    expect(within(contract).getByText("git diff returned the changed paths")).toBeTruthy();
   });
 
   it("previews agent-created workflow items while the tool call is running", () => {
@@ -345,9 +369,30 @@ describe("ToolList — live progress (ADR-0073)", () => {
         workflow_id: "release_review",
         phase: "verification",
         items: [
-          { id: "check-changes", label: "Review changes", status: "done" },
-          { id: "run-tests", label: "Run tests", status: "checking" },
-          { id: "report-result", label: "Report result" },
+          {
+            id: "check-changes",
+            label: "Review changes",
+            input: "Current branch diff",
+            output: "Review findings",
+            validation: "Inspect modified files",
+            validation_evidence: "Diff reviewed",
+            status: "done",
+          },
+          {
+            id: "run-tests",
+            label: "Run tests",
+            input: "Review findings",
+            output: "Test results",
+            validation: "Execute focused test suite",
+            status: "checking",
+          },
+          {
+            id: "report-result",
+            label: "Report result",
+            input: "Review findings and test results",
+            output: "Accurate summary",
+            validation: "Cross-check summary against observed evidence",
+          },
         ],
       },
     }];
