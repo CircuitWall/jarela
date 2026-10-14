@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fetchBytesWithRetry } from "./fetch-with-retry.mjs";
 
 const REPOSITORY = "Xenova/multilingual-e5-small";
 const REVISION = "761b726dd34fb83930e26aab4e9ac3899aa1fa78";
@@ -70,9 +71,7 @@ await mkdir(stageModelDir, { recursive: true });
 try {
   for (const file of FILES) {
     const url = `https://huggingface.co/${REPOSITORY}/resolve/${REVISION}/${file.path}?download=true`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`download failed (${response.status}) for ${file.path}`);
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const bytes = await fetchBytesWithRetry(url, { label: file.path });
     if (bytes.length !== file.size) {
       throw new Error(`size mismatch for ${file.path}: expected ${file.size}, got ${bytes.length}`);
     }

@@ -71,6 +71,7 @@
     "scripts/service-install.mjs",
     "scripts/start-prod.mjs",
     "scripts/prepare-local-embedding-model.mjs",
+    "scripts/fetch-with-retry.mjs",
     "scripts/update.mjs",
     "scripts/postbuild.mjs",
     "scripts/check-integration-manifests.mjs",
