@@ -17,10 +17,16 @@ const workflowProgressSchema = z.object({
   items: z.array(z.object({
     id: z.string().min(1).max(64).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
     label: z.string().min(1).max(120),
+    input: z.string().trim().min(1).max(500).describe("The concrete inputs or prerequisites for this step."),
+    output: z.string().trim().min(1).max(500).describe("The expected result this step must produce."),
+    validation: z.string().trim().min(1).max(500).describe("A concrete check for confirming the expected output."),
+    validation_evidence: z.string().trim().min(1).max(500).optional(),
     status: workflowItemStatusSchema.optional(),
-  })).max(12).optional().describe("For agent-created workflows, send the complete current checklist snapshot on every update. Omitted item statuses default to pending."),
+  })).max(12).optional().describe("For agent-created workflows, send the complete current checklist snapshot on every update. Every item requires input, output, and validation; completed items also require observed validation_evidence. Omitted item statuses default to pending."),
   item_id: z.string().optional().describe("Optional checklist item id to update."),
   status: workflowItemStatusSchema.optional().describe("For version_adoption only: checklist item status. Requires item_id."),
+  validation_evidence: z.string().trim().min(1).max(500).optional()
+    .describe("Exact check performed and observed result. Required when marking a version_adoption item done."),
   summary: z.string().max(300).optional().describe("Optional short workflow summary shown in the chat checklist."),
   detail: z.string().max(300).optional().describe("Optional live progress text to stream immediately to the UI."),
   needs_attention_reason: z.string().max(300).optional().describe("Optional reason shown when the item or workflow needs user attention."),
@@ -44,6 +50,13 @@ export const workflowProgressTool = tool(
           ok: false,
           workflow_id: input.workflow_id,
           error: "Agent-created workflows require the complete current items checklist on every update.",
+        });
+      }
+      if (input.items.some((item) => item.status === "done" && !item.validation_evidence)) {
+        return JSON.stringify({
+          ok: false,
+          workflow_id: input.workflow_id,
+          error: "Every completed workflow item requires observed validation_evidence.",
         });
       }
       if (input.item_id || input.status) {
@@ -82,11 +95,21 @@ export const workflowProgressTool = tool(
       });
     }
 
+    if (input.status === "done" && !input.validation_evidence) {
+      return JSON.stringify({
+        ok: false,
+        workflow_id: input.workflow_id,
+        error: "Every completed workflow item requires observed validation_evidence.",
+        state: getVersionAdoptionState(),
+      });
+    }
+
     try {
       const result = recordVersionAdoptionWorkflowProgress({
         phase: versionAdoptionPhase(input.phase),
         item_id: input.item_id,
         status: input.status,
+        validation_evidence: input.validation_evidence,
         summary: input.summary,
         error: input.needs_attention_reason ?? undefined,
       });
@@ -108,8 +131,8 @@ export const workflowProgressTool = tool(
   {
     name: "workflow_progress",
     description:
-      "Report structured progress for a substantial multi-step task. Use only when the task has several dependent phases, likely spans turns, or needs explicit verification; skip simple tasks and work already covered by native tool progress. For agent-created workflows, send the full current items snapshot on every call and reuse the same workflow_id. Keep secrets and private data out of workflow fields. Mark items done only after verifying the action; use needs_attention for blockers; phase=complete requires every item done or skipped. " +
-      "The system-owned version_adoption workflow has its own durable checklist.",
+      "Report structured progress for a substantial multi-step task. Use only when the task has several dependent phases, likely spans turns, or needs explicit verification; skip simple tasks and work already covered by native tool progress. For agent-created workflows, send the full current items snapshot on every call and reuse the same workflow_id. Keep secrets and private data out of workflow fields. Mark items done only with observed validation evidence; use needs_attention for blockers; phase=complete requires every item done or skipped. " +
+      "Every item needs input, expected output, and concrete validation criteria. Completed items also need observed validation_evidence. The system-owned version_adoption workflow has its own durable checklist.",
     schema: workflowProgressSchema,
   },
 );

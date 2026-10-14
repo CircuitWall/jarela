@@ -95,8 +95,19 @@ vi.mock("@/lib/agents/conversation-summary", async (importOriginal) => {
   };
 });
 
-import { kickBoundaryCompaction, compactThreadWarmContext, pendingCompactionBoundary, pendingCompactionBoundarySeq, compactAutomationChannelWarmContext, isChannelSummaryFresh } from "./warm-summary-background";
+import { kickBoundaryCompaction, compactThreadWarmContext, pendingCompactionBoundary, pendingCompactionBoundarySeq, compactAutomationChannelWarmContext, isChannelSummaryFresh, trackManualCompaction } from "./warm-summary-background";
 import { summarizeTranscript } from "@/lib/agents/conversation-summary";
+
+describe("trackManualCompaction", () => {
+  it("reports a manual /compact as pending until it settles", async () => {
+    let release!: () => void;
+    const done = trackManualCompaction("thread-manual", 42, () => new Promise<void>((r) => { release = r; }));
+    expect(pendingCompactionBoundarySeq("thread-manual")).toBe(42);
+    release();
+    await done;
+    expect(pendingCompactionBoundarySeq("thread-manual")).toBeNull();
+  });
+});
 
 describe("compactThreadWarmContext — seq-exact boundary (ADR-0088)", () => {
   it("excludes only rows at-or-after the boundary seq from the warm summary, even when their created_at ties the boundary (a same-millisecond tie is now possible since addMessage no longer bumps colliding timestamps)", async () => {

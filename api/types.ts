@@ -163,7 +163,11 @@ export type VersionAdoptionAction = "start" | "mark_done" | "dismiss" | "retry";
 export interface VersionAdoptionChecklistItem {
   id: string;
   label: string;
+  input: string;
+  output: string;
+  validation: string;
   status: VersionAdoptionChecklistStatus;
+  validation_evidence?: string;
   reason: string;
   affected_files: string[];
   action?: "read_skill" | "review_permissions" | "review_schedule" | "review_watcher" | "read_instructions" | "review_tools" | "review_api" | "review_persistence" | "review_release";
@@ -722,6 +726,38 @@ export interface DashboardModelRate {
   error: string | null;
 }
 
+export interface DashboardAggregatorSource {
+  id: string;
+  name: string;
+  source_url: string;
+  fetched_at: string;
+  last_successful_at: string | null;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+  model_rate_count: number;
+}
+
+export interface DashboardAggregatorModelRate {
+  aggregator_id: string;
+  aggregator_name: string;
+  source_url: string;
+  fetched_at: string;
+  last_successful_at: string | null;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+  provider: string;
+  model_id: string;
+  aggregator_model_id: string;
+  route: string;
+  input_per_1m_usd: number | null;
+  output_per_1m_usd: number | null;
+  cache_read_per_1m_usd: number | null;
+  cache_write_per_1m_usd: number | null;
+  has_conditional_pricing: boolean;
+}
+
 export interface DashboardProviderBreakdown {
   provider: string;
   message_count: number;
@@ -786,6 +822,8 @@ export interface DashboardMetrics {
     snapshot_generated_at: string | null;
     rates: DashboardProviderRate[];
     model_rates: DashboardModelRate[];
+    aggregator_sources: DashboardAggregatorSource[];
+    aggregator_model_rates: DashboardAggregatorModelRate[];
     notes: string;
   };
 }

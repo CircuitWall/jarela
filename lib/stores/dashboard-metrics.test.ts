@@ -17,6 +17,8 @@ function pricingTables(rate: ProviderRates | null): PricingTables {
     byProvider: new Map([["openai", rates]]),
     byProviderModel: new Map(rate ? [["openai::gpt-5", rate]] : []),
     byModel: new Map(rate ? [["gpt-5", rate]] : []),
+    aggregatorSources: [],
+    aggregatorModelRates: [],
     generatedAt: null,
   };
 }

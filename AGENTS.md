@@ -53,6 +53,20 @@ scripts/            # Maintenance / live tests
 - Lint: `npm run lint`
 - Live tests: `npm run test:live` (smoke), `npm run test:live:full`
 
+## Verified Workflows
+
+- This applies to every workflow built into Jarela and every workflow its agents
+  create, follow, or document, including workflow tools, skills, and scheduled
+  procedures.
+- Define every building block with explicit **input**, **output**, and
+  **validation** criteria. Validate each output before using it as the next
+  block's input.
+- Prefer executable, deterministic checks (tests, schemas, assertions, or
+  scripts) whenever code can verify the result. Record the observed validation
+  evidence; agents must not mark a step complete without it.
+- Do not present unchecked assumptions or inferred values as verified facts.
+  Preserve unknowns and report validation failures explicitly.
+
 ## Contribution And Releases
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full rules. Summary:

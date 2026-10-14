@@ -97,6 +97,16 @@ export async function refreshModelPricing(): Promise<Record<string, unknown>> {
       notes: source.notes,
       error: source.error,
     })),
+    aggregators: (snapshot.aggregators ?? []).map((source) => ({
+      id: source.id,
+      ok: source.ok,
+      status: source.status,
+      fetched_at: source.fetched_at,
+      last_successful_at: source.last_successful_at,
+      model_rate_count: source.model_rates.length,
+      error: source.error,
+    })),
+    aggregator_signal_count: (snapshot.aggregators ?? []).reduce((sum, source) => sum + source.model_rates.length, 0),
     dashboard: {
       days: dashboard.days,
       current_rate_estimated_cost_usd: dashboard.summary.estimated_cost_usd,
@@ -110,7 +120,7 @@ const refreshModelPricingTool = tool(
   async () => JSON.stringify(await refreshModelPricing()),
   {
     name: "refresh_model_pricing",
-    description: "Refresh the configured official LLM pricing sources and recalculate dashboard estimates using the latest rates. Returns rate changes, source health, confidence, and current-versus-recorded dashboard totals. These are estimates, not invoice amounts.",
+    description: "Refresh provider pricing pages and separate OpenRouter/LiteLLM reference feeds, then recalculate dashboard estimates using provider-page rates only. Returns rate changes, source health, confidence, and current-versus-recorded dashboard totals. These are estimates, not invoice amounts.",
     schema: z.object({}),
   },
 );

@@ -18,6 +18,7 @@ vi.mock("@/lib/stores/threads", () => ({
 }));
 vi.mock("@/lib/stores/memory", () => ({ putMemory: () => {}, listMemory: () => [], deleteMemory: () => false }));
 vi.mock("@/lib/agents/warm-summary-background", () => ({
+  trackManualCompaction: async <T,>(_threadId: string, _seq: number, run: () => Promise<T>) => run(),
   compactThreadWarmContext: async (_threadId: string, boundarySeq: number, options: { alignTopicBoundary: boolean }) => {
     state.movedSeq = boundarySeq;
     state.movedTo = state.rows.at(-1)?.created_at ?? null;

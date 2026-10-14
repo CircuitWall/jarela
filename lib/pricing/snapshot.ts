@@ -5,6 +5,7 @@ import { llmExtractModelRates, type LlmModelRate } from "./llm-extract";
 import { getConfig } from "@/lib/env/config";
 import { errorMessage } from "@/lib/utils/error";
 import { readResponseText } from "@/lib/utils/http-json";
+import { fetchAggregatorPricingSources, type AggregatorPricingSource } from "./aggregators";
 
 const SNAPSHOT_PATH = resolve("docs", "journal", "pricing-snapshot.json");
 const DEFAULT_TTL_DAYS = 3;
@@ -126,6 +127,7 @@ export interface PricingSnapshot {
   disclaimer: string;
   ttl_days: number;
   sources: PricingSnapshotSource[];
+  aggregators?: AggregatorPricingSource[];
 }
 
 export interface PricingRefreshResult {
@@ -187,11 +189,14 @@ export async function refreshPricingSnapshot(opts?: { force?: boolean; ttlDays?:
     sources = sortSourcesByKnownOrder([...fetched, ...untouched]);
   }
 
+  const aggregators = await fetchAggregatorPricingSources(existing?.aggregators ?? []);
+
   const snapshot: PricingSnapshot = {
     generated_at: new Date().toISOString(),
-    disclaimer: "No unified stable pricing API exists across providers. Verify final pricing manually on each official page.",
+    disclaimer: "Provider-page rates are best-effort estimates from their recorded sources. Aggregator rates are separate route-price signals and never replace provider-page rates.",
     ttl_days: ttlDays,
     sources,
+    aggregators,
   };
 
   await mkdir(dirname(SNAPSHOT_PATH), { recursive: true });

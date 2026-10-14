@@ -8,6 +8,10 @@ export interface WorkflowChecklistItemView {
   label: string;
   status: WorkflowChecklistStatus;
   reason?: string;
+  input?: string;
+  output?: string;
+  validation?: string;
+  validation_evidence?: string;
 }
 
 interface Props {
@@ -60,15 +64,28 @@ export function WorkflowChecklist({ eyebrow, title, phaseLabel, summary, items, 
           : "mt-2 flex max-h-32 flex-col gap-1 overflow-y-auto pr-1"}>
           {items.map((item) => (
             <div key={item.id} className={compact
-              ? "flex items-center justify-between gap-2 rounded border border-border/30 bg-surface-2/40 px-1.5 py-1 text-[10px] leading-tight text-fg-muted"
-              : "flex items-start gap-1.5 text-[10px] leading-tight text-fg-muted"}>
-              <span
-                aria-label={item.status}
-                className={["mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border", statusClass(item.status)].join(" ")}
-              >
-                <StatusIcon status={item.status} />
-              </span>
-              <span className={compact ? "min-w-0 flex-1 truncate" : "line-clamp-2"} title={item.label}>{item.label}</span>
+              ? "rounded border border-border/30 bg-surface-2/40 px-1.5 py-1 text-[10px] leading-tight text-fg-muted"
+              : "text-[10px] leading-tight text-fg-muted"}>
+              <div className="flex items-start gap-1.5">
+                <span
+                  aria-label={item.status}
+                  className={["mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border", statusClass(item.status)].join(" ")}
+                >
+                  <StatusIcon status={item.status} />
+                </span>
+                <span className={compact ? "min-w-0 flex-1 truncate" : "line-clamp-2"} title={item.label}>{item.label}</span>
+              </div>
+              {(item.input || item.output || item.validation || item.validation_evidence) && (
+                <details className="mt-1 pl-5">
+                  <summary className="cursor-pointer text-fg-faint">Step contract</summary>
+                  <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
+                    {item.input && <><dt className="text-fg-faint">Input</dt><dd className="break-words">{item.input}</dd></>}
+                    {item.output && <><dt className="text-fg-faint">Output</dt><dd className="break-words">{item.output}</dd></>}
+                    {item.validation && <><dt className="text-fg-faint">Validation</dt><dd className="break-words">{item.validation}</dd></>}
+                    {item.validation_evidence && <><dt className="text-fg-faint">Evidence</dt><dd className="break-words">{item.validation_evidence}</dd></>}
+                  </dl>
+                </details>
+              )}
             </div>
           ))}
         </div>

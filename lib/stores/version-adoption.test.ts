@@ -48,6 +48,12 @@ describe("version adoption state", () => {
       "fetch-changes",
       "build-todo-list",
     ]);
+    for (const item of state.checklist) {
+      expect(item.input.trim()).not.toBe("");
+      expect(item.output.trim()).not.toBe("");
+      expect(item.validation.trim()).not.toBe("");
+    }
+    expect(state.checklist[0].validation_evidence).toContain("first adoption");
   });
 
   it("records the current version after completing the baseline", () => {
@@ -61,6 +67,8 @@ describe("version adoption state", () => {
     });
 
     updateVersionAdoptionState("mark_done", "1.29.5");
+    const completed = getVersionAdoptionState("1.29.5");
+    expect(completed.checklist.every((item) => item.status === "done" && item.validation_evidence)).toBe(true);
     const next = getVersionAdoptionState("1.29.6");
 
     expect(next).toMatchObject({
@@ -93,6 +101,8 @@ describe("version adoption state", () => {
     expect(running.adoption_prompt).toContain("fetch-changes");
     expect(running.adoption_prompt).toContain('item_id: "build-todo-list"');
     expect(running.adoption_prompt).toContain("Phase 2 adoption checklist");
+    expect(running.adoption_prompt).toContain("expected output, and validation criteria");
+    expect(running.adoption_prompt).toContain("validation_evidence");
     expect(running.adoption_prompt).toContain("If Phase 1 finds no adoption work");
     // fetch-changes is resolved deterministically at creation time (git diff),
     // never left for the agent to fetch/infer — build-todo-list is the item
@@ -123,10 +133,12 @@ describe("version adoption state", () => {
     const adoption = recordVersionAdoptionWorkflowProgress({
       item_id: "build-todo-list",
       status: "done",
+      validation_evidence: "Every changed path is included or explicitly handled by the fallback.",
     }, "1.29.5");
     const done = recordVersionAdoptionWorkflowProgress({
       item_id: "tools",
       status: "done",
+      validation_evidence: "Tool and permission checks were run against the changed files.",
     }, "1.29.5");
 
     expect(checking.state.status).toBe("running");
@@ -135,7 +147,10 @@ describe("version adoption state", () => {
     expect(adoption.state.phase).toBe("adoption");
     expect(adoption.state.checklist.map((item) => item.id)).toEqual(["instructions", "tools", "scheduled-work"]);
     expect(done.updated_item_id).toBe("tools");
-    expect(done.state.checklist.find((item) => item.id === "tools")?.status).toBe("done");
+    expect(done.state.checklist.find((item) => item.id === "tools")).toMatchObject({
+      status: "done",
+      validation_evidence: "Tool and permission checks were run against the changed files.",
+    });
   });
 
   it("blocks adoption until a default agent exists", () => {

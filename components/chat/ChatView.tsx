@@ -288,7 +288,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         warmSummarySourceChars={thread.warmSummarySourceChars}
         warmSummaryTopics={thread.warmSummaryTopics}
         warmSummaryPending={thread.warmSummaryPending}
-        compactionPending={thread.compactionPending}
+        compactionPending={thread.compactionPending || compacting}
         onSetContextPin={thread.setContextPin}
         streaming={sse.streaming}
         contextWindowTokens={thread.contextWindowTokens}
