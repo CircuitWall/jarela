@@ -23,6 +23,11 @@ topic, the stored recap is marked partial and starts at the first source row.
 Older transcript remains stored and searchable through message recall; it is
 not accumulated into the warm summary.
 
+The summary preview renders persisted topic segments as expandable rows with
+short recap previews, rather than duplicating them as flat prose. Stored topic
+grouping remains visible when the summary is stale, alongside the stale-focus
+warning. Summaries without structured topic data retain the prose fallback.
+
 Existing agents receive the default through an additive SQLite migration.
 `history_limit` continues to control the raw history window and retains its
 existing zero-means-unlimited behavior.
