@@ -72,8 +72,12 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**": [
       "./node_modules/@napi-rs/keyring/**/*",
-      "./node_modules/onnxruntime-node/**/*",
-      "./node_modules/onnxruntime-web/dist/**/*.wasm",
+      // Transformers.js uses onnxruntime-node in Node; onnxruntime-web is the
+      // browser backend and is never loaded. scripts/postbuild.mjs prunes
+      // foreign-platform ONNX binaries the tracer still pulls in.
+      "./node_modules/onnxruntime-node/package.json",
+      "./node_modules/onnxruntime-node/dist/**/*",
+      `./node_modules/onnxruntime-node/bin/napi-v6/${process.platform}/${process.arch}/**/*`,
     ],
   },
   // Optional release-mode knob for supply-chain scanners like Socket that

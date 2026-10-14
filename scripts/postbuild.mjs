@@ -10,6 +10,7 @@
 
 import { cpSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { findStandaloneFootprintProblems, pruneStandaloneFootprint } from "./standalone-footprint.mjs";
 
 const root = process.cwd();
 const standalone = join(root, ".next", "standalone");
@@ -18,6 +19,16 @@ if (!existsSync(standalone)) {
   console.error(
     "[postbuild] .next/standalone/ missing — is `output: 'standalone'` still set in next.config?",
   );
+  process.exit(1);
+}
+
+const pruned = pruneStandaloneFootprint(standalone);
+if (pruned.length > 0) {
+  console.log(`[postbuild] pruned ${pruned.length} unused traced path(s) from .next/standalone/`);
+}
+const footprintProblems = findStandaloneFootprintProblems(standalone);
+if (footprintProblems.length > 0) {
+  console.error(`[postbuild] standalone bundle footprint check failed:\n  - ${footprintProblems.join("\n  - ")}`);
   process.exit(1);
 }
 
