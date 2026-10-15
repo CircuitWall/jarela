@@ -671,6 +671,8 @@ export interface ThreadChannelSummaryRow {
   summary_before: string | null;
   summary_before_seq: number | null;
   computed_at: string;
+  /** JSON array of SummaryTopicSegment, or null for summaries without topics. */
+  topics: string | null;
 }
 
 // ADR-0044 — one cached warm summary per (thread, automation channel),
@@ -682,27 +684,28 @@ export interface ThreadChannelSummaryRow {
 // hot/warm boundary move, there's no cross-field invariant to protect here.
 export function getThreadChannelSummary(threadId: string, channel: string): ThreadChannelSummaryRow | null {
   return (getDb()
-    .prepare("SELECT thread_id, channel, summary, summary_before, summary_before_seq, computed_at FROM thread_channel_summaries WHERE thread_id=? AND channel=?")
+    .prepare("SELECT thread_id, channel, summary, summary_before, summary_before_seq, computed_at, topics FROM thread_channel_summaries WHERE thread_id=? AND channel=?")
     .get(threadId, channel) as ThreadChannelSummaryRow | undefined) ?? null;
 }
 
 export function commitThreadChannelSummary(
   threadId: string,
   channel: string,
-  input: { summary: string; summaryBefore: string | null; summaryBeforeSeq?: number | null },
+  input: { summary: string; summaryBefore: string | null; summaryBeforeSeq?: number | null; topics?: string | null },
 ): void {
   if (input.summaryBefore !== null && input.summaryBeforeSeq == null) {
     throw new Error("summaryBeforeSeq is required for a boundary summary");
   }
   getDb()
     .prepare(
-      `INSERT INTO thread_channel_summaries (thread_id, channel, summary, summary_before, summary_before_seq, computed_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO thread_channel_summaries (thread_id, channel, summary, summary_before, summary_before_seq, computed_at, topics)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(thread_id, channel) DO UPDATE SET
          summary=excluded.summary, summary_before=excluded.summary_before,
-         summary_before_seq=excluded.summary_before_seq, computed_at=excluded.computed_at`,
+         summary_before_seq=excluded.summary_before_seq, computed_at=excluded.computed_at,
+         topics=excluded.topics`,
     )
-    .run(threadId, channel, input.summary, input.summaryBefore, input.summaryBeforeSeq ?? null, now());
+    .run(threadId, channel, input.summary, input.summaryBefore, input.summaryBeforeSeq ?? null, now(), input.topics ?? null);
 }
 
 export function touchThread(thread_id: string, firstMsg?: string): void {
@@ -746,7 +749,7 @@ export interface ThreadWarmContextCommit {
   /** Reject the commit if another compactor refreshed the same boundary. */
   expectedWarmSummary?: string | null;
   autoBoundaryLockedUntilMessageCount?: number;
-  channelSummaries?: Array<{ channel: string; summary: string }>;
+  channelSummaries?: Array<{ channel: string; summary: string; topics?: string | null }>;
 }
 
 // A warm recap is only valid for the exact boundary it replaced. Commit both
@@ -790,14 +793,15 @@ export function commitThreadWarmContext(
       thread_id,
     );
     const upsertChannel = db.prepare(
-      `INSERT INTO thread_channel_summaries (thread_id, channel, summary, summary_before, summary_before_seq, computed_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO thread_channel_summaries (thread_id, channel, summary, summary_before, summary_before_seq, computed_at, topics)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(thread_id, channel) DO UPDATE SET
          summary=excluded.summary, summary_before=excluded.summary_before,
-         summary_before_seq=excluded.summary_before_seq, computed_at=excluded.computed_at`,
+         summary_before_seq=excluded.summary_before_seq, computed_at=excluded.computed_at,
+         topics=excluded.topics`,
     );
     for (const channelSummary of input.channelSummaries ?? []) {
-      upsertChannel.run(thread_id, channelSummary.channel, channelSummary.summary, input.hotSince, hotSinceSeq, now());
+      upsertChannel.run(thread_id, channelSummary.channel, channelSummary.summary, input.hotSince, hotSinceSeq, now(), channelSummary.topics ?? null);
     }
     db.exec("COMMIT");
     return getThread(thread_id);

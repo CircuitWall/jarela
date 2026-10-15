@@ -19,7 +19,7 @@ const state = vi.hoisted(() => ({
   commits: [] as Array<{ hotSince: string; summary: string }>,
   rows: [] as unknown[],
   automationRows: {} as Record<string, unknown[]>,
-  channelSummaries: {} as Record<string, { thread_id: string; channel: string; summary: string; summary_before: string | null; summary_before_seq: number | null; computed_at: string }>,
+  channelSummaries: {} as Record<string, { thread_id: string; channel: string; summary: string; summary_before: string | null; summary_before_seq: number | null; computed_at: string; topics?: string | null }>,
   topicSegments: [] as unknown[],
   provider: {} as unknown,
 }));
@@ -32,7 +32,7 @@ vi.mock("@/lib/stores/threads", () => ({
     ...state.rows as Array<{ seq: number; created_at: string }>,
     ...Object.values(state.automationRows).flat() as Array<{ seq: number; created_at: string }>,
   ].find((row) => row.seq === seq) ?? null,
-  commitThreadWarmContext: (_threadId: string, input: { hotSince: string; hotSinceSeq?: number; summary: string; channelSummaries?: Array<{ channel: string; summary: string }> }) => {
+  commitThreadWarmContext: (_threadId: string, input: { hotSince: string; hotSinceSeq?: number; summary: string; channelSummaries?: Array<{ channel: string; summary: string; topics?: string | null }> }) => {
     state.commits.push({ hotSince: input.hotSince, summary: input.summary });
     state.thread = {
       ...state.thread,
@@ -50,13 +50,14 @@ vi.mock("@/lib/stores/threads", () => ({
         summary_before: input.hotSince,
         summary_before_seq: input.hotSinceSeq ?? 1,
         computed_at: "2026-09-25T10:00:00.000Z",
+        topics: channelSummary.topics ?? null,
       };
     }
     return state.thread;
   },
   getMessagesByAutomationCategory: (threadId: string, channel: string) => state.automationRows[channel] ?? [],
   getThreadChannelSummary: (threadId: string, channel: string) => state.channelSummaries[channel] ?? null,
-  commitThreadChannelSummary: (threadId: string, channel: string, input: { summary: string; summaryBefore: string | null; summaryBeforeSeq?: number | null }) => {
+  commitThreadChannelSummary: (threadId: string, channel: string, input: { summary: string; summaryBefore: string | null; summaryBeforeSeq?: number | null; topics?: string | null }) => {
     state.channelSummaries[channel] = {
       thread_id: threadId,
       channel,
@@ -64,6 +65,7 @@ vi.mock("@/lib/stores/threads", () => ({
       summary_before: input.summaryBefore,
       summary_before_seq: input.summaryBeforeSeq ?? null,
       computed_at: "2026-09-25T10:00:00.000Z",
+      topics: input.topics ?? null,
     };
   },
 }));
@@ -445,6 +447,87 @@ describe("compactAutomationChannelWarmContext (ADR-0044)", () => {
     const [, , , transcript] = vi.mocked(summarizeTranscript).mock.calls.at(-1)!;
     expect(transcript).toContain("before cursor");
     expect(transcript).not.toContain("at cursor, stays hot");
+  });
+
+  it("runs the channel through the compaction pipeline with source-aware prompts, stores topics, and keeps only agent-saved facts", async () => {
+    const previousProvider = state.provider;
+    state.automationRows = {
+      scheduled_task: [
+        { seq: 1, role: "user", content: "run nightly backup task", created_at: "2026-09-25T09:00:00.000Z" },
+        { seq: 2, role: "assistant", content: "backup finished, 3 files copied", created_at: "2026-09-25T09:00:05.000Z" },
+      ],
+    };
+    state.rows = DEFAULT_ROWS;
+    state.channelSummaries = {};
+    const systems: string[] = [];
+    state.provider = {
+      chat: async (_model: string, messages: Array<{ content: string }>) => {
+        systems.push(messages[0].content);
+        const text = messages[0].content.includes("step 1 of 3")
+          ? JSON.stringify({ groups: [{ start_seq: 1, end_seq: 2, continues: null, title: "Nightly backup" }] })
+          : JSON.stringify({ recap: "backup copied 3 files", facts: [{ subject: "Backup target", content: "NAS", confidence: "inferred" }] });
+        return { stream: (async function* () { yield text; })() };
+      },
+    };
+    try {
+      const built = await compactAutomationChannelWarmContext("thread-1", "scheduled_task", 10);
+      expect(systems).toHaveLength(2);
+      expect(systems.every((system) => system.includes("scheduled tasks"))).toBe(true);
+      expect(systems[1]).toContain('Leave "facts" as []');
+      expect(built?.summary).toContain("--- scheduled_task activity summary ---");
+      expect(built?.summary).toContain("backup copied 3 files");
+      expect(built?.topics).toMatchObject([{ title: "Nightly backup", start_seq: 1, end_seq: 2, message_count: 2, facts: [] }]);
+      const stored = JSON.parse(state.channelSummaries.scheduled_task.topics!) as Array<{ title: string }>;
+      expect(stored.map((topic) => topic.title)).toEqual(["Nightly backup"]);
+    } finally {
+      state.provider = previousProvider;
+    }
+  });
+
+  it("folds only newly aged-out channel rows into the channel's stored topics", async () => {
+    const previousProvider = state.provider;
+    const previousLimit = state.warmSummaryLimit;
+    state.warmSummaryLimit = 50;
+    state.automationRows = {
+      watcher: [
+        { seq: 1, role: "assistant", content: "already summarized fire", created_at: "2026-09-25T09:00:00.000Z" },
+        { seq: 2, role: "assistant", content: "already summarized handling", created_at: "2026-09-25T09:00:01.000Z" },
+        { seq: 5, role: "assistant", content: "new inbox fire", created_at: "2026-09-25T09:05:00.000Z" },
+        { seq: 6, role: "assistant", content: "new inbox handled", created_at: "2026-09-25T09:05:01.000Z" },
+      ],
+    };
+    state.rows = DEFAULT_ROWS;
+    state.channelSummaries = {
+      watcher: {
+        thread_id: "thread-1",
+        channel: "watcher",
+        summary: "old",
+        summary_before: null,
+        summary_before_seq: 3,
+        computed_at: "2026-09-25T09:00:02.000Z",
+        topics: JSON.stringify([{ title: "Inbox watcher", start_seq: 1, end_seq: 2, start_at: "a", end_at: "b", recap: "old recap", facts: [], message_count: 2, source_chars: 40 }]),
+      },
+    };
+    const userPrompts: string[] = [];
+    state.provider = {
+      chat: async (_model: string, messages: Array<{ content: string }>) => {
+        userPrompts.push(messages[1].content);
+        const text = messages[0].content.includes("step 1 of 3")
+          ? JSON.stringify({ groups: [{ start_seq: 5, end_seq: 6, continues: "t1", title: "Inbox watcher" }] })
+          : JSON.stringify({ recap: "new fire handled; earlier fires handled too", facts: [] });
+        return { stream: (async function* () { yield text; })() };
+      },
+    };
+    try {
+      const built = await compactAutomationChannelWarmContext("thread-1", "watcher", 10);
+      expect(userPrompts.join("\n")).toContain("new inbox fire");
+      expect(userPrompts.join("\n")).not.toContain("already summarized fire");
+      expect(built?.topics).toMatchObject([{ title: "Inbox watcher", start_seq: 1, end_seq: 6, message_count: 4 }]);
+      expect(built?.sourceMessages).toBe(4);
+    } finally {
+      state.provider = previousProvider;
+      state.warmSummaryLimit = previousLimit;
+    }
   });
 });
 

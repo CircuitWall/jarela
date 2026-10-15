@@ -264,3 +264,29 @@ made during implementation:
   conversation on the thread). The per-channel "bridge" summary is still
   computed and shown to chat — just never fed back into a live bridge
   reply's own hot window.
+
+## Amendment: topic pipeline for automation channels
+
+Automation channels now use the same validated compaction pipeline as chat
+(ADR-0042 amendment, `lib/agents/compaction-pipeline.ts`): group the
+messages by topic, recap each topic, then merge in code into the channel's
+stored topics.
+
+* **Schema.** `thread_channel_summaries` gains a nullable `topics TEXT`
+  column (JSON array of topic segments), added in place by
+  `ensureThreadChannelSummariesTable`. Existing rows read as `NULL` and are
+  rebuilt on the next boundary move. This supersedes the earlier "no
+  extend-prior-summary optimisation" note: with stored topics, a pass only
+  folds in the channel rows that aged out since `summary_before_seq`.
+* **Source-aware prompts.** The grouping and recap prompts describe the
+  stream being compacted (scheduled-task log, watcher events, bridge
+  conversation) and group by scheduled task, watched source or conversation
+  subject respectively. Registered as `agent.compaction-group-automation`
+  and `agent.compaction-topic-recap-automation`.
+* **Still no fact uplift.** The recap prompt asks automation channels for an
+  empty `facts` list, and code keeps only facts with `origin: "agent"`
+  (memory the agent verifiably saved itself), so a channel never writes to
+  memory during compaction.
+* **Fallback.** If the pipeline fails validation after its retry, the
+  channel falls back to the single-call summary and stores `topics = NULL`,
+  so the next pass rebuilds rather than merging into untrusted topics.

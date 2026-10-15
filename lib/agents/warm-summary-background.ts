@@ -1,8 +1,8 @@
 import { getProvider } from "@/lib/providers";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
 import { summarizeTranscript, transcriptText, extractTopicSegments, validateTopicSegments, parseStoredTopics, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
-import { canMergeIntoTopics, finalizeFreshTopics, mergeWarmTopics, slugifyForMemoryKey } from "@/lib/agents/warm-topics";
-import { formatTranscriptRow, runCompactionPipeline } from "@/lib/agents/compaction-pipeline";
+import { canMergeIntoTopics, finalizeFreshTopics, mergeWarmTopics, renderTopicRecaps, slugifyForMemoryKey } from "@/lib/agents/warm-topics";
+import { formatTranscriptRow, runCompactionPipeline, type CompactionSource, type PipelineSourceRow } from "@/lib/agents/compaction-pipeline";
 import { takeRecentWarmMessages, warmSummaryMessageLimit, wrapWarmSummary, AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-configs";
 import { getModelParams, resolveRunnableModelConfig } from "@/lib/stores/model-config";
@@ -299,7 +299,7 @@ export async function compactThreadWarmContext(
   const channelSummaries = await Promise.all(AUTOMATION_CHANNEL_ORDER.map(async (channel) => {
     const channelSummary = await buildAutomationChannelSummaryBefore(threadId, channel, boundarySeq, options.providerOverride);
     if (!channelSummary) throw new Error(`Could not build ${channel} warm summary`);
-    return { channel, summary: channelSummary.summary };
+    return { channel, summary: channelSummary.summary, topics: channelSummary.topics ? JSON.stringify(channelSummary.topics) : null };
   }));
 
   const committed = commitThreadWarmContext(threadId, {
@@ -363,48 +363,29 @@ async function buildSummaryBefore(
     ? providerParams
     : { ...providerParams, max_tokens: 1024 };
 
-  // Compaction pipeline (lib/agents/compaction-pipeline.ts): group -> recap ->
-  // merge. Incremental when the stored topics can be extended — only messages
-  // that aged out of hot since the last pass are folded in; otherwise the
-  // recent warm window is regrouped from scratch. If the pipeline fails
-  // validation, fall through to the single-call summary below.
-  const messageLimit = warmSummaryMessageLimit(agent.warm_summary_limit);
-  const storedTopics = parseStoredTopics(thread.warm_summary_topics);
-  const incremental = messageLimit > 0 && canMergeIntoTopics(storedTopics, thread.warm_summary_before_seq, boundarySeq);
-  const priorTopics = incremental ? storedTopics! : [];
-  const pipelineCandidates = incremental
-    ? rows.filter((m) => m.seq >= thread.warm_summary_before_seq! && m.seq < boundarySeq)
-    : takeRecentWarmMessages(rows.filter((m) => m.seq < boundarySeq), agent.warm_summary_limit);
-  const { selectedRows: pipelineRows } = selectTranscriptRows(pipelineCandidates, summaryInputChars);
-  if (incremental && pipelineRows.length === 0) {
-    const kept = mergeWarmTopics(priorTopics, [], messageLimit);
-    return { summary: wrapTopicSummary(kept.topics), sourceMessages: kept.sourceMessages, sourceChars: kept.sourceChars, topics: kept.topics, freshTopics: [] };
-  }
-  const pipelineChars = pipelineRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
-  if (!incremental && (pipelineChars < 24 || pipelineRows.length < 2)) {
-    return { summary: "", sourceMessages: pipelineRows.length, sourceChars: pipelineChars, topics: [], freshTopics: [] };
-  }
-  const firstPipelineSeq = pipelineRows[0]?.seq ?? boundarySeq;
-  const pipeline = await runCompactionPipeline({
+  const outcome = await runTopicCompaction({
+    threadId,
+    source: "chat",
+    rows,
+    storedTopics: parseStoredTopics(thread.warm_summary_topics),
+    storedBeforeSeq: thread.warm_summary_before_seq,
+    boundarySeq,
+    warmSummaryLimit: agent.warm_summary_limit,
+    summaryInputChars,
     provider,
     modelId,
     params: summaryParams,
-    rows: pipelineRows,
-    priorTopics,
-    messageLimit: messageLimit > 0 ? messageLimit : pipelineRows.length,
-    partialStart: !incremental && rows.some((m) => m.seq < firstPipelineSeq),
-    log: (message) => console.info(`[warm-summary] thread=${threadId} ${incremental ? "merge" : "rebuild"} ${message}`),
-  }).catch((err: unknown) => {
-    console.warn(`[warm-summary] thread=${threadId} compaction pipeline threw:`, err);
-    return null;
   });
-  if (pipeline) {
+  if (outcome.status === "empty") {
+    return { summary: "", sourceMessages: outcome.sourceMessages, sourceChars: outcome.sourceChars, topics: [], freshTopics: [] };
+  }
+  if (outcome.status === "topics") {
     return {
-      summary: wrapTopicSummary(pipeline.topics),
-      sourceMessages: pipeline.sourceMessages,
-      sourceChars: pipeline.sourceChars,
-      topics: pipeline.topics,
-      freshTopics: pipeline.freshTopics,
+      summary: wrapTopicSummary(outcome.topics),
+      sourceMessages: outcome.sourceMessages,
+      sourceChars: outcome.sourceChars,
+      topics: outcome.topics,
+      freshTopics: outcome.freshTopics,
     };
   }
   console.warn(`[warm-summary] thread=${threadId} compaction pipeline failed validation; using single-call summary`);
@@ -446,6 +427,77 @@ async function buildSummaryBefore(
   };
 }
 
+type TopicCompactionOutcome =
+  | { status: "empty"; sourceMessages: number; sourceChars: number }
+  | { status: "topics"; topics: SummaryTopicSegment[]; freshTopics: SummaryTopicSegment[]; sourceMessages: number; sourceChars: number }
+  | { status: "failed" };
+
+interface TopicCompactionInput<T extends PipelineSourceRow> {
+  threadId: string;
+  source: CompactionSource;
+  /** Every row of this message stream, ascending by seq. */
+  rows: readonly T[];
+  storedTopics: SummaryTopicSegment[] | null;
+  storedBeforeSeq: number | null | undefined;
+  boundarySeq: number;
+  warmSummaryLimit: number | null | undefined;
+  summaryInputChars: number;
+  provider: Pick<ModelProvider, "chat">;
+  modelId: string;
+  params: ProviderParams;
+}
+
+/**
+ * Shared by chat and every automation channel: run the compaction pipeline
+ * (lib/agents/compaction-pipeline.ts) over one message stream. Incremental
+ * when the stored topics can be extended — only rows that aged out of hot
+ * since the last pass are folded in; otherwise the recent warm window is
+ * regrouped from scratch. "failed" tells the caller to use its single-call
+ * fallback.
+ */
+async function runTopicCompaction<T extends PipelineSourceRow>(input: TopicCompactionInput<T>): Promise<TopicCompactionOutcome> {
+  const { threadId, source, rows, storedTopics, storedBeforeSeq, boundarySeq } = input;
+  const messageLimit = warmSummaryMessageLimit(input.warmSummaryLimit);
+  const incremental = messageLimit > 0 && canMergeIntoTopics(storedTopics, storedBeforeSeq, boundarySeq);
+  const priorTopics = incremental ? storedTopics! : [];
+  const candidates = incremental
+    ? rows.filter((m) => m.seq >= storedBeforeSeq! && m.seq < boundarySeq)
+    : takeRecentWarmMessages(rows.filter((m) => m.seq < boundarySeq), input.warmSummaryLimit);
+  const { selectedRows } = selectTranscriptRows(candidates, input.summaryInputChars);
+  if (incremental && selectedRows.length === 0) {
+    const kept = mergeWarmTopics(priorTopics, [], messageLimit);
+    return { status: "topics", topics: kept.topics, freshTopics: [], sourceMessages: kept.sourceMessages, sourceChars: kept.sourceChars };
+  }
+  const selectedChars = selectedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
+  if (!incremental && (selectedChars < 24 || selectedRows.length < 2)) {
+    return { status: "empty", sourceMessages: selectedRows.length, sourceChars: selectedChars };
+  }
+  const firstSeq = selectedRows[0]?.seq ?? boundarySeq;
+  const label = `[warm-summary] thread=${threadId} source=${source} ${incremental ? "merge" : "rebuild"}`;
+  const pipeline = await runCompactionPipeline({
+    provider: input.provider,
+    modelId: input.modelId,
+    params: input.params,
+    rows: selectedRows,
+    priorTopics,
+    messageLimit: messageLimit > 0 ? messageLimit : selectedRows.length,
+    partialStart: !incremental && rows.some((m) => m.seq < firstSeq),
+    source,
+    log: (message) => console.info(`${label} ${message}`),
+  }).catch((err: unknown) => {
+    console.warn(`${label} compaction pipeline threw:`, err);
+    return null;
+  });
+  if (!pipeline) return { status: "failed" };
+  return {
+    status: "topics",
+    topics: pipeline.topics,
+    freshTopics: pipeline.freshTopics,
+    sourceMessages: pipeline.sourceMessages,
+    sourceChars: pipeline.sourceChars,
+  };
+}
+
 function selectTranscriptRows<T extends { seq: number; created_at: string; role: string; content: string }>(
   rows: readonly T[],
   budgetChars: number,
@@ -474,16 +526,6 @@ function wrapTopicSummary(topics: readonly SummaryTopicSegment[] | null, body = 
   ].join("\n");
 }
 
-function renderTopicRecaps(topics: readonly SummaryTopicSegment[]): string {
-  return topics.map((topic) => {
-    const memorized = topic.facts.flatMap((fact) => fact.key ? [fact.key] : []);
-    return [
-      `### ${topic.title}${topic.partial_start ? " (partial; earlier messages omitted)" : ""}`,
-      topic.recap,
-      ...(memorized.length > 0 ? [`Memorized: ${memorized.join(", ")}`] : []),
-    ].join("\n");
-  }).join("\n\n");
-}
 
 // Batched uplift (once per compaction pass, covering every topic segment
 // together — not fired per-segment as each is identified). Direct writes,
@@ -523,21 +565,40 @@ export interface BuiltChannelSummary {
   summary: string;
   sourceMessages: number;
   sourceChars: number;
+  /** Stored topics when the compaction pipeline produced them; null for the single-call fallback. */
+  topics: SummaryTopicSegment[] | null;
+}
+
+const AUTOMATION_COMPACTION_SOURCES: readonly CompactionSource[] = ["scheduled_task", "watcher", "bridge"];
+
+function automationCompactionSource(channel: string): CompactionSource {
+  return (AUTOMATION_COMPACTION_SOURCES as readonly string[]).includes(channel) ? channel as CompactionSource : "scheduled_task";
+}
+
+// ADR-0044 channels never uplift facts to memory, so the only facts a channel
+// topic keeps are memory the agent itself saved there (verified in code).
+function keepSavedFactsOnly(topics: readonly SummaryTopicSegment[]): SummaryTopicSegment[] {
+  return topics.map((topic) => ({ ...topic, facts: topic.facts.filter((fact) => fact.origin === "agent") }));
+}
+
+function wrapChannelSummary(channel: string, body: string): string {
+  return [
+    `--- ${channel} activity summary ---`,
+    "Compressed recap of automation activity outside the hot window:",
+    body,
+  ].join("\n");
 }
 
 // ADR-0044 — the automation-channel counterpart to buildSummaryBefore. Chat
-// keeps using buildSummaryBefore/compactThreadWarmContext unchanged (the
-// legacy threads.warm_summary* columns ARE the "chat" channel's summary,
-// per the ADR's fallback design); this covers scheduled_task/watcher/bridge,
-// each cached in its own thread_channel_summaries row.
+// keeps using buildSummaryBefore/compactThreadWarmContext (the legacy
+// threads.warm_summary* columns ARE the "chat" channel's summary, per the
+// ADR's fallback design); this covers scheduled_task/watcher/bridge, each
+// cached in its own thread_channel_summaries row.
 //
-// Deliberately simpler than buildSummaryBefore: no extend-prior-summary
-// optimisation (thread_channel_summaries has no source_messages/source_chars
-// columns to carry a running count across calls) and no topic-fact uplift —
-// automation activity logs are far lower volume than interactive chat and
-// far less likely to carry durable personal facts worth extracting. Every
-// call re-summarises the full channel history below the boundary from
-// scratch; acceptable given the expected message counts.
+// Same compaction pipeline as chat (group -> recap -> merge, incremental into
+// the channel's stored topics), with source-specific prompt wording. Unlike
+// chat there is no topic-fact uplift: automation logs rarely carry durable
+// personal facts, so channel topics only keep memory the agent saved itself.
 async function buildAutomationChannelSummaryBefore(
   threadId: string,
   channel: string,
@@ -558,42 +619,51 @@ async function buildAutomationChannelSummaryBefore(
   const providerParams = tier ? { ...baseParams, context_tier_proportions: tier } : baseParams;
 
   const rows = getMessagesByAutomationCategory(threadId, channel);
-  const eligibleRows = rows.filter((m) => m.seq < boundarySeq);
-  const warmRows = takeRecentWarmMessages(
-    eligibleRows,
-    agent.warm_summary_limit,
-  );
-
   const contextTokens = typeof providerParams.context_window_tokens === "number"
     ? providerParams.context_window_tokens
     : 32768;
   const summaryInputChars = Math.max(4000, Math.min(120000, Math.round(contextTokens * 3)));
-
-  const selectedRows: typeof warmRows = [];
-  const selectedTranscript: string[] = [];
-  let selectedTranscriptChars = 0;
-  for (let index = warmRows.length - 1; index >= 0; index -= 1) {
-    const row = warmRows[index];
-    const formatted = `[seq=${row.seq}] [${row.created_at}] ${row.role === "user" ? "User" : "Assistant"}: ${transcriptText(row.content)}`;
-    const addedChars = formatted.length + (selectedTranscript.length > 0 ? 2 : 0);
-    if (selectedTranscriptChars + addedChars > summaryInputChars) break;
-    selectedRows.unshift(row);
-    selectedTranscript.unshift(formatted);
-    selectedTranscriptChars += addedChars;
-  }
-  const sourceChars = selectedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
-  if (sourceChars < 24 || selectedRows.length < 2) {
-    return { summary: "", sourceMessages: selectedRows.length, sourceChars };
-  }
-
-  const transcript = selectedTranscript.join("\n\n").trim();
-  if (!transcript) return null;
-
   const provider = providerOverride?.provider ?? getProvider(modelCfg.provider);
   const modelId = providerOverride?.modelId ?? modelCfg.model_id;
   const summaryParams = providerParams.max_tokens
     ? providerParams
     : { ...providerParams, max_tokens: 1024 };
+
+  const stored = getThreadChannelSummary(threadId, channel);
+  const outcome = await runTopicCompaction({
+    threadId,
+    source: automationCompactionSource(channel),
+    rows,
+    storedTopics: parseStoredTopics(stored?.topics ?? null),
+    storedBeforeSeq: stored?.summary_before_seq,
+    boundarySeq,
+    warmSummaryLimit: agent.warm_summary_limit,
+    summaryInputChars,
+    provider,
+    modelId,
+    params: summaryParams,
+  });
+  if (outcome.status === "empty") {
+    return { summary: "", sourceMessages: outcome.sourceMessages, sourceChars: outcome.sourceChars, topics: null };
+  }
+  if (outcome.status === "topics") {
+    const topics = keepSavedFactsOnly(outcome.topics);
+    return {
+      summary: topics.length > 0 ? wrapChannelSummary(channel, renderTopicRecaps(topics)) : "",
+      sourceMessages: outcome.sourceMessages,
+      sourceChars: outcome.sourceChars,
+      topics,
+    };
+  }
+  console.warn(`[warm-summary] thread=${threadId} ${channel} compaction pipeline failed validation; using single-call summary`);
+
+  const eligibleRows = takeRecentWarmMessages(rows.filter((m) => m.seq < boundarySeq), agent.warm_summary_limit);
+  const { selectedRows, transcript } = selectTranscriptRows(eligibleRows, summaryInputChars);
+  const sourceChars = selectedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
+  if (sourceChars < 24 || selectedRows.length < 2) {
+    return { summary: "", sourceMessages: selectedRows.length, sourceChars, topics: null };
+  }
+  if (!transcript) return null;
 
   const raw = (await summarizeTranscript(provider, modelId, summaryParams, transcript)).trim();
   if (!raw) return null;
@@ -603,7 +673,7 @@ async function buildAutomationChannelSummaryBefore(
     allowPartialStart: true,
   });
   const summary = validatedTopics.length > 0
-    ? renderTopicRecaps(validatedTopics)
+    ? renderTopicRecaps(validatedTopics.map((topic) => ({ ...topic, facts: [] })))
     : body;
   if (!summary) return null;
   const summarizedSeqs = new Set(validatedTopics.flatMap((topic) =>
@@ -617,13 +687,10 @@ async function buildAutomationChannelSummaryBefore(
   const summarizedChars = summarizedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
 
   return {
-    summary: [
-      `--- ${channel} activity summary ---`,
-      "Compressed recap of automation activity outside the hot window:",
-      summary,
-    ].join("\n"),
+    summary: wrapChannelSummary(channel, summary),
     sourceMessages: summarizedRows.length,
     sourceChars: summarizedChars,
+    topics: null,
   };
 }
 
@@ -647,6 +714,7 @@ export async function compactAutomationChannelWarmContext(
     summary: built.summary,
     summaryBefore: boundary,
     summaryBeforeSeq: boundarySeq,
+    topics: built.topics ? JSON.stringify(built.topics) : null,
   });
   return built;
 }
