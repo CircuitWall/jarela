@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-10-15
+
+### Fixed
+
+- **Let models be disabled temporarily so they drop out of model selection and default/router resolution without being deleted, and set the default model in one atomic step that no longer rewrites model params or silently clears the default on edits.**
+- **Show fresh agents, tasks, credentials, models, and other lists right after a save instead of a briefly stale browser-cached copy.**
+- **Stop treating a `GITHUB_TOKEN` environment PAT as a GitHub Copilot credential and report Copilot catalog configuration errors as 400 instead of 500.**
+
 ## [2.2.0] - 2026-10-15
 
 ### Added
