@@ -179,13 +179,25 @@ Setting `writable: true` on one repo clears it on any other.
 
 ### `GET /api/v1/models`
 
-List model configs (per-model parameter presets that agents bind to).
+List model configs (per-model parameter presets that agents bind to). Each row includes `is_default` and `enabled`.
 
 ### `POST /api/v1/models`
 
-Upsert a model config.
+Upsert a model config. Omitting `is_default` keeps the existing flag; `is_default: true` clears the flag on every other row and re-enables the model.
 
 - **Source:** [`app/api/v1/models/route.ts`](../app/api/v1/models/route.ts)
+
+### `PATCH /api/v1/models/[name]`
+
+Change model state without rewriting params. Body: `{ "enabled"?: boolean, "is_default"?: true }` (at least one field; `enabled: false` with `is_default: true` is rejected with 400). Each request runs in one transaction:
+
+- `is_default: true` moves the default to this model. Returns 409 if the model is disabled.
+- `enabled: false` hides the model from model selection and runtime default/router resolution. Disabling the default promotes the first other enabled model. Disabling the last enabled model returns 409.
+- Returns 404 for an unknown model.
+
+See [ADR-0102](adr/0102-model-config-enable-toggle.md).
+
+- **Source:** [`app/api/v1/models/[name]/route.ts`](../app/api/v1/models/[name]/route.ts)
 
 ---
 

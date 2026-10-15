@@ -21,7 +21,7 @@ export function StepModel({ models, onChanged }: StepModelProps) {
 
   async function handleSave(
     name: string,
-    data: Omit<ModelConfig, "name" | "created_at" | "updated_at">,
+    data: Omit<ModelConfig, "name" | "enabled" | "created_at" | "updated_at">,
   ) {
     setError(null);
     try {
@@ -35,12 +35,7 @@ export function StepModel({ models, onChanged }: StepModelProps) {
 
   async function handleSetDefault(m: ModelConfig) {
     try {
-      await api.models.update(m.name, {
-        provider: m.provider,
-        model_id: m.model_id,
-        params: m.params,
-        is_default: true,
-      });
+      await api.models.patch(m.name, { is_default: true });
       onChanged();
     } catch (e) {
       setError(errorMessage(e));
@@ -114,7 +109,7 @@ export function StepModel({ models, onChanged }: StepModelProps) {
                 <p className="truncate text-[11px] text-fg-faint">{m.model_id}</p>
               </div>
               <div className="flex shrink-0 items-center gap-0.5">
-                {!m.is_default && (
+                {!m.is_default && m.enabled !== false && (
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); handleSetDefault(m); }}

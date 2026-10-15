@@ -24,7 +24,7 @@ export interface ModelEditorFormInput {
   credential_id?: string | null;
 }
 
-export type ModelEditorPayload = Omit<ModelConfig, "name" | "created_at" | "updated_at">;
+export type ModelEditorPayload = Omit<ModelConfig, "name" | "enabled" | "created_at" | "updated_at">;
 
 export type BuildResult =
   | { ok: true; name: string; payload: ModelEditorPayload }

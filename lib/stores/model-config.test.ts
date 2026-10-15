@@ -118,3 +118,91 @@ describe("deleteModelConfig auto-promotes default", () => {
     deleteModelConfig("keep-default");
   });
 });
+
+describe("model config enable/disable and atomic default", () => {
+  async function load() {
+    return import("./model-config");
+  }
+
+  function reset(names: string[]) {
+    for (const n of names) deleteModelConfig(n);
+  }
+
+  it("new rows are enabled and upsert without is_default preserves the default flag", async () => {
+    const { isModelConfigEnabled } = await load();
+    upsertModelConfig("ena-a", "anthropic", "claude-x", {}, true);
+    const saved = upsertModelConfig("ena-a", "anthropic", "claude-x", { temperature: 0.2 }, undefined);
+    expect(saved.is_default).toBe(1);
+    expect(isModelConfigEnabled(saved)).toBe(true);
+    reset(["ena-a"]);
+  });
+
+  it("setDefaultModelConfig leaves exactly one default", async () => {
+    const { setDefaultModelConfig, listModelConfigs } = await load();
+    upsertModelConfig("def-a", "anthropic", "claude-x", {}, true);
+    upsertModelConfig("def-b", "anthropic", "claude-y", {}, false);
+    const row = setDefaultModelConfig("def-b");
+    expect(row.is_default).toBe(1);
+    expect(listModelConfigs().filter((r) => r.is_default === 1).map((r) => r.name)).toEqual(["def-b"]);
+    // Params are untouched by a default switch.
+    expect(getModelConfig("def-a")?.params).toBe(JSON.stringify({}));
+    reset(["def-a", "def-b"]);
+  });
+
+  it("setDefaultModelConfig rejects unknown and disabled configs without changing the default", async () => {
+    const { setDefaultModelConfig, setModelConfigEnabled, ModelConfigStateError } = await load();
+    upsertModelConfig("rej-a", "anthropic", "claude-x", {}, true);
+    upsertModelConfig("rej-b", "anthropic", "claude-y", {}, false);
+    setModelConfigEnabled("rej-b", false);
+    expect(() => setDefaultModelConfig("missing-model")).toThrow(ModelConfigStateError);
+    expect(() => setDefaultModelConfig("rej-b")).toThrow(/disabled/);
+    expect(getDefaultModelConfig()?.name).toBe("rej-a");
+    reset(["rej-a", "rej-b"]);
+  });
+
+  it("disabling the default promotes another enabled config in the same step", async () => {
+    const { setModelConfigEnabled, listModelConfigs } = await load();
+    upsertModelConfig("dis-a", "anthropic", "claude-x", {}, true);
+    upsertModelConfig("dis-b", "anthropic", "claude-y", {}, false);
+    const disabled = setModelConfigEnabled("dis-a", false);
+    expect(disabled.enabled).toBe(0);
+    expect(disabled.is_default).toBe(0);
+    const defaults = listModelConfigs().filter((r) => r.is_default === 1);
+    expect(defaults).toHaveLength(1);
+    expect(defaults[0].enabled).toBe(1);
+    expect(getDefaultModelConfig()?.name).not.toBe("dis-a");
+    reset(["dis-a", "dis-b"]);
+  });
+
+  it("refuses to disable the last enabled config", async () => {
+    const { setModelConfigEnabled, listModelConfigs } = await load();
+    for (const r of listModelConfigs()) deleteModelConfig(r.name);
+    upsertModelConfig("only-one", "anthropic", "claude-x", {}, true);
+    expect(() => setModelConfigEnabled("only-one", false)).toThrow(/at least one/i);
+    expect(getModelConfig("only-one")?.enabled).toBe(1);
+    reset(["only-one"]);
+  });
+
+  it("disabled configs are skipped by default fallback and runnable resolution", async () => {
+    const { setModelConfigEnabled, resolveRunnableModelConfig, listEnabledModelConfigs } = await load();
+    upsertModelConfig("run-a", "anthropic", "claude-x", {}, true);
+    upsertModelConfig("run-b", "anthropic", "claude-y", {}, false);
+    setModelConfigEnabled("run-b", false);
+    expect(listEnabledModelConfigs().map((r) => r.name)).not.toContain("run-b");
+    expect(resolveRunnableModelConfig("run-b")?.name).toBe("run-a");
+    setModelConfigEnabled("run-b", true);
+    expect(resolveRunnableModelConfig("run-b")?.name).toBe("run-b");
+    reset(["run-a", "run-b"]);
+  });
+
+  it("making a disabled config the default via upsert re-enables it", async () => {
+    const { setModelConfigEnabled } = await load();
+    upsertModelConfig("up-a", "anthropic", "claude-x", {}, true);
+    upsertModelConfig("up-b", "anthropic", "claude-y", {}, false);
+    setModelConfigEnabled("up-b", false);
+    const row = upsertModelConfig("up-b", "anthropic", "claude-y", {}, true);
+    expect(row.enabled).toBe(1);
+    expect(getDefaultModelConfig()?.name).toBe("up-b");
+    reset(["up-a", "up-b"]);
+  });
+});

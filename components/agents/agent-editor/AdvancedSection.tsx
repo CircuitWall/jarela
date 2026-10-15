@@ -9,6 +9,7 @@ import { VoiceFields } from "./VoiceFields";
 import { ToolCredentialsSection } from "./ToolCredentialsSection";
 import { Select } from "@/components/ui/Select";
 import { modelSupportsImages } from "@/lib/providers/capabilities";
+import { isModelEnabled } from "@/lib/agents/effective-model";
 import { SelectedModelDescription } from "./ModelSection";
 
 interface Props {
@@ -31,15 +32,20 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
         </p>
         <Select value={form.modelConfigName} onChange={(e) => form.setModelConfigName(e.target.value)}>
           <option value="">Automatic routing (recommended)</option>
-          {models.map((m) => {
+          {models.filter((m) => isModelEnabled(m) || m.name === form.modelConfigName).map((m) => {
             const vision = modelSupportsImages(m.provider, m.model_id);
             return (
               <option key={m.name} value={m.name}>
-                {vision ? "📷 " : ""}{m.name} · {m.provider} / {m.model_id}
+                {vision ? "📷 " : ""}{m.name} · {m.provider} / {m.model_id}{isModelEnabled(m) ? "" : " (disabled)"}
               </option>
             );
           })}
         </Select>
+        {selectedModel && !isModelEnabled(selectedModel) && (
+          <p className="text-[11px] text-amber-700 dark:text-amber-400">
+            This model is disabled, so the agent uses automatic routing until it is enabled again.
+          </p>
+        )}
         {selectedModel && <SelectedModelDescription model={selectedModel} prefix="Forced" />}
       </div>
       <Divider />

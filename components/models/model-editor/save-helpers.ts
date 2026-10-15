@@ -33,7 +33,7 @@ export function buildPayload(form: ModelEditorForm) {
 
 export async function runProbeStep(
   form: ModelEditorForm,
-  payload: Omit<ModelConfig, "name" | "created_at" | "updated_at">,
+  payload: Omit<ModelConfig, "name" | "enabled" | "created_at" | "updated_at">,
 ): Promise<boolean> {
   const probe = await api.models
     .probe(form.provider, payload.model_id, payload.params as Record<string, unknown>, undefined, form.credentialId ?? undefined)
@@ -50,7 +50,7 @@ export async function runProbeStep(
 
 export function shouldStageShrinkConfirm(
   form: ModelEditorForm,
-  result: { name: string; payload: Omit<ModelConfig, "name" | "created_at" | "updated_at"> },
+  result: { name: string; payload: Omit<ModelConfig, "name" | "enabled" | "created_at" | "updated_at"> },
 ): boolean {
   if (!form.model) return false;
   const oldCtx = Number(form.model.params.context_window_tokens) || 0;

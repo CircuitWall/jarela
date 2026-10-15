@@ -9,7 +9,7 @@ export type ShrinkPending =
   | {
       oldSnapshot: { provider: string; model_id: string; params: Record<string, unknown> };
       payloadName: string;
-      payload: Omit<ModelConfig, "name" | "created_at" | "updated_at">;
+      payload: Omit<ModelConfig, "name" | "enabled" | "created_at" | "updated_at">;
     };
 
 export type ProbeResult = { ok: boolean; error?: string } | null;

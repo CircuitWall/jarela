@@ -12,7 +12,7 @@ import {
 
 interface Args {
   form: ModelEditorForm;
-  onSave: (name: string, data: Omit<ModelConfig, "name" | "created_at" | "updated_at">) => Promise<void>;
+  onSave: (name: string, data: Omit<ModelConfig, "name" | "enabled" | "created_at" | "updated_at">) => Promise<void>;
   onClose: () => void;
 }
 
