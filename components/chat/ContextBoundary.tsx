@@ -134,9 +134,14 @@ function TopicSegmentRow({ topic }: { topic: SummaryTopicSegment }) {
         <CollapseChevron open={open} size={9} />
         <span className="font-medium text-fg-muted truncate">{topic.title}</span>
         {range && <span className="text-fg-faint shrink-0">· {range}</span>}
+        {typeof topic.message_count === "number" && topic.message_count > 0 && (
+          <span className="text-fg-faint shrink-0">
+            · {topic.message_count} {topic.message_count === 1 ? "msg" : "msgs"}
+          </span>
+        )}
         {topic.facts.length > 0 && (
           <span className="ml-auto shrink-0 text-[9px] uppercase tracking-wide text-accent">
-            {topic.facts.length} {topic.facts.length === 1 ? "fact" : "facts"} saved
+            {topic.facts.length} memorized
           </span>
         )}
       </MetaRow>
@@ -153,13 +158,17 @@ function TopicSegmentRow({ topic }: { topic: SummaryTopicSegment }) {
             </div>
           )}
           {topic.facts.length > 0 && (
-            <ul className="space-y-0.5">
-              {topic.facts.map((fact, i) => (
-                <li key={`${fact.subject}-${i}`} className="text-[11px] text-fg-faint">
-                  <span className="font-medium text-fg-muted">{fact.subject}:</span> {fact.content}
-                </li>
-              ))}
-            </ul>
+            <div>
+              <div className="text-[9px] uppercase tracking-wide text-fg-faint">Memorized</div>
+              <ul className="space-y-0.5">
+                {topic.facts.map((fact, i) => (
+                  <li key={`${fact.key ?? fact.subject}-${i}`} className="text-[11px] text-fg-faint">
+                    <span className="font-medium text-fg-muted">{fact.subject}:</span> {fact.content}
+                    {fact.key && <code className="ml-1 text-[10px] text-fg-faint">{fact.key}</code>}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
       )}

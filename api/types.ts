@@ -416,6 +416,9 @@ export interface SummaryTopicFact {
   content: string;
   tags: string[];
   confidence: "explicit" | "inferred" | "verified";
+  /** `namespace/key` of the memory record, once memorized. */
+  key?: string;
+  origin?: "agent" | "compaction";
 }
 
 export interface SummaryTopicSegment {
@@ -424,6 +427,8 @@ export interface SummaryTopicSegment {
   end_at: string;
   recap: string;
   facts: SummaryTopicFact[];
+  /** Messages folded into this topic across compaction passes. */
+  message_count?: number;
 }
 
 export interface ThreadContextPin {

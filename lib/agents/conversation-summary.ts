@@ -101,6 +101,9 @@ export function buildConversationSummaryMessages(transcript: string): ProviderMe
         '   "tags": string[], "confidence": "explicit"|"inferred"|"verified"}.',
         "`confidence` is \"explicit\" when the user stated it outright, \"verified\"",
         "when a tool result confirmed it, \"inferred\" when you're deducing it.",
+        "A topic groups every consecutive message about one subject and must",
+        "span at least two messages (a request and its reply); fold a stray",
+        "single message into the adjacent topic instead of giving it its own.",
         "Emit exactly one `jarela-topics` fence, after all Markdown sections,",
         "with nothing else following it.",
       ].join("\n"),
@@ -121,7 +124,7 @@ export function buildConversationSummaryMessages(transcript: string): ProviderMe
 // sentinel back as the entire "summary" — which then renders verbatim in
 // the warm-summary card. Guard against that here so a degenerate
 // sentinel-only completion is treated as no summary rather than persisted.
-const BARE_SENTINEL_RE = /^NO_?REPLY$/i;
+export const BARE_SENTINEL_RE = /^NO_?REPLY$/i;
 
 // Trailing structured block the summarizer prompt asks for (see
 // summaryMessages above) — mirrors the `jarela-references` fence pattern
@@ -135,6 +138,10 @@ export interface SummaryTopicFact {
   content: string;
   tags: string[];
   confidence: "explicit" | "inferred" | "verified";
+  /** `namespace/key` of the memory record holding this fact, once memorized. */
+  key?: string;
+  /** "agent" when the agent saved it during the turn; "compaction" when extracted here. */
+  origin?: "agent" | "compaction";
 }
 
 export interface SummaryTopicSegment {
@@ -146,6 +153,34 @@ export interface SummaryTopicSegment {
   partial_start?: boolean;
   recap: string;
   facts: SummaryTopicFact[];
+  /** Messages folded into this topic across every compaction pass. */
+  message_count?: number;
+  source_chars?: number;
+  /** Compaction pipeline only: id of the stored topic this one continues. Never stored. */
+  continues?: string;
+}
+
+/** Schema check for summarizer-produced facts; malformed entries are dropped. */
+export function parseTopicFacts(value: unknown): SummaryTopicFact[] {
+  const facts: SummaryTopicFact[] = [];
+  if (!Array.isArray(value)) return facts;
+  for (const f of value) {
+    if (facts.length >= 16) break;
+    if (!f || typeof f !== "object") continue;
+    const fo = f as Record<string, unknown>;
+    const subject = typeof fo.subject === "string" ? fo.subject.trim() : "";
+    const content = typeof fo.content === "string" ? fo.content.trim() : "";
+    if (!subject || subject.length > 160 || !content || content.length > 1_000) continue;
+    if (fo.confidence !== "explicit" && fo.confidence !== "inferred" && fo.confidence !== "verified") continue;
+    const tags = Array.isArray(fo.tags)
+      ? fo.tags
+        .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
+        .slice(0, 16)
+        .map((t) => t.trim().slice(0, 80))
+      : [];
+    facts.push({ subject, content, tags, confidence: fo.confidence });
+  }
+  return facts;
 }
 
 export interface SummarySourceMessage {
@@ -236,26 +271,7 @@ export function extractTopicSegments(text: string): { body: string; topics: Summ
     const end_at = typeof obj.end_at === "string" ? obj.end_at.trim() : "";
     const recap = typeof obj.recap === "string" ? obj.recap.trim() : "";
     if (!title || !start_at || !end_at) continue;
-    const facts: SummaryTopicFact[] = [];
-    if (Array.isArray(obj.facts)) {
-      for (const f of obj.facts) {
-        if (facts.length >= 16) break;
-        if (!f || typeof f !== "object") continue;
-        const fo = f as Record<string, unknown>;
-        const subject = typeof fo.subject === "string" ? fo.subject.trim() : "";
-        const content = typeof fo.content === "string" ? fo.content.trim() : "";
-        if (!subject || subject.length > 160 || !content || content.length > 1_000) continue;
-        if (fo.confidence !== "explicit" && fo.confidence !== "inferred" && fo.confidence !== "verified") continue;
-        const tags = Array.isArray(fo.tags)
-          ? fo.tags
-            .filter((t): t is string => typeof t === "string" && t.trim().length > 0)
-            .slice(0, 16)
-            .map((t) => t.trim().slice(0, 80))
-          : [];
-        facts.push({ subject, content, tags, confidence: fo.confidence });
-      }
-    }
-    topics.push({ title, start_seq, end_seq, start_at, end_at, recap, facts });
+    topics.push({ title, start_seq, end_seq, start_at, end_at, recap, facts: parseTopicFacts(obj.facts) });
   }
   const body = text.slice(0, m.index).trimEnd();
   return { body, topics };

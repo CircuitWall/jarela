@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   automationRows: {} as Record<string, unknown[]>,
   channelSummaries: {} as Record<string, { thread_id: string; channel: string; summary: string; summary_before: string | null; summary_before_seq: number | null; computed_at: string }>,
   topicSegments: [] as unknown[],
+  provider: {} as unknown,
 }));
 state.rows = DEFAULT_ROWS;
 
@@ -74,7 +75,7 @@ vi.mock("@/lib/stores/model-config", () => ({
   resolveRunnableModelConfig: () => ({ name: "model-1", provider: "mock", model_id: "mock-1" }),
   getModelParams: () => ({}),
 }));
-vi.mock("@/lib/providers", () => ({ getProvider: () => ({}) }));
+vi.mock("@/lib/providers", () => ({ getProvider: () => state.provider }));
 vi.mock("@/lib/stores/memory", () => ({ putMemory: () => {} }));
 vi.mock("@/lib/agents/prepare/history-window", () => ({
   unwrapWarmSummary: (s: string) => ({ scope: "foreground", content: s }),
@@ -208,6 +209,66 @@ describe("compactThreadWarmContext — seq-exact boundary (ADR-0088)", () => {
       state.warmSummaryLimit = previousLimit;
       state.rows = previousRows;
       state.automationRows = previousAutomationRows;
+    }
+  });
+
+  it("folds only messages that aged out since the last pass into the stored topics, via the compaction pipeline", async () => {
+    const storedTopics = [{
+      title: "Earlier topic",
+      start_seq: 1,
+      end_seq: 2,
+      start_at: "2026-09-25T09:00:00.000Z",
+      end_at: "2026-09-25T09:00:01.000Z",
+      recap: "earlier recap",
+      facts: [],
+      message_count: 2,
+      source_chars: 20,
+    }];
+    const previousRows = state.rows;
+    const previousProvider = state.provider;
+    const previousLimit = state.warmSummaryLimit;
+    state.warmSummaryLimit = 50;
+    state.thread = {
+      thread_id: "thread-1",
+      hot_since: null,
+      hot_since_seq: 3,
+      warm_summary: "previous",
+      warm_summary_before: null,
+      warm_summary_before_seq: 3,
+      warm_summary_topics: JSON.stringify(storedTopics),
+      message_count: 6,
+    } as typeof state.thread;
+    state.rows = [
+      { seq: 1, role: "user", content: "already summarized question", created_at: "2026-09-25T09:00:00.000Z" },
+      { seq: 2, role: "assistant", content: "already summarized answer", created_at: "2026-09-25T09:00:01.000Z" },
+      { seq: 3, role: "user", content: "newly aged-out question", created_at: "2026-09-25T09:01:00.000Z" },
+      { seq: 4, role: "assistant", content: "newly aged-out answer", created_at: "2026-09-25T09:01:01.000Z" },
+      { seq: 5, role: "user", content: "hot question", created_at: "2026-09-25T09:02:00.000Z" },
+    ];
+    const prompts: string[] = [];
+    state.provider = {
+      chat: async (_model: string, messages: Array<{ content: string }>) => {
+        prompts.push(messages[1].content);
+        const text = messages[0].content.includes("step 1 of 3")
+          ? JSON.stringify({ groups: [{ start_seq: 3, end_seq: 4, continues: "t1", title: "Earlier topic" }] })
+          : JSON.stringify({ recap: "newest detail first; earlier recap compressed", facts: [] });
+        return { stream: (async function* () { yield text; })() };
+      },
+    };
+
+    try {
+      const context = await compactThreadWarmContext("thread-1", 5);
+      expect(prompts).toHaveLength(2);
+      expect(prompts.join("\n")).toContain("newly aged-out question");
+      expect(prompts.join("\n")).not.toContain("already summarized question");
+      expect(prompts.join("\n")).not.toContain("hot question");
+      expect(context?.topics).toMatchObject([{ title: "Earlier topic", start_seq: 1, end_seq: 4, message_count: 4 }]);
+      expect(context?.summary).toContain("newest detail first; earlier recap compressed");
+      expect(context?.sourceMessages).toBe(4);
+    } finally {
+      state.rows = previousRows;
+      state.provider = previousProvider;
+      state.warmSummaryLimit = previousLimit;
     }
   });
 });

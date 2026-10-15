@@ -16,7 +16,9 @@ import { DESIGN_QA_PROMPT } from "@/lib/tools/delegation/claude-delegate";
 import { buildSharedToolCatalogContext } from "@/lib/agents/prepare/system-prompt";
 import { BUILTIN_HARNESSES } from "@/lib/agents/harness/presets";
 import { SYSTEM_SIGNAL_WAKE_PROMPT } from "@/lib/lifecycle/system-signals";
-import { buildConversationSummaryMessages } from "@/lib/agents/conversation-summary";
+import { buildConversationSummaryMessages, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
+import { buildTopicGroupingMessages, buildTopicRecapMessages } from "@/lib/agents/compaction-pipeline";
+import type { ProviderMessage } from "@/lib/providers/types";
 
 export interface StaticPrompt {
   id: string;
@@ -36,6 +38,22 @@ export function listStaticPrompts(): StaticPrompt[] {
   const conversationSummary = buildConversationSummaryMessages(
     "[seq=42] [2026-10-09T10:00:00.000Z] User: Example transcript row.",
   ).map((message) => `${message.role.toUpperCase()}\n${typeof message.content === "string" ? message.content : JSON.stringify(message.content)}`).join("\n\n");
+  const renderMessages = (messages: ProviderMessage[]) => messages
+    .map((message) => `${message.role.toUpperCase()}\n${typeof message.content === "string" ? message.content : JSON.stringify(message.content)}`)
+    .join("\n\n");
+  const sampleTopic: SummaryTopicSegment = {
+    title: "Example earlier topic",
+    start_seq: 40,
+    end_seq: 44,
+    start_at: "2026-10-09T10:00:00.000Z",
+    end_at: "2026-10-09T10:05:00.000Z",
+    recap: "Example recap of the earlier topic.",
+    facts: [{ subject: "Example preference", content: "The user prefers examples.", tags: [], confidence: "explicit", key: "facts/example-preference" }],
+    message_count: 4,
+  };
+  const sampleNewMessages = "[seq=50] [2026-10-09T11:00:00.000Z] User: Example newer message.\n\n[seq=51] [2026-10-09T11:00:05.000Z] Assistant: Example reply.";
+  const compactionGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic]));
+  const compactionRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages));
   const prompts: StaticPrompt[] = [
     {
       id: "agent.system-signal-wakeup",
@@ -54,6 +72,18 @@ export function listStaticPrompts(): StaticPrompt[] {
       source: "lib/agents/conversation-summary.ts",
       purpose: "Compress warm chat context while preserving source seq boundaries for topic alignment.",
       text: conversationSummary,
+    },
+    {
+      id: "agent.compaction-group",
+      source: "lib/agents/compaction-pipeline.ts",
+      purpose: "Compaction step 1: group newly aged-out messages into topics, each new or continuing a stored warm topic.",
+      text: compactionGroup,
+    },
+    {
+      id: "agent.compaction-topic-recap",
+      source: "lib/agents/compaction-pipeline.ts",
+      purpose: "Compaction step 2: recap one topic, newest detail first, merging its stored recap and listing durable facts.",
+      text: compactionRecap,
     },
     {
       id: "audit.citation-checker",

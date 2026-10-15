@@ -131,6 +131,7 @@ describe("prompt registry coverage", () => {
       "lib/agents/citation-checker.ts",
       "lib/agents/hallucination-classifier.ts",
       "lib/agents/conversation-summary.ts",
+      "lib/agents/compaction-pipeline.ts",
       "lib/pricing/llm-extract.ts",
       "lib/tools/claude-delegate.ts",
       "lib/agents/prepare/system-prompt.ts",
