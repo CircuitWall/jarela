@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-15
+
+### Added
+
+- **Download the Jarela Local embedding model (~135 MB) on first use instead of shipping it in every installer; set `JARELA_BUNDLE_LOCAL_EMBEDDING=1` at build time to bundle it for offline installs, or `JARELA_LOCAL_EMBEDDING_DOWNLOAD=0` to disable runtime downloads.**
+
+### Fixed
+
+- **Exclude other platforms' ONNX runtimes, WebAssembly runtimes, and traced git metadata from release bundles, cutting the standalone build from 785 MB to 270 MB together with the on-demand model.**
+- **Retry loading Jarela Local after a failed model load instead of failing until restart.**
+
 ## [2.1.0] - 2026-10-14
 
 ### Added
