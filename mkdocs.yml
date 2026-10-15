@@ -71,6 +71,7 @@ nav:
       - Overview: OPERATIONS.md
       - Demo Gmail: DEMO_GMAIL_CONNECT.md
       - UI hook API: ui-hook-api.md
+      - Version adoption changesets: adoption/index.md
 
 plugins:
   - search

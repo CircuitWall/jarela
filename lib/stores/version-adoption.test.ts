@@ -174,6 +174,51 @@ describe("version adoption state", () => {
     });
   });
 
+  it("builds adaptation items and prompt hints from bundled release changesets", () => {
+    upsertAgentConfig({
+      id: "default-agent",
+      name: "Assistant",
+      identity: "helper",
+      instructions: "Be useful.",
+      tools: [],
+      is_default: true,
+    });
+    updateVersionAdoptionState("mark_done", "2.0.5");
+
+    const pending = getVersionAdoptionState("2.2.1");
+    expect(pending.previous_version).toBe("2.0.5");
+    expect(pending.checklist[0]).toMatchObject({ id: "fetch-changes", status: "done" });
+    expect(pending.checklist[0].validation_evidence).toContain("bundled release changesets for 2.1.0, 2.2.0, 2.2.1");
+    expect(pending.stale_prompt_risks).toEqual(expect.arrayContaining([
+      "Adapt agent settings to tool changes",
+      "Adapt scheduled task and watcher prompts",
+      "Adapt agent instructions and skills",
+    ]));
+
+    const running = updateVersionAdoptionState("start", "2.2.1");
+    const prompt = running.adoption_prompt ?? "";
+    expect(prompt).toContain("read deterministically by the system from the bundled release changesets");
+    expect(prompt).toContain("Release changesets — model-facing prompt and tool description/schema changes from 2.0.5 to 2.2.1:");
+    expect(prompt).toContain("tool `workflow_progress`");
+    expect(prompt).toContain("params added: validation_evidence");
+    expect(prompt).toContain("apply an edit only after the user approves it");
+    expect(prompt).not.toContain("partial");
+
+    const adoption = recordVersionAdoptionWorkflowProgress({
+      item_id: "build-todo-list",
+      status: "done",
+      validation_evidence: "Every changed prompt and tool is covered by an adapt item.",
+    }, "2.2.1");
+    const ids = adoption.state.checklist.map((item) => item.id);
+    expect(ids).toEqual(["adapt-settings", "adapt-task-prompts", "adapt-instructions-skills"]);
+    for (const item of adoption.state.checklist) {
+      expect(item.input.trim()).not.toBe("");
+      expect(item.output.trim()).not.toBe("");
+      expect(item.validation).toMatch(/re-(read|list)/);
+    }
+    expect(adoption.state.checklist[0].affected_files).toContain("tool:workflow_progress");
+  });
+
   it("blocks adoption until a default agent exists", () => {
     const state = getVersionAdoptionState("1.29.5");
     expect(state.status).toBe("blocked_no_default_agent");

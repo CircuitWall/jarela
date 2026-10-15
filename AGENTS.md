@@ -74,7 +74,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full rules. Summary:
 - Trunk-based: never push to `main`; use a topic branch (`feat/…`, `fix/…`, `chore/…`, `docs/…`, or `refactor/…`) and open a PR.
 - Rebase merge only. Every commit that lands on `main` must have a Conventional Commit subject; the PR title is used in release notes.
 - `package.json` is the semver source of truth. Breaking changes require a major bump; new user-facing capabilities use a minor bump; fixes and improvements to existing features use a patch bump.
-- Releases are deliberate and tag-driven. Bump `package.json` and update `CHANGELOG.md` in a release PR, merge it, then tag `main`. GitHub Actions handles bundles and npm publishing through OIDC Trusted Publishing; never publish from a developer machine.
+- Releases are deliberate and tag-driven. Bump `package.json`, update `CHANGELOG.md` (with an optional `### Adoption` section for user-setup steps), and run `npm run release:changeset` to record prompt and tool description/schema changes in `docs/adoption/` in a release PR, merge it, then tag `main`. GitHub Actions handles bundles and npm publishing through OIDC Trusted Publishing; never publish from a developer machine.
 
 ## Repository Conventions
 
