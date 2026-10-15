@@ -37,6 +37,22 @@ Every update to an existing key keeps a dated snapshot of the prior record in
 its `history`, and older free-form or v1 entries are upgraded to the current
 schema automatically the first time they're read — no manual migration step.
 
+## Proactive Saving
+
+Memory is shared by every Jarela agent, so save durable information in the
+turn it appears instead of relying on background compaction, which runs later
+and can miss details.
+
+1. **Trigger:** the user states a preference, fact, decision, constraint, or
+   correction; or a tool result verifies a durable fact.
+2. **Check:** search for an existing record on the same subject and reuse its
+   key.
+3. **Write:** call `memory_upsert` before the final reply.
+4. **Validate:** the result must contain `ok: true` and the key you sent;
+   retry once on failure, then tell the user it was not saved.
+5. **Cite:** end the reply with `Saved to memory: facts/<key>` for each saved
+   key.
+
 ## Retrieval And Consolidation
 
 1. Let proactive recall supply matching facts on normal user turns. Use

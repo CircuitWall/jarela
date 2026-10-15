@@ -148,6 +148,45 @@ describe("buildSystemPrompt self-configuration", () => {
   });
 });
 
+describe("buildSystemPrompt proactive memory saving", () => {
+  const build = () => buildSystemPrompt({
+    agentCfg: agentCfg(),
+    trimmedMessage: "I prefer short answers",
+    budget,
+    recallCtx: "",
+    warmSummaryCtx: "",
+    factsCtx: "",
+    experienceMode: "full",
+    delegateRosterLines: [],
+  });
+
+  it("orders the save procedure as trigger, check, write, validate, cite", () => {
+    const prompt = build();
+    const steps = ["1. Trigger:", "2. Check:", "3. Write:", "4. Validate:", "5. Cite:"].map((s) => prompt.indexOf(s));
+    expect(steps.every((i) => i >= 0)).toBe(true);
+    expect([...steps].sort((a, b) => a - b)).toEqual(steps);
+    expect(prompt).toContain("backstop, not your save step");
+  });
+
+  it("keeps the save procedure in the cached agent-stable block", () => {
+    const prompt = build();
+    const split = prompt.indexOf(CACHE_SPLIT_SENTINEL);
+    expect(split).toBeGreaterThan(0);
+    expect(prompt.indexOf("Proactive save procedure")).toBeLessThan(split);
+  });
+
+  it("only names memory tools that are registered", async () => {
+    const memory = await import("@/lib/tools/general/memory");
+    const registered = new Set(Object.values(memory)
+      .filter((v): v is { name: string } => typeof v === "object" && v !== null && "name" in v)
+      .map((t) => t.name));
+    const block = build().split("--- Memory & recall ---")[1]?.split("\n---")[0] ?? "";
+    const named = new Set(block.match(/\bmemory_[a-z]+\b/g) ?? []);
+    expect(named.size).toBeGreaterThan(0);
+    for (const name of named) expect(registered).toContain(name);
+  });
+});
+
 const permissionMapFixture = [
   {
     name: "file_read",

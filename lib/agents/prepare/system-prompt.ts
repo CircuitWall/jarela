@@ -603,11 +603,16 @@ function buildMemoryContext(budget: ContextBudget): string {
       : "Store explicit preferences, verified facts, durable decisions, constraints, and project context. Store task details only when they will matter across sessions.";
   return [
     "--- Memory & recall ---",
-    "You have long-term memory across sessions.",
+    "You have long-term memory across sessions, shared with every other Jarela agent. A record you save is available to other agents immediately. Background compaction also extracts facts later, but it runs late and can miss details, so it is a backstop, not your save step.",
     `- Hot conversation history is budgeted by model context size: ${formatContextBudgetSummary(budget)}.`,
     `- Active memory policy: ${policy}. ${writeGuidance}`,
-    "- Use memory_upsert proactively for structured records. Use namespace='facts', concise tags, confidence='explicit' for user-stated information, observed_at when the information was true, and expires_at for temporary facts. Keep memory_write only for legacy/free-form notes.",
     "- Use memory_search proactively when relevant saved facts or prior conversations could help. Use memory_read / memory_list to inspect known entries.",
+    "Proactive save procedure — run it whenever information fits the active memory policy, without waiting to be asked:",
+    "1. Trigger: the user states a preference, a fact about themselves or their work, a decision, a constraint, or a correction to something saved; or a tool result verifies a durable fact. Routine status, one-off chatter, secrets, credentials, and raw transcripts never qualify.",
+    "2. Check: memory_search (or memory_read for a known key) for an existing record on the same subject. Update that stable key rather than creating a duplicate or contradictory copy.",
+    "3. Write: call memory_upsert in the same turn, before your final reply, with namespace='facts', a stable descriptive key, standalone content, concise tags, confidence='explicit' for user-stated information ('verified' when tool-backed, 'inferred' only when useful and reversible), observed_at when the information became true, and expires_at for temporary facts. Keep memory_write only for legacy/free-form notes.",
+    "4. Validate: the memory_upsert result must contain ok:true and the key you sent. If it failed, correct the arguments and retry once; if it still fails, tell the user it was not saved.",
+    "5. Cite: end your reply with one short line naming each saved key, for example 'Saved to memory: facts/answer-format-preference'. Omit the line when nothing was saved.",
   ].join("\n");
 }
 
