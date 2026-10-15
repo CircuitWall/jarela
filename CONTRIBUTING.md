@@ -298,13 +298,19 @@ git clone https://github.com/CircuitWall/jarela.git
 cd jarela
 npm install
 npm run setup:hooks
-npm run dev          # http://localhost:3000
+npm run dev          # http://localhost:4312
 
 npm run lint
 npm run build
 npm run security:ci
 npm start            # http://localhost:4312 (prod-mode local run)
 npm run test:live    # smoke against the running server
+
+# Install this checkout as the autostart service. Builds the working tree
+# as-is, uncommitted changes included; re-runs `npm ci` when
+# package-lock.json changed.
+.\make.ps1 install-service   # Windows
+make install-service         # macOS
 ```
 
 ## Solo-maintainer quick PR flow

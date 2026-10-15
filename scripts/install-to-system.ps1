@@ -2,10 +2,14 @@
 # %LOCALAPPDATA%\Programs\Jarela so it can run without this dev repo.
 # Re-registers the per-user "Jarela" scheduled task to point at the install dir.
 #
+# Builds and installs the repo's working tree as-is, including uncommitted
+# changes; install.json records the commit with a "-dirty" suffix when the
+# tree had local changes.
+#
 # Data (SQLite, vector DB, OAuth tokens, memory, agents, models, MCP config,
-# whitelist) lives at %USERPROFILE%\.jarela and is shared between the dev
-# repo and the installed copy - so "migration" is automatic: the same user
-# reads the same database.
+# whitelist) lives at %LOCALAPPDATA%\Jarela (ADR-0006) and is shared between
+# the dev repo and the installed copy - so "migration" is automatic: the same
+# user reads the same database.
 #
 # Usage (no admin required):
 #   powershell -ExecutionPolicy Bypass -File scripts\install-to-system.ps1
@@ -16,13 +20,13 @@
 # -Boot (requires elevated PowerShell): registers the scheduled task to start
 # at machine boot instead of at user logon. Uses S4U so no password is stored
 # and the task still runs as the current user (the SQLite DB at
-# %USERPROFILE%\.jarela stays owned by the right account).
+# %LOCALAPPDATA%\Jarela stays owned by the right account).
 #   powershell -ExecutionPolicy Bypass -File scripts\install-to-system.ps1 -Boot
 # Also reachable via: make install-service -Boot
 #
 # Note: if you've set an encryption PIN (lib/crypto/pin-wrap.ts) the server
 # will boot but stay locked until you visit the UI and enter it. With no PIN,
-# the master key is protected only by NTFS ACLs on ~/.jarela.
+# the master key is protected only by NTFS ACLs on %LOCALAPPDATA%\Jarela.
 
 [CmdletBinding()]
 param(
@@ -93,13 +97,42 @@ foreach ($c in $busy) {
 Start-Sleep -Milliseconds 500
 
 # ── 2. Build (standalone) ──────────────────────────────────────────────────
+# Always builds the working tree as it is on disk — committed or not — so
+# `make install-service` installs exactly the code you are looking at.
+function Get-SourceState {
+  try {
+    $head = (& git -C $RepoRoot rev-parse --short HEAD 2>$null)
+    if (-not $head) { return 'unknown' }
+    $head = $head.Trim()
+    $dirty = (& git -C $RepoRoot status --porcelain --untracked-files=normal 2>$null)
+    if ($dirty) { "$head-dirty" } else { $head }
+  } catch { 'unknown' }
+}
+$commit = Get-SourceState
+
 if (-not $SkipBuild) {
   Push-Location $RepoRoot
   try {
-    if (-not (Test-Path (Join-Path $RepoRoot 'node_modules'))) {
+    Info ("source: working tree at " + $commit)
+    # Re-sync dependencies when package-lock.json changed since the last
+    # install, so an uncommitted dependency change is built against the right
+    # packages. Compares a content hash recorded after `npm ci` (mtime alone
+    # trips on every branch switch); falls back to npm's own stamp the first
+    # time.
+    $lockFile = Join-Path $RepoRoot 'package-lock.json'
+    $installedLock = Join-Path $RepoRoot 'node_modules\.package-lock.json'
+    $lockStamp = Join-Path $RepoRoot 'node_modules\.jarela-lock.sha256'
+    $lockHash = (Get-FileHash -Algorithm SHA256 $lockFile).Hash.ToLowerInvariant()
+    $needsDeps = if (-not (Test-Path $installedLock)) { $true }
+      elseif (Test-Path $lockStamp) { (Get-Content -Raw $lockStamp).Trim() -ne $lockHash }
+      else { (Get-Item $lockFile).LastWriteTimeUtc -gt (Get-Item $installedLock).LastWriteTimeUtc }
+    if ($needsDeps) {
       Step "Installing build dependencies (npm ci)"
       & $npm ci
       if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+    }
+    if (-not (Test-Path $lockStamp) -or $needsDeps) {
+      [IO.File]::WriteAllText($lockStamp, $lockHash)
     }
     Step "Building production bundle (next build, output=standalone)"
     # PowerShell 7's $PSNativeCommandUseErrorActionPreference treats any
@@ -242,11 +275,6 @@ Copy-Item -Path (Join-Path $RepoRoot 'scripts\installed-launcher.vbs') `
           -Destination (Join-Path $InstallDir 'launcher.vbs') -Force
 
 # Stamp a version marker so we know which commit produced this install.
-$commit = try {
-  $head = (& git -C $RepoRoot rev-parse --short HEAD).Trim()
-  $dirty = (& git -C $RepoRoot status --porcelain --untracked-files=normal).Trim()
-  if ($dirty) { "$head-dirty" } else { $head }
-} catch { 'unknown' }
 @{
   installedAt   = (Get-Date).ToString('o')
   commit        = $commit

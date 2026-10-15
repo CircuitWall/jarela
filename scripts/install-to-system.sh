@@ -3,6 +3,10 @@
 # Installs Jarela as a standalone app under ~/Library/Application Support/Jarela
 # and registers a per-user LaunchAgent so it auto-starts at login.
 #
+# Builds and installs the repo's working tree as-is, including uncommitted
+# changes; install.json records the commit with a "-dirty" suffix when the
+# tree had local changes.
+#
 # Data (SQLite, vector DB, OAuth tokens, memory, agents, models, MCP config,
 # whitelist) lives at ~/.jarela and is shared between the dev repo and the
 # installed copy — same DB, no migration step.
@@ -36,7 +40,7 @@ while [[ $# -gt 0 ]]; do
     --skip-optional-packages) SKIP_OPTIONAL_PACKAGES=1; shift ;;
     --no-start)    NO_START=1; shift ;;
     -h|--help)
-      sed -n '2,16p' "$0"
+      sed -n '2,18p' "$0"
       exit 0
       ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
@@ -54,6 +58,11 @@ step() { printf '\033[36m==> %s\033[0m\n' "$*"; }
 info() { printf '    %s\n' "$*"; }
 
 # ── Sanity checks ──────────────────────────────────────────────────────────
+if [[ "$(uname -s)" != Darwin ]]; then
+  echo "install-to-system.sh registers a macOS LaunchAgent and only runs on macOS." >&2
+  echo "On Linux, run 'npm run build' and supervise .next/standalone/server.js yourself (see docs/INSTALL.md)." >&2
+  exit 1
+fi
 [[ -f "$REPO_ROOT/package.json" ]] || { echo "package.json not found at $REPO_ROOT" >&2; exit 1; }
 command -v npm  >/dev/null || { echo "npm not on PATH"  >&2; exit 1; }
 command -v node >/dev/null || { echo "node not on PATH" >&2; exit 1; }
@@ -71,6 +80,8 @@ step "Stopping existing LaunchAgent (if loaded)"
 # when the plist is valid. bootout itself may exit non-zero if the
 # service isn't currently loaded — that's fine, we proceed anyway.
 launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
+# Clear any "disabled" flag a prior failed bootstrap may have left behind.
+launchctl enable "gui/$(id -u)/$LABEL" 2>/dev/null || true
 # Belt-and-braces: kill anything still on :4312.
 if lsof -nP -iTCP:$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
   info "killing process on :$PORT"
@@ -79,12 +90,36 @@ fi
 sleep 1
 
 # ── 2. Build ──────────────────────────────────────────────────────────────
+# Always builds the working tree as it is on disk — committed or not — so
+# `make install-service` installs exactly the code you are looking at.
+COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [[ "$COMMIT" != unknown && -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
+  COMMIT="$COMMIT-dirty"
+fi
+
 if [[ $SKIP_BUILD -eq 0 ]]; then
   pushd "$REPO_ROOT" >/dev/null
-  if [[ ! -d node_modules ]]; then
+  info "source: working tree at $COMMIT"
+  # Re-sync dependencies when package-lock.json changed since the last
+  # install, so an uncommitted dependency change is built against the right
+  # packages. Compares a content hash recorded after `npm ci` (mtime alone
+  # trips on every branch switch); falls back to npm's own stamp the first
+  # time.
+  LOCK_HASH="$(node -e "process.stdout.write(require('crypto').createHash('sha256').update(require('fs').readFileSync('package-lock.json')).digest('hex'))")"
+  LOCK_STAMP=node_modules/.jarela-lock.sha256
+  NEEDS_DEPS=0
+  if [[ ! -f node_modules/.package-lock.json ]]; then
+    NEEDS_DEPS=1
+  elif [[ -f "$LOCK_STAMP" ]]; then
+    [[ "$(cat "$LOCK_STAMP")" == "$LOCK_HASH" ]] || NEEDS_DEPS=1
+  elif [[ package-lock.json -nt node_modules/.package-lock.json ]]; then
+    NEEDS_DEPS=1
+  fi
+  if [[ $NEEDS_DEPS -eq 1 ]]; then
     step "Installing build dependencies (npm ci)"
     npm ci
   fi
+  printf '%s' "$LOCK_HASH" > "$LOCK_STAMP"
   step "Building production bundle (next build, output=standalone)"
   npm run build
   popd >/dev/null
@@ -125,7 +160,6 @@ cp -R "$STATIC_SRC" "$INSTALL_DIR/.next/static"
 cp -R "$PUBLIC_SRC" "$INSTALL_DIR/public"
 
 # ── 5. Stamp install.json ─────────────────────────────────────────────────
-COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 INSTALLED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cat > "$INSTALL_DIR/install.json" <<JSON
 {

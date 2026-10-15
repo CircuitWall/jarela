@@ -14,7 +14,7 @@ INSTALL_DIR  := $(HOME)/Library/Application Support/$(APP_NAME)
 PLIST        := $(HOME)/Library/LaunchAgents/$(LABEL).plist
 LOG_DIR      := $(HOME)/Library/Logs/$(APP_NAME)
 LOG_FILE     := $(LOG_DIR)/app.log
-NODE_BIN     := $(shell command -v node 2>/dev/null)
+ARGS         ?=
 
 CYAN := \033[36m
 YEL  := \033[33m
@@ -26,7 +26,7 @@ RST  := \033[0m
 .PHONY: help install dev build start lint test test-full icons clean \
 	install-service uninstall-service start-service stop-service restart-service \
 	install-task uninstall-task start-task stop-task restart-task \
-        logs status push
+	logs status push scan scan-staged install-hooks
 
 help:
 	@printf "$(CYAN)Jarela task runner$(RST) (macOS / Linux)\n"
@@ -40,7 +40,8 @@ help:
 	@printf "  $(YEL)test-full$(RST)       Extended live test suite\n"
 	@printf "  $(YEL)icons$(RST)           Regenerate the logo / icon set\n"
 	@printf "  $(YEL)clean$(RST)           Remove .next, build artefacts, node_modules cache\n"
-	@printf "  $(YEL)install-service$(RST) Install per-user LaunchAgent (auto-start at login)\n"
+	@printf "  $(YEL)install-service$(RST) Build the working tree (incl. uncommitted changes) and install\n"
+	@printf "                  it as a per-user LaunchAgent (macOS). Flags: ARGS=--skip-build\n"
 	@printf "  $(YEL)uninstall-service$(RST) Remove the LaunchAgent + installed files\n"
 	@printf "  $(YEL)start-service$(RST)   launchctl kickstart $(LABEL)\n"
 	@printf "  $(YEL)stop-service$(RST)    launchctl kill TERM gui/<uid>/$(LABEL)\n"
@@ -48,7 +49,10 @@ help:
 	@printf "  $(YEL)*-task$(RST)          Back-compat aliases for the service targets\n"
 	@printf "  $(YEL)logs$(RST)            Tail the installed-task log file (Ctrl+C to stop)\n"
 	@printf "  $(YEL)status$(RST)          Show LaunchAgent state + listener on :$(PORT)\n"
-	@printf "  $(YEL)push$(RST)            git push current branch to the jarela remote\n\n"
+	@printf "  $(YEL)scan$(RST)            npm audit + secret and sensitive-term scans over the whole tree\n"
+	@printf "  $(YEL)scan-staged$(RST)     Scan only staged changes\n"
+	@printf "  $(YEL)install-hooks$(RST)   Point git at the repo's .githooks (pre-commit gate)\n"
+	@printf "  $(YEL)push$(RST)            git push current branch to origin\n\n"
 	@printf "$(DGY)Data dir: $(DATA_DIR)$(RST)\n"
 	@printf "$(DGY)Override with JARELA_DB_DIR$(RST)\n"
 
@@ -84,80 +88,12 @@ clean:
 	  fi; \
 	done
 
-install-service: build
-	@printf "$(CYAN)==> Installing $(APP_NAME) to $(INSTALL_DIR)$(RST)\n"
-	@if [ -z "$(NODE_BIN)" ]; then \
-	  printf "$(RED)node not found on PATH. Install Node.js first.$(RST)\n"; exit 1; \
-	fi
-	@if [ ! -f .next/standalone/server.js ]; then \
-	  printf "$(RED)Standalone build missing at .next/standalone/server.js$(RST)\n"; exit 1; \
-	fi
-	@launchctl bootout gui/$$(id -u)/$(LABEL) 2>/dev/null || true
-	@# Free port $(PORT) before bootstrap. launchd spawns the child under
-	@# RunAtLoad immediately; if anything else (a stray `next dev`, a
-	@# previous unmanaged install, etc.) is holding the socket, the child
-	@# fails with EADDRINUSE and bootstrap surfaces that as the cryptic
-	@# "Bootstrap failed: 5: Input/output error".
-	@for pid in $$(lsof -nP -iTCP:$(PORT) -sTCP:LISTEN -t 2>/dev/null); do \
-	  printf "$(YEL)stopping process $$pid holding port $(PORT)$(RST)\n"; \
-	  kill -TERM "$$pid" 2>/dev/null || true; \
-	done
-	@# Brief settle so launchd doesn't see the just-killed socket in TIME_WAIT.
-	@sleep 1
-	@# Clear any "disabled" flag a prior failed bootstrap may have left behind.
-	@launchctl enable "gui/$$(id -u)/$(LABEL)" 2>/dev/null || true
-	@mkdir -p "$(INSTALL_DIR)" "$(LOG_DIR)" "$(HOME)/Library/LaunchAgents"
-	@find "$(INSTALL_DIR)" -mindepth 1 -delete 2>/dev/null || true
-	@cp -R .next/standalone/. "$(INSTALL_DIR)/"
-	@mkdir -p "$(INSTALL_DIR)/.next"
-	@cp -R .next/static "$(INSTALL_DIR)/.next/static"
-	@cp -R public "$(INSTALL_DIR)/public"
-	@COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown); \
-	 INSTALLED_AT=$$(date -u +%Y-%m-%dT%H:%M:%SZ); \
-	 printf '{\n  "installedAt": "%s",\n  "commit": "%s",\n  "sourceRepo": "%s",\n  "node": "%s",\n  "port": %s,\n  "dbDir": "%s"\n}\n' \
-	   "$$INSTALLED_AT" "$$COMMIT" "$(REPO_ROOT)" "$(NODE_BIN)" "$(PORT)" "$(DATA_DIR)" \
-	   > "$(INSTALL_DIR)/install.json"
-	@printf "$(CYAN)==> Writing LaunchAgent $(PLIST)$(RST)\n"
-	@{ \
-	  echo '<?xml version="1.0" encoding="UTF-8"?>'; \
-	  echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'; \
-	  echo '<plist version="1.0"><dict>'; \
-	  echo '  <key>Label</key><string>$(LABEL)</string>'; \
-	  echo '  <key>ProgramArguments</key>'; \
-	  echo '  <array>'; \
-	  echo '    <string>$(NODE_BIN)</string>'; \
-	  echo '    <string>$(INSTALL_DIR)/server.js</string>'; \
-	  echo '  </array>'; \
-	  echo '  <key>WorkingDirectory</key><string>$(INSTALL_DIR)</string>'; \
-	  echo '  <key>EnvironmentVariables</key>'; \
-	  echo '  <dict>'; \
-	  echo '    <key>PORT</key><string>$(PORT)</string>'; \
-	  echo '    <key>HOSTNAME</key><string>127.0.0.1</string>'; \
-	  echo '    <key>NODE_ENV</key><string>production</string>'; \
-	  echo '    <key>JARELA_DB_DIR</key><string>$(DATA_DIR)</string>'; \
-	  echo '  </dict>'; \
-	  echo '  <key>RunAtLoad</key><true/>'; \
-	  echo '  <key>KeepAlive</key><true/>'; \
-	  echo '  <key>ThrottleInterval</key><integer>10</integer>'; \
-	  echo '  <key>StandardOutPath</key><string>$(LOG_FILE)</string>'; \
-	  echo '  <key>StandardErrorPath</key><string>$(LOG_FILE)</string>'; \
-	  echo '</dict></plist>'; \
-	} > "$(PLIST)"
-	@if ! launchctl bootstrap gui/$$(id -u) "$(PLIST)"; then \
-	  printf "$(RED)launchctl bootstrap failed.$(RST) Common causes:\n"; \
-	  printf "  - port $(PORT) already in use (check: lsof -nP -iTCP:$(PORT) -sTCP:LISTEN)\n"; \
-	  printf "  - the agent is loaded in another session; try: launchctl bootout gui/$$(id -u)/$(LABEL)\n"; \
-	  printf "  - the agent is marked disabled; try: launchctl enable gui/$$(id -u)/$(LABEL)\n"; \
-	  exit 1; \
-	fi
-	@launchctl kickstart -k gui/$$(id -u)/$(LABEL) 2>/dev/null || true
-	@printf "$(GRN)Installed $(APP_NAME) at $(INSTALL_DIR)$(RST)\n"
-	@printf "  URL:   http://localhost:$(PORT)\n"
-	@printf "  Data:  $(DATA_DIR)\n"
-	@printf "  Logs:  $(LOG_FILE)\n"
-	@printf "  Stop:  make stop-service\n"
-	@printf "  Off:   make uninstall-service\n"
-
+# Delegates to scripts/install-to-system.sh (as make.ps1 delegates to the .ps1)
+# so both entry points install the same way: the working tree as-is, committed
+# or not, with dependencies re-synced when package-lock.json changed.
+# Pass installer flags through ARGS, e.g. make install-service ARGS=--skip-build
+install-service:
+	@bash scripts/install-to-system.sh $(ARGS)
 uninstall-service:
 	@printf "$(CYAN)==> Removing $(APP_NAME) LaunchAgent$(RST)\n"
 	@launchctl bootout gui/$$(id -u)/$(LABEL) 2>/dev/null || \
@@ -203,4 +139,18 @@ status:
 
 push:
 	@branch=$$(git rev-parse --abbrev-ref HEAD); \
-	 git push jarela "$$branch"
+	 git push -u origin "$$branch"
+
+scan:
+	@printf "$(CYAN)=== npm audit (production deps, high+) ===$(RST)\n"
+	@audit=0; npm audit --omit=dev --audit-level=high || audit=$$?; \
+	 node scripts/scan-secrets.mjs --all; \
+	 node scripts/scan-sensitive-terms.mjs --all; \
+	 if [ $$audit -ne 0 ]; then echo "npm audit reported high/critical issues (exit $$audit)"; exit $$audit; fi
+
+scan-staged:
+	@node scripts/scan-secrets.mjs --staged
+	@node scripts/scan-sensitive-terms.mjs --staged
+
+install-hooks:
+	@node scripts/setup-git-hooks.mjs
