@@ -68,6 +68,9 @@ type StoredVersionAdoptionState = VersionAdoptionState & {
   last_adopted_version: string | null;
 };
 
+/** A client request that cannot be applied to the current adoption state. */
+export class VersionAdoptionRequestError extends Error {}
+
 const DEFAULT_CHECKLIST: VersionAdoptionChecklistItem[] = [
   {
     id: "instructions",
@@ -562,6 +565,70 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
   ].join("\n");
 }
 
+function buildAdoptionStepRetryPrompt(
+  state: Pick<VersionAdoptionState, "current_version" | "previous_version" | "is_first_adoption">,
+  phase: "impact_radius" | "adoption",
+  entry: VersionAdoptionChecklistItem,
+): string {
+  const phaseLabel = state.is_first_adoption
+    ? `current-version baseline ${state.current_version}`
+    : `upgrade from ${state.previous_version} to ${state.current_version}`;
+  const plan = computeAdoptionPlan(state.previous_version, state.current_version);
+  const changesetSection = phase === "adoption" && plan.source === "changeset" && plan.range
+    ? ["", "Release changesets:", formatChangesetsForPrompt(plan.range.entries)]
+    : [];
+  return [
+    `Retry one Jarela version adoption step for ${phaseLabel}. The user asked to redo only this step; leave every other checklist item unchanged.`,
+    "",
+    `Step: ${entry.id} — ${entry.label}`,
+    `Input: ${entry.input}`,
+    `Output: ${entry.output}`,
+    `Validation: ${entry.validation}`,
+    `Reason: ${entry.reason}`,
+    ...(entry.affected_files.length > 0 ? [`Affected: ${entry.affected_files.join(", ")}.`] : []),
+    "",
+    `- Call \`workflow_progress\` with \`workflow_id: "version_adoption"\`, \`phase: "${phase}"\`, \`item_id: "${entry.id}"\`, and \`status: "checking"\`.`,
+    "- Redo the step from its stated input. Prefer executable checks for code-verifiable behavior, and do not reuse earlier evidence: run the validation again.",
+    `- Then call \`workflow_progress\` for \`item_id: "${entry.id}"\` with \`status: "done"\` and newly observed \`validation_evidence\`, or \`status: "needs_attention"\` with the reason.`,
+    "- For `adapt-*` steps, show the before and after text and apply an edit only after the user approves it, then re-read the artifact.",
+    "- Do not create external issues, PRs, scheduled tasks, watcher updates, or credential changes unless the user explicitly approves.",
+    "- Keep the response concise: what you rechecked, the observed result, and any approval needed.",
+    ...changesetSection,
+  ].join("\n");
+}
+
+function retryAdoptionItem(
+  state: StoredVersionAdoptionState,
+  checklist: VersionAdoptionChecklistItem[],
+  itemId: string,
+  t: string,
+): StoredVersionAdoptionState {
+  const index = checklist.findIndex((entry) => entry.id === itemId);
+  if (index === -1) throw new VersionAdoptionRequestError(`Unknown adoption checklist item: ${itemId}`);
+  if (itemId === "fetch-changes") {
+    throw new VersionAdoptionRequestError("fetch-changes is computed by the system and cannot be retried by the agent.");
+  }
+  if (!state.default_agent_id) {
+    return { ...state, status: "blocked_no_default_agent", phase: null, error: "No default agent is configured." };
+  }
+  const phase = PHASE_1_CHECKLIST.some((entry) => entry.id === itemId) ? "impact_radius" : "adoption";
+  const { validation_evidence: _previousEvidence, ...rest } = checklist[index];
+  checklist[index] = { ...rest, status: "checking" };
+  const thread = getOrCreateAgentThread(state.default_agent_id);
+  return {
+    ...state,
+    status: "running",
+    phase,
+    started_at: state.started_at ?? t,
+    completed_at: null,
+    dismissed_at: null,
+    checklist,
+    adoption_thread_id: thread.thread_id,
+    adoption_prompt: buildAdoptionStepRetryPrompt(state, phase, checklist[index]),
+    error: null,
+  };
+}
+
 function createState(currentVersion: string, previousVersion: string | null): StoredVersionAdoptionState {
   const defaultAgent = getDefaultAgentConfig();
   const isFirst = previousVersion === null;
@@ -610,6 +677,7 @@ export function getVersionAdoptionState(currentVersion = getCurrentVersion()): V
 export function updateVersionAdoptionState(
   action: "start" | "mark_done" | "dismiss" | "retry",
   currentVersion = getCurrentVersion(),
+  itemId?: string,
 ): VersionAdoptionState {
   const existing = parseStored();
   const state = existing && existing.current_version === currentVersion
@@ -617,6 +685,10 @@ export function updateVersionAdoptionState(
     : createState(currentVersion, existing?.last_adopted_version ?? existing?.current_version ?? null);
   const t = now();
   const nextChecklist = state.checklist.map((entry) => ({ ...entry }));
+
+  if (action === "retry" && itemId) {
+    return persist(retryAdoptionItem(state, nextChecklist, itemId, t));
+  }
 
   if (action === "start" || action === "retry") {
     if (!state.default_agent_id) {

@@ -5,6 +5,7 @@ import type { AgentConfig, AutomationActivityMetadata, ContentPart, Message, Sum
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
 import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
+import { WorkflowStepRetryContext, workflowStepRetryMessage, type WorkflowStepRetryRequest } from "./workflow-step-retry";
 import { MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { MetaRow } from "@/components/ui/MetaRow";
@@ -104,6 +105,13 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   const [pendingHotSinceSeq, setPendingHotSinceSeq] = useState<number | null>(null);
   const [topControlsOpen, setTopControlsOpen] = useState(false);
   const [summaryPopoverOpen, setSummaryPopoverOpen] = useState(false);
+
+  const retryWorkflowStep = useMemo(
+    () => onRetryMessage
+      ? (request: WorkflowStepRetryRequest) => onRetryMessage(workflowStepRetryMessage(request), [])
+      : null,
+    [onRetryMessage],
+  );
 
   // Apply category filter. Messages with no `category` (NULL = ordinary
   // chat) are always shown; tagged messages are gated by their toggle.
@@ -780,6 +788,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   }
 
   return (
+    <WorkflowStepRetryContext.Provider value={retryWorkflowStep}>
     <div ref={hostRef} className="flex-1 flex flex-col min-h-0 relative">
       {visibleMessages.length > 0 && (
         <div className="shrink-0 px-4 pt-[calc(var(--app-safe-top)+3rem)] pb-1">
@@ -1166,6 +1175,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
         </div>
       </Dialog>
     </div>
+    </WorkflowStepRetryContext.Provider>
   );
 }
 

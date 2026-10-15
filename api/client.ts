@@ -523,6 +523,12 @@ export const api = {
           body: JSON.stringify({ action }),
           cache: "no-store",
         }),
+      retryItem: (itemId: string) =>
+        request<VersionAdoptionState>("/lifecycle/adoption", {
+          method: "POST",
+          body: JSON.stringify({ action: "retry", item_id: itemId }),
+          cache: "no-store",
+        }),
     },
   },
 

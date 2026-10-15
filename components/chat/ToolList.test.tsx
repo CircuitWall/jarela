@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ToolList, type ToolEvent } from "./ToolList";
+import { WorkflowStepRetryContext, workflowStepRetryMessage } from "./workflow-step-retry";
 
 const { codexJobGet, codexJobCancel } = vi.hoisted(() => ({
   codexJobGet: vi.fn(),
@@ -343,21 +344,73 @@ describe("ToolList — live progress (ADR-0073)", () => {
     render(<ToolList events={events} />);
     fireEvent.click(screen.getByText("workflow_progress"));
 
-    expect(screen.getByText("workflow")).toBeTruthy();
-    expect(screen.getAllByText("Fetching changes").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Fetch changes").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Build todo list").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("done")).toBeTruthy();
-    expect(screen.getByLabelText("checking")).toBeTruthy();
-    const firstContract = screen.getAllByText("Step contract")[0];
-    fireEvent.click(firstContract);
-    const contract = firstContract.closest("details");
-    expect(contract).toBeTruthy();
-    if (!contract) throw new Error("Workflow step contract details were not rendered");
-    expect(within(contract).getByText("Baseline tag and repository HEAD")).toBeTruthy();
-    expect(within(contract).getByText("Paths changed since baseline")).toBeTruthy();
-    expect(within(contract).getByText("Inspect system-computed git diff result")).toBeTruthy();
-    expect(within(contract).getByText("git diff returned the changed paths")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "verified" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "checking" })).toBeTruthy();
+    expect(screen.queryByText("Step contract")).toBeNull();
+    expect(screen.queryByText("Baseline tag and repository HEAD")).toBeNull();
+    expect(screen.getByText("Fetch changes").getAttribute("title")).toContain("git diff returned the changed paths");
+    expect(screen.queryByRole("button", { name: /^Retry / })).toBeNull();
+    expect(screen.queryByText("result")).toBeNull();
+  });
+
+  it("shows a rejected workflow update as an error instead of a silent checklist", () => {
+    const events: ToolEvent[] = [
+      {
+        id: "w4",
+        phase: "call",
+        name: "workflow_progress",
+        payload: {
+          workflow_id: "release_review",
+          items: [{ id: "run-tests", label: "Run tests", input: "Diff", output: "Results", validation: "Run suite", status: "done" }],
+        },
+      },
+      {
+        id: "w4",
+        phase: "result",
+        name: "workflow_progress",
+        payload: { ok: false, workflow_id: "release_review", error: "Every completed workflow item requires observed validation_evidence." },
+      },
+    ];
+
+    render(<ToolList events={events} />);
+    fireEvent.click(screen.getByText("workflow_progress"));
+
+    expect(screen.getByText("Update rejected: Every completed workflow item requires observed validation_evidence.")).toBeTruthy();
+  });
+
+  it("offers a per-step retry that asks the agent to redo that step", () => {
+    const onRetry = vi.fn();
+    const events: ToolEvent[] = [{
+      id: "w3",
+      phase: "call",
+      name: "workflow_progress",
+      payload: {
+        workflow_id: "release_review",
+        items: [
+          { id: "check-changes", label: "Review changes", input: "Diff", output: "Findings", validation: "Inspect files", validation_evidence: "Diff reviewed", status: "done" },
+          { id: "run-tests", label: "Run tests", input: "Findings", output: "Results", validation: "Run suite", status: "needs_attention" },
+          { id: "report-result", label: "Report result", input: "Results", output: "Summary", validation: "Cross-check" },
+        ],
+      },
+    }];
+
+    render(
+      <WorkflowStepRetryContext.Provider value={onRetry}>
+        <ToolList events={events} />
+      </WorkflowStepRetryContext.Provider>,
+    );
+    fireEvent.click(screen.getByText("workflow_progress"));
+
+    expect(screen.getByRole("button", { name: "Retry Review changes" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry Report result" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry Run tests" }));
+    expect(onRetry).toHaveBeenCalledWith({ workflowId: "release_review", itemId: "run-tests", label: "Run tests" });
+    expect(workflowStepRetryMessage({ workflowId: "release_review", itemId: "run-tests", label: "Run tests" }))
+      .toContain("complete items snapshot");
+    expect(workflowStepRetryMessage({ workflowId: "version_adoption", itemId: "adapt-settings", label: "Adapt settings" }))
+      .toContain('item_id: "adapt-settings"');
   });
 
   it("previews agent-created workflow items while the tool call is running", () => {
@@ -403,8 +456,8 @@ describe("ToolList — live progress (ADR-0073)", () => {
     expect(screen.getAllByText("Review changes").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Run tests").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Report result").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("done")).toBeTruthy();
-    expect(screen.getByLabelText("checking")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "verified" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "checking" })).toBeTruthy();
   });
 
   it("renders an invoke_tool dispatch under the target tool's name, args and result", () => {
