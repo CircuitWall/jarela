@@ -27,7 +27,7 @@ function AuthHeader({ status, polling, onSignIn, onSignOut }: HeaderProps) {
       <div className="text-fg-muted">
         <strong>GitHub Copilot sign-in</strong>
         <p className="text-fg-faint mt-0.5">
-          Unlocks full model context windows (vs. the 8k cap on raw PATs via GitHub Models).
+          Required for Copilot models; GitHub PAT authentication is no longer supported.
         </p>
       </div>
       {status?.signed_in ? (

@@ -410,13 +410,8 @@ export async function probeCohere(): Promise<HealthResult> {
 }
 
 export async function probeGithubCopilot(): Promise<HealthResult> {
-  // Two credential paths share this probe:
-  //   1. Device-flow OAuth token (stored under memory_store namespace
-  //      "github-copilot-auth" by the in-app sign-in). Verified by
-  //      exchanging it for a Copilot session token.
-  //   2. Personal Access Token saved via the Integrations panel.
-  //      PATs cannot be exchanged, so we check them against the GitHub
-  //      Models REST surface which Copilot PATs are routed to.
+  // Device-flow OAuth token stored under the github-copilot-auth namespace.
+  // Legacy PAT credentials used GitHub Models, which has been retired.
   const oauth = getStoredCopilotOAuthToken();
   if (oauth) {
     try {
@@ -441,30 +436,9 @@ export async function probeGithubCopilot(): Promise<HealthResult> {
       return transient(describeError(err));
     }
   }
-  const pat = getIntegrationRaw("github-copilot")?.api_key?.trim();
-  if (!pat) return unconfigured("Not signed in and no PAT configured");
-  try {
-    const res = await fetch("https://models.github.ai/catalog/models", {
-      headers: {
-        Authorization: `Bearer ${pat}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2026-03-10",
-        "User-Agent": "Jarela",
-      },
-      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
-    });
-    if (res.status === 401 || res.status === 403) {
-      return authFailed(`GitHub rejected the PAT (${res.status}). Confirm the token has the "copilot" scope and your subscription is active.`);
-    }
-    if (res.status === 429) return transient("GitHub rate-limited the probe (429).");
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return probeError(`GitHub Models ${res.status}: ${body.slice(0, 200)}`);
-    }
-    return ok({ auth: "pat" });
-  } catch (err) {
-    return transient(describeError(err));
-  }
+  const legacyPat = getIntegrationRaw("github-copilot")?.api_key?.trim();
+  if (!legacyPat) return unconfigured("Not signed in. Use device-flow sign-in from the Models panel.");
+  return authFailed("GitHub PAT authentication is no longer supported. Use device-flow sign-in from the Models panel.");
 }
 
 export async function probeClaudeCode(): Promise<HealthResult> {

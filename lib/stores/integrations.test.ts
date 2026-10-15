@@ -175,6 +175,13 @@ describe("integrations store (credentials-backed)", () => {
     // And no credential was created as a side effect of the failed write.
     expect(listCredentials({ type: "integration", provider: "anthropic" }).length).toBe(0);
   });
+
+  it("does not create a configured row from an empty optional credential field", () => {
+    const result = saveIntegration("github-copilot", { api_key: "" });
+    expect("error" in result).toBe(true);
+    expect(getIntegrationStatus("github-copilot")?.configured).toBe(false);
+    expect(listCredentials({ type: "integration", provider: "github-copilot" })).toHaveLength(0);
+  });
 });
 
 describe("integrations store: multi-instance + ALS routing", () => {

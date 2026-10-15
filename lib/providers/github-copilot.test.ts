@@ -1,5 +1,9 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import type AnthropicNS from "@anthropic-ai/sdk";
+
+// Keep routing tests off the developer's real data directory: no stored OAuth token.
+vi.mock("./github-copilot-auth", () => ({ getStoredOAuthToken: () => null }));
+
 import { githubCopilotProvider, isCopilotClaudeModel } from "./github-copilot";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -112,5 +116,28 @@ describe("Claude-via-Copilot routing", () => {
       copilot_session_token: "synthetic-session-token",
     }, [])).rejects.toMatchObject({ status: 429 });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it.each(["ghp_synthetic", "github_pat_synthetic"])("rejects PAT %s without network access", async (apiKey) => {
+    const fetch = vi.fn(async () => new Response("{}", { status: 503 }));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(githubCopilotProvider.invoke!("gpt-4o", [{ role: "user", content: "synthetic" }], {
+      api_key: apiKey,
+    }, [])).rejects.toThrow(/PAT route used GitHub Models.*retired/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("routes explicit session tokens through the Copilot Chat endpoint", async () => {
+    const urls: string[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(input instanceof Request ? input.url : input.toString());
+      return new Response("{}", { status: 503 });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(githubCopilotProvider.invoke!("gpt-4o", [{ role: "user", content: "synthetic" }], {
+      copilot_session_token: "synthetic-session-token",
+    }, [])).rejects.toThrow();
+    expect(urls).toEqual(["https://api.githubcopilot.com/chat/completions"]);
   });
 });

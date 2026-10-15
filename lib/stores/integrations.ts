@@ -176,11 +176,10 @@ export const INTEGRATIONS = {
     label: "GitHub Copilot",
     category: "llm" as IntegrationCategory,
     description:
-      "Routes chat-completion requests through your Copilot subscription. Paste a GitHub PAT " +
-      "with `copilot` scope from github.com/settings/tokens, or run the device-flow sign-in in " +
-      "the Models panel.",
+      "Routes chat-completion requests through your Copilot subscription. Use the device-flow " +
+      "sign-in in the Models panel; legacy GitHub PAT authentication is no longer supported.",
     fields: [
-      { key: "api_key", label: "GitHub PAT", placeholder: "ghp_… or github_pat_…", secret: true, required: true },
+      { key: "api_key", label: "Legacy GitHub PAT (unsupported)", placeholder: "Use Models panel sign-in", secret: true, required: false },
     ],
   },
   gmail: {
@@ -437,6 +436,7 @@ export function saveIntegration(name: string, incoming: Record<string, string>):
       else if (f.required) return { error: `missing required secret "${f.key}"` };
     } else {
       if (f.required && !v.trim()) return { error: `"${f.key}" cannot be empty` };
+      if (!v.trim()) continue;
       merged[f.key] = v;
       if (existing[f.key] !== v) touched.push(f.key);
     }

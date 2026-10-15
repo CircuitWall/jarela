@@ -200,7 +200,7 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
       icon={<KeyRound size={18} />}
       eyebrow="Step 2 · Credentials"
       title="Connect provider credentials in the UI first"
-      description="Use the built-in credential forms as the main setup path. They work for Claude, GPT, Gemini, Copilot, and other providers without depending on your shell environment."
+      description="Use the built-in credential forms as the main setup path for Claude, GPT, Gemini, and other providers. GitHub Copilot uses device-flow sign-in in the Models panel."
     >
       <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 text-xs text-fg">
         <p className="font-medium">Recommended path</p>

@@ -56,8 +56,17 @@ export async function GET(req: NextRequest, { params }: Params) {
       },
     });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return catalogErrorResponse(err);
   }
+}
+
+// Raised when the saved configuration itself is unusable, so callers get a
+// 4xx they can act on instead of a generic server error.
+class CatalogConfigError extends Error {}
+
+function catalogErrorResponse(err: unknown): NextResponse {
+  const status = err instanceof CatalogConfigError ? 400 : 500;
+  return NextResponse.json({ error: String(err) }, { status });
 }
 
 // POST allows the editor to ship the in-form credentials (api_key /
@@ -71,7 +80,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const models = await fetchCatalog(provider, body.params);
     return NextResponse.json(models, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    return catalogErrorResponse(err);
   }
 }
 
@@ -162,13 +171,8 @@ async function fetchOpenAICatalog(): Promise<CatalogModel[]> {
 // ── GitHub Copilot ────────────────────────────────────────────────────────────
 
 async function fetchGitHubCopilotCatalog(): Promise<CatalogModel[]> {
-  // We deliberately do NOT return the broad GitHub Models cross-publisher
-  // registry here — that lists hundreds of models from every vendor, which is
-  // confusing when the user is configuring the "github-copilot" provider
-  // specifically. We mirror what Copilot Chat actually serves: its own
-  // /models endpoint when we have an exchangeable credential, else a curated
-  // fallback list. Users who want the raw GitHub Models catalog can type the
-  // namespaced model id directly into the Model ID field.
+  // Use Copilot Chat's account-specific /models endpoint when an exchangeable
+  // credential is available, otherwise return a curated fallback list.
 
   // 1. Prefer the in-app device-flow OAuth token — it can be exchanged.
   const { getStoredOAuthToken } = await import("@/lib/providers/github-copilot-auth");
@@ -193,8 +197,16 @@ async function fetchGitHubCopilotCatalog(): Promise<CatalogModel[]> {
         if (list.length > 0) return list;
       } catch { /* fall through */ }
     }
-    const apiKey = (params.api_key as string | undefined) ?? process.env.GITHUB_TOKEN;
-    if (apiKey && !isLikelyGitHubPat(apiKey)) {
+    // Only the Copilot config's own api_key is considered: GITHUB_TOKEN belongs
+    // to the GitHub integration and is usually a PAT unrelated to Copilot.
+    const apiKey = (params.api_key as string | undefined)?.trim();
+    if (apiKey && isLikelyGitHubPat(apiKey)) {
+      throw new CatalogConfigError(
+        "GitHub Copilot: PAT model discovery used GitHub Models, which has been retired. " +
+        "Use device-flow sign-in in the Models panel or set copilot_session_token.",
+      );
+    }
+    if (apiKey) {
       try {
         const sessionToken = await exchangeCopilotSessionToken(apiKey);
         const list = await fetchCopilotChatCatalog(sessionToken);
@@ -203,8 +215,7 @@ async function fetchGitHubCopilotCatalog(): Promise<CatalogModel[]> {
     }
   }
 
-  // 3. Fallback: curated known-models list. Works even on a PAT — those
-  //    model IDs are valid on both Models API and Copilot Chat.
+  // 3. Fallback: curated known-models list when no credential can be exchanged.
   return githubCopilotKnownModels();
 }
 
@@ -241,13 +252,13 @@ async function fetchCopilotChatCatalog(sessionToken: string): Promise<CatalogMod
 }
 
 function isLikelyGitHubPat(token: string): boolean {
-  return token.startsWith("ghp_") || token.startsWith("github_pat_") || token.startsWith("gho_");
+  return token.startsWith("ghp_") || token.startsWith("github_pat_");
 }
 
-async function exchangeCopilotSessionToken(pat: string): Promise<string> {
+async function exchangeCopilotSessionToken(githubToken: string): Promise<string> {
   const res = await fetch("https://api.github.com/copilot_internal/v2/token", {
     headers: {
-      Authorization: `token ${pat}`,
+      Authorization: `token ${githubToken}`,
       "User-Agent": "Jarela/1.0",
     },
   });
