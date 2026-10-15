@@ -482,8 +482,16 @@ export interface ModelConfig {
   // this for legacy rows that had inline secrets.
   credential_id?: string | null;
   is_default: boolean;
+  // Disabled configs are hidden from model pickers and skipped by runtime
+  // default/router resolution; the row and its credentials are kept.
+  enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ModelConfigPatch {
+  enabled?: boolean;
+  is_default?: true;
 }
 
 export interface ModelConfigIn {

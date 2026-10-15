@@ -9,7 +9,7 @@ import { ModelEditorBody, ModelEditorOverlays } from "./model-editor/ModelEditor
 
 interface Props {
   model?: ModelConfig;
-  onSave: (name: string, data: Omit<ModelConfig, "name" | "created_at" | "updated_at">) => Promise<void>;
+  onSave: (name: string, data: Omit<ModelConfig, "name" | "enabled" | "created_at" | "updated_at">) => Promise<void>;
   onClose: () => void;
 }
 

@@ -9,7 +9,7 @@ import {
 import type { BaseMessage } from "@langchain/core/messages";
 import { getProvider } from "@/lib/providers";
 import { ProviderAuthError, isAuthErrorMessage, isRetryableProviderStreamError } from "@/lib/providers/errors";
-import { getModelConfig, getDefaultModelConfig, getModelParams, upsertModelConfig } from "@/lib/stores/model-config";
+import { getModelParams, resolveRunnableModelConfig, upsertModelConfig } from "@/lib/stores/model-config";
 import { getAllToolsAsync } from "@/lib/tools";
 import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
 import { SqliteMemoryStore } from "@/lib/stores/langgraph-store";
@@ -226,7 +226,7 @@ async function* streamWithConfigImpl(
   const runCfg = options?.agent_run_config;
 
   const cfgName = runCfg?.model_config_name ?? null;
-  const cfg = (cfgName ? getModelConfig(cfgName) : null) ?? getDefaultModelConfig();
+  const cfg = resolveRunnableModelConfig(cfgName);
 
   if (!cfg) {
     yield { type: "error", data: { message: "No model configured. Add a model in the Models panel.", code: "no_model" } };

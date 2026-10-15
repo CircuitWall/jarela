@@ -51,6 +51,7 @@ import type {
   MemorySearchHit,
   ModelConfig,
   ModelConfigIn,
+  ModelConfigPatch,
   Credential,
   CredentialIn,
   StreamOptions,
@@ -772,8 +773,10 @@ export const api = {
   },
 
   models: {
+    // `no-store`: the server's short Cache-Control TTL would otherwise serve
+    // a stale list right after enable/disable/default writes.
     list: (opts?: { force?: boolean }) =>
-      cachedList(modelListCache, () => request<ModelConfig[]>("/models"), setModelListCache, opts?.force === true),
+      cachedList(modelListCache, () => request<ModelConfig[]>("/models", { cache: "no-store" }), setModelListCache, opts?.force === true),
     providers: () => request<string[]>("/providers"),
     catalog: (provider: string, overrides?: Record<string, unknown>) =>
       overrides
@@ -808,6 +811,14 @@ export const api = {
       const updated = await request<ModelConfig>(`/models/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) });
       if (modelListCache.data) setModelListCache(modelListCache.data.map((m) => (m.name === name ? updated : m)));
       else invalidateModelListCache();
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
+      return updated;
+    },
+    patch: async (name: string, data: ModelConfigPatch) => {
+      const updated = await request<ModelConfig>(`/models/${encodeURIComponent(name)}`, { method: "PATCH", body: JSON.stringify(data) });
+      // Enabling/disabling or setting the default can move the default flag
+      // on other rows, so drop the cached list instead of patching one row.
+      invalidateModelListCache();
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
       return updated;
     },

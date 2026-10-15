@@ -71,8 +71,7 @@ vi.mock("@/lib/stores/agent-configs", () => ({
   getAgentTierProportions: () => null,
 }));
 vi.mock("@/lib/stores/model-config", () => ({
-  getDefaultModelConfig: () => ({ name: "model-1" }),
-  getModelConfig: () => ({ provider: "mock", model_id: "mock-1" }),
+  resolveRunnableModelConfig: () => ({ name: "model-1", provider: "mock", model_id: "mock-1" }),
   getModelParams: () => ({}),
 }));
 vi.mock("@/lib/providers", () => ({ getProvider: () => ({}) }));

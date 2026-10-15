@@ -1,5 +1,5 @@
 "use client";
-import { ArrowUpRight, Cpu, Plus, Star, Trash2 } from "lucide-react";
+import { ArrowUpRight, Cpu, Plus, Power, PowerOff, Star, Trash2 } from "lucide-react";
 import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { useEffect, useRef, useState } from "react";
 import type { ModelConfig } from "@/api/types";
@@ -37,7 +37,7 @@ interface EnvEntry {
 }
 
 export function ModelsPanel() {
-  const { models, assignments, loading, create, update, remove, refresh } = useModels();
+  const { models, assignments, loading, create, update, setDefault, setEnabled, remove, refresh } = useModels();
   const { agents, loading: agentsLoading } = useAgents();
   const strategyOverrides = agents.filter((agent) => agent.usage_strategy != null);
   const [editing, setEditing] = useState<ModelConfig | null | "new">(null);
@@ -93,14 +93,28 @@ export function ModelsPanel() {
     return () => { cancelled = true; };
   }, []);
 
-  async function handleSave(name: string, data: Omit<ModelConfig, "name" | "created_at" | "updated_at">) {
+  async function handleSave(name: string, data: Omit<ModelConfig, "name" | "enabled" | "created_at" | "updated_at">) {
     if (editing === "new") await create(name, data);
     else if (editing) await update(name, data);
     refresh();
   }
 
   async function handleSetDefault(m: ModelConfig) {
-    await update(m.name, { provider: m.provider, model_id: m.model_id, params: m.params, is_default: true });
+    setDeleteError(null);
+    try {
+      await setDefault(m.name);
+    } catch (e) {
+      setDeleteError(`Could not set "${m.name}" as default: ${errorMessage(e)}`);
+    }
+  }
+
+  async function handleToggleEnabled(m: ModelConfig) {
+    setDeleteError(null);
+    try {
+      await setEnabled(m.name, !m.enabled);
+    } catch (e) {
+      setDeleteError(`Could not ${m.enabled ? "disable" : "enable"} "${m.name}": ${errorMessage(e)}`);
+    }
   }
 
   async function handleRemove(name: string) {
@@ -283,14 +297,17 @@ export function ModelsPanel() {
           {models.map((m) => {
             const inUse = assignments.some((a) => a.model_config_name === m.name);
             return (
-            <div key={m.name} data-deep-link-id={m.name} onClick={() => setEditing(m)} className="flex items-center gap-3 py-2.5 border-b border-border/60 group cursor-pointer hover:bg-surface-3/30 transition-colors">
+            <div key={m.name} data-deep-link-id={m.name} onClick={() => setEditing(m)} className={`flex items-center gap-3 py-2.5 border-b border-border/60 group cursor-pointer hover:bg-surface-3/30 transition-colors ${m.enabled ? "" : "opacity-60"}`}>
               <span className="shrink-0 text-fg-subtle">
                 <ProviderLogo name={m.provider} size={22} />
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-sm font-medium text-fg">{m.name}</span>
+                  <span className={`text-sm font-medium ${m.enabled ? "text-fg" : "text-fg-subtle line-through"}`}>{m.name}</span>
                   {m.is_default && <Star size={11} className="text-yellow-700 dark:text-yellow-400 fill-yellow-400 shrink-0" />}
+                  {!m.enabled && (
+                    <span className="text-xs px-1.5 py-0.5 rounded border bg-surface-2 text-fg-muted border-border">disabled</span>
+                  )}
                   <span className={`text-xs px-1.5 py-0.5 rounded border ${PROVIDER_COLORS[m.provider] ?? "bg-surface-2 text-fg-muted border-border"}`}>
                     {m.provider}
                   </span>
@@ -301,11 +318,20 @@ export function ModelsPanel() {
                 </div>
               </div>
               <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-                {!m.is_default && (
-                  <button onClick={(e) => { e.stopPropagation(); handleSetDefault(m); }} className="p-1 text-fg-subtle hover:text-yellow-700 dark:hover:text-yellow-400 transition-colors" title="Set as default">
+                {!m.is_default && m.enabled && (
+                  <button onClick={(e) => { e.stopPropagation(); void handleSetDefault(m); }} className="p-1 text-fg-subtle hover:text-yellow-700 dark:hover:text-yellow-400 transition-colors" title="Set as default">
                     <Star size={13} />
                   </button>
                 )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); void handleToggleEnabled(m); }}
+                  className="p-1 text-fg-subtle hover:text-fg transition-colors"
+                  title={m.enabled ? "Disable; hide from model selection" : "Enable; show in model selection"}
+                  aria-label={m.enabled ? `Disable ${m.name}` : `Enable ${m.name}`}
+                  aria-pressed={!m.enabled}
+                >
+                  {m.enabled ? <Power size={13} /> : <PowerOff size={13} />}
+                </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); handleRemove(m.name); }}
                   className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"

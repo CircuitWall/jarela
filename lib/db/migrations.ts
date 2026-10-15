@@ -469,6 +469,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureCredentialsTable(db);
   ensureCredentialsLabelAndDefaultColumns(db);
   ensureModelConfigCredentialIdColumn(db);
+  ensureModelConfigEnabledColumn(db);
   ensureAgentConfigsToolCredentialsColumn(db);
   seedAgentConfigs(db);
   backfillDeveloperInteractiveTerminalTools(db);
@@ -1550,6 +1551,15 @@ function ensureModelConfigCredentialIdColumn(db: DatabaseSync): void {
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("credential_id")) {
     db.exec("ALTER TABLE model_configs ADD COLUMN credential_id TEXT");
+  }
+}
+
+// ADR-0102: disabled model configs stay saved but are hidden from model
+// selection, routing, and default fallback. Existing rows default to enabled.
+function ensureModelConfigEnabledColumn(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(model_configs)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "enabled")) {
+    db.exec("ALTER TABLE model_configs ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1");
   }
 }
 

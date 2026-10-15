@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getModelConfig, listModelConfigs, upsertModelConfig, withModelConfigMutation } from "@/lib/stores/model-config";
+import { getModelConfig, isModelConfigEnabled, listModelConfigs, upsertModelConfig, withModelConfigMutation } from "@/lib/stores/model-config";
 import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
@@ -65,6 +65,7 @@ export function GET() {
     ...r,
     params: redactInlineParams(r.params),
     is_default: Boolean(r.is_default),
+    enabled: isModelConfigEnabled(r),
   })), 15, 60);
 }
 
@@ -79,13 +80,14 @@ export async function POST(req: NextRequest) {
       body.provider,
       body.model_id,
       enriched,
-      body.is_default ?? false,
+      body.is_default,
       body.credential_id ?? null,
     );
     return createdResponse({
       ...r,
       params: redactInlineParams(r.params),
       is_default: Boolean(r.is_default),
+      enabled: isModelConfigEnabled(r),
     });
   });
 }

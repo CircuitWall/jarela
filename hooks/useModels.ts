@@ -15,6 +15,8 @@ export function useModels(): UnifiedHookResult<
     refresh: () => Promise<void>;
     create: (name: string, data: ModelConfigIn) => Promise<ModelConfig>;
     update: (name: string, data: ModelConfigIn) => Promise<ModelConfig>;
+    setDefault: (name: string) => Promise<ModelConfig>;
+    setEnabled: (name: string, enabled: boolean) => Promise<ModelConfig>;
     remove: (name: string) => Promise<void>;
     assign: (agent_id: string, model_config_name: string, tool_policy?: ToolPolicy) => Promise<TaskAssignment>;
     unassign: (agent_id: string) => Promise<void>;
@@ -61,6 +63,18 @@ export function useModels(): UnifiedHookResult<
     return m;
   }, [refreshModels]);
 
+  const setDefault = useCallback(async (name: string) => {
+    const m = await api.models.patch(name, { is_default: true });
+    await refreshModels();
+    return m;
+  }, [refreshModels]);
+
+  const setEnabled = useCallback(async (name: string, enabled: boolean) => {
+    const m = await api.models.patch(name, { enabled });
+    await refreshModels();
+    return m;
+  }, [refreshModels]);
+
   const remove = useCallback(async (name: string): Promise<void> => {
     await api.models.delete(name);
     await refreshModels();
@@ -82,7 +96,7 @@ export function useModels(): UnifiedHookResult<
   }, [setAssignments]);
 
   const state = { models, assignments, loading, error };
-  const commands = { refresh, create, update, remove, assign, unassign };
+  const commands = { refresh, create, update, setDefault, setEnabled, remove, assign, unassign };
 
   return {
     state,
@@ -94,6 +108,8 @@ export function useModels(): UnifiedHookResult<
     refresh,
     create,
     update,
+    setDefault,
+    setEnabled,
     remove,
     assign,
     unassign,

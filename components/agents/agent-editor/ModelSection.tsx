@@ -1,4 +1,5 @@
 import type { ModelConfig } from "@/api/types";
+import { isModelEnabled } from "@/lib/agents/effective-model";
 import { isProviderClassified, modelSupportsImages } from "@/lib/providers/capabilities";
 import { CapBadges } from "@/components/models/CapBadges";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
@@ -19,8 +20,10 @@ interface Props {
 
 export function ModelSection({ form, models, integrations, onClose }: Props) {
   const { dispatch } = useAppContext();
-  const defaultModel = models.find((m) => m.is_default);
-  const selectedModel = models.find((m) => m.name === form.modelConfigName) ?? defaultModel;
+  const enabledModels = models.filter(isModelEnabled);
+  const defaultModel = enabledModels.find((m) => m.is_default) ?? enabledModels[0];
+  const forcedModel = enabledModels.find((m) => m.name === form.modelConfigName);
+  const selectedModel = forcedModel ?? defaultModel;
   const readiness = computeFeatureReadiness({
     models,
     integrations,
@@ -48,7 +51,7 @@ export function ModelSection({ form, models, integrations, onClose }: Props) {
         ) : (
           <p className="text-[11px] text-amber-700 dark:text-amber-400">No default fallback model is configured yet.</p>
         )}
-        {form.modelConfigName && models.find((m) => m.name === form.modelConfigName) && (
+        {forcedModel && (
           <p className="text-[11px] text-sky-700 dark:text-sky-400">
             This agent currently has a forced model override. Clear it in Advanced settings to return to router-driven selection.
           </p>

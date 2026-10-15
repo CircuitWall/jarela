@@ -22,7 +22,7 @@ import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { getMemoryPolicy } from "@/lib/stores/app-settings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
-import { getDefaultModelConfig, getModelConfig, getModelParams, listModelConfigs } from "@/lib/stores/model-config";
+import { getDefaultModelConfig, getModelConfig, getModelParams, isModelConfigEnabled, listEnabledModelConfigs } from "@/lib/stores/model-config";
 import {
   buildHistoryWindow,
   buildSystemPrompt,
@@ -425,9 +425,11 @@ export function snapshotThreadModelConfigName(thread_id: string): string | null 
   const agentCfg = getAgentConfig(thread.agent_id);
   if (!agentCfg) return null;
 
-  if (agentCfg.model_config_name) return agentCfg.model_config_name;
+  if (agentCfg.model_config_name && isModelConfigEnabled(getModelConfig(agentCfg.model_config_name))) {
+    return agentCfg.model_config_name;
+  }
   if (getConfig().modelRouterMode !== "off") return null;
-  return agentCfg.model_config_name ?? getDefaultModelConfig()?.name ?? null;
+  return getDefaultModelConfig()?.name ?? null;
 }
 
 export function appendHistoryMessage(
@@ -578,7 +580,9 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   let modelConfigName = req._pinned_model_config_name
     ?? agentCfg.model_config_name
     ?? null;
-  if (modelConfigName && !getModelConfig(modelConfigName)) {
+  // Missing or disabled configs fall through to routing / the default; a
+  // disabled agent override is kept so re-enabling the model restores it.
+  if (modelConfigName && !isModelConfigEnabled(getModelConfig(modelConfigName))) {
     modelConfigName = null;
   }
   let routeDecision: RouteDecisionMetadata | null = null;
@@ -607,13 +611,14 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   if (!modelConfigName && useRouter) {
     const pricingTables = getPricingTables();
     const routed = routeTurnModel({
-      models: listModelConfigs().map((cfg) => ({
+      models: listEnabledModelConfigs().map((cfg) => ({
         name: cfg.name,
         provider: cfg.provider,
         model_id: cfg.model_id,
         params: getModelParams(cfg),
         credential_id: cfg.credential_id ?? null,
         is_default: cfg.is_default === 1,
+        enabled: true,
         created_at: cfg.created_at,
         updated_at: cfg.updated_at,
       })),

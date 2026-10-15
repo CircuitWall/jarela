@@ -3,7 +3,7 @@ import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
 import { summarizeTranscript, transcriptText, extractTopicSegments, validateTopicSegments, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
 import { takeRecentWarmMessages, warmSummaryMessageLimit, wrapWarmSummary, AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-configs";
-import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
+import { getModelParams, resolveRunnableModelConfig } from "@/lib/stores/model-config";
 import { putMemory } from "@/lib/stores/memory";
 import {
   commitThreadWarmContext,
@@ -168,8 +168,7 @@ export async function findTopicBoundary(threadId: string, boundarySeq: number): 
   if (!thread) return null;
   const agent = getAgentConfig(thread.agent_id);
   if (!agent) return null;
-  const modelName = agent.model_config_name ?? getDefaultModelConfig()?.name ?? null;
-  const modelCfg = modelName ? getModelConfig(modelName) : null;
+  const modelCfg = resolveRunnableModelConfig(agent.model_config_name);
   if (!modelCfg?.provider || !modelCfg.model_id) return null;
 
   const rows = getRecentMessagesWindow(threadId, 0, undefined, "foreground")
@@ -339,8 +338,7 @@ async function buildSummaryBefore(
   const agent = getAgentConfig(thread.agent_id);
   if (!agent) return null;
 
-  const modelName = agent.model_config_name ?? getDefaultModelConfig()?.name ?? null;
-  const modelCfg = modelName ? getModelConfig(modelName) : null;
+  const modelCfg = resolveRunnableModelConfig(agent.model_config_name);
   if (!modelCfg?.provider || !modelCfg.model_id) return null;
 
   const baseParams = providerOverride?.params ?? getModelParams(modelCfg);
@@ -491,8 +489,7 @@ async function buildAutomationChannelSummaryBefore(
   const agent = getAgentConfig(thread.agent_id);
   if (!agent) return null;
 
-  const modelName = agent.model_config_name ?? getDefaultModelConfig()?.name ?? null;
-  const modelCfg = modelName ? getModelConfig(modelName) : null;
+  const modelCfg = resolveRunnableModelConfig(agent.model_config_name);
   if (!modelCfg?.provider || !modelCfg.model_id) return null;
 
   const baseParams = providerOverride?.params ?? getModelParams(modelCfg);

@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { deleteModelConfig, getModelConfig, upsertModelConfig, withModelConfigMutation } from "@/lib/stores/model-config";
+import {
+  deleteModelConfig,
+  getModelConfig,
+  isModelConfigEnabled,
+  ModelConfigStateError,
+  setDefaultModelConfig,
+  setModelConfigEnabled,
+  upsertModelConfig,
+  withModelConfigMutation,
+} from "@/lib/stores/model-config";
+import { withDbTransaction } from "@/lib/db/transaction";
 import { validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
@@ -13,6 +23,17 @@ const PutBody = z.object({
   params: z.record(z.string(), z.unknown()).optional(),
   is_default: z.boolean().optional(),
   credential_id: z.string().nullable().optional(),
+});
+
+// Targeted state changes that must not re-send (and re-process) the whole
+// config. Each request is applied in a single transaction.
+const PatchBody = z.object({
+  enabled: z.boolean().optional(),
+  is_default: z.literal(true).optional(),
+}).strict().refine((b) => b.enabled !== undefined || b.is_default !== undefined, {
+  message: "provide enabled and/or is_default",
+}).refine((b) => !(b.enabled === false && b.is_default === true), {
+  message: "a disabled model cannot be the default",
 });
 
 // Mirror /api/v1/models GET: never echo plaintext secrets back to the
@@ -64,11 +85,41 @@ export async function PUT(req: NextRequest, { params }: Params) {
       body.provider,
       body.model_id,
       enriched,
-      body.is_default ?? false,
+      body.is_default,
       body.credential_id ?? null,
     );
-    return NextResponse.json({ ...r, params: redactInlineParams(r.params), is_default: Boolean(r.is_default) });
+    return NextResponse.json(toResponse(r));
   });
+}
+
+export async function PATCH(req: NextRequest, { params }: Params) {
+  const { name } = await params;
+  const body = await validateBody(req, PatchBody);
+  if (body instanceof NextResponse) return body;
+  try {
+    const r = withDbTransaction(() => {
+      let row = getModelConfig(name);
+      if (!row) throw new ModelConfigStateError(`Model config "${name}" not found`, 404);
+      if (body.enabled !== undefined) row = setModelConfigEnabled(name, body.enabled);
+      if (body.is_default) row = setDefaultModelConfig(name);
+      return row;
+    });
+    return NextResponse.json(toResponse(r));
+  } catch (err) {
+    if (err instanceof ModelConfigStateError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
+  }
+}
+
+function toResponse(r: NonNullable<ReturnType<typeof getModelConfig>>) {
+  return {
+    ...r,
+    params: redactInlineParams(r.params),
+    is_default: Boolean(r.is_default),
+    enabled: isModelConfigEnabled(r),
+  };
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
