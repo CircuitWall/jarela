@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
 .SYNOPSIS
     Windows task runner for Jarela — Makefile-equivalent for PowerShell.
@@ -32,7 +32,7 @@ Set-Location $RepoRoot
 $Targets = [ordered]@{
     'help'           = 'Show this help.'
     'install'        = 'npm install.'
-    'dev'            = 'Hot-reload dev server on http://localhost:3000.'
+    'dev'            = 'Hot-reload dev server on http://localhost:4312.'
     'build'          = 'Production build (standalone output).'
     'start'          = 'Serve the standalone build on http://localhost:4312.'
     'lint'           = 'Run eslint.'
@@ -40,7 +40,7 @@ $Targets = [ordered]@{
     'test-full'      = 'Extended live test suite.'
     'icons'          = 'Regenerate the logo / icon set from public\logo-source.png.'
     'clean'          = 'Remove .next, build artefacts, and node_modules cache.'
-    'install-service' = 'Install the per-user Windows scheduled task (auto-start at logon). Add -Boot to start at machine boot (requires elevated shell).'
+    'install-service' = 'Build the working tree (incl. uncommitted changes) and install it as the per-user scheduled task (auto-start at logon). Add -SkipBuild to reuse the last build, -Boot to start at machine boot (requires elevated shell).'
     'uninstall-service' = 'Remove the Jarela scheduled task and installed files.'
     'start-service' = 'Start-ScheduledTask -TaskName Jarela.'
     'stop-service'  = 'Stop-ScheduledTask  -TaskName Jarela.'
@@ -48,10 +48,10 @@ $Targets = [ordered]@{
     '*-task'        = 'Back-compat aliases for the service targets.'
     'logs'           = 'Tail the installed-task log file (Ctrl+C to stop).'
     'status'         = 'Show scheduled-task state and listener on :4312.'
-    'push'           = 'Push the current branch to the jarela remote.'
-    'scan'           = 'Run npm audit + secret scan over the whole tree.'
-    'scan-staged'    = 'Run the secret scan over staged files only (used by pre-commit hook).'
-    'install-hooks'  = 'Install .git/hooks/pre-commit to run scan-staged.'
+    'push'           = 'Push the current branch to origin.'
+    'scan'           = 'Run npm audit + secret and sensitive-term scans over the whole tree.'
+    'scan-staged'    = 'Run the secret and sensitive-term scans over staged files only.'
+    'install-hooks'  = 'Point git at the repo''s .githooks (pre-commit gate: scans, lint, typecheck, tests).'
     'backup-key'     = 'Print base64 of the at-rest master keyfile so you can store it in a password manager.'
 }
 
@@ -65,7 +65,7 @@ function Show-Help {
         Write-Host $Targets[$k]
     }
     Write-Host ''
-    Write-Host "Data dir: $env:USERPROFILE\.jarela" -ForegroundColor DarkGray
+    Write-Host "Data dir: $(Get-DataDir)" -ForegroundColor DarkGray
     Write-Host "Override with `$env:JARELA_DB_DIR" -ForegroundColor DarkGray
 }
 
@@ -80,6 +80,11 @@ function Invoke-Node([string]$Script) {
 }
 
 function Get-LogPath { Join-Path $env:LOCALAPPDATA 'Jarela\logs\app.log' }
+
+# Matches lib/db/data-dir.ts (ADR-0006).
+function Get-DataDir {
+    if ($env:JARELA_DB_DIR) { $env:JARELA_DB_DIR } else { Join-Path $env:LOCALAPPDATA 'Jarela' }
+}
 
 # ---------------------------------------------------------------------------
 # Dispatch
@@ -178,7 +183,7 @@ switch ($NormalizedTarget) {
             Write-Host '(nothing listening)'
         }
         Write-Host '=== Data dir ===' -ForegroundColor Cyan
-        $dir = if ($env:JARELA_DB_DIR) { $env:JARELA_DB_DIR } else { Join-Path $env:USERPROFILE '.jarela' }
+        $dir = Get-DataDir
         if (Test-Path $dir) {
             Get-ChildItem $dir -Force | Select-Object Name, Length, LastWriteTime |
                 Format-Table -AutoSize | Out-String | Write-Host
@@ -189,7 +194,7 @@ switch ($NormalizedTarget) {
 
     'push' {
         $branch = (& git rev-parse --abbrev-ref HEAD).Trim()
-        & git push jarela $branch
+        & git push -u origin $branch
         if ($LASTEXITCODE -ne 0) { throw "git push failed (exit $LASTEXITCODE)" }
     }
 
@@ -201,28 +206,24 @@ switch ($NormalizedTarget) {
         Write-Host '=== secret scan (all tracked files) ===' -ForegroundColor Cyan
         & node scripts/scan-secrets.mjs --all
         if ($LASTEXITCODE -ne 0) { throw "secret scan failed (exit $LASTEXITCODE)" }
+        Write-Host '=== sensitive-term scan (all tracked files) ===' -ForegroundColor Cyan
+        & node scripts/scan-sensitive-terms.mjs --all
+        if ($LASTEXITCODE -ne 0) { throw "sensitive-term scan failed (exit $LASTEXITCODE)" }
         if ($auditExit -ne 0) { throw "npm audit reported high/critical issues (exit $auditExit)" }
     }
 
     'scan-staged' {
         & node scripts/scan-secrets.mjs --staged
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        & node scripts/scan-sensitive-terms.mjs --staged
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     }
 
     'install-hooks' {
-        $hookDir = Join-Path $RepoRoot '.git\hooks'
-        if (-not (Test-Path $hookDir)) { throw "no .git/hooks dir - is this a git checkout?" }
-        $hookFile = Join-Path $hookDir 'pre-commit'
-        $hookBody = @'
-#!/bin/sh
-# Installed by `make.ps1 install-hooks`. Aborts the commit if any staged
-# file looks like it contains a high-value secret (OpenAI/GitHub/Google
-# tokens, AWS keys, private key blocks). See scripts/scan-secrets.mjs.
-exec node scripts/scan-secrets.mjs --staged
-'@
-        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($hookFile, $hookBody, $utf8NoBom)
-        Write-Host "installed pre-commit hook -> $hookFile" -ForegroundColor Green
+        # The committed hooks live in .githooks; .git\hooks is ignored once
+        # core.hooksPath is set.
+        & node scripts/setup-git-hooks.mjs
+        if ($LASTEXITCODE -ne 0) { throw "hook setup failed (exit $LASTEXITCODE)" }
     }
 
     'backup-key' {
