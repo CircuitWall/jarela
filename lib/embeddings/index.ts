@@ -26,6 +26,7 @@ import {
 } from "@/lib/memory/record";
 import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID } from "./constants";
 import { embedLocally, type LocalEmbeddingTask } from "./local";
+import { LocalModelNotReadyError } from "./local-model";
 
 // Sensitive namespaces (ADR-0005) are never surfaced via recall: their
 // values are encrypted at rest, and credentials should not reach agent
@@ -197,6 +198,7 @@ export async function embedOne(text: string): Promise<number[] | null> {
 // problem that retrying won't fix.
 const TRANSIENT_RE = /\b(429|5\d\d|ECONNRESET|ETIMEDOUT|EAI_AGAIN|UND_ERR_(SOCKET|CONNECT_TIMEOUT)|fetch failed)\b/;
 function isTransient(err: unknown): boolean {
+  if ((err as { transient?: unknown } | null)?.transient === true) return true;
   return TRANSIENT_RE.test(errorMessage(err));
 }
 
@@ -213,7 +215,9 @@ async function callEmbedWithRetry(
       return await client.embed(texts);
     } catch (err) {
       lastErr = err;
-      if (attempt >= backoffs.length || !isTransient(err)) break;
+      // A model download does not finish within this backoff; fail fast and
+      // let the caller's next pass pick it up.
+      if (attempt >= backoffs.length || !isTransient(err) || err instanceof LocalModelNotReadyError) break;
       await new Promise((r) => setTimeout(r, backoffs[attempt]));
     }
   }

@@ -92,6 +92,8 @@ try {
     "package/scripts/first-run-prompt.mjs",
     "package/scripts/start-prod.mjs",
     "package/scripts/prepare-local-embedding-model.mjs",
+    "package/lib/embeddings/local-model-assets.mjs",
+    "package/lib/embeddings/fetch-with-retry.mjs",
     "package/scripts/run-workspace-script-if-present.mjs",
     "package/scripts/prune-npm-source-maps.mjs",
     // The extension rebranding step (ADR-0077) is only reachable by an
@@ -120,8 +122,8 @@ try {
   if (!listing.some((entry) => entry.startsWith("package/.next/standalone/.next/static/"))) {
     throw new Error("npm tarball is missing hydrated .next/static assets inside the standalone bundle");
   }
-  if (!listing.includes("package/.next/standalone/.jarela-assets/local-embedding/Xenova/multilingual-e5-small/onnx/model_quantized.onnx")) {
-    throw new Error("npm tarball is missing the bundled local embedding model");
+  if (listing.some((entry) => entry.startsWith("package/.next/standalone/.jarela-assets/"))) {
+    throw new Error("npm tarball must not bundle the local embedding model; it is downloaded on first use (ADR-0101)");
   }
 
   const packedManifest = run("tar", ["-xOf", filename, "package/package.json"]);
@@ -157,11 +159,13 @@ try {
     '}',
     'require(onnxRuntime);',
   ].join("\n")], { cwd: extractedPackageRoot });
+  // Fetch/verify the pinned model (cached in CI) and run it through the
+  // installed ONNX runtime the package resolves.
+  run("node", ["scripts/prepare-local-embedding-model.mjs"], { cwd: repoRoot });
   run("node", ["-e", [
     '(async () => {',
-    '  const { resolve } = require("node:path");',
     '  const { env, pipeline } = await import("@huggingface/transformers");',
-    '  env.localModelPath = resolve(process.cwd(), ".next/standalone/.jarela-assets/local-embedding");',
+    `  env.localModelPath = ${JSON.stringify(join(repoRoot, ".jarela-assets", "local-embedding"))};`,
     '  env.allowRemoteModels = false;',
     '  env.allowLocalModels = true;',
     '  const extractor = await pipeline("feature-extraction", "Xenova/multilingual-e5-small", { dtype: "q8" });',

@@ -8,8 +8,9 @@
 // standalone mode at all). This postbuild step makes `npm run build` produce
 // a self-contained runnable bundle on every platform.
 
-import { cpSync, existsSync } from "node:fs";
+import { cpSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { ensureLocalModelAssets } from "../lib/embeddings/local-model-assets.mjs";
 import { findStandaloneFootprintProblems, pruneStandaloneFootprint } from "./standalone-footprint.mjs";
 
 const root = process.cwd();
@@ -37,9 +38,17 @@ cpSync(join(root, ".next", "static"), join(standalone, ".next", "static"), {
   recursive: true,
   force: true,
 });
-cpSync(join(root, ".jarela-assets"), join(standalone, ".jarela-assets"), {
-  recursive: true,
-  force: true,
-});
+// The Jarela Local embedding model (~136 MB) is downloaded on first use
+// (ADR-0101). Offline/air-gapped builds opt into bundling it.
+const bundleModel = process.env.JARELA_BUNDLE_LOCAL_EMBEDDING === "1";
+const standaloneAssets = join(standalone, ".jarela-assets");
+rmSync(standaloneAssets, { recursive: true, force: true });
+if (bundleModel) {
+  const assets = join(root, ".jarela-assets", "local-embedding");
+  await ensureLocalModelAssets(assets);
+  cpSync(assets, join(standaloneAssets, "local-embedding"), { recursive: true, force: true });
+}
 
-console.log("[postbuild] hydrated .next/standalone/ with public, .next/static, and bundled model assets");
+console.log(
+  `[postbuild] hydrated .next/standalone/ with public and .next/static${bundleModel ? " plus the bundled local embedding model" : ""}`,
+);
