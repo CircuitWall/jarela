@@ -46,7 +46,7 @@ export const memoryUpsertTool = tool(
   {
     name: "memory_upsert",
     description:
-      "Store a durable, structured memory record for proactive semantic recall. Use namespace='facts' for information that should surface in future conversations. Store explicit user preferences, verified facts, decisions, constraints, and reusable project context; do not store transient chat details or secrets. Use an expiry for temporary facts, and status='archived' to soft-retire a record instead of deleting it.",
+      "Store a durable, structured memory record for proactive semantic recall. Use namespace='facts' for information that should surface in future conversations. Store explicit user preferences, verified facts, decisions, constraints, and reusable project context; do not store transient chat details or secrets. Use an expiry for temporary facts, and status='archived' to soft-retire a record instead of deleting it. Save proactively in the same turn the information appears so other agents can use it immediately; do not defer to background compaction.",
     schema: z.object({
       namespace: z.string().describe("Memory namespace. Use 'facts' for proactively recalled durable knowledge."),
       key: z.string().describe("Stable, descriptive key such as 'user-research-preference' or 'project-auth-decision'."),
