@@ -389,6 +389,11 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
     try {
       const res = await fetch(`${BASE}${path}`, {
         headers: { "Content-Type": "application/json", ...fetchInit.headers },
+        // The in-memory list/value caches above are the client cache layer
+        // and are invalidated on writes. The browser HTTP cache would honor
+        // the server's short max-age and serve a stale list right after a
+        // save, so bypass it unless a caller opts in.
+        cache: "no-store",
         ...fetchInit,
         signal: timeoutCtrl.signal,
       });
@@ -773,10 +778,8 @@ export const api = {
   },
 
   models: {
-    // `no-store`: the server's short Cache-Control TTL would otherwise serve
-    // a stale list right after enable/disable/default writes.
     list: (opts?: { force?: boolean }) =>
-      cachedList(modelListCache, () => request<ModelConfig[]>("/models", { cache: "no-store" }), setModelListCache, opts?.force === true),
+      cachedList(modelListCache, () => request<ModelConfig[]>("/models"), setModelListCache, opts?.force === true),
     providers: () => request<string[]>("/providers"),
     catalog: (provider: string, overrides?: Record<string, unknown>) =>
       overrides
@@ -929,7 +932,8 @@ export const api = {
   },
 
   dashboard: {
-    metrics: (days = 30) => request<DashboardMetrics>(`/dashboard/metrics?days=${encodeURIComponent(String(days))}`),
+    // Read-only aggregates: the server's 30s HTTP cache is intended here.
+    metrics: (days = 30) => request<DashboardMetrics>(`/dashboard/metrics?days=${encodeURIComponent(String(days))}`, { cache: "default" }),
     pricingTask: () => request<DashboardPricingTaskStatus>("/dashboard/pricing-task"),
     setupPricingTask: () => request<DashboardPricingTaskStatus>("/dashboard/pricing-task", {
       method: "POST",
