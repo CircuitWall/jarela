@@ -40,6 +40,7 @@ export interface VersionAdoptionChecklistItem {
   validation: string;
   status: VersionAdoptionChecklistStatus;
   validation_evidence?: string;
+  attempts?: number;
   reason: string;
   affected_files: string[];
   action?: VersionAdoptionAction;
@@ -201,6 +202,7 @@ function normalizeChecklistItem(value: unknown): VersionAdoptionChecklistItem | 
       ? item.validation
       : "Verify findings against the affected files; report unavailable evidence instead of inferring.",
     ...(validationEvidence ? { validation_evidence: validationEvidence } : {}),
+    ...(typeof item.attempts === "number" && Number.isInteger(item.attempts) && item.attempts > 0 ? { attempts: item.attempts } : {}),
     ...(isVersionAdoptionAction(item.action) ? { action: item.action } : {}),
   };
 }
@@ -548,7 +550,7 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
     "- For `adapt-*` items, compare each user artifact (agent settings, instructions, skills, scheduled task and watcher prompts) with the release changesets: removed tools, added, removed, or newly required parameters, changed tool descriptions, and built-in prompt guidance the artifact now duplicates or contradicts. Show the before and after text, apply an edit only after the user approves it, then re-read the artifact to validate.",
     "- For risky or external side effects, propose an approval flow instead of acting silently.",
     "- If Phase 1 finds no adoption work, explicitly say that Phase 2 is skipped and why.",
-    "- After each Phase 2 item, call `workflow_progress` with `status: \"done\"` and observed `validation_evidence`, or `status: \"skipped\"` / `status: \"needs_attention\"` as appropriate.",
+    "- After each Phase 2 item, call `workflow_progress` with `status: \"done\"` and observed `validation_evidence`, or `status: \"skipped\"` / `status: \"needs_attention\"` as appropriate. Add `needs_user: true` only when the user must decide or act; other unfinished or failed steps are retried automatically, up to 3 attempts per step.",
     "- Before your final response, call `workflow_progress` with `workflow_id: \"version_adoption\"`, `phase: \"complete\"`, and a concise `summary`.",
     "",
     "Constraints:",
@@ -613,7 +615,7 @@ function retryAdoptionItem(
   }
   const phase = PHASE_1_CHECKLIST.some((entry) => entry.id === itemId) ? "impact_radius" : "adoption";
   const { validation_evidence: _previousEvidence, ...rest } = checklist[index];
-  checklist[index] = { ...rest, status: "checking" };
+  checklist[index] = { ...rest, status: "checking", attempts: (rest.attempts ?? 0) + 1 };
   const thread = getOrCreateAgentThread(state.default_agent_id);
   return {
     ...state,
@@ -704,7 +706,11 @@ export function updateVersionAdoptionState(
     // still-open item (normally build-todo-list) as checking instead of
     // hardcoding index 0, which would otherwise clobber that done status.
     const firstOpen = nextChecklist.findIndex((entry) => entry.status !== "done" && entry.status !== "skipped");
-    if (firstOpen !== -1) nextChecklist[firstOpen].status = "checking";
+    if (firstOpen !== -1) {
+      const entry = nextChecklist[firstOpen];
+      if (entry.status !== "checking") entry.attempts = (entry.attempts ?? 0) + 1;
+      entry.status = "checking";
+    }
     const running = {
       ...state,
       status: "running",

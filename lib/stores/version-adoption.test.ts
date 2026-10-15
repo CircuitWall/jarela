@@ -133,6 +133,7 @@ describe("version adoption state", () => {
     expect(running.checklist[0].status).toBe("done");
     expect(running.checklist[1].id).toBe("build-todo-list");
     expect(running.checklist[1].status).toBe("checking");
+    expect(running.checklist[1].attempts).toBe(1);
   });
 
   it("records item-by-item adoption progress through the workflow helper", () => {
@@ -253,6 +254,7 @@ describe("version adoption state", () => {
     expect(retried.phase).toBe("adoption");
     const settings = retried.checklist.find((item) => item.id === "adapt-settings");
     expect(settings?.status).toBe("checking");
+    expect(settings?.attempts).toBe(1);
     expect(settings?.validation_evidence).toBeUndefined();
     expect(retried.checklist.find((item) => item.id === "adapt-task-prompts")?.status).toBe("needs_attention");
 

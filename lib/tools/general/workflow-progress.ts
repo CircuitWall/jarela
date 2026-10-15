@@ -30,6 +30,7 @@ const workflowProgressSchema = z.object({
   summary: z.string().max(300).optional().describe("Optional short workflow summary shown in the chat checklist."),
   detail: z.string().max(300).optional().describe("Optional live progress text to stream immediately to the UI."),
   needs_attention_reason: z.string().max(300).optional().describe("Optional reason shown when the item or workflow needs user attention."),
+  needs_user: z.boolean().optional().describe("For version_adoption only: set true when item_id cannot progress without the user's input or approval."),
 });
 
 function versionAdoptionPhase(phase: string | undefined): "impact_radius" | "adoption" | "complete" | undefined {
@@ -132,6 +133,7 @@ export const workflowProgressTool = tool(
     name: "workflow_progress",
     description:
       "Report structured progress for a substantial multi-step task. Use only when the task has several dependent phases, likely spans turns, or needs explicit verification; skip simple tasks and work already covered by native tool progress. For agent-created workflows, send the full current items snapshot on every call and reuse the same workflow_id. Keep secrets and private data out of workflow fields. Mark items done only with observed validation evidence; use needs_attention for blockers; phase=complete requires every item done or skipped. " +
+      "A rejected update, or a step left checking or needs_attention at the end of the turn, is retried automatically (at most 3 attempts per step); set needs_user=true on a step that only the user can unblock. " +
       "Every item needs input, expected output, and concrete validation criteria. Completed items also need observed validation_evidence. The system-owned version_adoption workflow has its own durable checklist.",
     schema: workflowProgressSchema,
   },

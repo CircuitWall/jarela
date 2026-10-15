@@ -22,6 +22,14 @@ import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { getMemoryPolicy } from "@/lib/stores/app-settings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
+import {
+  buildWorkflowStepRetryNudge,
+  collectWorkflowContractFailures,
+  planWorkflowStepRetries,
+  WORKFLOW_TURN_AUTO_RETRY_LIMIT,
+  workflowProgressArgs,
+  type WorkflowProgressObservation,
+} from "@/lib/agents/workflow-step-retry";
 import { getDefaultModelConfig, getModelConfig, getModelParams, isModelConfigEnabled, listEnabledModelConfigs } from "@/lib/stores/model-config";
 import {
   buildHistoryWindow,
@@ -1135,6 +1143,10 @@ async function* stallRetryStream(
   // turns where the model's claimed action didn't actually happen.
   const toolCallIds = new Map<string, string>();
   const failedProxyCallIds = new Set<string>();
+  // workflow_progress calls (direct or proxied) awaiting their result, so the
+  // step contract can be checked from observed tool output at turn end.
+  const pendingWorkflowArgs = new Map<string, Record<string, unknown>>();
+  const workflowObservations: WorkflowProgressObservation[] = [];
   let loopedToolName: string | null = null;
   let doneChunk: StreamChunk | null = null;
   let sawError = false;
@@ -1153,7 +1165,11 @@ async function* stallRetryStream(
       const name = unwrapInvokedToolName(rawName, args);
       if (name) {
         toolNames.push(name);
-        if (typeof data?.id === "string") toolCallIds.set(data.id, name);
+        if (typeof data?.id === "string") {
+          toolCallIds.set(data.id, name);
+          const workflowArgs = workflowProgressArgs(rawName, args);
+          if (workflowArgs) pendingWorkflowArgs.set(data.id, workflowArgs);
+        }
         const sig = toolCallSignature(rawName, args);
         const count = (signatureCounts.get(sig) ?? 0) + 1;
         signatureCounts.set(sig, count);
@@ -1182,6 +1198,10 @@ async function* stallRetryStream(
         if (payload && typeof payload === "object" && payload.ok === false) {
           failedProxyCallIds.add(data.id);
         }
+      }
+      if (typeof data?.id === "string" && pendingWorkflowArgs.has(data.id)) {
+        workflowObservations.push({ args: pendingWorkflowArgs.get(data.id), result: data.result });
+        pendingWorkflowArgs.delete(data.id);
       }
       const summary = summarizeRetryValue(data?.result).trim();
       if (summary) {
@@ -1322,6 +1342,10 @@ async function* stallRetryStream(
   const citationFail = uncitedHighClaims.length > 0;
 
   if (!stalled && !looped && fabrication.ok && !citationFail) {
+    if (!sawError && workflowObservations.length > 0) {
+      yield* workflowStepRetryStream(workflowObservations, originalReq, retriesLeft, attemptAbort, doneChunk, textBuf, toolNames, toolResultSummaries);
+      return;
+    }
     if (doneChunk) yield doneChunk;
     return;
   }
@@ -1447,6 +1471,67 @@ async function* stallRetryStream(
       );
     }
   }
+}
+
+// Workflow step contract auto-retry. Runs only after every other quality
+// gate passed, and has its own per-step budget (WORKFLOW_STEP_MAX_ATTEMPTS)
+// so a stall retry earlier in the turn never starves it. The retry is an
+// append-mode continuation: the turn's work stays visible, followed by the
+// model redoing only the failed steps.
+async function* workflowStepRetryStream(
+  observations: readonly WorkflowProgressObservation[],
+  originalReq: ThreadRunRequest,
+  stallRetriesLeft: number,
+  attemptAbort: AbortController,
+  doneChunk: StreamChunk | null,
+  textBuf: string,
+  toolNames: readonly string[],
+  toolResultSummaries: readonly string[],
+): AsyncGenerator<StreamChunk> {
+  const spent = originalReq._workflow_step_retries ?? {};
+  const failures = collectWorkflowContractFailures(observations);
+  const { retry, exhausted } = planWorkflowStepRetries(failures, spent);
+  const spentTotal = Object.values(spent).reduce((sum, n) => sum + n, 0);
+
+  if (retry.length === 0 || spentTotal >= WORKFLOW_TURN_AUTO_RETRY_LIMIT) {
+    const unresolved = [...exhausted, ...retry];
+    if (unresolved.length > 0) {
+      console.warn(
+        `[workflow-retry] contract still failing after auto-retry: ${unresolved.map((f) => f.key).join(", ")} thread=${originalReq.thread_id}`,
+      );
+      yield {
+        type: "text_delta",
+        data: {
+          delta: `\n\n*⚠️ Workflow step${unresolved.length === 1 ? "" : "s"} still failing the step contract after automatic retries: ${unresolved.slice(0, 4).map((f) => `"${f.label}"`).join(", ")}. Use the step's retry button or review it manually.*`,
+        },
+      };
+    }
+    if (doneChunk) yield doneChunk;
+    return;
+  }
+
+  console.warn(
+    `[workflow-retry] retrying ${retry.map((f) => `${f.key}#${f.attempt}`).join(", ")} thread=${originalReq.thread_id}`,
+  );
+  yield { type: "text_delta", data: { delta: "\n\n↻ " } };
+  const nudge = buildWorkflowStepRetryNudge(retry);
+  const retryContext = buildRetryContextSummary(textBuf, [...toolNames], [...toolResultSummaries]);
+  const nudgeWithContext = retryContext ? `${nudge}\n\n${retryContext}` : nudge;
+  const nextSpent: Record<string, number> = { ...spent };
+  for (const failure of retry) nextSpent[failure.key] = (nextSpent[failure.key] ?? 0) + 1;
+
+  attemptAbort.abort("workflow_step_retry");
+  const next = await prepareThreadRun({
+    ...originalReq,
+    message: nudgeWithContext,
+    attachments: undefined,
+    _stall_retries_left: stallRetriesLeft,
+    _workflow_step_retries: nextSpent,
+    _retry_count: (originalReq._retry_count ?? 0) + 1,
+    _skip_persist_message: true,
+    _history_append_message: nudgeWithContext,
+  });
+  for await (const chunk of next.stream) yield chunk;
 }
 
 export interface AssistantUsageSnapshot {

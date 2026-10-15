@@ -168,6 +168,7 @@ export interface VersionAdoptionChecklistItem {
   validation: string;
   status: VersionAdoptionChecklistStatus;
   validation_evidence?: string;
+  attempts?: number;
   reason: string;
   affected_files: string[];
   action?: "read_skill" | "review_permissions" | "review_schedule" | "review_watcher" | "read_instructions" | "review_tools" | "review_api" | "review_persistence" | "review_release";

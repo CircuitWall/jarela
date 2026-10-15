@@ -918,4 +918,70 @@ describe("prepareThreadRun transient retry", () => {
     expect(chunkTypes).toContain("text_delta");
     expect(collected.assistantContent).toBe("I patched the file to fix the bug.");
   });
+
+  describe("workflow step contract auto-retry", () => {
+    const done = (id: string): StreamChunk => ({
+      type: "done",
+      data: { message_id: id, usage: { input_tokens: 1, output_tokens: 1, source: "estimate" }, provider: "openai", model_id: "gpt-4o-mini", model_config_name: "default" },
+    });
+    const step = (status: string, evidence?: string) => ({
+      id: "run-tests", label: "Run tests", input: "Diff", output: "Results", validation: "Run the suite", status,
+      ...(evidence ? { validation_evidence: evidence } : {}),
+    });
+    const rejectedTurn = (n: number) => chunks(
+      { type: "tool_call", data: { id: `wf-${n}`, name: "workflow_progress", arguments: { workflow_id: "release_check", items: [step("done")] } } },
+      { type: "tool_result", data: { id: `wf-${n}`, name: "workflow_progress", result: JSON.stringify({ ok: false, workflow_id: "release_check", error: "Every completed workflow item requires observed validation_evidence." }) } },
+      { type: "text_delta", data: { delta: `Turn ${n}.` } },
+      done(`done-wf-${n}`),
+    );
+    const setup = async (agentId: string) => {
+      upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+      upsertAgentConfig({ id: agentId, name: "Workflow Agent", identity: "helper", instructions: "Be helpful.", tools: ["workflow_progress"], model_config_name: null });
+      const thread = createThread(agentId);
+      return prepareThreadRun({
+        thread_id: thread.thread_id,
+        message: "Check the release",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+    };
+    const lastUserText = (callIndex: number) => {
+      const messages = streamWithConfigMock.mock.calls[callIndex][1] as Array<{ role?: string; content?: unknown }>;
+      return JSON.stringify(messages[messages.length - 1]);
+    };
+
+    it("retries a step whose update was rejected and stops once the contract is met", async () => {
+      streamWithConfigMock
+        .mockImplementationOnce(() => rejectedTurn(1))
+        .mockImplementationOnce(() => chunks(
+          { type: "tool_call", data: { id: "wf-2", name: "workflow_progress", arguments: { workflow_id: "release_check", items: [step("done", "npm test: 120 passed")] } } },
+          { type: "tool_result", data: { id: "wf-2", name: "workflow_progress", result: JSON.stringify({ ok: true, workflow_id: "release_check", state: { phase: null, summary: "", error: null, checklist: [step("done", "npm test: 120 passed")] } }) } },
+          { type: "text_delta", data: { delta: "Verified." } },
+          done("done-wf-2"),
+        ));
+
+      const collected = await collectStream((await setup("agent-workflow-retry")).stream);
+
+      expect(collected.terminal).toBe("done");
+      expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
+      expect(lastUserText(1)).toContain("attempt 2 of 3");
+      expect(lastUserText(1)).toContain("Run tests");
+      expect(collected.assistantContent).toContain("Turn 1.");
+      expect(collected.assistantContent).toContain("Verified.");
+    });
+
+    it("gives up after three attempts and tells the user the step still fails", async () => {
+      streamWithConfigMock
+        .mockImplementationOnce(() => rejectedTurn(1))
+        .mockImplementationOnce(() => rejectedTurn(2))
+        .mockImplementationOnce(() => rejectedTurn(3))
+        .mockImplementationOnce(() => rejectedTurn(4));
+
+      const collected = await collectStream((await setup("agent-workflow-retry-exhausted")).stream);
+
+      expect(collected.terminal).toBe("done");
+      expect(streamWithConfigMock).toHaveBeenCalledTimes(3);
+      expect(lastUserText(2)).toContain("attempt 3 of 3");
+      expect(collected.assistantContent).toContain("still failing the step contract after automatic retries");
+    });
+  });
 });

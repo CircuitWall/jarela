@@ -12,6 +12,8 @@ export interface WorkflowChecklistItemView {
   output?: string;
   validation?: string;
   validation_evidence?: string;
+  /** Times this step has been started; shown when greater than one. */
+  attempts?: number;
 }
 
 interface Props {
@@ -101,6 +103,11 @@ export function WorkflowChecklist({ eyebrow, title, phaseLabel, summary, items, 
                 <span className={compact ? "min-w-0 flex-1 truncate" : "min-w-0 flex-1 line-clamp-2"} title={itemTooltip(item)}>
                   {item.label}
                 </span>
+                {(item.attempts ?? 0) > 1 && (
+                  <span className="shrink-0 text-[9px] tabular-nums text-fg-faint" title={`Attempt ${item.attempts}`}>
+                    attempt {item.attempts}
+                  </span>
+                )}
                 {retryable && (
                   <button
                     type="button"

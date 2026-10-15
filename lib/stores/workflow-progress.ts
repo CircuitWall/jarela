@@ -5,6 +5,8 @@ export interface WorkflowItem<Action extends string = string> {
   label: string;
   status: WorkflowItemStatus;
   validation_evidence?: string;
+  /** Times the step has entered `checking`; auto- and manual retries add one each. */
+  attempts?: number;
   reason: string;
   affected_files: string[];
   action?: Action;
@@ -59,6 +61,7 @@ export function updateWorkflowItem<State extends WorkflowState>(
     return {
       ...item,
       status,
+      ...(status === "checking" && item.status !== "checking" ? { attempts: (item.attempts ?? 0) + 1 } : {}),
       ...(validationEvidence ? { validation_evidence: validationEvidence } : {}),
     };
   });
