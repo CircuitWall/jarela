@@ -584,4 +584,35 @@ describe("MessageList conversation focus", () => {
     fireEvent.click(enabledButton);
     expect(scrollIntoView).toHaveBeenCalled();
   });
+
+  it("keeps a near-bottom boundary locate from snapping back to the bottom", () => {
+    const messages = [
+      mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "newer", "2026-08-09T10:00:01.000Z"),
+      mkMessage("m3", "assistant", "latest", "2026-08-09T10:00:02.000Z"),
+    ];
+    const props = { threadId: "thread-1", onSetContextPin: vi.fn(), hotSinceSeq: 2 };
+    const { container, rerender } = render(<MessageList {...props} messages={messages} />);
+
+    const scroller = container.querySelector(".panel-scrollbar") as HTMLDivElement;
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 2000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 500 });
+    Object.defineProperty(scroller, "scrollTop", { configurable: true, writable: true, value: 1500 });
+    fireEvent.scroll(scroller);
+
+    // Simulate the first smooth-scroll frame: still within 100px of the bottom.
+    const boundaryEl = document.querySelector("[data-focus-boundary='1']") as HTMLElement;
+    boundaryEl.scrollIntoView = vi.fn(() => {
+      scroller.scrollTop = 1450;
+      fireEvent.scroll(scroller);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /filters & focus/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Locate boundary line" }));
+    expect(boundaryEl.scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
+    expect(boundaryEl.classList.contains("jarela-deep-link-flash")).toBe(true);
+
+    rerender(<MessageList {...props} messages={[...messages]} />);
+    expect(scroller.scrollTop).toBe(1450);
+  });
 });

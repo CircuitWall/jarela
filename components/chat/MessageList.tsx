@@ -593,10 +593,25 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     boundaryAnchorRef.current = null;
   }, []);
 
+  // While a programmatic smooth scroll (locate boundary, deep link) animates
+  // away from the bottom, its first frames are still "near bottom". Without
+  // this lock, scroll sync re-arms bottom-follow and the post-render snap
+  // cancels the animation, so the target is never reached.
+  const programmaticScrollUntilRef = useRef(0);
   const syncScrollButton = useCallback((el: HTMLDivElement) => {
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    atBottomRef.current = isAtBottom;
-    setShowScrollButton(!isAtBottom && hasScrollTarget);
+    const locked = Date.now() < programmaticScrollUntilRef.current;
+    atBottomRef.current = isAtBottom && !locked;
+    setShowScrollButton(!atBottomRef.current && hasScrollTarget);
+  }, [hasScrollTarget]);
+
+  const scrollTargetIntoView = useCallback((target: HTMLElement) => {
+    programmaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_LOCK_MS;
+    atBottomRef.current = false;
+    setShowScrollButton(hasScrollTarget);
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.add("jarela-deep-link-flash");
+    window.setTimeout(() => target.classList.remove("jarela-deep-link-flash"), 1600);
   }, [hasScrollTarget]);
 
   // Anchor for older-message pagination. When the user scrolls near the top
@@ -715,11 +730,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
         const safe = id.replace(/"/g, '\\"');
         const el = root.querySelector(`[data-message-id="${safe}"]`) as HTMLElement | null;
         if (!el) return;
-        atBottomRef.current = false;
-        setShowScrollButton(hasScrollTarget);
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.classList.add("jarela-deep-link-flash");
-        setTimeout(() => el.classList.remove("jarela-deep-link-flash"), 1600);
+        scrollTargetIntoView(el);
         // Strip the hash so the next streaming message / list-length change
         // doesn't yank the view back to this anchor. replaceState avoids
         // triggering a hashchange event (which would re-enter this handler).
@@ -730,7 +741,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     scrollToHashTarget();
     window.addEventListener("hashchange", scrollToHashTarget);
     return () => window.removeEventListener("hashchange", scrollToHashTarget);
-  }, [messages.length, hasScrollTarget]);
+  }, [messages.length, scrollTargetIntoView]);
 
   // Handle orientation changes and resizes to maintain scroll position
   useEffect(() => {
@@ -765,9 +776,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
       ? document.getElementById(`context-boundary-${effectiveHotSinceSeq}`)
       : root.querySelector("[data-focus-boundary='1']") as HTMLElement | null;
     if (!boundary) return;
-    atBottomRef.current = false;
-    setShowScrollButton(hasScrollTarget);
-    boundary.scrollIntoView({ behavior: "smooth", block: "center" });
+    scrollTargetIntoView(boundary);
   }
 
   return (
@@ -1165,6 +1174,7 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
 // activeChannels + lib/agents/prepare/history-window.ts). The rest
 // (extension, page_capture, synthetic, tool_use, thinking) are display-only.
 const CHANNEL_SCOPED_FILTER_KEYS = new Set<MessageFilterKey>(["scheduled_task", "watcher", "bridge"]);
+const PROGRAMMATIC_SCROLL_LOCK_MS = 1500;
 
 const CHIP_LABELS: Record<MessageFilterKey, string> = {
   scheduled_task: "scheduled",
