@@ -189,6 +189,16 @@ after the initial `0.1.2` bootstrap.
    - Bump `version` in `package.json` to the new `MAJOR.MINOR.PATCH`.
    - In `CHANGELOG.md`, promote `[Unreleased]` entries under a new heading
      `## [<version>] - YYYY-MM-DD`. Keep `[Unreleased]` empty above it.
+     If users need to change their own setup (agent instructions, skills,
+     settings, scheduled task or watcher prompts), add the steps as bullets
+     under a `### Adoption` heading in that section.
+   - Run `npm run release:changeset` after the bump and CHANGELOG edit, and
+     commit `docs/adoption/`. It snapshots every prompt Jarela sends and every
+     built-in tool's description and parameter schema, diffs them against the
+     previous release, and records the delta with the `### Adoption` hints in
+     `docs/adoption/changesets.json`. Version adoption reads this bundled file
+     to adapt user setups after an upgrade. A test and the release workflow
+     (`npm run release:changeset -- --check`) fail if the step is missing.
    - PR title: `chore(release): bump to <version>`.
 2. **Merge once CI is green.** Rebase merge as usual.
 3. **Tag `main` and push the tag:**
@@ -323,6 +333,8 @@ For a release PR:
 ```powershell
 git checkout -b chore/release-0.2.0
 # bump package.json version, update CHANGELOG.md
+npm run release:changeset
+git add docs/adoption
 git commit -am "chore(release): bump to 0.2.0"
 git push -u origin HEAD
 gh pr create --fill --base main

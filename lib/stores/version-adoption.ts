@@ -4,6 +4,12 @@ import { getDefaultAgentConfig } from "@/lib/stores/agent-configs";
 import { getOrCreateAgentThread } from "@/lib/stores/threads";
 import { getCurrentVersion } from "@/lib/lifecycle/version";
 import {
+  changesetsBetween,
+  formatChangesetsForPrompt,
+  summarizeChangesets,
+  type ChangesetRange,
+} from "@/lib/lifecycle/changesets";
+import {
   completeWorkflow,
   mergeWorkflowProgress,
   type WorkflowItemStatus,
@@ -102,9 +108,9 @@ const PHASE_1_CHECKLIST: VersionAdoptionChecklistItem[] = [
   {
     id: "fetch-changes",
     label: "Fetch changes",
-    input: "Previously adopted version tag and current repository HEAD.",
-    output: "The changed-file list between the baseline and current version.",
-    validation: "Use the system-computed git diff result; if no baseline is available, explicitly identify first-adoption status.",
+    input: "Previously adopted version, current version, the bundled release changesets, and git history when running from a source checkout.",
+    output: "The prompt and tool description/schema deltas from the release changesets, or the changed-file list from git, between the baseline and current version.",
+    validation: "Use the system-computed changeset or git diff result; if no baseline is available, explicitly identify first-adoption status.",
     status: "pending",
     reason: "Compare the current version with the previously adopted version or baseline.",
     affected_files: [],
@@ -112,9 +118,9 @@ const PHASE_1_CHECKLIST: VersionAdoptionChecklistItem[] = [
   {
     id: "build-todo-list",
     label: "Build todo list",
-    input: "System-computed changed-file list and classified adoption surfaces.",
+    input: "System-computed change surface and classified adoption surfaces.",
     output: "A Phase 2 checklist covering all matched changes and a fallback review for unmatched changes.",
-    validation: "Check that every changed path is represented by an adoption item or explicitly covered by the fallback.",
+    validation: "Check that every changed prompt, tool, or path is represented by an adoption item or explicitly covered by the fallback.",
     status: "pending",
     reason: "Turn detected version changes into the concrete Phase 2 adoption checklist.",
     affected_files: [],
@@ -262,12 +268,118 @@ function item(
   };
 }
 
-function buildChecklist(previousVersion: string | null, currentVersion: string): VersionAdoptionChecklistItem[] {
-  if (!previousVersion) {
-    return DEFAULT_CHECKLIST.map((entry) => ({ ...entry }));
-  }
+type ChangeSource = "changeset" | "git" | "none";
 
+interface AdoptionPlan {
+  items: VersionAdoptionChecklistItem[];
+  source: ChangeSource;
+  range: ChangesetRange | null;
+}
+
+function changesetChecklist(previousVersion: string, range: ChangesetRange): VersionAdoptionChecklistItem[] {
+  const summary = summarizeChangesets(range.entries);
+  const toolRefs = summary.toolNames.map((name) => `tool:${name}`);
+  const promptRefs = summary.promptIds.map((id) => `prompt:${id}`);
+  const removed = summary.removedTools.length > 0 ? ` Removed tools: ${summary.removedTools.join(", ")}.` : "";
+  const items: VersionAdoptionChecklistItem[] = [];
+  const surfaceItem = (
+    entry: Omit<VersionAdoptionChecklistItem, "status" | "affected_files"> & { refs: string[] },
+  ): VersionAdoptionChecklistItem => {
+    const { refs, ...rest } = entry;
+    return { ...rest, status: "pending", affected_files: refs.slice(0, 12) };
+  };
+
+  if (summary.toolNames.length > 0) {
+    items.push(surfaceItem({
+      id: "adapt-settings",
+      label: "Adapt agent settings to tool changes",
+      reason: `${summary.toolNames.length} built-in tool(s) changed description or schema since ${previousVersion}.${removed}`,
+      input: "Release changeset tool deltas, every agent's configuration from read_agent_config (tool allowlist and delegate targets), and the live catalog from list_tools.",
+      output: "Per agent: proposed settings edits for allowlists that reference removed tools or should include changed tools the user relies on, or an explicit no-change finding.",
+      validation: "After approved edits, re-read each agent with read_agent_config and confirm every allowlisted tool name exists in list_tools; name every agent checked.",
+      action: "review_permissions",
+      refs: toolRefs,
+    }));
+  }
+  if (summary.toolNames.length > 0 || summary.promptIds.length > 0) {
+    items.push(surfaceItem({
+      id: "adapt-task-prompts",
+      label: "Adapt scheduled task and watcher prompts",
+      reason: "Long-lived task and watcher prompts can reference changed tools or parameters, or repeat built-in guidance that changed.",
+      input: "Release changeset tool and prompt deltas, plus every prompt returned by list_scheduled_tasks and list_watchers.",
+      output: "For each affected task or watcher: current prompt, proposed prompt, and the changeset delta that motivates it; unaffected ones listed as checked.",
+      validation: "After approved update_scheduled_task / update_watcher calls, re-list and confirm each stored prompt equals the approved text and names only tools present in list_tools.",
+      action: "review_schedule",
+      refs: [...toolRefs, ...promptRefs],
+    }));
+    items.push(surfaceItem({
+      id: "adapt-instructions-skills",
+      label: "Adapt agent instructions and skills",
+      reason: "Agent instructions and user skills can reference changed tools or parameters, or duplicate or contradict changed built-in prompt guidance.",
+      input: "Release changeset prompt and tool deltas, each agent's instructions from read_agent_instruction, and user skills from list_skills / read_skill.",
+      output: "For each affected instruction or skill: before and after text and the changeset delta that motivates it; unaffected ones listed as checked.",
+      validation: "After approved update_agent_instruction / write_skill calls, re-read each artifact and confirm the stored text matches and names only tools and parameters present in list_tools and the changed schemas.",
+      action: "read_skill",
+      refs: [...promptRefs, ...toolRefs],
+    }));
+  }
+  if (summary.hints.length > 0) {
+    items.push(surfaceItem({
+      id: "release-hints",
+      label: "Apply release adoption hints",
+      reason: `The release notes include ${summary.hints.length} adoption hint(s) from the maintainers.`,
+      input: `Adoption hints: ${summary.hints.join(" | ")}`,
+      output: "Each hint applied to the user's setup, or a finding that it does not apply.",
+      validation: "For each hint, cite the artifact or setting checked and re-read anything changed.",
+      action: "review_release",
+      refs: [],
+    }));
+  }
+  if (!range.complete) {
+    items.push(surfaceItem({
+      id: "version-diff",
+      label: "Review changes not covered by changesets",
+      reason: `Bundled changesets do not fully cover ${previousVersion} → current; older releases predate changesets.`,
+      input: "The available changesets and the changelog for the uncovered versions.",
+      output: "Findings for uncovered versions and any required adoption actions.",
+      validation: "State which versions were covered by changesets and which only by the changelog.",
+      action: "review_release",
+      refs: [],
+    }));
+  }
+  if (items.length === 0) {
+    items.push(surfaceItem({
+      id: "version-diff",
+      label: "Review version changes",
+      reason: "Release changesets report no prompt or tool description/schema changes; user prompts, skills, and settings need no adaptation.",
+      input: "Release changesets for the version range.",
+      output: "Confirmation that no adaptation is required.",
+      validation: "Confirm each changeset in the range lists no tool or prompt changes and no adoption hints.",
+      action: "review_release",
+      refs: [],
+    }));
+    items[0].status = "skipped";
+  }
+  return items;
+}
+
+function computeAdoptionPlan(previousVersion: string | null, currentVersion: string): AdoptionPlan {
+  if (!previousVersion) {
+    return { items: DEFAULT_CHECKLIST.map((entry) => ({ ...entry })), source: "none", range: null };
+  }
+  const range = changesetsBetween(previousVersion, currentVersion);
+  if (range.entries.length > 0) {
+    return { items: changesetChecklist(previousVersion, range), source: "changeset", range };
+  }
   const files = changedFiles(previousVersion, currentVersion);
+  return { items: gitChecklist(files), source: files.length > 0 ? "git" : "none", range: null };
+}
+
+function buildChecklist(previousVersion: string | null, currentVersion: string): VersionAdoptionChecklistItem[] {
+  return computeAdoptionPlan(previousVersion, currentVersion).items;
+}
+
+function gitChecklist(files: readonly string[]): VersionAdoptionChecklistItem[] {
   const dynamic = [
     item(
       "permissions",
@@ -353,26 +465,35 @@ function phase1Checklist(): VersionAdoptionChecklistItem[] {
   return PHASE_1_CHECKLIST.map((entry) => ({ ...entry }));
 }
 
-// `fetch-changes` never needs an agent tool call: the git diff it reports
-// on already ran synchronously in createState() (via buildChecklist), so
-// the item starts pre-completed with the deterministic result baked into
-// its reason. Only `build-todo-list` is left for the agent to actually do.
+// `fetch-changes` never needs an agent tool call: the changeset read or git
+// diff it reports on already ran synchronously in createState() (via
+// computeAdoptionPlan), so the item starts pre-completed with the
+// deterministic result baked into its reason. Only `build-todo-list` is left
+// for the agent to actually do.
 function resolvedPhase1Checklist(
-  adoptionChecklist: readonly VersionAdoptionChecklistItem[],
+  plan: AdoptionPlan,
   isFirst: boolean,
 ): VersionAdoptionChecklistItem[] {
   const [fetchChanges, ...rest] = phase1Checklist();
+  const adoptionChecklist = plan.items;
   const affectedCount = adoptionChecklist.reduce((n, entry) => n + entry.affected_files.length, 0);
+  const changesetVersions = plan.range?.entries.map((entry) => entry.version).join(", ") ?? "";
+  const evidence = isFirst
+    ? "System confirmed that this is the first adoption and no prior baseline exists."
+    : plan.source === "changeset"
+      ? `System read bundled release changesets for ${changesetVersions}${plan.range?.complete ? "" : " (partial coverage)"}; ${affectedCount} changed prompt/tool surface reference(s) were counted.`
+      : `System computed the changed-file surface against the prior version; ${affectedCount} affected file(s) were counted.`;
+  const reason = isFirst
+    ? "First adoption — no previously adopted version to diff against."
+    : plan.source === "changeset"
+      ? `Read deterministically from the bundled release changesets (prompt and tool description/schema deltas): ${affectedCount} surface reference(s) across ${adoptionChecklist.length} area(s).`
+      : `Computed deterministically via git diff against the previously adopted version: ${affectedCount} affected file(s) across ${adoptionChecklist.length} area(s).`;
   return [
     {
       ...fetchChanges,
       status: "done",
-      validation_evidence: isFirst
-        ? "System confirmed that this is the first adoption and no prior baseline exists."
-        : `System computed the changed-file surface against the prior version; ${affectedCount} affected file(s) were counted.`,
-      reason: isFirst
-        ? "First adoption — no previously adopted version to diff against."
-        : `Computed deterministically via git diff against the previously adopted version: ${affectedCount} affected file(s) across ${adoptionChecklist.length} area(s).`,
+      validation_evidence: evidence,
+      reason,
     },
     ...rest,
   ];
@@ -380,7 +501,8 @@ function resolvedPhase1Checklist(
 
 function stalePromptRisks(checklist: readonly VersionAdoptionChecklistItem[]): string[] {
   return checklist
-    .filter((item) => item.id === "skills-instructions" || item.id === "scheduled-work" || item.id === "stale-prompts" || item.id === "permissions")
+    .filter((item) => item.id === "skills-instructions" || item.id === "scheduled-work" || item.id === "stale-prompts" || item.id === "permissions"
+      || item.id === "adapt-settings" || item.id === "adapt-task-prompts" || item.id === "adapt-instructions-skills")
     .map((item) => item.label);
 }
 
@@ -395,11 +517,21 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
   const phaseLabel = state.is_first_adoption
     ? `current-version baseline ${state.current_version}`
     : `upgrade from ${state.previous_version} to ${state.current_version}`;
+  const plan = computeAdoptionPlan(state.previous_version, state.current_version);
+  const changesetSection = plan.source === "changeset" && plan.range
+    ? [
+      "",
+      `Release changesets — model-facing prompt and tool description/schema changes from ${state.previous_version} to ${state.current_version}${plan.range.complete ? "" : " (partial: older versions predate changesets)"}:`,
+      formatChangesetsForPrompt(plan.range.entries),
+    ]
+    : [];
   return [
     `Run Jarela version adoption for ${phaseLabel}.`,
     "",
     "Phase 1 — impact radius analysis:",
-    "- The changed-file surface (`fetch-changes`) was already computed deterministically by the system via git diff against the previously adopted version — see each Phase 2 checklist item below with its affected_files. Do not independently fetch or guess at what changed; that item is already marked done in the UI.",
+    plan.source === "changeset"
+      ? "- The change surface (`fetch-changes`) was already read deterministically by the system from the bundled release changesets: prompt text and built-in tool description/schema deltas between the previously adopted version and this one. They are listed under \"Release changesets\" below. Do not independently fetch or guess at what changed; that item is already marked done in the UI."
+      : "- The changed-file surface (`fetch-changes`) was already computed deterministically by the system via git diff against the previously adopted version — see each Phase 2 checklist item below with its affected_files. Do not independently fetch or guess at what changed; that item is already marked done in the UI.",
     "- Every checklist item provides its input, expected output, and validation criteria. Work from the stated inputs, validate the output using those criteria, and report observed evidence before marking the item done.",
     "- Prefer executable checks for code-verifiable behavior. If a check cannot run, say why and leave the result unverified or mark the item needs_attention.",
     "- Call `workflow_progress` with `workflow_id: \"version_adoption\"`, `phase: \"impact_radius\"`, `item_id: \"build-todo-list\"`, and `status: \"checking\"`.",
@@ -410,6 +542,7 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
     "- Start Phase 2 by calling `workflow_progress` with `workflow_id: \"version_adoption\"` and `phase: \"adoption\"`; the UI will swap from the Phase 1 checklist to the generated adoption todo list.",
     "- Before each Phase 2 checklist item, call `workflow_progress` with that `item_id` and `status: \"checking\"`.",
     "- If Phase 1 finds actionable adoption work, complete safe local updates directly when your available tools allow it.",
+    "- For `adapt-*` items, compare each user artifact (agent settings, instructions, skills, scheduled task and watcher prompts) with the release changesets: removed tools, added, removed, or newly required parameters, changed tool descriptions, and built-in prompt guidance the artifact now duplicates or contradicts. Show the before and after text, apply an edit only after the user approves it, then re-read the artifact to validate.",
     "- For risky or external side effects, propose an approval flow instead of acting silently.",
     "- If Phase 1 finds no adoption work, explicitly say that Phase 2 is skipped and why.",
     "- After each Phase 2 item, call `workflow_progress` with `status: \"done\"` and observed `validation_evidence`, or `status: \"skipped\"` / `status: \"needs_attention\"` as appropriate.",
@@ -423,15 +556,17 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
     "Phase 1 checklist:",
     ...PHASE_1_CHECKLIST.map((item) => `- ${item.id}: ${item.label} — Input: ${item.input} Output: ${item.output} Validation: ${item.validation} Reason: ${item.reason}`),
     "Phase 2 adoption checklist:",
-    ...buildChecklist(state.previous_version, state.current_version).map((item) => `- ${item.id}: ${item.label}: Input: ${item.input} Output: ${item.output} Validation: ${item.validation} Reason: ${item.reason}${item.affected_files.length > 0 ? ` Affected files: ${item.affected_files.join(", ")}.` : ""}`),
+    ...plan.items.map((item) => `- ${item.id}: ${item.label}: Input: ${item.input} Output: ${item.output} Validation: ${item.validation} Reason: ${item.reason}${item.affected_files.length > 0 ? ` Affected: ${item.affected_files.join(", ")}.` : ""}`),
     state.stale_prompt_risks.length > 0 ? `Stale-prompt risks: ${state.stale_prompt_risks.join(", ")}.` : "Stale-prompt risks: none detected in the checklist.",
+    ...changesetSection,
   ].join("\n");
 }
 
 function createState(currentVersion: string, previousVersion: string | null): StoredVersionAdoptionState {
   const defaultAgent = getDefaultAgentConfig();
   const isFirst = previousVersion === null;
-  const adoptionChecklist = buildChecklist(previousVersion, currentVersion);
+  const plan = computeAdoptionPlan(previousVersion, currentVersion);
+  const adoptionChecklist = plan.items;
   const summaryInput = {
     current_version: currentVersion,
     previous_version: previousVersion,
@@ -450,7 +585,7 @@ function createState(currentVersion: string, previousVersion: string | null): St
     started_at: null,
     completed_at: null,
     dismissed_at: null,
-    checklist: resolvedPhase1Checklist(adoptionChecklist, isFirst),
+    checklist: resolvedPhase1Checklist(plan, isFirst),
     stale_prompt_risks: stalePromptRisks(adoptionChecklist),
     summary: buildSummary(summaryInput, adoptionChecklist),
     error: defaultAgent ? null : "No default agent is configured.",

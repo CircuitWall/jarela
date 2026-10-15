@@ -1,7 +1,7 @@
 {
   "name": "@circuitwall/jarela",
   "version": "2.2.1",
-  "description": "Jarela — local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
+  "description": "Jarela â€” local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
   "license": "Apache-2.0",
   "author": "Andrew Ge Wu",
   "homepage": "https://github.com/CircuitWall/jarela#readme",
@@ -116,6 +116,7 @@
     "check:impact": "node scripts/check-change-impact.mjs",
     "pricing:snapshot": "node scripts/snapshot-pricing.mjs",
     "prompts:dump": "node scripts/dump-prompts.mjs",
+    "release:changeset": "node scripts/release-changeset.mjs",
     "docs:sync-assets": "node scripts/sync-docs-assets.mjs",
     "docs:dev": "npm run docs:sync-assets && mkdocs serve",
     "docs:build": "npm run docs:sync-assets && mkdocs build",

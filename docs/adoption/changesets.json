@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "changesets": [
+    {
+      "version": "2.0.1",
+      "previous_version": "2.0.0",
+      "date": "2026-10-11",
+      "hints": [],
+      "commits": [
+        "chore(release): bump to 2.0.1",
+        "fix(npm): remove oversized runtime assets"
+      ],
+      "prompts": [],
+      "tools": []
+    },
+    {
+      "version": "2.0.2",
+      "previous_version": "2.0.1",
+      "date": "2026-10-11",
+      "hints": [],
+      "commits": [
+        "chore(release): bump to 2.0.2",
+        "fix(npm): exclude nested server source maps"
+      ],
+      "prompts": [],
+      "tools": []
+    },
+    {
+      "version": "2.0.3",
+      "previous_version": "2.0.2",
+      "date": "2026-10-12",
+      "hints": [],
+      "commits": [
+        "chore(release): bump to 2.0.3",
+        "fix(npm): remove maps before npm packing"
+      ],
+      "prompts": [],
+      "tools": []
+    },
+    {
+      "version": "2.0.4",
+      "previous_version": "2.0.3",
+      "date": "2026-10-12",
+      "hints": [],
+      "commits": [
+        "chore(release): bump to 2.0.4",
+        "fix(npm): use installed onnx runtime dependencies"
+      ],
+      "prompts": [],
+      "tools": []
+    },
+    {
+      "version": "2.0.5",
+      "previous_version": "2.0.4",
+      "date": "2026-10-13",
+      "hints": [],
+      "commits": [
+        "chore(release): bump to 2.0.5",
+        "fix(providers): detect streams that end without events",
+        "fix(http): fix gzip response decoding",
+        "docs(site): update guides, theme, and architecture diagrams",
+        "refactor(bridges): add capability-driven bridge modules",
+        "fix(security): update vulnerable media parser",
+        "refactor(modules): split built-in provider and package registries"
+      ],
+      "prompts": [],
+      "tools": []
+    },
+    {
+      "version": "2.1.0",
+      "previous_version": "2.0.5",
+      "date": "2026-10-14",
+      "hints": [],
+      "commits": [
+        "chore(release): bump to 2.1.0",
+        "fix(release): add model download retries and cache",
+        "fix(chat): render grouped summary topic previews",
+        "fix(workflows): validate legacy checklist items",
+        "docs(pricing): document aggregator data sources",
+        "feat(core): add verified workflows, pricing signals, and summaries"
+      ],
+      "prompts": [
+        {
+          "id": "static.agent.tool-usage-sop",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…"
+          ],
+          "removed_lines": [
+            "0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…"
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Tool usage SOP",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…"
+          ],
+          "removed_lines": [
+            "0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…"
+          ],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "refresh_model_pricing",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Refresh provider pricing pages and separate OpenRouter/LiteLLM reference feeds, then recalculate dashboard estimates using provider-page rates only. Returns rate changes, source health, confidence, and current-versus-recorded dashboard totals. These are estimates, not invoice amounts.",
+          "previous_description": "Refresh the configured official LLM pricing sources and recalculate dashboard estimates using the latest rates. Returns rate changes, source health, confidence, and current-versus-recorded dashboard totals. These are estimates, not invoice amounts.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "workflow_progress",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Report structured progress for a substantial multi-step task. Use only when the task has several dependent phases, likely spans turns, or needs explicit verification; skip simple tasks and work already covered by native tool progress. For agent-created workflows, send the full current items snapshot on every call and reuse the same workflow_id. Keep secrets and private data out of workflow fields. Mark items done only with observed validation evidence; use needs_attention for blockers; phase=complete requires every item done or skipped. Every item needs input, expected output, and concrete va…",
+          "previous_description": "Report structured progress for a substantial multi-step task. Use only when the task has several dependent phases, likely spans turns, or needs explicit verification; skip simple tasks and work already covered by native tool progress. For agent-created workflows, send the full current items snapshot on every call and reuse the same workflow_id. Keep secrets and private data out of workflow fields. Mark items done only after verifying the action; use needs_attention for blockers; phase=complete requires every item done or skipped. The system-owned version_adoption workflow has its own durable …",
+          "params_added": [
+            "validation_evidence"
+          ],
+          "params_removed": [],
+          "params_changed": [
+            "items"
+          ],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
+    },
+    {
+      "version": "2.2.0",
+      "previous_version": "2.1.0",
+      "date": "2026-10-15",
+      "hints": [],
+      "commits": [
+        "chore(release): bump to 2.2.0",
+        "feat(embeddings): add on-demand local model download",
+        "fix(build): exclude foreign runtimes from standalone bundles"
+      ],
+      "prompts": [],
+      "tools": []
+    },
+    {
+      "version": "2.2.1",
+      "previous_version": "2.2.0",
+      "date": "2026-10-15",
+      "hints": [],
+      "commits": [
+        "chore(release): bump to 2.2.1",
+        "fix(api): skip browser http cache for client requests",
+        "feat(models): add model enable toggle and atomic default",
+        "fix(github-copilot): remove retired pat route"
+      ],
+      "prompts": [],
+      "tools": []
+    }
+  ]
+}
