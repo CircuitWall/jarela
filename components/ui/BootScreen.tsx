@@ -344,6 +344,20 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
     }
   }
 
+  async function handleAdoptionItemRetry(itemId: string) {
+    if (adoptionBusy || adoption?.status === "running") return;
+    setAdoptionBusy("retry");
+    try {
+      const next = await api.lifecycle.adoption.retryItem(itemId);
+      setAdoption(next);
+      adoptionRunStartedRef.current = null;
+    } catch {
+      setAdoption((prev) => prev ? { ...prev, error: "Could not retry that step." } : prev);
+    } finally {
+      setAdoptionBusy(null);
+    }
+  }
+
   // The agent rendered in the centered tile. During `loading` and
   // `pick` it's the default (so the user sees the same artwork as soon
   // as agents resolve). During `opening` it's whatever was picked.
@@ -539,6 +553,9 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
               summary={adoptionLiveLabel ?? adoption.summary}
               items={adoption.checklist}
               error={adoption.error}
+              onRetryItem={(item) => void handleAdoptionItemRetry(item.id)}
+              canRetryItem={(item) => item.id !== "fetch-changes"}
+              retryDisabled={adoptionBusy !== null || adoption.status === "running"}
             >
                 {adoption.status === "done" && (
                   <p className="mt-2 rounded-lg border border-border/50 bg-surface px-2 py-1 text-[10px] leading-snug text-fg-muted">

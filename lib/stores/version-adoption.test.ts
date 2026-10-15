@@ -13,6 +13,7 @@ const {
   getVersionAdoptionState,
   recordVersionAdoptionWorkflowProgress,
   updateVersionAdoptionState,
+  VersionAdoptionRequestError,
 } = await import("@/lib/stores/version-adoption");
 
 afterAll(() => {
@@ -217,6 +218,54 @@ describe("version adoption state", () => {
       expect(item.validation).toMatch(/re-(read|list)/);
     }
     expect(adoption.state.checklist[0].affected_files).toContain("tool:workflow_progress");
+  });
+
+  it("retries a single adoption step with a focused prompt and keeps other steps", () => {
+    upsertAgentConfig({
+      id: "default-agent",
+      name: "Assistant",
+      identity: "helper",
+      instructions: "Be useful.",
+      tools: [],
+      is_default: true,
+    });
+    updateVersionAdoptionState("mark_done", "2.0.5");
+    updateVersionAdoptionState("start", "2.2.1");
+    recordVersionAdoptionWorkflowProgress({
+      item_id: "build-todo-list",
+      status: "done",
+      validation_evidence: "Every changed prompt and tool is covered.",
+    }, "2.2.1");
+    recordVersionAdoptionWorkflowProgress({
+      phase: "adoption",
+      item_id: "adapt-settings",
+      status: "done",
+      validation_evidence: "Re-read agent settings; no removed tools referenced.",
+    }, "2.2.1");
+    recordVersionAdoptionWorkflowProgress({
+      phase: "adoption",
+      item_id: "adapt-task-prompts",
+      status: "needs_attention",
+    }, "2.2.1");
+
+    const retried = updateVersionAdoptionState("retry", "2.2.1", "adapt-settings");
+    expect(retried.status).toBe("running");
+    expect(retried.phase).toBe("adoption");
+    const settings = retried.checklist.find((item) => item.id === "adapt-settings");
+    expect(settings?.status).toBe("checking");
+    expect(settings?.validation_evidence).toBeUndefined();
+    expect(retried.checklist.find((item) => item.id === "adapt-task-prompts")?.status).toBe("needs_attention");
+
+    const prompt = retried.adoption_prompt ?? "";
+    expect(prompt).toContain("Retry one Jarela version adoption step for upgrade from 2.0.5 to 2.2.1");
+    expect(prompt).toContain("Step: adapt-settings");
+    expect(prompt).toContain('item_id: "adapt-settings"');
+    expect(prompt).toContain('phase: "adoption"');
+    expect(prompt).toContain("Release changesets:");
+    expect(prompt).not.toContain("Phase 1 — impact radius analysis");
+
+    expect(() => updateVersionAdoptionState("retry", "2.2.1", "missing-step")).toThrow(VersionAdoptionRequestError);
+    expect(() => updateVersionAdoptionState("retry", "2.2.1", "fetch-changes")).toThrow(VersionAdoptionRequestError);
   });
 
   it("blocks adoption until a default agent exists", () => {

@@ -29,6 +29,7 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { WorkflowChecklist, type WorkflowChecklistItemView, type WorkflowChecklistStatus } from "@/components/ui/WorkflowChecklist";
+import { useWorkflowStepRetry } from "./workflow-step-retry";
 import { StructuredTurnCard } from "@/components/chat/StructuredTurnCard";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { ProviderLogo, brandSlugForToolName } from "@/components/models/ProviderLogo";
@@ -498,6 +499,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
       {open && (
         <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
           <WorkflowProgressDetails group={group} />
+          {!hasWorkflowView(group) && (<>
           {hasVisibleArgs(group.args) ? (
             <DetailSection label="arguments" value={group.args} />
           ) : hasArgs ? (
@@ -523,6 +525,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
               value={group.result}
             />
           )}
+          </>)}
         </div>
       )}
     </div>
@@ -617,19 +620,38 @@ function ToolResultRefDetails({ value }: { value: unknown }) {
   );
 }
 
-function WorkflowProgressDetails({ group }: { group: ToolCallGroup }) {
+function workflowViewFor(group: ToolCallGroup): WorkflowProgressView | null {
   if (group.name !== "workflow_progress") return null;
-  const workflow = workflowProgressFrom(group.result) ?? workflowProgressPreviewFrom(group.args);
+  const view = workflowProgressFrom(group.result) ?? workflowProgressPreviewFrom(group.args);
+  const result = coerceObject(unwrapLangChainSerializable(group.result));
+  if (view && result?.ok === false && typeof result.error === "string") {
+    return { ...view, error: `Update rejected: ${result.error}` };
+  }
+  return view;
+}
+
+/** Workflow rows show only their work items; raw payloads stay visible when the call failed. */
+function hasWorkflowView(group: ToolCallGroup): boolean {
+  return group.status !== "error" && workflowViewFor(group) !== null;
+}
+
+function WorkflowProgressDetails({ group }: { group: ToolCallGroup }) {
+  const retryStep = useWorkflowStepRetry();
+  const workflow = workflowViewFor(group);
   if (!workflow) return null;
+  const workflowId = workflow.workflow_id;
   return (
     <WorkflowChecklist
       compact
       eyebrow="workflow"
-      title={workflow.workflow_id.replace(/[_-]/g, " ")}
+      title={workflowId.replace(/[_-]/g, " ")}
       phaseLabel={workflow.phase ?? "in progress"}
       summary={workflow.summary ?? ""}
       items={workflow.items}
       error={workflow.error}
+      onRetryItem={retryStep
+        ? (item) => retryStep({ workflowId, itemId: item.id, label: item.label })
+        : undefined}
     />
   );
 }

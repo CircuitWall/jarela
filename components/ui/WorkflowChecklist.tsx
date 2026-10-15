@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, LoaderCircle, Minus } from "lucide-react";
+import { AlertTriangle, Check, LoaderCircle, Minus, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type WorkflowChecklistStatus = "pending" | "checking" | "done" | "needs_attention" | "skipped";
@@ -22,7 +22,23 @@ interface Props {
   items: WorkflowChecklistItemView[];
   error?: string | null;
   compact?: boolean;
+  /** Retries a single finished or failed step; omitted hides the per-step retry button. */
+  onRetryItem?: (item: WorkflowChecklistItemView) => void;
+  canRetryItem?: (item: WorkflowChecklistItemView) => boolean;
+  retryDisabled?: boolean;
   children?: ReactNode;
+}
+
+const RETRYABLE_STATUSES: ReadonlySet<WorkflowChecklistStatus> = new Set(["done", "needs_attention", "skipped"]);
+
+export function isWorkflowItemRetryable(item: WorkflowChecklistItemView): boolean {
+  return RETRYABLE_STATUSES.has(item.status);
+}
+
+function statusLabel(status: WorkflowChecklistStatus): string {
+  if (status === "done") return "verified";
+  if (status === "needs_attention") return "needs attention";
+  return status;
 }
 
 function StatusIcon({ status }: { status: WorkflowChecklistStatus }) {
@@ -41,12 +57,19 @@ function statusClass(status: WorkflowChecklistStatus): string {
   return "border-border/60 bg-surface text-fg-faint";
 }
 
-export function WorkflowChecklist({ eyebrow, title, phaseLabel, summary, items, error, compact = false, children }: Props) {
+function itemTooltip(item: WorkflowChecklistItemView): string {
+  const note = item.status === "done" ? item.validation_evidence : item.reason;
+  return note ? `${item.label}\n${statusLabel(item.status)}: ${note}` : item.label;
+}
+
+export function WorkflowChecklist({ eyebrow, title, phaseLabel, summary, items, error, compact = false, onRetryItem, canRetryItem, retryDisabled = false, children }: Props) {
   return (
     <div className={compact ? "flex flex-col gap-1.5" : "absolute inset-x-0 top-0 flex flex-col gap-2 transition-opacity duration-300"}>
-      <p className="text-[10px] text-fg-faint uppercase tracking-wider text-center">
-        {eyebrow}
-      </p>
+      {!compact && (
+        <p className="text-[10px] text-fg-faint uppercase tracking-wider text-center">
+          {eyebrow}
+        </p>
+      )}
       <div className={compact
         ? "w-full rounded border border-border/40 bg-surface/60 px-2 py-1.5 text-left"
         : "w-full rounded-xl border border-border/60 bg-surface-2/70 px-3 py-2 text-left shadow-lg shadow-black/5"}>
@@ -56,39 +79,47 @@ export function WorkflowChecklist({ eyebrow, title, phaseLabel, summary, items, 
             {phaseLabel}
           </span>
         </div>
-        <p className="mt-1 text-[11px] leading-snug text-fg-muted line-clamp-2">
-          {summary}
-        </p>
-        <div className={compact
-          ? "mt-1.5 flex max-h-32 flex-col gap-1 overflow-y-auto pr-1"
+        {!compact && summary && (
+          <p className="mt-1 text-[11px] leading-snug text-fg-muted line-clamp-2">
+            {summary}
+          </p>
+        )}
+        <ul className={compact
+          ? "mt-1.5 flex max-h-48 flex-col gap-0.5 overflow-y-auto pr-1"
           : "mt-2 flex max-h-32 flex-col gap-1 overflow-y-auto pr-1"}>
-          {items.map((item) => (
-            <div key={item.id} className={compact
-              ? "rounded border border-border/30 bg-surface-2/40 px-1.5 py-1 text-[10px] leading-tight text-fg-muted"
-              : "text-[10px] leading-tight text-fg-muted"}>
-              <div className="flex items-start gap-1.5">
+          {items.map((item) => {
+            const retryable = !!onRetryItem && isWorkflowItemRetryable(item) && (canRetryItem ? canRetryItem(item) : true);
+            return (
+              <li key={item.id} className="group flex items-center gap-1.5 text-[10px] leading-tight text-fg-muted">
                 <span
-                  aria-label={item.status}
-                  className={["mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border", statusClass(item.status)].join(" ")}
+                  role="img"
+                  aria-label={statusLabel(item.status)}
+                  className={["flex h-4 w-4 shrink-0 items-center justify-center rounded border", statusClass(item.status)].join(" ")}
                 >
                   <StatusIcon status={item.status} />
                 </span>
-                <span className={compact ? "min-w-0 flex-1 truncate" : "line-clamp-2"} title={item.label}>{item.label}</span>
-              </div>
-              {(item.input || item.output || item.validation || item.validation_evidence) && (
-                <details className="mt-1 pl-5">
-                  <summary className="cursor-pointer text-fg-faint">Step contract</summary>
-                  <dl className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
-                    {item.input && <><dt className="text-fg-faint">Input</dt><dd className="break-words">{item.input}</dd></>}
-                    {item.output && <><dt className="text-fg-faint">Output</dt><dd className="break-words">{item.output}</dd></>}
-                    {item.validation && <><dt className="text-fg-faint">Validation</dt><dd className="break-words">{item.validation}</dd></>}
-                    {item.validation_evidence && <><dt className="text-fg-faint">Evidence</dt><dd className="break-words">{item.validation_evidence}</dd></>}
-                  </dl>
-                </details>
-              )}
-            </div>
-          ))}
-        </div>
+                <span className={compact ? "min-w-0 flex-1 truncate" : "min-w-0 flex-1 line-clamp-2"} title={itemTooltip(item)}>
+                  {item.label}
+                </span>
+                {retryable && (
+                  <button
+                    type="button"
+                    onClick={() => onRetryItem(item)}
+                    disabled={retryDisabled}
+                    aria-label={`Retry ${item.label}`}
+                    title={`Retry ${item.label}`}
+                    className={[
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded text-fg-faint hover:bg-surface-3 hover:text-fg disabled:opacity-40",
+                      item.status === "needs_attention" ? "" : "opacity-0 focus:opacity-100 group-hover:opacity-100",
+                    ].join(" ")}
+                  >
+                    <RotateCcw className="h-3 w-3" aria-hidden />
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
         {error && (
           <p className="mt-2 text-[10px] leading-tight text-red-400">{error}</p>
         )}
