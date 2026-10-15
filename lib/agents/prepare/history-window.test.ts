@@ -576,6 +576,24 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(getThread(thread_id)?.warm_summary).toBeFalsy();
   });
 
+  it("strips the machine-readable topics fence from an in-turn warm summary and renders the topic recaps instead", async () => {
+    const thread_id = seedWarmThread();
+    chatReturns([
+      "Prose recap body.",
+      "",
+      "```jarela-topics",
+      JSON.stringify([{ title: "Fence topic", start_seq: 1, end_seq: 2, start_at: "a", end_at: "b", recap: "TOPIC-RECAP-TEXT", facts: [{ subject: "S", content: "C" }] }]),
+      "```",
+    ].join("\n"));
+
+    const result = await buildHistoryWindow(thread_id, agentCfg(), providerParams, "q", modelInfo);
+
+    expect(result.warmSummaryCtx).toContain("### Fence topic");
+    expect(result.warmSummaryCtx).toContain("TOPIC-RECAP-TEXT");
+    expect(result.warmSummaryCtx).not.toContain("jarela-topics");
+    expect(result.warmSummaryCtx).not.toContain("Memorized:");
+  });
+
   it("clips an oversized latest hot message even when warm summary succeeds", async () => {
     const thread_id = seedWarmThread();
     addMessage(thread_id, "user", "latest " + "y ".repeat(20_000));

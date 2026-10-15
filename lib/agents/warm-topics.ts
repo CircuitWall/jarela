@@ -224,6 +224,18 @@ export function canMergeIntoTopics(
   );
 }
 
+/** Model-facing text for stored topics: one heading per topic, its recap, and the memory keys it produced. */
+export function renderTopicRecaps(topics: readonly SummaryTopicSegment[]): string {
+  return topics.map((topic) => {
+    const memorized = topic.facts.flatMap((fact) => fact.key ? [fact.key] : []);
+    return [
+      `### ${topic.title}${topic.partial_start ? " (partial; earlier messages omitted)" : ""}`,
+      topic.recap,
+      ...(memorized.length > 0 ? [`Memorized: ${memorized.join(", ")}`] : []),
+    ].join("\n");
+  }).join("\n\n");
+}
+
 export interface MergedWarmTopics {
   topics: SummaryTopicSegment[];
   sourceMessages: number;

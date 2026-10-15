@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assembleFreshTopics,
+  buildTopicGroupingMessages,
+  buildTopicRecapMessages,
   runCompactionPipeline,
   validateTopicGroups,
   validateTopicRecap,
@@ -45,6 +47,29 @@ function scriptedProvider(script: (messages: ProviderMessage[], call: number) =>
     } as never,
   };
 }
+
+describe("source-aware prompts", () => {
+  const group = { title: "T", continues: null, seqs: [1, 2] };
+  const sources = ["chat", "scheduled_task", "watcher", "bridge"] as const;
+
+  it("describes each message stream differently in both steps", () => {
+    const firstLines = sources.map((source) => [
+      String(buildTopicGroupingMessages("x", [], source)[0].content).split("\n")[0],
+      String(buildTopicRecapMessages(group, null, "x", source)[0].content).split("\n")[0],
+    ]);
+    expect(new Set(firstLines.map(([grouping]) => grouping)).size).toBe(sources.length);
+    expect(new Set(firstLines.map(([, recap]) => recap)).size).toBe(sources.length);
+  });
+
+  it("asks only chat to extract facts; automation channels must return an empty list", () => {
+    for (const source of sources) {
+      const system = String(buildTopicRecapMessages(group, null, "x", source)[0].content);
+      expect(system.includes('"confidence"')).toBe(source === "chat");
+      expect(system.includes('Leave "facts" as []')).toBe(source !== "chat");
+      expect(system).toMatch(/\n1\. [\s\S]*\n2\. [\s\S]*\n3\. /);
+    }
+  });
+});
 
 describe("step 1 — validateTopicGroups", () => {
   const rows = [10, 11, 12, 13, 14, 15].map((seq) => row(seq));

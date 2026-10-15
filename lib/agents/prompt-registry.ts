@@ -54,6 +54,8 @@ export function listStaticPrompts(): StaticPrompt[] {
   const sampleNewMessages = "[seq=50] [2026-10-09T11:00:00.000Z] User: Example newer message.\n\n[seq=51] [2026-10-09T11:00:05.000Z] Assistant: Example reply.";
   const compactionGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic]));
   const compactionRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages));
+  const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
+  const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
   const prompts: StaticPrompt[] = [
     {
       id: "agent.system-signal-wakeup",
@@ -84,6 +86,18 @@ export function listStaticPrompts(): StaticPrompt[] {
       source: "lib/agents/compaction-pipeline.ts",
       purpose: "Compaction step 2: recap one topic, newest detail first, merging its stored recap and listing durable facts.",
       text: compactionRecap,
+    },
+    {
+      id: "agent.compaction-group-automation",
+      source: "lib/agents/compaction-pipeline.ts",
+      purpose: "Compaction step 1 for an automation channel (scheduled_task shown; watcher and bridge differ only in wording).",
+      text: channelGroup,
+    },
+    {
+      id: "agent.compaction-topic-recap-automation",
+      source: "lib/agents/compaction-pipeline.ts",
+      purpose: "Compaction step 2 for an automation channel (scheduled_task shown); recap focuses on runs, outcomes and failures.",
+      text: channelRecap,
     },
     {
       id: "audit.citation-checker",

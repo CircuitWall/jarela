@@ -629,6 +629,11 @@ function ensureThreadChannelSummariesTable(db: DatabaseSync): void {
   if (!cols.some((column) => column.name === "summary_before_seq")) {
     db.exec("ALTER TABLE thread_channel_summaries ADD COLUMN summary_before_seq INTEGER");
   }
+  // Stored topic segments (JSON array) so the next compaction can merge new
+  // activity into them instead of re-summarising the channel from scratch.
+  if (!cols.some((column) => column.name === "topics")) {
+    db.exec("ALTER TABLE thread_channel_summaries ADD COLUMN topics TEXT");
+  }
 }
 
 // ADR-0041. Immutable per-assistant-turn snapshot of LLM usage. Written once

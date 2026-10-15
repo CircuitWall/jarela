@@ -21,7 +21,8 @@ import {
   truncateLargestMessagesWithinBudget,
   type ContextBudget,
 } from "@/lib/agents/context-budget";
-import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import { extractTopicSegments, summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import { renderTopicRecaps } from "@/lib/agents/warm-topics";
 import type { MessageRow } from "@/lib/stores/threads";
 import { listMemory } from "@/lib/stores/memory";
 import { recall } from "@/lib/embeddings";
@@ -538,7 +539,15 @@ async function buildWarmSummary(
     const summaryParams: typeof providerParams = providerParams.max_tokens
       ? providerParams
       : { ...providerParams, max_tokens: 1024 };
-    const summary = await summarizeTranscript(provider, modelId, summaryParams, transcript);
+    const raw = (await summarizeTranscript(provider, modelId, summaryParams, transcript)).trim();
+    if (!raw) return "";
+    // The summarizer appends a machine-readable topics fence; the model only
+    // needs the readable recap. Nothing is memorised on this path, so facts are dropped.
+    const { body, topics } = extractTopicSegments(raw);
+    const recapped = topics.filter((topic) => topic.recap);
+    const summary = recapped.length > 0
+      ? renderTopicRecaps(recapped.map((topic) => ({ ...topic, facts: [] })))
+      : body;
     if (!summary) return "";
     return [
       "--- Warm context summary ---",

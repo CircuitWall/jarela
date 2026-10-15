@@ -692,6 +692,15 @@ describe("thread channel summaries (ADR-0044)", () => {
     expect(getThreadChannelSummary(t.thread_id, "watcher")?.summary).toBe("watcher recap");
     expect(getThreadChannelSummary(t.thread_id, "bridge")?.summary).toBe("bridge recap");
   });
+
+  it("round-trips stored channel topics and clears them when a later commit omits them", () => {
+    const t = createThread("agent-chsum-4");
+    const topics = JSON.stringify([{ title: "Nightly backup", start_seq: 1, end_seq: 2, recap: "r", facts: [], message_count: 2 }]);
+    commitThreadChannelSummary(t.thread_id, "scheduled_task", { summary: "recap", summaryBefore: null, summaryBeforeSeq: 3, topics });
+    expect(getThreadChannelSummary(t.thread_id, "scheduled_task")?.topics).toBe(topics);
+    commitThreadChannelSummary(t.thread_id, "scheduled_task", { summary: "fallback", summaryBefore: null, summaryBeforeSeq: 4 });
+    expect(getThreadChannelSummary(t.thread_id, "scheduled_task")?.topics).toBeNull();
+  });
 });
 
 describe("getRecentlyUsedToolNames", () => {
