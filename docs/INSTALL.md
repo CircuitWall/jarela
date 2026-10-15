@@ -259,6 +259,10 @@ All persistent state — chat threads, model configs, integration tokens, schedu
 
 Override with `JARELA_DB_DIR=/path/to/dir`. Uninstalling does **not** delete this directory; remove it by hand if you want a clean slate.
 
+### Jarela Local embedding model
+
+The on-device embedding model (about 136 MB) is not part of the installers. The first time you select **Jarela Local** under Settings → Models → Embeddings, Jarela downloads it from Hugging Face. The download is pinned to a fixed revision, every file is hash-checked, and the model is stored in `models/local-embedding/` under the data directory above. For offline or air-gapped machines, build with `JARELA_BUNDLE_LOCAL_EMBEDDING=1` to include the model in the bundle. Set `JARELA_LOCAL_EMBEDDING_DOWNLOAD=0` to stop Jarela from ever downloading it.
+
 ## Uninstall
 
 - **macOS**: `launchctl unload ~/Library/LaunchAgents/com.jarela.app.plist && rm -rf ~/Library/Application\ Support/Jarela ~/Library/LaunchAgents/com.jarela.app.plist`

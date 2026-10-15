@@ -123,16 +123,6 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Cache local embedding model
-        # Avoid a hard dependency on Hugging Face availability at release
-        # time. The prepare script re-verifies every file's size and hash, so
-        # a restored cache is still integrity-checked before use.
-        uses: actions/cache@v5
-        with:
-          path: .jarela-assets/local-embedding
-          key: local-embedding-${{ hashFiles('scripts/prepare-local-embedding-model.mjs') }}
-          enableCrossOsArchive: true
-
       - name: Build (next build â†’ standalone)
         run: npm run build
         # The Windows GitHub runner image ships legacy junctions
@@ -338,10 +328,12 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Cache local embedding model
+        # The npm package smoke test runs the pinned model; restored assets
+        # are hash-verified before use.
         uses: actions/cache@v5
         with:
           path: .jarela-assets/local-embedding
-          key: local-embedding-${{ hashFiles('scripts/prepare-local-embedding-model.mjs') }}
+          key: local-embedding-${{ hashFiles('lib/embeddings/local-model-assets.mjs') }}
           enableCrossOsArchive: true
 
       - name: Build standalone bundle for npm package

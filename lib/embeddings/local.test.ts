@@ -9,13 +9,10 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("@huggingface/transformers", () => ({ env: mocks.env, pipeline: mocks.pipeline }));
-vi.mock("node:fs", async (importOriginal) => ({
-  ...await importOriginal<typeof import("node:fs")>(),
-  existsSync: vi.fn(() => true),
-}));
+vi.mock("./local-model", () => ({ requireLocalModelRoot: () => modelRoot }));
 
+const modelRoot = `${join("data", "models", "local-embedding")}${sep}`;
 const { embedLocally, splitIntoTokenWindows } = await import("./local");
-const modelPath = join(process.cwd(), ".jarela-assets", "local-embedding");
 
 beforeEach(() => {
   const globals = globalThis as typeof globalThis & { __jarelaLocalEmbeddingPipeline?: Promise<unknown> };
@@ -45,7 +42,7 @@ describe("local embedding model", () => {
     expect(mocks.pipeline).toHaveBeenCalledWith("feature-extraction", LOCAL_EMBEDDING_MODEL_ID, { dtype: "q8" });
     expect(mocks.env.allowRemoteModels).toBe(false);
     expect(mocks.env.allowLocalModels).toBe(true);
-    expect(mocks.env.localModelPath).toBe(`${modelPath}${sep}`);
+    expect(mocks.env.localModelPath).toBe(modelRoot);
     expect(mocks.tokenizer).toHaveBeenCalledTimes(2);
     expect(mocks.extractor).toHaveBeenCalledTimes(1);
     expect(mocks.extractor.mock.calls[0][0]).toEqual([

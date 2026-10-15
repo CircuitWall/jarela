@@ -1,6 +1,5 @@
-import { existsSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
 import { LOCAL_EMBEDDING_DIMENSIONS, LOCAL_EMBEDDING_MODEL_ID } from "./constants";
+import { requireLocalModelRoot } from "./local-model";
 const MAX_CONTENT_TOKENS = 500;
 const TOKEN_WINDOW_OVERLAP = 32;
 const INFERENCE_BATCH_SIZE = 16;
@@ -40,30 +39,25 @@ const localGlobals = globalThis as typeof globalThis & {
   __jarelaLocalEmbeddingPipeline?: Promise<FeatureExtractor>;
 };
 
-function resolveLocalModelPath(): string {
-  const candidates = [
-    resolve(process.cwd(), ".jarela-assets", "local-embedding"),
-    resolve(process.cwd(), ".next", "standalone", ".jarela-assets", "local-embedding"),
-  ];
-  for (const root of candidates) {
-    if (existsSync(join(root, LOCAL_EMBEDDING_MODEL_ID, "onnx", "model_quantized.onnx"))) {
-      return root.endsWith(sep) ? root : `${root}${sep}`;
-    }
-  }
-  throw new Error("Bundled Jarela embedding model is missing; run `npm run model:prepare`.");
-}
-
 async function getFeatureExtractor(): Promise<FeatureExtractor> {
-  localGlobals.__jarelaLocalEmbeddingPipeline ??= (async () => {
+  if (localGlobals.__jarelaLocalEmbeddingPipeline) return localGlobals.__jarelaLocalEmbeddingPipeline;
+  // Throws (and starts the download) until the model is installed; resolve
+  // it before caching so a missing model is not memoised as a failure.
+  const modelRoot = requireLocalModelRoot();
+  const loading = (async () => {
     const { env, pipeline } = await import("@huggingface/transformers");
-    env.localModelPath = resolveLocalModelPath();
+    env.localModelPath = modelRoot;
     env.allowRemoteModels = false;
     env.allowLocalModels = true;
     return await pipeline("feature-extraction", LOCAL_EMBEDDING_MODEL_ID, {
       dtype: "q8",
     }) as unknown as FeatureExtractor;
   })();
-  return localGlobals.__jarelaLocalEmbeddingPipeline;
+  localGlobals.__jarelaLocalEmbeddingPipeline = loading;
+  loading.catch(() => {
+    if (localGlobals.__jarelaLocalEmbeddingPipeline === loading) localGlobals.__jarelaLocalEmbeddingPipeline = undefined;
+  });
+  return loading;
 }
 
 export function splitIntoTokenWindows(

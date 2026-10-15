@@ -13,6 +13,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { validateBody } from "@/lib/api/responses";
 import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID, LOCAL_EMBEDDING_PROVIDER_NAME } from "@/lib/embeddings/constants";
 import { embedLocally } from "@/lib/embeddings/local";
+import { getLocalModelStatus, startLocalModelDownload } from "@/lib/embeddings/local-model";
 import { getReembedStatus, reembedStaleVectors } from "@/lib/embeddings";
 
 const PutSchema = z.object({
@@ -30,24 +31,31 @@ function resolveProbeModelId(modelId: string, params: ProviderParams): string {
   return modelId;
 }
 
-async function probeEmbeddingModelConfig(name: string | null) {
+function ensureLocalModel(force: boolean): void {
+  // Rebuild memory/chat vectors once the one-time download lands.
+  startLocalModelDownload({ force })
+    .then(() => reembedStaleVectors())
+    .catch(() => { /* surfaced through getLocalModelStatus() */ });
+}
+
+async function probeEmbeddingModelConfig(name: string | null, { forceDownload = false } = {}) {
   if (!name) return null;
   if (name === LOCAL_EMBEDDING_CONFIG_NAME) {
+    const local = { provider: LOCAL_EMBEDDING_PROVIDER_NAME, model_id: LOCAL_EMBEDDING_MODEL_ID };
+    if (getLocalModelStatus().state !== "ready") ensureLocalModel(forceDownload);
+    const status = getLocalModelStatus();
+    if (status.state === "downloading") {
+      const mb = Math.round(status.totalBytes / 1_000_000);
+      return { ok: false, ...local, downloading: true, error: `downloading the model (~${mb} MB, one time)` };
+    }
+    if (status.state !== "ready") {
+      return { ok: false, ...local, error: status.error ?? "the model is not installed" };
+    }
     try {
       const [vector] = await embedLocally(["Jarela local embedding capability probe"], "query");
-      return {
-        ok: true,
-        provider: LOCAL_EMBEDDING_PROVIDER_NAME,
-        model_id: LOCAL_EMBEDDING_MODEL_ID,
-        dimension: vector.length,
-      };
+      return { ok: true, ...local, dimension: vector.length };
     } catch (err) {
-      return {
-        ok: false,
-        provider: LOCAL_EMBEDDING_PROVIDER_NAME,
-        model_id: LOCAL_EMBEDDING_MODEL_ID,
-        error: errorMessage(err),
-      };
+      return { ok: false, ...local, error: errorMessage(err) };
     }
   }
   const cfg = getModelConfig(name);
@@ -119,7 +127,7 @@ export async function PUT(req: NextRequest) {
   void reembedStaleVectors();
   return NextResponse.json({
     embedding_model_config: selected,
-    embedding_probe: await probeEmbeddingModelConfig(selected),
+    embedding_probe: await probeEmbeddingModelConfig(selected, { forceDownload: true }),
     reembed: getReembedStatus(),
   });
 }

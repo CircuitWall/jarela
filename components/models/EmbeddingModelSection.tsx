@@ -15,6 +15,7 @@ interface EmbeddingProbe {
   model_id: string;
   dimension?: number;
   error?: string;
+  downloading?: boolean;
 }
 
 // One embedding model serves documents, memory, and chat-history recall.
@@ -46,6 +47,20 @@ export function EmbeddingModelSection({ models }: { models: ModelConfig[] }) {
     }, 1500);
     return () => clearInterval(timer);
   }, [reembed?.running]);
+
+  // Poll while Jarela Local downloads its one-time model.
+  useEffect(() => {
+    if (!probe?.downloading) return;
+    const timer = setInterval(() => {
+      api.documents.getSettings()
+        .then((s) => {
+          setProbe(s.embedding_probe ?? null);
+          setReembed(s.reembed);
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [probe?.downloading]);
 
   async function save(value: string) {
     setEmbeddingModel(value);
@@ -89,7 +104,10 @@ export function EmbeddingModelSection({ models }: { models: ModelConfig[] }) {
         Memory and chat vectors are rebuilt automatically after a change. Documents need Reindex on each source.
       </p>
       {saving && <p className="text-[11px] text-fg-faint">Testing embedding model...</p>}
-      {!saving && probe && (
+      {!saving && probe?.downloading && (
+        <Notice tone="info">Jarela Local is {probe.error ?? "downloading its model"}. Embeddings start automatically when it finishes.</Notice>
+      )}
+      {!saving && probe && !probe.downloading && (
         <p className={`text-[11px] ${probe.ok ? "text-emerald-500" : "text-red-400"}`}>
           {probe.ok
             ? `Usable: ${probe.provider}/${probe.model_id}` + (probe.dimension ? ` (${probe.dimension} dims)` : "")

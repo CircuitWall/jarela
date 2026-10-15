@@ -32,6 +32,7 @@ export default defineConfig({
       "hooks/**/*.test.tsx",
       "browser-extension/lib/**/*.test.mjs",
       "components/**/*.test.tsx",
+      "lib/**/*.test.mjs",
       "scripts/**/*.test.mjs",
     ],
     coverage: {

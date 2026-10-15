@@ -1134,6 +1134,8 @@ export interface DocumentSettings {
     model_id: string;
     dimension?: number;
     error?: string;
+    /** Jarela Local is fetching its one-time model download. */
+    downloading?: boolean;
   } | null;
 }
 
