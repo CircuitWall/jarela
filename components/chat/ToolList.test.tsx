@@ -380,6 +380,29 @@ describe("ToolList — live progress (ADR-0073)", () => {
     expect(screen.getByText("Update rejected: Every completed workflow item requires observed validation_evidence.")).toBeTruthy();
   });
 
+  it("shows the attempt count on a workflow step that was retried", () => {
+    const snapshot = (id: string, status: string) => ({
+      workflow_id: "release_review",
+      items: [{ id: "run-tests", label: "Run tests", input: "Diff", output: "Results", validation: "Run suite", status }],
+    });
+    const result = (status: string) => ({
+      ok: true,
+      workflow_id: "release_review",
+      state: { phase: null, summary: "", error: null, checklist: snapshot("", status).items },
+    });
+    const events: ToolEvent[] = (["checking", "needs_attention", "checking"] as const).flatMap((status, i) => [
+      { id: `a${i}`, phase: "call" as const, name: "workflow_progress", payload: snapshot("", status) },
+      { id: `a${i}`, phase: "result" as const, name: "workflow_progress", payload: result(status) },
+    ]);
+
+    render(<ToolList events={events} />);
+    const rows = screen.getAllByText("workflow_progress");
+    fireEvent.click(rows[1]);
+    expect(screen.queryByText("attempt 2")).toBeNull();
+    fireEvent.click(rows[2]);
+    expect(screen.getByText("attempt 2")).toBeTruthy();
+  });
+
   it("offers a per-step retry that asks the agent to redo that step", () => {
     const onRetry = vi.fn();
     const events: ToolEvent[] = [{

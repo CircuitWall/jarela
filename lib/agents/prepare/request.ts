@@ -117,6 +117,10 @@ export interface ThreadRunRequest {
    *  stall-retry recursion. */
   _stall_retries_left?: number;
 
+  /** Internal — public callers leave undefined. Automatic workflow-step
+   *  contract retries already spent this turn, keyed by `workflow_id:item_id`. */
+  _workflow_step_retries?: Readonly<Record<string, number>>;
+
   /**
    * Internal — public callers leave undefined. When set, prepareThreadRun
    * will NOT call addMessage/touchThread for this request. Retry paths set

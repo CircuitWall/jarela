@@ -264,6 +264,9 @@ interface ToolCallGroup {
   result: unknown;
   deadlineMs: number;
   status: "running" | "ok" | "error" | "async";
+  // workflow_progress only: per-step attempt counts so far in this message
+  // (how many times each item has entered `checking`).
+  workflowAttempts?: Readonly<Record<string, number>>;
   // True when this group's `result` arrived via a later tool_result_get
   // call rather than the original tool's direct return. Surfaces a small
   // "read" pill so it's obvious the agent reaped a background handoff.
@@ -387,7 +390,33 @@ function groupByCallId(events: ToolEvent[]): ToolCallGroup[] {
     g.absorbed = true;
   }
 
-  return order.map((id) => map.get(id)!).filter((g) => !g.absorbed);
+  const groups = order.map((id) => map.get(id)!).filter((g) => !g.absorbed);
+  annotateWorkflowAttempts(groups);
+  return groups;
+}
+
+// Counts each workflow step's transitions into `checking` across the
+// message's workflow_progress calls, so auto-retried steps show "attempt N".
+// Rejected updates (ok:false) changed nothing and are not counted.
+function annotateWorkflowAttempts(groups: ToolCallGroup[]): void {
+  const lastStatus = new Map<string, WorkflowChecklistStatus>();
+  const attempts = new Map<string, Record<string, number>>();
+  for (const group of groups) {
+    if (group.name !== "workflow_progress") continue;
+    if (coerceObject(unwrapLangChainSerializable(group.result))?.ok === false) continue;
+    const view = workflowViewFor(group);
+    if (!view) continue;
+    const counts = { ...(attempts.get(view.workflow_id) ?? {}) };
+    for (const item of view.items) {
+      const key = `${view.workflow_id}:${item.id}`;
+      if (item.status === "checking" && lastStatus.get(key) !== "checking") {
+        counts[item.id] = (counts[item.id] ?? 0) + 1;
+      }
+      lastStatus.set(key, item.status);
+    }
+    attempts.set(view.workflow_id, counts);
+    group.workflowAttempts = counts;
+  }
 }
 
 function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: number }) {
@@ -624,10 +653,14 @@ function workflowViewFor(group: ToolCallGroup): WorkflowProgressView | null {
   if (group.name !== "workflow_progress") return null;
   const view = workflowProgressFrom(group.result) ?? workflowProgressPreviewFrom(group.args);
   const result = coerceObject(unwrapLangChainSerializable(group.result));
-  if (view && result?.ok === false && typeof result.error === "string") {
-    return { ...view, error: `Update rejected: ${result.error}` };
+  const attempts = group.workflowAttempts;
+  const withAttempts = view && attempts
+    ? { ...view, items: view.items.map((item) => (attempts[item.id] ? { ...item, attempts: attempts[item.id] } : item)) }
+    : view;
+  if (withAttempts && result?.ok === false && typeof result.error === "string") {
+    return { ...withAttempts, error: `Update rejected: ${result.error}` };
   }
-  return view;
+  return withAttempts;
 }
 
 /** Workflow rows show only their work items; raw payloads stay visible when the call failed. */
