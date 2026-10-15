@@ -41,7 +41,11 @@ export function WarmSummaryCard({
   const fresh = !!summary && hotSinceSeq != null && summaryBeforeSeq === hotSinceSeq;
   const stale = !!summary && !fresh;
   const computing = stale && streaming;
-  const summaryTopics = summary && topics && topics.length > 0 ? topics : null;
+  // Summaries stored before topic segmentation still read as topics: their
+  // markdown sections render through the same collapsible rows.
+  const summaryTopics = summary
+    ? (topics && topics.length > 0 ? topics : topicsFromSummarySections(summary))
+    : null;
 
   return (
     <div
@@ -313,9 +317,38 @@ function formatBytes(n: number): string {
 // awkwardly inside a card that already has its own header. Strip them.
 function stripWarmHeader(raw: string): string {
   return raw
+    .replace(/\r\n/g, "\n")
+    .replace(/^\s*(<!--[\s\S]*?-->\s*)+/, "")
     .replace(/^--- Warm context summary ---\n/, "")
-    .replace(/^Compressed recap of earlier messages outside the hot window:\n/, "")
+    .replace(/^Compressed recap of [^\n]*:\n/, "")
     .trimStart();
+}
+
+/**
+ * Splits a markdown summary into topic segments at its headings. Returns
+ * null when there are fewer than two sections, so short or unstructured
+ * summaries keep the plain prose rendering.
+ */
+export function topicsFromSummarySections(raw: string): SummaryTopicSegment[] | null {
+  const sections: SummaryTopicSegment[] = [];
+  let title: string | null = null;
+  let body: string[] = [];
+  const flush = () => {
+    const recap = body.join("\n").trim();
+    if (title !== null || recap) sections.push({ title: title ?? "Overview", start_at: "", end_at: "", recap, facts: [] });
+  };
+  for (const line of stripWarmHeader(raw).split("\n")) {
+    const heading = /^#{1,3}\s+(.+?)\s*#*\s*$/.exec(line);
+    if (heading) {
+      flush();
+      title = heading[1];
+      body = [];
+    } else {
+      body.push(line);
+    }
+  }
+  flush();
+  return sections.length >= 2 ? sections : null;
 }
 
 function summaryLong(raw: string): boolean {

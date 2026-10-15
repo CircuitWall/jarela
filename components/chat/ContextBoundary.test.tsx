@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { WarmSummaryCard } from "./ContextBoundary";
+import { topicsFromSummarySections, WarmSummaryCard } from "./ContextBoundary";
 import type { SummaryTopicSegment } from "@/api/types";
 
 const topics: SummaryTopicSegment[] = [
@@ -65,5 +65,42 @@ describe("WarmSummaryCard topic preview", () => {
     render(card(10, structuredTopics));
     expect(screen.getByText("Flat prose fallback.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Pricing extraction/ })).toBeNull();
+  });
+
+  it("groups a sectioned summary without stored topics into collapsed topic rows", () => {
+    const legacy = [
+      "<!-- jarela:warm-scope=foreground -->",
+      "--- Warm context summary ---",
+      "Compressed recap of recent messages immediately before the hot window:",
+      "## Context",
+      "Weighing **three offers** against each other.",
+      "## User facts & preferences",
+      "- Will not relocate",
+      "- Wants numerical answers",
+    ].join("\n");
+    render(<WarmSummaryCard olderCount={46} summary={legacy} summaryBeforeSeq={10} hotSinceSeq={10} computedAt={null} streaming={false} topics={null} />);
+
+    expect(screen.queryByText(/jarela:warm-scope/)).toBeNull();
+    expect(screen.queryByText(/Warm context summary/)).toBeNull();
+    const context = screen.getByRole("button", { name: /^Context/ });
+    expect(context.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: /User facts & preferences/ })).toBeTruthy();
+    expect(screen.getByText("three offers").tagName).toBe("STRONG");
+    expect(screen.queryByRole("button", { name: /Show more/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /User facts & preferences/ }));
+    expect(screen.getAllByText("Will not relocate")).toHaveLength(1);
+  });
+});
+
+describe("topicsFromSummarySections", () => {
+  it("keeps unstructured or single-section summaries as prose", () => {
+    expect(topicsFromSummarySections("Just a short recap.")).toBeNull();
+    expect(topicsFromSummarySections("## Only\nOne section.")).toBeNull();
+  });
+
+  it("keeps intro text before the first heading as an overview section", () => {
+    const sections = topicsFromSummarySections("Intro line.\n## Decisions\n- Chose A");
+    expect(sections?.map((s) => [s.title, s.recap])).toEqual([["Overview", "Intro line."], ["Decisions", "- Chose A"]]);
   });
 });
