@@ -1,6 +1,8 @@
 import { getProvider } from "@/lib/providers";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
-import { summarizeTranscript, transcriptText, extractTopicSegments, validateTopicSegments, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
+import { summarizeTranscript, transcriptText, extractTopicSegments, validateTopicSegments, parseStoredTopics, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
+import { canMergeIntoTopics, finalizeFreshTopics, mergeWarmTopics, slugifyForMemoryKey } from "@/lib/agents/warm-topics";
+import { formatTranscriptRow, runCompactionPipeline } from "@/lib/agents/compaction-pipeline";
 import { takeRecentWarmMessages, warmSummaryMessageLimit, wrapWarmSummary, AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-configs";
 import { getModelParams, resolveRunnableModelConfig } from "@/lib/stores/model-config";
@@ -241,6 +243,9 @@ interface BuiltSummary {
   // Per-topic segmentation of the same range (see SummaryTopicSegment). Empty
   // when the summarizer didn't return a `jarela-topics` fence.
   topics: SummaryTopicSegment[];
+  // Topics produced by this pass only; their extracted facts get uplifted.
+  // Stored topics merged in earlier were uplifted when they were fresh.
+  freshTopics: SummaryTopicSegment[];
 }
 
 export interface CommittedWarmContext {
@@ -314,8 +319,9 @@ export async function compactThreadWarmContext(
     channelSummaries,
   });
   if (!committed) return null;
-  upliftTopicFacts(built.topics);
-  return { boundary, boundarySeq, ...built };
+  upliftTopicFacts(built.freshTopics);
+  const { freshTopics: _fresh, ...context } = built;
+  return { boundary, boundarySeq, ...context };
 }
 
 /**
@@ -351,40 +357,74 @@ async function buildSummaryBefore(
     ? providerParams.context_window_tokens
     : 32768;
   const summaryInputChars = Math.max(4000, Math.min(120000, Math.round(contextTokens * 3)));
-  const eligibleRows = takeRecentWarmMessages(rows.filter((m) => m.seq < boundarySeq), agent.warm_summary_limit);
-  const selectedRows: typeof eligibleRows = [];
-  const selectedTranscript: string[] = [];
-  let selectedTranscriptChars = 0;
-  for (let index = eligibleRows.length - 1; index >= 0; index -= 1) {
-    const row = eligibleRows[index];
-    const formatted = `[seq=${row.seq}] [${row.created_at}] ${row.role === "user" ? "User" : "Assistant"}: ${transcriptText(row.content)}`;
-    const addedChars = formatted.length + (selectedTranscript.length > 0 ? 2 : 0);
-    if (selectedTranscriptChars + addedChars > summaryInputChars) break;
-    selectedRows.unshift(row);
-    selectedTranscript.unshift(formatted);
-    selectedTranscriptChars += addedChars;
-  }
-  const selectedSourceChars = selectedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
-  if (selectedSourceChars < 24 || selectedRows.length < 2) {
-    return { summary: "", sourceMessages: selectedRows.length, sourceChars: selectedSourceChars, topics: [] };
-  }
-
-  const transcript = selectedTranscript.join("\n\n").trim();
-  if (!transcript) return null;
-
   const provider = providerOverride?.provider ?? getProvider(modelCfg.provider);
   const modelId = providerOverride?.modelId ?? modelCfg.model_id;
   const summaryParams = providerParams.max_tokens
     ? providerParams
     : { ...providerParams, max_tokens: 1024 };
 
+  // Compaction pipeline (lib/agents/compaction-pipeline.ts): group -> recap ->
+  // merge. Incremental when the stored topics can be extended — only messages
+  // that aged out of hot since the last pass are folded in; otherwise the
+  // recent warm window is regrouped from scratch. If the pipeline fails
+  // validation, fall through to the single-call summary below.
+  const messageLimit = warmSummaryMessageLimit(agent.warm_summary_limit);
+  const storedTopics = parseStoredTopics(thread.warm_summary_topics);
+  const incremental = messageLimit > 0 && canMergeIntoTopics(storedTopics, thread.warm_summary_before_seq, boundarySeq);
+  const priorTopics = incremental ? storedTopics! : [];
+  const pipelineCandidates = incremental
+    ? rows.filter((m) => m.seq >= thread.warm_summary_before_seq! && m.seq < boundarySeq)
+    : takeRecentWarmMessages(rows.filter((m) => m.seq < boundarySeq), agent.warm_summary_limit);
+  const { selectedRows: pipelineRows } = selectTranscriptRows(pipelineCandidates, summaryInputChars);
+  if (incremental && pipelineRows.length === 0) {
+    const kept = mergeWarmTopics(priorTopics, [], messageLimit);
+    return { summary: wrapTopicSummary(kept.topics), sourceMessages: kept.sourceMessages, sourceChars: kept.sourceChars, topics: kept.topics, freshTopics: [] };
+  }
+  const pipelineChars = pipelineRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
+  if (!incremental && (pipelineChars < 24 || pipelineRows.length < 2)) {
+    return { summary: "", sourceMessages: pipelineRows.length, sourceChars: pipelineChars, topics: [], freshTopics: [] };
+  }
+  const firstPipelineSeq = pipelineRows[0]?.seq ?? boundarySeq;
+  const pipeline = await runCompactionPipeline({
+    provider,
+    modelId,
+    params: summaryParams,
+    rows: pipelineRows,
+    priorTopics,
+    messageLimit: messageLimit > 0 ? messageLimit : pipelineRows.length,
+    partialStart: !incremental && rows.some((m) => m.seq < firstPipelineSeq),
+    log: (message) => console.info(`[warm-summary] thread=${threadId} ${incremental ? "merge" : "rebuild"} ${message}`),
+  }).catch((err: unknown) => {
+    console.warn(`[warm-summary] thread=${threadId} compaction pipeline threw:`, err);
+    return null;
+  });
+  if (pipeline) {
+    return {
+      summary: wrapTopicSummary(pipeline.topics),
+      sourceMessages: pipeline.sourceMessages,
+      sourceChars: pipeline.sourceChars,
+      topics: pipeline.topics,
+      freshTopics: pipeline.freshTopics,
+    };
+  }
+  console.warn(`[warm-summary] thread=${threadId} compaction pipeline failed validation; using single-call summary`);
+
+  const eligibleRows = takeRecentWarmMessages(rows.filter((m) => m.seq < boundarySeq), agent.warm_summary_limit);
+  const { selectedRows, transcript } = selectTranscriptRows(eligibleRows, summaryInputChars);
+  const selectedSourceChars = selectedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
+  if (selectedSourceChars < 24 || selectedRows.length < 2) {
+    return { summary: "", sourceMessages: selectedRows.length, sourceChars: selectedSourceChars, topics: [], freshTopics: [] };
+  }
+
+  if (!transcript) return null;
+
   const raw = (await summarizeTranscript(provider, modelId, summaryParams, transcript)).trim();
   if (!raw) return null;
   const { body, topics } = extractTopicSegments(raw);
-  const validatedTopics = validateTopicSegments(topics, rows, selectedRows, {
+  const validatedTopics = finalizeFreshTopics(validateTopicSegments(topics, rows, selectedRows, {
     boundarySeq,
     allowPartialStart: true,
-  });
+  }), selectedRows);
   const summarizedSeqs = new Set(validatedTopics.flatMap((topic) =>
     selectedRows
       .filter((row) => row.seq >= topic.start_seq! && row.seq <= topic.end_seq!)
@@ -393,29 +433,56 @@ async function buildSummaryBefore(
   const summarizedRows = validatedTopics.length > 0
     ? selectedRows.filter((row) => summarizedSeqs.has(row.seq))
     : selectedRows;
-  const summary = validatedTopics.length > 0
-    ? renderTopicRecaps(validatedTopics)
-    : body;
-  if (!summary) return null;
+  if (validatedTopics.length === 0 && !body) return null;
   const sourceMessages = summarizedRows.length;
   const sourceChars = summarizedRows.reduce((total, row) => total + transcriptText(row.content).length, 0);
 
   return {
-    summary: [
-      "--- Warm context summary ---",
-      "Compressed recap of recent messages immediately before the hot window:",
-      summary,
-    ].join("\n"),
+    summary: validatedTopics.length > 0 ? wrapTopicSummary(validatedTopics) : wrapTopicSummary(null, body),
     sourceMessages,
     sourceChars,
     topics: validatedTopics,
+    freshTopics: validatedTopics,
   };
 }
 
+function selectTranscriptRows<T extends { seq: number; created_at: string; role: string; content: string }>(
+  rows: readonly T[],
+  budgetChars: number,
+): { selectedRows: T[]; transcript: string } {
+  // Newest first, so a budget overflow drops the oldest messages.
+  const selectedRows: T[] = [];
+  const parts: string[] = [];
+  let chars = 0;
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    const formatted = formatTranscriptRow(row);
+    const added = formatted.length + (parts.length > 0 ? 2 : 0);
+    if (chars + added > budgetChars) break;
+    selectedRows.unshift(row);
+    parts.unshift(formatted);
+    chars += added;
+  }
+  return { selectedRows, transcript: parts.join("\n\n").trim() };
+}
+
+function wrapTopicSummary(topics: readonly SummaryTopicSegment[] | null, body = ""): string {
+  return [
+    "--- Warm context summary ---",
+    "Compressed recap of recent messages immediately before the hot window:",
+    topics ? renderTopicRecaps(topics) : body,
+  ].join("\n");
+}
+
 function renderTopicRecaps(topics: readonly SummaryTopicSegment[]): string {
-  return topics.map((topic) =>
-    `### ${topic.title}${topic.partial_start ? " (partial; earlier messages omitted)" : ""}\n${topic.recap}`,
-  ).join("\n\n");
+  return topics.map((topic) => {
+    const memorized = topic.facts.flatMap((fact) => fact.key ? [fact.key] : []);
+    return [
+      `### ${topic.title}${topic.partial_start ? " (partial; earlier messages omitted)" : ""}`,
+      topic.recap,
+      ...(memorized.length > 0 ? [`Memorized: ${memorized.join(", ")}`] : []),
+    ].join("\n");
+  }).join("\n\n");
 }
 
 // Batched uplift (once per compaction pass, covering every topic segment
@@ -428,7 +495,9 @@ export function upliftTopicFacts(topics: readonly SummaryTopicSegment[]): void {
   const seenKeys = new Set<string>();
   for (const topic of topics) {
     for (const fact of topic.facts) {
-      const key = slugifyForMemoryKey(fact.subject);
+      // The agent already saved this one during the turn; don't overwrite it.
+      if (fact.origin === "agent") continue;
+      const key = fact.key?.startsWith("facts/") ? fact.key.slice("facts/".length) : slugifyForMemoryKey(fact.subject);
       if (!key || seenKeys.has(key)) continue;
       seenKeys.add(key);
       putMemory("facts", key, {
@@ -447,14 +516,6 @@ export function upliftTopicFacts(topics: readonly SummaryTopicSegment[]): void {
       });
     }
   }
-}
-
-function slugifyForMemoryKey(subject: string): string {
-  return subject
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
 }
 
 export interface BuiltChannelSummary {
