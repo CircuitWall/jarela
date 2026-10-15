@@ -1,6 +1,5 @@
-// GitHub Copilot device-flow login. Lets users sign in with their Copilot
-// subscription instead of pasting a PAT (which can't be exchanged for a
-// Copilot session token and gets rate-limited on the Models REST API).
+// GitHub Copilot device-flow login. The legacy PAT path depended on GitHub
+// Models, which has been retired; use this flow for Copilot Chat access.
 //
 // Flow (RFC 8628):
 //   1. POST github.com/login/device/code with the VS Code Copilot client_id.

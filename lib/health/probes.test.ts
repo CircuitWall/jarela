@@ -562,17 +562,14 @@ describe("health probes", () => {
       expect(r.status).toBe("auth_failed");
       expect(String(r.error)).toMatch(/subscription/i);
     });
-    it("PAT fallback: ok against the Models API", async () => {
-      saveIntegration("github-copilot", { api_key: "ghp_xxx" });
-      mockFetch(() => jsonResponse({ models: [] }));
-      const r = await probeGithubCopilot();
-      expect(r.status).toBe("ok");
-      expect(r.detail?.auth).toBe("pat");
-    });
-    it("PAT fallback: 401 auth_failed", async () => {
-      saveIntegration("github-copilot", { api_key: "ghp_bad" });
-      mockFetch(() => new Response("", { status: 401 }));
-      expect((await probeGithubCopilot()).status).toBe("auth_failed");
+    it("rejects legacy PAT credentials without probing GitHub Models", async () => {
+      saveIntegration("github-copilot", { api_key: "ghp_synthetic" });
+      const fetch = vi.fn();
+      vi.stubGlobal("fetch", fetch);
+      const result = await probeGithubCopilot();
+      expect(result.status).toBe("auth_failed");
+      expect(result.error).toMatch(/device-flow sign-in/i);
+      expect(fetch).not.toHaveBeenCalled();
     });
     it("prefers OAuth token over PAT when both are present", async () => {
       storeOAuthToken("gho_xxx");

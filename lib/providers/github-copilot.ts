@@ -55,19 +55,19 @@ interface SessionToken {
 
 const tokenCache = new Map<string, SessionToken>();
 
-function isLikelyGitHubPat(token: string): boolean {
-  return token.startsWith("ghp_") || token.startsWith("github_pat_") || token.startsWith("gho_");
+function isGitHubPat(token: string): boolean {
+  return token.startsWith("ghp_") || token.startsWith("github_pat_");
 }
 
-async function getCopilotToken(pat: string): Promise<string> {
-  if (!pat) throw new Error("GitHub Copilot: no API key configured for token exchange.");
-  const cached = tokenCache.get(pat);
+async function exchangeCopilotSessionToken(githubToken: string): Promise<string> {
+  if (!githubToken) throw new Error("GitHub Copilot: no API key configured for token exchange.");
+  const cached = tokenCache.get(githubToken);
   if (cached && cached.expiresAt - Date.now() > 60_000) return cached.token;
-  tokenCache.delete(pat);
+  tokenCache.delete(githubToken);
 
   const res = await fetch("https://api.github.com/copilot_internal/v2/token", {
     headers: {
-      Authorization: `token ${pat}`,
+      Authorization: `token ${githubToken}`,
       "User-Agent": "Jarela/1.0",
     },
     signal: AbortSignal.timeout(30_000),
@@ -78,15 +78,14 @@ async function getCopilotToken(pat: string): Promise<string> {
     if (res.status === 401) {
       throw new Error(
         `GitHub Copilot: token exchange failed (401). ` +
-        `Ensure your PAT has the "copilot" scope and that you have an active Copilot subscription. ` +
+        `Check that this GitHub account has an active Copilot subscription and the credential is valid. ` +
         `Details: ${body}`,
       );
     }
     if (res.status === 404) {
       throw new Error(
-        "GitHub Copilot token exchange endpoint was not found for this credential. " +
-        "Personal Access Tokens are not accepted directly by Copilot chat. " +
-        "Use a Copilot session token in params.copilot_session_token, or a credential that supports token exchange.",
+        "GitHub Copilot could not exchange this credential for a session token. " +
+        "Use the in-app device-flow sign-in or set params.copilot_session_token.",
       );
     }
     throw new Error(`GitHub Copilot: token exchange failed (${res.status}): ${body}`);
@@ -96,7 +95,7 @@ async function getCopilotToken(pat: string): Promise<string> {
   if (!json.token) throw new Error("GitHub Copilot: token exchange returned no token");
 
   const expiresAt = json.expires_at ? new Date(json.expires_at).getTime() : Date.now() + 28 * 60_000;
-  tokenCache.set(pat, { token: json.token, expiresAt });
+  tokenCache.set(githubToken, { token: json.token, expiresAt });
   return json.token;
 }
 
@@ -119,14 +118,8 @@ async function resolvedClient(params: ProviderParams): Promise<OpenAI> {
   });
 }
 
-// Returns the auth + transport details needed to talk to GitHub Copilot. The
-// session-token + native-Messages-API path is preferred because it preserves
-// Anthropic `cache_control` markers; the legacy PAT path falls back to
-// GitHub Models REST (OpenAI-shaped, no Claude Messages support, capped at
-// ~8K input tokens) and is incompatible with Anthropic routing.
-type CopilotAuth =
-  | { kind: "copilot-api"; baseURL: string; apiKey: string; headers: Record<string, string> }
-  | { kind: "models-rest"; baseURL: string; apiKey: string; headers: Record<string, string> };
+// Resolves credentials for Copilot's OpenAI-compatible and native Messages APIs.
+type CopilotAuth = { baseURL: string; apiKey: string; headers: Record<string, string> };
 
 async function resolveCopilotAuth(params: ProviderParams): Promise<CopilotAuth> {
   const apiKey = (params.api_key as string | undefined) ?? "";
@@ -134,7 +127,6 @@ async function resolveCopilotAuth(params: ProviderParams): Promise<CopilotAuth> 
 
   if (explicitSessionToken && explicitSessionToken.length > 0) {
     return {
-      kind: "copilot-api",
       baseURL: params.base_url ?? "https://api.githubcopilot.com",
       apiKey: explicitSessionToken,
       headers: { ...FIXED_HEADERS },
@@ -143,25 +135,19 @@ async function resolveCopilotAuth(params: ProviderParams): Promise<CopilotAuth> 
 
   const oauthToken = getStoredOAuthToken();
   if (oauthToken) {
-    const token = await getCopilotToken(oauthToken);
+    const token = await exchangeCopilotSessionToken(oauthToken);
     return {
-      kind: "copilot-api",
       baseURL: params.base_url ?? "https://api.githubcopilot.com",
       apiKey: token,
       headers: { ...FIXED_HEADERS },
     };
   }
 
-  if (apiKey && isLikelyGitHubPat(apiKey)) {
-    return {
-      kind: "models-rest",
-      baseURL: params.base_url ?? "https://models.github.ai/inference",
-      apiKey,
-      headers: {
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2026-03-10",
-      },
-    };
+  if (apiKey && isGitHubPat(apiKey)) {
+    throw new Error(
+      "GitHub Copilot: this provider's GitHub PAT route used GitHub Models, which has been retired. " +
+      "Use the in-app device-flow sign-in or set copilot_session_token.",
+    );
   }
 
   if (!apiKey) {
@@ -169,9 +155,8 @@ async function resolveCopilotAuth(params: ProviderParams): Promise<CopilotAuth> 
       "GitHub Copilot: not signed in. Use the in-app device-flow login, or set api_key / copilot_session_token.",
     );
   }
-  const token = await getCopilotToken(apiKey);
+  const token = await exchangeCopilotSessionToken(apiKey);
   return {
-    kind: "copilot-api",
     baseURL: params.base_url ?? "https://api.githubcopilot.com",
     apiKey: token,
     headers: { ...FIXED_HEADERS },
@@ -181,17 +166,9 @@ async function resolveCopilotAuth(params: ProviderParams): Promise<CopilotAuth> 
 // Anthropic SDK client pointed at Copilot's native `/v1/messages` endpoint.
 // Copilot accepts the Anthropic request shape (including `cache_control`
 // ephemeral breakpoints) for Claude-family models when called with a
-// session token. The PAT-only `models.github.ai` fallback does NOT expose
-// this endpoint, so we surface a clear error there instead of silently
-// downgrading to a path that strips the cache markers.
+// Copilot session token.
 async function resolvedAnthropicClient(params: ProviderParams): Promise<Anthropic> {
   const auth = await resolveCopilotAuth(params);
-  if (auth.kind !== "copilot-api") {
-    throw new Error(
-      "GitHub Copilot: Claude models require a Copilot session token (OAuth or copilot_session_token). " +
-      "Personal Access Tokens route to GitHub Models REST, which does not expose the native Messages API.",
-    );
-  }
   return new Anthropic({
     // The SDK requires an apiKey field; we authenticate via authToken
     // (Authorization: Bearer ...) per Copilot's contract. The empty
