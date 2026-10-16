@@ -211,6 +211,22 @@ plugins under `~/.jarela/providers/`).
 - **Source:** [`app/api/v1/providers/route.ts`](../app/api/v1/providers/route.ts)
 - **Agent equivalent:** `list_providers` and `describe_provider` tools.
 
+### `GET /api/v1/providers/{provider}/models`
+
+Lists models available from the selected provider. For OpenAI, Anthropic,
+Gemini, DeepSeek, GitHub Copilot, and provider plugins that implement
+`listModels`, Jarela discovers models from the provider API when credentials
+are configured. Anthropic, Gemini, and DeepSeek use curated lists when no API
+key is configured; GitHub Copilot may also use its curated list when live
+discovery is unavailable. GET results are cached per provider for up to
+10 minutes; add `?fresh=1` to bypass that server cache.
+
+`POST` to the same route accepts `{ "params": { ... } }` for credentials or
+endpoint settings not yet saved in the model config. These responses are not
+cached.
+
+- **Source:** [`app/api/v1/providers/[provider]/models/route.ts`](../app/api/v1/providers/[provider]/models/route.ts)
+
 ---
 
 ## Page capture (browser extension)

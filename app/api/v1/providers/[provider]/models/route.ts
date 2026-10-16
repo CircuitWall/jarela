@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { getProvider } from "@/lib/providers";
 import { listModelConfigs, getModelParams } from "@/lib/stores/model-config";
 import type { ProviderCatalogModel, ProviderParams } from "@/lib/providers/types";
+import { validateBody } from "@/lib/api/responses";
 import {
   getKnownContextLength,
   getKnownMaxOutputTokens,
@@ -26,9 +28,12 @@ export interface CatalogModel {
 
 type Params = { params: Promise<{ provider: string }> };
 
-// Live provider catalogs (OpenAI, GitHub Copilot) hit external APIs on every
-// call; static ones still cost JSON construction. Cache per-provider for a
-// short TTL so flipping panels / model browsers doesn't re-hit upstream.
+const CatalogBody = z.object({
+  params: z.record(z.string(), z.unknown()).optional(),
+});
+
+// Live provider catalogs hit external APIs. Cache per-provider briefly so
+// opening the model browser repeatedly doesn't re-hit upstream.
 const PROVIDER_CATALOG_TTL_MS = 10 * 60 * 1000;
 type CachedCatalog = { data: CatalogModel[]; fetchedAt: number };
 const catalogCache = new Map<string, CachedCatalog>();
@@ -74,10 +79,11 @@ function catalogErrorResponse(err: unknown): NextResponse {
 // these responses since they're keyed on user-supplied secrets.
 export async function POST(req: NextRequest, { params }: Params) {
   const { provider } = await params;
-  let body: { params?: ProviderParams } = {};
-  try { body = await req.json(); } catch { /* empty body is fine */ }
+  const body = await validateBody(req, CatalogBody);
+  if (body instanceof NextResponse) return body;
   try {
     const models = await fetchCatalog(provider, body.params);
+    catalogCache.delete(provider);
     return NextResponse.json(models, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     return catalogErrorResponse(err);
@@ -86,13 +92,68 @@ export async function POST(req: NextRequest, { params }: Params) {
 
 async function fetchCatalog(provider: string, overrides?: ProviderParams): Promise<CatalogModel[]> {
   switch (provider) {
-    case "openai":  return fetchOpenAICatalog();
+    case "openai":  return fetchOpenAICatalog(overrides);
     case "github-copilot": return fetchGitHubCopilotCatalog();
-    case "anthropic": return anthropicKnownModels();
-    case "gemini":  return geminiKnownModels();
-    case "deepseek": return deepseekKnownModels();
+    case "anthropic": return fetchAnthropicCatalog(overrides);
+    case "gemini":  return fetchGeminiCatalog(overrides);
+    case "deepseek": return fetchDeepseekCatalog(overrides);
     default: return fetchExternalCatalog(provider, overrides);
   }
+}
+
+const PROVIDER_API_KEY_ENV: Record<string, string> = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  gemini: "GEMINI_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+};
+
+function catalogParamsCandidates(provider: string, overrides?: ProviderParams): ProviderParams[] {
+  const envKey = process.env[PROVIDER_API_KEY_ENV[provider] ?? ""];
+  const configs = listModelConfigs().filter((cfg) => cfg.provider === provider);
+  const candidates = configs.map((cfg) => {
+    const params = { ...getModelParams(cfg), ...(overrides ?? {}) };
+    if (!params.api_key && envKey) params.api_key = envKey;
+    return params;
+  });
+
+  if (overrides) {
+    const params = { ...overrides };
+    if (!params.api_key && envKey) params.api_key = envKey;
+    candidates.push(params);
+  }
+  if (candidates.length === 0 && envKey) candidates.push({ api_key: envKey });
+  if (candidates.length === 0) candidates.push({});
+  return candidates;
+}
+
+async function fetchConfiguredCatalog(
+  provider: string,
+  overrides: ProviderParams | undefined,
+  fetcher: (params: ProviderParams, apiKey: string) => Promise<CatalogModel[]>,
+  fallback: () => CatalogModel[],
+): Promise<CatalogModel[]> {
+  const candidates = catalogParamsCandidates(provider, overrides)
+    .filter((params): params is ProviderParams & { api_key: string } =>
+      typeof params.api_key === "string" && params.api_key.length > 0,
+    );
+  if (candidates.length === 0) return fallback();
+
+  let lastErr: unknown;
+  for (const params of candidates) {
+    try {
+      return await fetcher(params, params.api_key);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr ?? new Error(`${provider} catalog request failed`);
+}
+
+async function requestCatalogJson<T>(provider: string, url: URL, init: RequestInit): Promise<T> {
+  const res = await fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`${provider} catalog error: ${res.status}`);
+  return res.json() as Promise<T>;
 }
 
 async function fetchExternalCatalog(providerName: string, overrides?: ProviderParams): Promise<CatalogModel[]> {
@@ -132,40 +193,203 @@ async function fetchExternalCatalog(providerName: string, overrides?: ProviderPa
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────
 
-async function fetchOpenAICatalog(): Promise<CatalogModel[]> {
-  const cfg = listModelConfigs().find((c) => c.provider === "openai");
-  if (!cfg) throw new Error("No OpenAI model config found.");
-  const params = getModelParams(cfg);
-  const apiKey = (params.api_key as string | undefined) ?? process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OpenAI: no api_key configured.");
-
-  const res = await fetch("https://api.openai.com/v1/models", {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
-  if (!res.ok) throw new Error(`OpenAI catalog error: ${res.status}`);
-  const data = await res.json() as { data: Array<{ id: string }> };
-
-  const chatPrefixes = ["gpt-", "o1", "o3", "o4", "chatgpt-"];
-  const chatModels = data.data
-    .filter((m) => chatPrefixes.some((p) => m.id.startsWith(p)))
-    .map((m): CatalogModel => ({
-      id: m.id,
-      context_length: getKnownContextLength("openai", m.id),
-      max_output_tokens: getKnownMaxOutputTokens("openai", m.id),
-      hosted_on: "azure/openai",
-      capabilities: {
-        vision:    m.id.includes("vision") || m.id.startsWith("gpt-4"),
-        tools:     true,
-        streaming: true,
-        json_mode: true,
-        web_search: false,
-        audio:     m.id.includes("audio") || m.id.startsWith("gpt-4o") || m.id.startsWith("gpt-5"),
-        files:     m.id.startsWith("gpt-4") || m.id.startsWith("gpt-5") || m.id.startsWith("o"),
+async function fetchOpenAICatalog(overrides?: ProviderParams): Promise<CatalogModel[]> {
+  return fetchConfiguredCatalog("openai", overrides, async (params, apiKey) => {
+    const url = endpointUrl(params.base_url, "https://api.openai.com/v1", "/models");
+    const data = await requestCatalogJson<{ data?: Array<{ id: string }> }>("OpenAI", url, {
+      headers: {
+        ...params.extra_headers,
+        Authorization: "Bearer " + apiKey,
       },
-    }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+    });
+    const chatPrefixes = ["gpt-", "o1", "o3", "o4", "chatgpt-"];
+    return (data.data ?? [])
+      .filter((m) => chatPrefixes.some((p) => m.id.startsWith(p)))
+      .map((m): CatalogModel => ({
+        id: m.id,
+        context_length: getKnownContextLength("openai", m.id),
+        max_output_tokens: getKnownMaxOutputTokens("openai", m.id),
+        hosted_on: "azure/openai",
+        capabilities: {
+          vision: m.id.includes("vision") || m.id.startsWith("gpt-4"),
+          tools: true,
+          streaming: true,
+          json_mode: true,
+          web_search: false,
+          audio: m.id.includes("audio") || m.id.startsWith("gpt-4o") || m.id.startsWith("gpt-5"),
+          files: m.id.startsWith("gpt-4") || m.id.startsWith("gpt-5") || m.id.startsWith("o"),
+        },
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }, () => {
+    throw new Error("OpenAI: no api_key configured.");
+  });
+}
 
-  return chatModels;
+async function fetchAnthropicCatalog(overrides?: ProviderParams): Promise<CatalogModel[]> {
+  return fetchConfiguredCatalog("anthropic", overrides, async (params, apiKey) => {
+    const url = endpointUrl(params.base_url, "https://api.anthropic.com", "/v1/models");
+    url.searchParams.set("limit", "1000");
+    const models: Array<{
+      id: string;
+      max_input_tokens?: number | null;
+      max_tokens?: number | null;
+      capabilities?: {
+        image_input?: { supported?: boolean };
+        pdf_input?: { supported?: boolean };
+        structured_outputs?: { supported?: boolean };
+        server_tools?: { web_search?: { supported?: boolean } };
+      };
+    }> = [];
+    let afterId: string | undefined;
+
+    do {
+      const pageUrl = new URL(url);
+      if (afterId) pageUrl.searchParams.set("after_id", afterId);
+      const page = await requestCatalogJson<{
+        data?: typeof models;
+        has_more?: boolean;
+        last_id?: string | null;
+      }>("Anthropic", pageUrl, {
+        headers: {
+          ...params.extra_headers,
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+      });
+      models.push(...(page.data ?? []));
+      if (page.has_more && !page.last_id) throw new Error("Anthropic catalog response is missing its next-page cursor");
+      if (page.has_more && page.last_id === afterId) throw new Error("Anthropic catalog pagination did not advance");
+      afterId = page.has_more ? page.last_id ?? undefined : undefined;
+    } while (afterId);
+
+    return models.map((model): CatalogModel => {
+      const vision = model.capabilities?.image_input?.supported ?? true;
+      return {
+        id: model.id,
+        context_length: model.max_input_tokens ?? getKnownContextLength("anthropic", model.id),
+        max_output_tokens: model.max_tokens ?? getKnownMaxOutputTokens("anthropic", model.id),
+        hosted_on: "anthropic",
+        capabilities: {
+          vision,
+          tools: true,
+          streaming: true,
+          json_mode: model.capabilities?.structured_outputs?.supported ?? false,
+          web_search: model.capabilities?.server_tools?.web_search?.supported ?? true,
+          audio: false,
+          files: model.capabilities?.pdf_input?.supported ?? vision,
+        },
+      };
+    });
+  }, anthropicKnownModels);
+}
+
+async function fetchGeminiCatalog(overrides?: ProviderParams): Promise<CatalogModel[]> {
+  return fetchConfiguredCatalog("gemini", overrides, async (_params, apiKey) => {
+    const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
+    url.searchParams.set("pageSize", "1000");
+    const models: Array<{
+      name: string;
+      inputTokenLimit?: number;
+      outputTokenLimit?: number;
+      supportedGenerationMethods?: string[];
+    }> = [];
+    let pageToken: string | undefined;
+
+    do {
+      const pageUrl = new URL(url);
+      if (pageToken) pageUrl.searchParams.set("pageToken", pageToken);
+      const page = await requestCatalogJson<{
+        models?: typeof models;
+        nextPageToken?: string;
+      }>("Gemini", pageUrl, { headers: { "x-goog-api-key": apiKey } });
+      models.push(...(page.models ?? []));
+      if (page.nextPageToken && page.nextPageToken === pageToken) {
+        throw new Error("Gemini catalog pagination did not advance");
+      }
+      pageToken = page.nextPageToken;
+    } while (pageToken);
+
+    return models
+      .map((model): CatalogModel | null => {
+        const id = model.name.replace(/^models\//, "");
+        if (!id.startsWith("gemini-") ||
+            !model.supportedGenerationMethods?.includes("generateContent")) return null;
+        return {
+          id,
+          context_length: model.inputTokenLimit ?? getKnownContextLength("gemini", id),
+          max_output_tokens: model.outputTokenLimit ?? getKnownMaxOutputTokens("gemini", id),
+          hosted_on: "google",
+          capabilities: {
+            vision: true,
+            tools: true,
+            streaming: true,
+            json_mode: true,
+            web_search: true,
+            audio: true,
+            files: true,
+          },
+        };
+      })
+      .filter((model): model is CatalogModel => model !== null)
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }, geminiKnownModels);
+}
+
+async function fetchDeepseekCatalog(overrides?: ProviderParams): Promise<CatalogModel[]> {
+  return fetchConfiguredCatalog("deepseek", overrides, async (params, apiKey) => {
+    const url = endpointUrl(params.base_url, "https://api.deepseek.com", "/models");
+    const data = await requestCatalogJson<{
+      data?: Array<{
+        id: string;
+        context_window?: number;
+        max_output_tokens?: number;
+        input_modalities?: string[];
+      }>;
+    }>("DeepSeek", url, {
+      headers: {
+        ...params.extra_headers,
+        Authorization: "Bearer " + apiKey,
+      },
+    });
+    return (data.data ?? []).map((model): CatalogModel => {
+      const vision = model.input_modalities?.includes("image") ?? false;
+      return {
+        id: model.id,
+        context_length: model.context_window ?? getKnownContextLength("deepseek", model.id),
+        max_output_tokens: model.max_output_tokens ?? getKnownMaxOutputTokens("deepseek", model.id),
+        hosted_on: "deepseek",
+        capabilities: {
+          vision,
+          tools: true,
+          streaming: true,
+          json_mode: true,
+          web_search: false,
+          audio: model.input_modalities?.includes("audio") ?? false,
+          files: vision,
+        },
+      };
+    });
+  }, deepseekKnownModels);
+}
+
+function endpointUrl(baseUrl: unknown, defaultBaseUrl: string, path: string): URL {
+  const base = typeof baseUrl === "string" && baseUrl.trim() ? baseUrl.trim() : defaultBaseUrl;
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    throw new Error("Provider base URL must be a valid absolute URL");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error("Provider base URL must use HTTP or HTTPS");
+  }
+  const normalizedPath = url.pathname.replace(/\/+$/, "");
+  const suffix = path === "/v1/models" && normalizedPath.endsWith("/v1") ? "/models" : path;
+  url.pathname = `${normalizedPath}${suffix}` || "/";
+  url.search = "";
+  url.hash = "";
+  return url;
 }
 
 // ── GitHub Copilot ────────────────────────────────────────────────────────────
