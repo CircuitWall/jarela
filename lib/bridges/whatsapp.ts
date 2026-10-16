@@ -35,6 +35,7 @@ import { ensureWhatsAppAuthDir, removeWhatsAppAuth } from "./modules/whatsapp/au
 import type { BridgeAdapter, ChatInfo, InboundEvent, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import { storeCanonicalBridgeAttachment } from "./attachment-store";
+import { whatsappChatLink } from "./whatsapp-link";
 import { errorMessage } from "@/lib/utils/error";
 
 // Baileys + qrcode are dev-time-installed peer libs. We never import their
@@ -590,6 +591,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       (sock as unknown as { end?: (err: Error | undefined) => void }).end?.(undefined);
     } catch { /* ignore */ }
     this.pushStatus({ status: "disconnected", qr_data_url: null, error: null });
+  }
+
+  chatLink(remote_jid: string): string | null {
+    return whatsappChatLink(remote_jid);
   }
 
   async sendText(remote_jid: string, text: string): Promise<void> {

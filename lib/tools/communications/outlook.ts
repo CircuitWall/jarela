@@ -14,6 +14,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
 import { truncateBytes } from "@/lib/utils/text";
+import { citeAs } from "@/lib/utils/source-link";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import {
   graphFetch,
@@ -84,6 +85,7 @@ function summarizeMessage(m: GraphMessage): Record<string, unknown> {
     folder_id: m.parentFolderId ?? null,
     snippet: m.bodyPreview ?? null,
     web_link: m.webLink ?? null,
+    cite_as: citeAs(m.subject, m.webLink, "Outlook message"),
   };
 }
 

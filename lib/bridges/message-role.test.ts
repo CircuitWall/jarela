@@ -19,7 +19,40 @@ describe("bridge prompt envelope", () => {
     expect(parsed?.chatJid).toBe("dm@jid");
     expect(parsed?.isGroup).toBe(false);
     expect(parsed?.senderJid).toBe("alice@jid");
+    expect(parsed?.chatLink).toBeNull();
     expect(parsed?.body).toBe("hello from dm");
+  });
+
+  it("stamps and round-trips an https chat link", () => {
+    const raw = formatBridgePrompt({
+      bridge_id: "b1",
+      chat_id: "15551234567@s.whatsapp.net",
+      chat_name: "Alice",
+      is_group: false,
+      role: "counterpart",
+      sender_id: "15551234567@s.whatsapp.net",
+      sender_name: "Alice",
+      chat_link: "https://wa.me/15551234567",
+      text: "hi",
+    });
+    expect(raw).toContain("[chat_link:https://wa.me/15551234567]");
+    expect(parseBridgePrompt(raw)?.chatLink).toBe("https://wa.me/15551234567");
+  });
+
+  it("drops a chat link that is not https", () => {
+    const raw = formatBridgePrompt({
+      bridge_id: "b1",
+      chat_id: "dm@jid",
+      chat_name: "Alice",
+      is_group: false,
+      role: "counterpart",
+      sender_id: "alice@jid",
+      sender_name: "Alice",
+      chat_link: "javascript:alert(1)",
+      text: "hi",
+    });
+    expect(raw).not.toContain("chat_link");
+    expect(parseBridgePrompt(raw.replace("[sender_name:Alice]", "[sender_name:Alice]\n[chat_link:http://evil.test]"))?.chatLink).toBeNull();
   });
 
   it("round-trips group prompt metadata and body", () => {

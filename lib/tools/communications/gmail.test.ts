@@ -2,10 +2,60 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { gzipSync } from "node:zlib";
 import { googleFetch } from "@/lib/integrations/gmail-oauth";
 
-const { buildRawMessage, gmailCreateDraftTool, gmailModifyMessageTool, gmailSendEmailTool } = await import("./gmail");
+const { buildRawMessage, gmailCreateDraftTool, gmailGetMessageTool, gmailModifyMessageTool, gmailSendEmailTool, gmailWebLink } = await import("./gmail");
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
+
+describe("gmail source links", () => {
+  it("builds an All Mail thread link scoped to the account", () => {
+    expect(gmailWebLink("18c2f0a1b2c3d4e5", "me+x@example.test"))
+      .toBe("https://mail.google.com/mail/u/me%2Bx%40example.test/#all/18c2f0a1b2c3d4e5");
+    expect(gmailWebLink("18c2f0a1b2c3d4e5", null)).toBe("https://mail.google.com/mail/u/0/#all/18c2f0a1b2c3d4e5");
+  });
+
+  it("refuses ids that are not Gmail API hex ids", () => {
+    expect(gmailWebLink(undefined, null)).toBeNull();
+    expect(gmailWebLink("../inbox", null)).toBeNull();
+    expect(gmailWebLink("18c2f0a1)x", null)).toBeNull();
+  });
+
+  function stubGmail(profile: Response) {
+    vi.stubEnv("GMAIL_CLIENT_ID", "test-client");
+    vi.stubEnv("GMAIL_CLIENT_SECRET", "test-secret");
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.includes("oauth2")) return json({ access_token: "at", expires_in: 3600 });
+      if (url.endsWith("/profile")) return profile;
+      return json({
+        id: "18c2f0a1b2c3d4e6",
+        threadId: "18c2f0a1b2c3d4e5",
+        payload: { headers: [{ name: "Subject", value: "Invoice [March]" }] },
+      });
+    }));
+  }
+
+  it("returns web_link and cite_as from gmail_get_message", async () => {
+    vi.stubEnv("GMAIL_REFRESH_TOKEN", "gmail-link-ok-refresh-token");
+    stubGmail(new Response(JSON.stringify({ emailAddress: "owner@example.test" }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    const out = JSON.parse(await gmailGetMessageTool.invoke({ id: "18c2f0a1b2c3d4e6" })) as Record<string, unknown>;
+
+    const link = "https://mail.google.com/mail/u/owner%40example.test/#all/18c2f0a1b2c3d4e5";
+    expect(out.web_link).toBe(link);
+    expect(out.cite_as).toBe(`[Invoice \\[March\\]](${link})`);
+  });
+
+  it("falls back to the first signed-in account when the profile lookup fails", async () => {
+    vi.stubEnv("GMAIL_REFRESH_TOKEN", "gmail-link-fail-refresh-token");
+    stubGmail(new Response(JSON.stringify({ error: { message: "forbidden" } }), { status: 403, headers: { "content-type": "application/json" } }));
+
+    const out = JSON.parse(await gmailGetMessageTool.invoke({ id: "18c2f0a1b2c3d4e6" })) as Record<string, unknown>;
+
+    expect(out.web_link).toBe("https://mail.google.com/mail/u/0/#all/18c2f0a1b2c3d4e5");
+  });
 });
 
 describe("gmail tools", () => {

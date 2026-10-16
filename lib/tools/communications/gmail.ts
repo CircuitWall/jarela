@@ -30,6 +30,7 @@ import {
   type GoogleAuth,
 } from "@/lib/integrations/gmail-oauth";
 import { errorMessage } from "@/lib/utils/error";
+import { citeAs } from "@/lib/utils/source-link";
 
 // Re-export under the old name so existing imports (e.g. the integrations
 // test endpoint) keep working unchanged.
@@ -60,6 +61,38 @@ function resolveGmailAuthForTool(): GmailAuth | { error: string } {
   } catch (err) {
     return { error: errorMessage(err) };
   }
+}
+
+// ── Source links ────────────────────────────────────────────────────────────
+
+// Gmail's web URL scheme is undocumented. `#all/<threadId>` opens the
+// conversation from All Mail whatever its labels, and `/u/<email>/` selects
+// the signed-in account (`/u/0/` is whichever account signed in first).
+const GMAIL_API_ID = /^[0-9a-f]{8,32}$/i;
+
+export function gmailWebLink(threadId: string | null | undefined, account: string | null): string | null {
+  if (!threadId || !GMAIL_API_ID.test(threadId)) return null;
+  const slot = account ? encodeURIComponent(account) : "0";
+  return `https://mail.google.com/mail/u/${slot}/#all/${threadId}`;
+}
+
+const accountEmailCache = new Map<string, Promise<string | null>>();
+
+// getProfile works with every Gmail scope; a failure only drops the account
+// from the link, so it is not retried within the process.
+function gmailAccountEmail(auth: GmailAuth): Promise<string | null> {
+  const key = auth.refresh_token.slice(0, 20);
+  let pending = accountEmailCache.get(key);
+  if (!pending) {
+    pending = gmailFetch(auth, "/profile")
+      .then((p) => {
+        const email = (p as { emailAddress?: unknown }).emailAddress;
+        return typeof email === "string" && email.includes("@") ? email : null;
+      })
+      .catch(() => null);
+    accountEmailCache.set(key, pending);
+  }
+  return pending;
 }
 
 // ── Decoders / helpers ──────────────────────────────────────────────────────
@@ -164,6 +197,7 @@ export const gmailSearchTool = tool(
         messages: [],
       });
     }
+    const account = await gmailAccountEmail(auth);
     // Parallel metadata fetch; the API recommends batching but for ≤100 ids
     // parallel single calls are simpler and well within quota.
     const details = await Promise.all(ids.map(async (id) => {
@@ -172,15 +206,19 @@ export const gmailSearchTool = tool(
         `/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`,
       ) as { id?: string; threadId?: string; snippet?: string; labelIds?: string[]; payload?: { headers?: Header[] }; error?: string };
       if (m.error) return { id, error: m.error };
+      const subject = header(m.payload?.headers, "Subject");
+      const webLink = gmailWebLink(m.threadId, account);
       return {
         id: m.id,
         thread_id: m.threadId,
         from: header(m.payload?.headers, "From"),
         to: header(m.payload?.headers, "To"),
-        subject: header(m.payload?.headers, "Subject"),
+        subject,
         date: header(m.payload?.headers, "Date"),
         snippet: m.snippet ?? null,
         labels: m.labelIds ?? [],
+        web_link: webLink,
+        cite_as: citeAs(subject, webLink, "Gmail message"),
       };
     }));
     return JSON.stringify({
@@ -220,14 +258,18 @@ export const gmailGetMessageTool = tool(
     if (m.error) return JSON.stringify(m);
     const body = extractBody(m.payload);
     const { text: capped, truncated } = truncateBytes(body, MAX_BODY_BYTES);
+    const subject = header(m.payload?.headers, "Subject");
+    const webLink = gmailWebLink(m.threadId, await gmailAccountEmail(auth));
     return JSON.stringify({
       id: m.id,
       thread_id: m.threadId,
+      web_link: webLink,
+      cite_as: citeAs(subject, webLink, "Gmail message"),
       labels: m.labelIds ?? [],
       from: header(m.payload?.headers, "From"),
       to: header(m.payload?.headers, "To"),
       cc: header(m.payload?.headers, "Cc"),
-      subject: header(m.payload?.headers, "Subject"),
+      subject,
       date: header(m.payload?.headers, "Date"),
       message_id: header(m.payload?.headers, "Message-Id") ?? header(m.payload?.headers, "Message-ID"),
       snippet: m.snippet ?? null,

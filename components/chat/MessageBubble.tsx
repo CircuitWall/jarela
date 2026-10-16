@@ -849,6 +849,18 @@ function BridgeMessageCard({ ctx, activity }: {
           {activity.occurrence_count > 1 ? ` · ${activity.occurrence_count} checks` : ""}
         </span>
       ) : null}
+      {ctx.chatLink ? (
+        <a
+          href={ctx.chatLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white/15 hover:bg-white/25 text-[9.5px] shrink-0"
+          title={`Open this chat (${ctx.chatLink})`}
+        >
+          <ExternalLink size={9} />
+          open chat
+        </a>
+      ) : null}
     </>
   );
   const sections: Array<{ label: string; content: ReactNode; defaultOpen?: boolean; hint?: string }> = [
