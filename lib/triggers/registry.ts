@@ -14,10 +14,6 @@ export function registerTriggerHandler(handler: TriggerHandler): void {
   state.handlers.set(handler.kind, handler);
 }
 
-export function getTriggerHandler(kind: string): TriggerHandler | undefined {
-  return state.handlers.get(kind);
-}
-
 export function listTriggerHandlers(): TriggerHandler[] {
   return Array.from(state.handlers.values());
 }
