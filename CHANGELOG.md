@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-16
+
+### Added
+
+- **Compact earlier messages as validated topics: messages are grouped into topics, each topic gets a recap, and the recaps are merged in code. Every step's output is checked in code and retried once before falling back. Scheduled tasks, watchers and bridges are compacted with the same topic pipeline.**
+- **Agents save new facts to memory in the same turn with `memory_upsert`, check that the save succeeded, and cite the saved key, instead of waiting for background compaction.**
+- **Retry a single workflow step from the chat or the version-adoption checklist. Steps that fail validation retry automatically up to 3 times each.**
+- **Record a changeset of prompt and tool changes with every release, so version adoption can show what changed and adapt settings, task prompts, instructions and skills after an upgrade.**
+- **Show what a thread is doing (thinking, responding, preparing context, compacting) after switching agents or reloading, including turns started by a scheduled task, watcher, bridge or another device.**
+
+### Fixed
+
+- **Stop compaction after a time limit and allow only one compaction per thread at a time. The limit defaults to 10 minutes and is set with `JARELA_COMPACTION_TIMEOUT_MS`. `/compact` now says when a thread is already compacting or the attempt timed out.**
+- **Allow compacting agents whose only messages come from bridges, watchers or scheduled tasks, and show those recaps in the summary card instead of a summary that stays pending.**
+- **Report compaction results as toast notifications, and keep showing the compacting state after switching agents.**
+- **Show older summaries as collapsible topic rows instead of one long block.**
+- **Keep "locate boundary" and message deep links from snapping back to the bottom.**
+- **Install the current working tree, including uncommitted changes, from both `make.ps1` and `Makefile`, and reinstall dependencies when `package-lock.json` changes.**
+- **Remove the unused `@langchain/deepseek` dependency; DeepSeek still runs through the OpenAI-compatible adapter.**
+
+### Adoption
+
+- If an agent's instructions or skills tell it to leave fact capture to compaction or to avoid `memory_upsert`, remove that guidance, since agents now save facts during the turn.
+- If a scheduled task or watcher prompt asks the agent to write memory facts, keep that in the agent's own turn; automation channel summaries no longer extract facts.
+
 ## [2.2.1] - 2026-10-15
 
 ### Fixed

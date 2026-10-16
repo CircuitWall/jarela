@@ -162,6 +162,148 @@
       ],
       "prompts": [],
       "tools": []
+    },
+    {
+      "version": "2.3.0",
+      "previous_version": "2.2.1",
+      "date": "2026-10-16",
+      "hints": [
+        "If an agent's instructions or skills tell it to leave fact capture to compaction or to avoid `memory_upsert`, remove that guidance, since agents now save facts during the turn.",
+        "If a scheduled task or watcher prompt asks the agent to write memory facts, keep that in the agent's own turn; automation channel summaries no longer extract facts."
+      ],
+      "commits": [
+        "chore(repo): remove dead exports and the unused deepseek package",
+        "fix(chat): restore thread activity and bound compaction per thread",
+        "fix(chat): render automation recaps in the warm summary card",
+        "fix(chat): restore the compacting state after switching agents",
+        "fix(chat): allow compacting bridge-only threads, report via toasts",
+        "fix(scripts): align make targets and install the current working tree",
+        "feat(agents): add topic pipeline to automation channel summaries",
+        "feat(agents): add validated topic pipeline for warm compaction",
+        "feat(agents): add proactive, validated memory saving for agents",
+        "fix(chat): group older summaries into collapsible topic rows",
+        "feat(agents): add auto-retry for failed workflow step contracts",
+        "feat(chat): add per-step retry to workflow checklists",
+        "feat(lifecycle): add release changesets for version adoption",
+        "fix(chat): keep boundary locate from snapping to bottom"
+      ],
+      "prompts": [
+        {
+          "id": "static.agent.compaction-group",
+          "source": "lib/agents/compaction-pipeline.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.agent.compaction-group-automation",
+          "source": "lib/agents/compaction-pipeline.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.agent.compaction-topic-recap",
+          "source": "lib/agents/compaction-pipeline.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.agent.compaction-topic-recap-automation",
+          "source": "lib/agents/compaction-pipeline.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.agent.conversation-summary",
+          "source": "lib/agents/conversation-summary.ts",
+          "change": "changed",
+          "added_lines": [
+            "A topic groups every consecutive message about one subject and must",
+            "span at least two messages (a request and its reply); fold a stray",
+            "single message into the adjacent topic instead of giving it its own."
+          ],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.agent.tool-usage-sop",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…"
+          ],
+          "removed_lines": [
+            "0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…"
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Memory & recall",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "You have long-term memory across sessions, shared with every other Jarela agent. A record you save is available to other agents immediately. Background compaction also extracts facts later, but it runs late and can miss details, so it is a backstop, not your save step.",
+            "Proactive save procedure — run it whenever information fits the active memory policy, without waiting to be asked:",
+            "1. Trigger: the user states a preference, a fact about themselves or their work, a decision, a constraint, or a correction to something saved; or a tool result verifies a durable fact. Routine status, one-off chatter, secrets, credentials, and raw transcripts never qualify.",
+            "2. Check: memory_search (or memory_read for a known key) for an existing record on the same subject. Update that stable key rather than creating a duplicate or contradictory copy.",
+            "3. Write: call memory_upsert in the same turn, before your final reply, with namespace='facts', a stable descriptive key, standalone content, concise tags, confidence='explicit' for user-stated information ('verified' when tool-backed, 'inferred' only when useful and reversible), observed_at when t…",
+            "4. Validate: the memory_upsert result must contain ok:true and the key you sent. If it failed, correct the arguments and retry once; if it still fails, tell the user it was not saved.",
+            "5. Cite: end your reply with one short line naming each saved key, for example 'Saved to memory: facts/answer-format-preference'. Omit the line when nothing was saved."
+          ],
+          "removed_lines": [
+            "You have long-term memory across sessions.",
+            "- Use memory_upsert proactively for structured records. Use namespace='facts', concise tags, confidence='explicit' for user-stated information, observed_at when the information was true, and expires_at for temporary facts. Keep memory_write only for legacy/free-form notes."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Tool usage SOP",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…"
+          ],
+          "removed_lines": [
+            "0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…"
+          ],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "memory_upsert",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Store a durable, structured memory record for proactive semantic recall. Use namespace='facts' for information that should surface in future conversations. Store explicit user preferences, verified facts, decisions, constraints, and reusable project context; do not store transient chat details or secrets. Use an expiry for temporary facts, and status='archived' to soft-retire a record instead of deleting it. Save proactively in the same turn the information appears so other agents can use it immediately; do not defer to background compaction.",
+          "previous_description": "Store a durable, structured memory record for proactive semantic recall. Use namespace='facts' for information that should surface in future conversations. Store explicit user preferences, verified facts, decisions, constraints, and reusable project context; do not store transient chat details or secrets. Use an expiry for temporary facts, and status='archived' to soft-retire a record instead of deleting it.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "workflow_progress",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Report structured progress for a substantial multi-step task. Use only when the task has several dependent phases, likely spans turns, or needs explicit verification; skip simple tasks and work already covered by native tool progress. For agent-created workflows, send the full current items snapshot on every call and reuse the same workflow_id. Keep secrets and private data out of workflow fields. Mark items done only with observed validation evidence; use needs_attention for blockers; phase=complete requires every item done or skipped. A rejected update, or a step left checking or needs_atte…",
+          "previous_description": "Report structured progress for a substantial multi-step task. Use only when the task has several dependent phases, likely spans turns, or needs explicit verification; skip simple tasks and work already covered by native tool progress. For agent-created workflows, send the full current items snapshot on every call and reuse the same workflow_id. Keep secrets and private data out of workflow fields. Mark items done only with observed validation evidence; use needs_attention for blockers; phase=complete requires every item done or skipped. Every item needs input, expected output, and concrete va…",
+          "params_added": [
+            "needs_user"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
