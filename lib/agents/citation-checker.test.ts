@@ -27,9 +27,25 @@ afterAll(() => {
 });
 
 describe("normalizeSource", () => {
-  it("lowercases + strips query/fragment + trailing slash on URLs", () => {
-    expect(normalizeSource("HTTPS://Example.com/Docs/?x=1#a")).toBe("https://example.com/docs");
+  it("lowercases + strips tracking params, page anchors and trailing slash on URLs", () => {
+    expect(normalizeSource("HTTPS://Example.com/Docs/?utm_source=x&fbclid=y#a")).toBe("https://example.com/docs");
     expect(normalizeSource("https://a.io/p/")).toBe("https://a.io/p");
+  });
+
+  it("keeps the query and hash route that identify a message permalink", () => {
+    const a = normalizeSource("https://outlook.office365.com/owa/?ItemID=AAMk%2BA%3D&exvsurl=1&viewmodel=ReadMessageItem");
+    const b = normalizeSource("https://outlook.office365.com/owa/?ItemID=AAMk%2BB%3D&exvsurl=1&viewmodel=ReadMessageItem");
+    expect(a).not.toBe(b);
+    // Base64 item ids are case-sensitive; folding case would merge distinct messages.
+    expect(a).toContain("ItemID=AAMk%2BA%3D");
+    expect(normalizeSource("https://mail.google.com/mail/u/0/#all/18c2f0a1b2c3d4e5"))
+      .toBe("https://mail.google.com/mail/u/0#all/18c2f0a1b2c3d4e5");
+    expect(normalizeSource("https://www.youtube.com/watch?v=dQw4w9WgXcQ&utm_medium=share"))
+      .toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  });
+
+  it("treats the same permalink with reordered params as one source", () => {
+    expect(normalizeSource("https://x.test/r?b=2&a=1")).toBe(normalizeSource("https://x.test/r?a=1&b=2&utm_campaign=z"));
   });
 
   it("normalises backslashes and trailing slashes on paths", () => {
@@ -137,6 +153,18 @@ describe("parseCitationVerdict", () => {
     expect(out).toEqual([{ text: "a", marker: null, link: null, verified: false, reason: "no link", impact: "med" }]);
   });
 
+  it("finds the verdict when the model wraps it in prose that also contains braces", () => {
+    const verdict = '{"claims":[{"text":"rate is 5%","marker":1,"verified":true,"reason":"in [1]","impact":"high"}]}';
+    const expected = [{ text: "rate is 5%", marker: 1, link: null, verified: true, reason: "in [1]", impact: "high" }];
+    expect(parseCitationVerdict(`Checked the {draft} reply. ${verdict}`)).toEqual(expected);
+    expect(parseCitationVerdict(`${verdict}\nNote: ignored the {code} block.`)).toEqual(expected);
+  });
+
+  it("keeps braces that belong to a claim string", () => {
+    const out = parseCitationVerdict('{"claims":[{"text":"set {a: 1} in config","verified":false,"reason":"} unmatched"}]}');
+    expect(out?.[0].text).toBe("set {a: 1} in config");
+    expect(out?.[0].reason).toBe("} unmatched");
+  });
   it("returns null on malformed JSON", () => {
     expect(parseCitationVerdict("{not json")).toBeNull();
   });
@@ -297,6 +325,16 @@ describe("mergeDeclaredReferences", () => {
     expect(out).toEqual([
       { n: 1, label: "tool", href: "https://example.com/a" },
     ]);
+  });
+
+  it("keeps two declared emails that differ only by their permalink id", () => {
+    const out = mergeDeclaredReferences([], [
+      { label: "Invoice mail", href: "https://mail.google.com/mail/u/0/#all/18c2f0a1b2c3d4e5" },
+      { label: "Contract mail", href: "https://mail.google.com/mail/u/0/#all/18c2f0a1b2c3ffff" },
+      { label: "Board invite", href: "https://outlook.office365.com/owa/?ItemID=AAMk%2BA%3D&exvsurl=1" },
+      { label: "Offsite invite", href: "https://outlook.office365.com/owa/?ItemID=AAMk%2BB%3D&exvsurl=1" },
+    ]);
+    expect(out.map((e) => e.label)).toEqual(["Invoice mail", "Contract mail", "Board invite", "Offsite invite"]);
   });
 
   it("returns a copy of the manifest unchanged when there are no declared refs", () => {

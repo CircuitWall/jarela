@@ -152,7 +152,7 @@ export function parseBridgePrompt(raw: string): BridgePromptContext | null {
   const lines = src.split("\n");
   let i = 0;
   for (; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i].replace(/\r$/, "");
     if (line === "") { i++; break; }
     const m = /^\[([a-z_]+):([\s\S]*)\]$/.exec(line);
     if (!m) return null;

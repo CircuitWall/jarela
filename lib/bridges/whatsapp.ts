@@ -29,7 +29,7 @@ import {
   bumpRouteLastSeenTs,
   findRoute,
   getBridge,
-  getMaxRouteLastSeenTs,
+  getRouteLastSeenTsMap,
 } from "@/lib/stores/bridges";
 import { ensureWhatsAppAuthDir, removeWhatsAppAuth } from "./modules/whatsapp/auth-state";
 import type { BridgeAdapter, ChatInfo, InboundEvent, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
@@ -286,12 +286,12 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       // adapter should re-deliver to agents) and the legacy
       // `replace`/`update` events that arrive via messages.update.
       if (payload.type !== "notify" && payload.type !== "append") return;
-      // On a fresh adapter boot the watermark is whatever the last run
-      // persisted. Read it once per batch (cheap SQLite call) so we can
-      // hard-reject very old appends without doing any per-message work.
-      const watermark = payload.type === "append"
-        ? getMaxRouteLastSeenTs(this.bridge_id)
-        : 0;
+      // On a fresh adapter boot the watermarks are whatever the last run
+      // persisted. Read them once per batch (one cheap SQLite call) so old
+      // appends are rejected without per-message queries.
+      const watermarks = payload.type === "append"
+        ? getRouteLastSeenTsMap(this.bridge_id)
+        : null;
       for (const raw of payload.messages ?? []) {
         const m = raw as {
           key?: { remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean; id?: string; participant?: string };
@@ -325,18 +325,20 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         const ts = typeof m.messageTimestamp === "number"
           ? m.messageTimestamp * 1000
           : (m.messageTimestamp?.low ?? 0) * 1000 || Date.now();
-        // Watermark gate: on `append` batches, skip anything strictly
-        // older than the highest per-route watermark we've persisted. This
-        // prevents the server's reconnect replay from re-delivering
-        // messages we already routed in a previous process lifetime.
-        // `notify` events skip this check — they're live and may legitimately
-        // arrive in any order relative to the cross-route max.
-        if (payload.type === "append" && watermark > 0 && ts > 0 && ts <= watermark) {
+        // Watermark gate: on `append` batches, skip anything at or below
+        // this chat's own persisted watermark. This prevents the server's
+        // reconnect replay from re-delivering messages we already routed in
+        // a previous process lifetime. `notify` events skip this check —
+        // they're live and may legitimately arrive out of order.
+        const watermark = watermarks?.get(remote_jid) ?? 0;
+        if (watermark > 0 && ts > 0 && ts <= watermark) {
           continue;
         }
-        // In groups, pushName is typically the participant's display name,
-        // not the group subject. Avoid poisoning the group chat label.
-        this.observeChat(remote_jid, is_group ? null : (m.pushName ?? null), ts);
+        // pushName names the *sender*: in groups that's a participant, and on
+        // fromMe messages it's the user's own name. Only a counterpart's
+        // pushName in a 1:1 chat is a valid label for the chat itself.
+        const chatPushName = is_group || m.key.fromMe ? null : (m.pushName ?? null);
+        this.observeChat(remote_jid, chatPushName, ts);
 
         // Unwrap protocol envelopes (view-once, ephemeral, etc.) so we can
         // see the underlying payload uniformly, then turn it into a text
@@ -358,7 +360,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         const participant_jid = is_group && m.key.participant
           ? normalizeUserJid(m.key.participant)
           : null;
-        const chat_name = this.chats.get(remote_jid)?.name ?? m.pushName ?? null;
+        const chat_name = this.chats.get(remote_jid)?.name ?? chatPushName;
         const sender = resolveWhatsAppSender({
           fromMe: m.key.fromMe === true,
           isGroup: is_group,
@@ -423,7 +425,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         };
         const chatJid = pickContactChatJid(ct);
         if (!chatJid) continue;
-        const name = ct.name ?? ct.verifiedName ?? ct.notify ?? null;
+        const name = [ct.name, ct.verifiedName, ct.notify].find((n) => n?.trim()) ?? null;
         this.observeChat(chatJid, name, null);
       }
     });
@@ -458,7 +460,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       for (const ct of list) {
         const chatJid = pickContactChatJid(ct);
         if (!chatJid) continue;
-        this.observeChat(chatJid, ct.name ?? ct.verifiedName ?? ct.notify ?? null, null);
+        this.observeChat(chatJid, [ct.name, ct.verifiedName, ct.notify].find((n) => n?.trim()) ?? null, null);
       }
     });
 
@@ -917,8 +919,11 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         });
         attachments.push(ref);
         const sizeKb = Math.max(1, Math.round(buf.length / 1024));
+        // Sender-supplied document names can carry newlines or brackets;
+        // describe the attachment by the store's sanitized name.
+        const shownName = oneLine(("filename" in ref && ref.filename) || filename);
         text = (text ? text + "\n" : "")
-          + `[Attached ${label}: ${filename} (${mime}, ${sizeKb} KB); retained as a Jarela file reference.]`;
+          + `[Attached ${label}: ${shownName} (${mime}, ${sizeKb} KB); retained as a Jarela file reference.]`;
       } catch (err) {
         const m = errorMessage(err);
         console.warn(`[bridge ${this.bridge_id}] failed to spill ${label} from ${remote_jid}: ${m}`);
@@ -980,8 +985,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     if (inner.locationMessage) {
       const { degreesLatitude, degreesLongitude, name, address } = inner.locationMessage;
       const parts = [`lat=${degreesLatitude ?? "?"}`, `lng=${degreesLongitude ?? "?"}`];
-      if (name) parts.push(`name="${name}"`);
-      if (address) parts.push(`address="${address}"`);
+      if (name) parts.push(`name=${JSON.stringify(oneLine(name))}`);
+      if (address) parts.push(`address=${JSON.stringify(oneLine(address))}`);
       text = (text ? text + "\n" : "") + `[location: ${parts.join(" ")}]`;
     }
 
@@ -991,14 +996,14 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     }
 
     if (inner.contactMessage) {
-      const name = inner.contactMessage.displayName ?? "unknown";
-      const vcard = inner.contactMessage.vcard ?? "";
+      const name = oneLine(inner.contactMessage.displayName ?? "") || "unknown";
+      const vcard = stripVcardBinary(inner.contactMessage.vcard ?? "");
       text = (text ? text + "\n" : "") + `[contact: ${name}]\n${vcard}`;
     }
 
     if (inner.contactsArrayMessage) {
       const names = (inner.contactsArrayMessage.contacts ?? [])
-        .map((c) => c?.displayName ?? "unknown")
+        .map((c) => oneLine(c?.displayName ?? "") || "unknown")
         .join(", ");
       text = (text ? text + "\n" : "") + `[contacts: ${names}]`;
     }
@@ -1010,8 +1015,9 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     if (!remote_jid) return;
     const existing = this.chats.get(remote_jid);
     // Prefer the most recently-observed name (group subjects rename; users
-    // change push names). Don't overwrite a known name with null.
-    const nextName = name ?? existing?.name ?? null;
+    // change push names). Don't overwrite a known name with a missing or
+    // blank one.
+    const nextName = name?.trim() || existing?.name || null;
     const nextTs = ts && (!existing?.last_message_at || ts > existing.last_message_at)
       ? ts
       : existing?.last_message_at ?? null;
@@ -1029,6 +1035,30 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   }
 
   get status(): StatusUpdate["status"] { return this.currentStatus; }
+}
+
+export function oneLine(value: string): string {
+  return value.replace(/[\s\u0085\u2028\u2029]+/g, " ").trim();
+}
+
+/**
+ * Phones embed contact photos and logos as base64 vCard properties, often
+ * tens of KB of noise in the agent's context. Drop those properties,
+ * including their folded continuation lines (RFC 6350 §3.2), and keep the
+ * readable fields.
+ */
+export function stripVcardBinary(vcard: string): string {
+  const out: string[] = [];
+  let skipping = false;
+  for (const line of vcard.split(/\r\n|\r|\n/)) {
+    if (/^[ \t]/.test(line)) {
+      if (!skipping) out.push(line);
+      continue;
+    }
+    skipping = /^(?:[\w-]+\.)?(?:PHOTO|LOGO|SOUND|KEY)[;:]/i.test(line);
+    if (!skipping) out.push(line);
+  }
+  return out.join("\n").trim();
 }
 
 // Minimal pino-compatible silent logger. Baileys uses `logger.child()`
