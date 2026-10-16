@@ -16,6 +16,7 @@ import {
   getThreadMessageBySeq,
   getThreadChannelSummary,
   listThreadChannelSummaries,
+  setAutoBoundaryLock,
 } from "@/lib/stores/threads";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import {
@@ -163,9 +164,10 @@ function runBoundaryCompaction(
 ): void {
   const baseThread = getThread(threadId);
   const basePinSeq = baseThread?.hot_since_seq ?? null;
+  const baseLock = baseThread?.auto_boundary_locked_until_msg_count ?? 0;
   void runTrackedCompaction(threadId, "auto", boundarySeq, async (attempt) => {
     await Promise.resolve();
-    await commitBoundaryCompaction(threadId, boundarySeq, basePinSeq, options, attempt);
+    await commitBoundaryCompaction(threadId, boundarySeq, basePinSeq, baseLock, options, attempt);
   })
     .catch((err) => console.warn(`[context-boundary:auto] compaction failed thread=${threadId}: ${String(err)}`))
     .finally(() => drainQueuedBoundary(threadId));
@@ -174,6 +176,7 @@ async function commitBoundaryCompaction(
   threadId: string,
   boundarySeq: number,
   basePinSeq: number | null,
+  baseLock: number,
   options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount">,
   attempt?: CompactionAttempt,
 ): Promise<void> {
@@ -184,7 +187,24 @@ async function commitBoundaryCompaction(
     ...options,
     attempt,
   });
-  if (!committed) return;
+  if (!committed) {
+    // A pass that resolved to no change (the active topic still starts at the
+    // current pin) must not be retried on every following turn either. Skip
+    // it when the boundary or lock changed mid-pass (e.g. the user cleared or
+    // moved the boundary): that newer state wins over this stale pass.
+    const lockUntil = options.autoBoundaryLockedUntilMessageCount;
+    const current = getThread(threadId);
+    if (
+      lockUntil !== undefined &&
+      current &&
+      (current.hot_since_seq ?? null) === basePinSeq &&
+      (current.auto_boundary_locked_until_msg_count ?? 0) === baseLock &&
+      lockUntil > baseLock
+    ) {
+      setAutoBoundaryLock(threadId, lockUntil);
+    }
+    return;
+  }
   console.info(
     `[context-boundary:auto] thread=${threadId} committed boundary_seq=${committed.boundarySeq} warm_msgs=${committed.sourceMessages}`,
   );

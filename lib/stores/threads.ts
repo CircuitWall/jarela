@@ -157,11 +157,15 @@ export function getThreadMessageBySeq(thread_id: string, seq: number): MessageRo
   return (getDb().prepare(MSG_COLS_SQL + " WHERE thread_id=? AND rowid=?").get(thread_id, seq) as unknown as MessageRow | undefined) ?? null;
 }
 
-export function countThreadMessagesFromSeq(thread_id: string, seq: number): number {
-  const row = getDb().prepare("SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid>=?").get(thread_id, seq) as { n: number } | undefined;
+
+// Rows that size compaction can prune: automation-channel rows are kept
+// (see pruneThreadMessages), so they must not count toward its trigger.
+export function countForegroundThreadMessages(thread_id: string, fromSeq = 0): number {
+  const row = getDb()
+    .prepare("SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid>=? AND " + foregroundCategoryGuardSql())
+    .get(thread_id, fromSeq, ...FOREGROUND_EXCLUDED_CATEGORIES) as { n: number } | undefined;
   return row?.n ?? 0;
 }
-
 export function isValidThreadContextCursor(thread_id: string, seq: number): boolean {
   if (getThreadMessageBySeq(thread_id, seq)) return true;
   return getThread(thread_id)?.hot_since_seq === seq;
@@ -733,11 +737,11 @@ export function setThreadContextPin(thread_id: string, hot_since: string | null,
     .run(hot_since, hot_since === null ? null : hot_since_seq!, thread_id);
 }
 
-// Called by moveThreadContextBoundary whenever the user explicitly moves the
-// boundary (drag, or manual /compact) — never by the auto-detector's own
-// commit path, which calls setThreadContextPin directly. `untilMessageCount`
-// is a one-time write; the read side (lib/agents/run-thread.ts) just compares
-// against it, no per-turn write needed.
+// Armed by moveThreadContextBoundary whenever the user explicitly moves the
+// boundary (drag, or manual /compact), and by the auto-detector's hot-turn
+// cooldown when a compaction pass ends without a commit (a commit writes the
+// lock in the same transaction). `untilMessageCount` is a one-time write; the
+// read side (lib/agents/run-thread.ts) just compares against it.
 export function setAutoBoundaryLock(thread_id: string, untilMessageCount: number): void {
   getDb()
     .prepare("UPDATE threads SET auto_boundary_locked_until_msg_count=? WHERE thread_id=?")
