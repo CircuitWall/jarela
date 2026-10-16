@@ -113,25 +113,29 @@ export interface BridgePromptContext {
  */
 export function formatBridgePrompt(input: BridgePromptInput): string {
   const note = roleNote(input.role, input.is_group, input.silent === true, input.event);
+  // Header values come from the platform (display names, group subjects) and
+  // are sender-controlled: a line break would forge extra headers or end the
+  // header block early, so every value is flattened onto one line.
+  const h = (value: string) => String(value ?? "").replace(/[\r\n\u0085\u2028\u2029]+/g, " ");
   const lines = [
-    `[bridge:${input.bridge_id}]`,
-    `[chat_id:${input.chat_id}]`,
-    `[chat_name:${input.chat_name}]`,
+    `[bridge:${h(input.bridge_id)}]`,
+    `[chat_id:${h(input.chat_id)}]`,
+    `[chat_name:${h(input.chat_name)}]`,
     `[chat_type:${input.is_group ? "group" : "dm"}]`,
     `[message_role:${input.role}]`,
-    `[sender_id:${input.sender_id}]`,
-    `[sender_name:${input.sender_name}]`,
+    `[sender_id:${h(input.sender_id)}]`,
+    `[sender_name:${h(input.sender_name)}]`,
   ];
   const chatLink = httpsUrlOrNull(input.chat_link);
   if (chatLink) lines.push(`[chat_link:${chatLink}]`);
   if (input.event) {
     lines.push(`[event_type:${input.event.type}]`);
-    lines.push(`[event_subtype:${input.event.subtype}]`);
+    lines.push(`[event_subtype:${h(input.event.subtype)}]`);
   }
   if (input.is_group) {
-    lines.push(`[group_name:${input.chat_name}]`);
-    lines.push(`[participant_id:${input.sender_id}]`);
-    lines.push(`[participant_name:${input.sender_name}]`);
+    lines.push(`[group_name:${h(input.chat_name)}]`);
+    lines.push(`[participant_id:${h(input.sender_id)}]`);
+    lines.push(`[participant_name:${h(input.sender_name)}]`);
   }
   return `${note}\n\n${lines.join("\n")}\n\n${input.text}`;
 }

@@ -130,10 +130,13 @@ function fuzzyUniqueRange(raw: string, oldString: string): MatchRange[] {
   if (oldLines.some((line) => line.length === 0)) return [];
   const rawLines = raw.split(/\r\n|\r|\n/);
   const rawLineStarts: number[] = [];
+  const eol = /\r\n|\r|\n/g;
   let offset = 0;
   for (const line of rawLines) {
     rawLineStarts.push(offset);
-    offset += line.length + 1;
+    eol.lastIndex = offset + line.length;
+    const brk = eol.exec(raw);
+    offset = offset + line.length + (brk ? brk[0].length : 0);
   }
   const scores: Array<{ score: number; start: number; end: number }> = [];
   for (let i = 0; i + oldLines.length <= rawLines.length; i++) {
@@ -188,7 +191,9 @@ function findAllExact(haystack: string, needle: string): number[] {
 function findWithTransforms(raw: string, oldString: string, fns: Array<(s: string) => Transform>): MatchRange[] {
   const bufT = composeTransforms(raw, fns);
   const oldT = composeTransforms(oldString, fns);
-  if (oldT.text.length === 0) return [];
+  // A needle that normalizes to bare whitespace would match an arbitrary
+  // line break, so it can never identify an edit target.
+  if (oldT.text.trim().length === 0) return [];
   const starts = findAllExact(bufT.text, oldT.text);
   return starts.map((s) => ({
     start: bufT.toOriginal[s],
