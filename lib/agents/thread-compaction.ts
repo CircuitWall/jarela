@@ -9,8 +9,10 @@ import { putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
 import { compactThreadWarmContext, trackManualCompaction } from "@/lib/agents/warm-summary-background";
 import { getConfig } from "@/lib/env/config";
 
+export type ThreadCompactionFailureReason = "nothing to compact" | "no summary produced";
+
 export type ThreadCompactionResult =
-  | { compacted: false; reason: string }
+  | { compacted: false; reason: ThreadCompactionFailureReason }
   | {
       compacted: true;
       summary: string;
@@ -78,13 +80,19 @@ export async function compactAgentThread(
       expectedHotSinceSeq: thread.hot_since_seq ?? null,
       alignTopicBoundary: !fullSessionReset,
     }));
-  if (!context) return { compacted: false, reason: "summary was not committed" };
+  if (!context) return { compacted: false, reason: "no summary produced" };
+
+  // Automation channels (bridge, watcher, scheduled task) are compacted at the
+  // same boundary; a bridge-only agent has nothing but channel recaps.
+  const channelRecaps = context.channels.filter((c) => !!c.summary);
+  const archivedSummary = [context.summary, ...channelRecaps.map((c) => c.summary)].filter(Boolean).join("\n\n");
+  const messageCount = context.sourceMessages + channelRecaps.reduce((n, c) => n + c.sourceMessages, 0);
 
   putMemory("sessions", `${agentId}/${Date.now()}`, {
-    summary: context.summary,
+    summary: archivedSummary,
     agent_id: agentId,
     agent_name: agent.name,
-    message_count: context.sourceMessages,
+    message_count: messageCount,
     compacted_at: new Date().toISOString(),
   });
   const archivePruned = pruneSessionArchives(agentId, maxSessionArchives());
@@ -95,7 +103,7 @@ export async function compactAgentThread(
   return {
     compacted: true,
     summary: context.summary,
-    message_count: context.sourceMessages,
+    message_count: messageCount,
     context_chars: context.sourceChars,
     pruned,
     archive_pruned: archivePruned,

@@ -572,3 +572,57 @@ describe("kickBoundaryCompaction refreshes automation channels alongside chat (A
     expect(state.channelSummaries.scheduled_task.summary_before).toBe(state.commits[0].hotSince);
   });
 });
+
+describe("compactThreadWarmContext — automation-only threads", () => {
+  function resetThread() {
+    state.thread = {
+      thread_id: "thread-1",
+      hot_since: null,
+      hot_since_seq: null,
+      warm_summary: null,
+      warm_summary_before: null,
+      warm_summary_before_seq: null,
+      message_count: 2,
+    };
+    state.commits = [];
+    state.channelSummaries = {};
+    state.topicSegments = [];
+  }
+
+  it("commits a manual compaction when only the bridge channel has activity", async () => {
+    resetThread();
+    state.rows = [];
+    state.automationRows = {
+      bridge: [
+        { seq: 1, role: "user", content: "whatsapp: can you book the table for friday", created_at: "2026-09-25T09:00:00.000Z" },
+        { seq: 2, role: "assistant", content: "booked the table for friday at 8pm", created_at: "2026-09-25T09:00:05.000Z" },
+      ],
+    };
+    vi.mocked(summarizeTranscript).mockReset();
+    vi.mocked(summarizeTranscript).mockResolvedValue("table booked for friday");
+
+    const context = await compactThreadWarmContext("thread-1", 3);
+
+    expect(context).not.toBeNull();
+    expect(context?.summary).toBe("");
+    const bridge = context?.channels.find((c) => c.channel === "bridge");
+    expect(bridge?.summary).toContain("table booked for friday");
+    expect(bridge?.sourceMessages).toBe(2);
+    expect(state.commits).toHaveLength(1);
+    expect(state.channelSummaries.bridge.summary).toContain("--- bridge activity summary ---");
+  });
+
+  it("still declines a manual compaction when neither chat nor any channel produced a summary", async () => {
+    resetThread();
+    state.rows = [];
+    state.automationRows = {
+      bridge: [{ seq: 1, role: "user", content: "hi", created_at: "2026-09-25T09:00:00.000Z" }],
+    };
+    vi.mocked(summarizeTranscript).mockReset();
+
+    const context = await compactThreadWarmContext("thread-1", 2);
+
+    expect(context).toBeNull();
+    expect(state.commits).toHaveLength(0);
+  });
+});

@@ -12,11 +12,6 @@ import { MetaRow } from "@/components/ui/MetaRow";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Dialog } from "@/components/ui/Dialog";
 
-interface SystemNotice {
-  id: string;
-  text: string;
-}
-
 interface QueuedMessageView {
   id: string;
   text: string;
@@ -32,7 +27,6 @@ interface Props {
   threadId?: string | null;
   messages: Message[];
   steeredSegments?: SteeredSegment[];
-  notices?: SystemNotice[];
   agentConfig?: AgentConfig | null;
   userProfile?: UserProfile | null;
   streamingContent?: string;
@@ -80,7 +74,7 @@ const ALL_FILTERS_SHOWN: Record<MessageFilterKey, boolean> = Object.fromEntries(
   MESSAGE_FILTER_KEYS.map((k) => [k, true]),
 ) as Record<MessageFilterKey, boolean>;
 
-export function MessageList({ threadId, messages, steeredSegments, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = () => {}, onResetFilters: reset = () => {} }: Props) {
+export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = () => {}, onResetFilters: reset = () => {} }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1032,13 +1026,6 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
           ))}
         </div>
       )}
-      {notices?.map((n) => (
-        <div key={n.id} className="flex justify-center my-3">
-          <span className="text-xs italic text-fg-faint bg-surface-2 px-3 py-1 rounded-full border border-border">
-            {n.text}
-          </span>
-        </div>
-      ))}
         </div>
 
         <div

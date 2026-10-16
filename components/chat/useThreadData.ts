@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Message, SummaryTopicSegment } from "@/api/types";
-import { applyThreadMeta, type SystemNotice, type ThreadMetaApplier } from "./chat-helpers";
+import { applyThreadMeta, type ThreadMetaApplier } from "./chat-helpers";
 
 interface Params {
   threadId: string | null;
@@ -13,9 +13,6 @@ export interface ThreadDataApi {
   messages: Message[];
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   messagesRef: React.MutableRefObject<Message[]>;
-  notices: SystemNotice[];
-  setNotices: React.Dispatch<React.SetStateAction<SystemNotice[]>>;
-  addNotice: (text: string) => void;
   hasMore: boolean;
   setHasMore: React.Dispatch<React.SetStateAction<boolean>>;
   loadingMore: boolean;
@@ -40,7 +37,6 @@ export interface ThreadDataApi {
 
 export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [notices, setNotices] = useState<SystemNotice[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -69,15 +65,10 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     setCompactionPending, setWarmSummaryTopics,
   };
 
-  const addNotice = useCallback((text: string) => {
-    setNotices((p) => [...p, { id: `notice-${Date.now()}`, text }]);
-  }, []);
-
   useEffect(() => {
     if (!threadId) {
       setMetadataThreadId(null);
       setMessages([]);
-      setNotices([]);
       setHasMore(false);
       setMessagesLoading(false);
       setHotSince(null);
@@ -211,7 +202,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   }, [threadId, loadingMore, hasMore, messages.length]);
 
   return {
-    messages, setMessages, messagesRef, notices, setNotices, addNotice,
+    messages, setMessages, messagesRef,
     hasMore, setHasMore, loadingMore, messagesLoading,
     hotSince: metadataMatchesThread ? hotSince : null,
     hotSinceSeq: metadataMatchesThread ? hotSinceSeq : null,
