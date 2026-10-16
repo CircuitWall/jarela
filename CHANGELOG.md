@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-10-16
+
+### Added
+
+- **Link answers back to the source: Gmail, Outlook mail and calendar, and Google Calendar results carry a web link and a ready-made `cite_as` markdown link, and WhatsApp 1:1 bridge messages carry a `wa.me` chat link, so agents can point you at the exact email, event or chat. Group chats and single WhatsApp messages have no public link. Replies delivered to WhatsApp use bare URLs.**
+
+### Fixed
+
+- **Stop bridge-heavy threads from showing "Compacting" and running an empty compaction on every turn, and stop topic detection from re-running every turn after a hot-turn-limit pass.**
+- **Always send localhost traffic (Ollama, the WhatsApp bridge, Jarela's own API) directly when an HTTP proxy is configured, accept IPv6 proxy hosts, and reject manual proxy hosts that include a scheme, port, path or credentials.**
+- **Replay each WhatsApp chat's offline backlog separately so one active chat no longer causes others to lose messages, and keep known chat names when a contact sends a blank name.**
+- **Keep tuned persona sliders when an approved proposal or tool edit updates an agent, apply `hot_turn_limit` from proposals, reject negative or fractional limits, and drop blank or duplicate tool names.**
+- **Save facts about non-Latin subjects under their own memory keys instead of colliding, and stop replacing a fact from deleting an unrelated one.**
+- **Keep distinct Outlook and Gmail links as separate citations, keep closing code fences and horizontal rules when deduplicating instruction lines, and fix fuzzy edits on CRLF files and paged reads that split multi-byte characters.**
+
+### Adoption
+
+- If an agent's instructions or skills tell it not to include links or URLs in replies, decide whether it should now cite sources with the provided `cite_as` and chat links.
+- If you listed `localhost` or `127.0.0.1` in the proxy bypass list only to reach local services, you can remove them; loopback is always direct now.
 ## [2.3.0] - 2026-10-16
 
 ### Added
