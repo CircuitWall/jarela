@@ -189,7 +189,6 @@ export async function POST(req: NextRequest, { params }: Params) {
           _pinned_model_config_name: pinnedModelConfigName,
           _onCompacting: () => broadcast(active, { type: "status", data: { phase: "compacting", label: "Compacting earlier messages…" } }),
           _user_message_persisted: true,
-          _message_count_before_user: admittedTurn.messageCountBefore,
           _idle_ms_before_user: admittedTurn.idleMsBefore,
         });
         prepDurationMs = Date.now() - prepStartedAt;

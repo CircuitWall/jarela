@@ -10,6 +10,7 @@ process.env.JARELA_MAX_THREAD_MESSAGES = "4";
 
 const streamWithConfigMock = vi.fn();
 let providerSummary = "AUTO-COMPACT-RECAP";
+let providerCalls = 0;
 
 vi.mock("@/lib/agents/llm", () => ({
   streamWithConfig: (...args: unknown[]) => streamWithConfigMock(...args),
@@ -21,7 +22,7 @@ vi.mock("@/lib/scheduler", () => ({
 
 vi.mock("@/lib/providers", () => ({
   getProvider: () => ({
-    chat: async () => ({
+    chat: async () => (providerCalls++, {
       stream: (async function* () { yield providerSummary; })(),
     }),
   }),
@@ -164,7 +165,6 @@ describe("prepareThreadRun auto context boundary", () => {
       thread_id: thread.thread_id,
       message: "Persist this before the assistant draft.",
       _user_message_persisted: true,
-      _message_count_before_user: persisted.messageCountBefore,
       _idle_ms_before_user: persisted.idleMsBefore,
       context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
     });
@@ -271,7 +271,6 @@ describe("prepareThreadRun auto context boundary", () => {
         .run(new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(), message.msg_id);
     });
     const orderedSeeded = getMessages(thread.thread_id);
-    const messageCountBefore = getThread(thread.thread_id)!.message_count;
     const activePrompt = addMessage(thread.thread_id, "user", "topic 3 question");
     providerSummary = [
       "AUTO-COMPACT-RECAP",
@@ -292,7 +291,6 @@ describe("prepareThreadRun auto context boundary", () => {
       thread_id: thread.thread_id,
       message: "topic 3 question",
       _user_message_persisted: true,
-      _message_count_before_user: messageCountBefore,
       _idle_ms_before_user: null,
       context_profile: {
         include_hot: true,
@@ -373,5 +371,127 @@ describe("prepareThreadRun auto context boundary", () => {
       "older turn 23",
       "continue after retention guard",
     ]);
+  });
+
+  async function seedBridgeHeavyAgent(agentId: string, foregroundTurns: number) {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: agentId,
+      name: agentId,
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread(agentId);
+    const metadata = { bridge_conversation: { key: "wa:chat-1" } };
+    for (let i = 0; i < 20; i++) {
+      addMessage(thread.thread_id, i % 2 === 0 ? "user" : "assistant", `bridge turn ${i}`, undefined, "bridge", metadata);
+    }
+    for (let i = 0; i < foregroundTurns; i++) {
+      addMessage(thread.thread_id, "user", `chat question ${i}`);
+      addMessage(thread.thread_id, "assistant", `chat answer ${i}`);
+    }
+    return { thread, metadata };
+  }
+
+  it("does not start size compaction for bridge rows that compaction can never prune", async () => {
+    const { thread, metadata } = await seedBridgeHeavyAgent("agent-bridge-only", 0);
+    const onCompacting = vi.fn();
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "new bridge message",
+      user_category: "bridge",
+      message_metadata: metadata,
+      history_bridge_key: "wa:chat-1",
+      context_profile: { history_scope: "bridge", include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      _onCompacting: onCompacting,
+    });
+    expect(onCompacting).not.toHaveBeenCalled();
+    expect(getMessages(thread.thread_id).filter((m) => m.category === "bridge")).toHaveLength(21);
+  });
+
+  it("does not report compacting on a short chat just because the bridge history is long", async () => {
+    const { thread } = await seedBridgeHeavyAgent("agent-bridge-mixed", 1);
+    const onCompacting = vi.fn();
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "quick chat question",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      _onCompacting: onCompacting,
+    });
+    expect(onCompacting).not.toHaveBeenCalled();
+  });
+
+  it("still size-compacts once the chat itself outgrows the cap alongside bridge rows", async () => {
+    const { thread } = await seedBridgeHeavyAgent("agent-bridge-busy-chat", 6);
+    const onCompacting = vi.fn();
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "long chat question",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      _onCompacting: onCompacting,
+    });
+    expect(onCompacting).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-run hot-turn compaction on the very next turn after a commit", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-hot-turn-rolling",
+      name: "Rolling Hot Turn Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 0,
+      hot_turn_limit: 2,
+    });
+    const thread = createThread("agent-hot-turn-rolling");
+    for (let i = 0; i < 4; i += 1) {
+      addMessage(thread.thread_id, "user", `topic ${i} question`);
+      addMessage(thread.thread_id, "assistant", `topic ${i} answer`);
+    }
+    const seeded = getMessages(thread.thread_id);
+    seeded.forEach((message, index) => {
+      getDb().prepare("UPDATE messages SET created_at=? WHERE msg_id=?")
+        .run(new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(), message.msg_id);
+    });
+    const rows = getMessages(thread.thread_id);
+    providerSummary = [
+      "AUTO-COMPACT-RECAP",
+      "```jarela-topics",
+      JSON.stringify([{
+        title: "later topic",
+        start_seq: rows[4].seq,
+        end_seq: rows[7].seq,
+        start_at: rows[4].created_at,
+        end_at: rows[7].created_at,
+        recap: "Topics 2 and 3.",
+        facts: [],
+      }]),
+      "```",
+    ].join("\n");
+    const turn = (message: string) => prepareThreadRun({
+      thread_id: thread.thread_id,
+      message,
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+
+    await turn("topic 4 question");
+    await waitForCondition(() => getThread(thread.thread_id)?.hot_since_seq === rows[4].seq);
+    addMessage(thread.thread_id, "assistant", "topic 4 answer");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    providerCalls = 0;
+    await turn("topic 5 question");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(providerCalls).toBe(0);
+    addMessage(thread.thread_id, "assistant", "topic 5 answer");
+
+    // The cooldown is half the turn limit; the turn after it re-evaluates.
+    await turn("topic 6 question");
+    await waitForCondition(() => providerCalls > 0);
+    expect(getThread(thread.thread_id)?.hot_since_seq).toBe(rows[4].seq);
   });
 });

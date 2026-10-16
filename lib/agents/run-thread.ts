@@ -13,7 +13,7 @@ import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-
 import { kickBoundaryCompaction, kickWarmSummaryRefresh, pendingCompactionBoundarySeq } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
-import { addMessage, capToolEventPayload, countThreadMessagesFromSeq, getMessagesPage, isValidThreadContextCursor, pruneThreadMessages, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, capToolEventPayload, countForegroundThreadMessages, getMessagesPage, isValidThreadContextCursor, pruneThreadMessages, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, getThreadMessageBySeq, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -170,10 +170,19 @@ function hotTurnBoundary(
   return boundary?.seq ?? null;
 }
 
+// The topic-aware boundary keeps the whole active topic hot, so user turns
+// since the pin usually still exceed the limit right after a commit. Without a
+// cooldown every following turn re-runs the topic LLM pass only to land on the
+// same pin. Skip the next half-limit turns (2 rows per turn) before re-checking.
+export function hotTurnCooldownUntil(messageCount: number, hotTurnLimit: number | null | undefined): number {
+  const turnLimit = hotTurnLimit ?? DEFAULT_HOT_TURN_LIMIT;
+  const skipTurns = Math.max(1, Math.ceil(Math.max(1, turnLimit) / 2));
+  return messageCount + skipTurns * 2 + 1;
+}
+
 async function maybeAutoCompactOversizedThread(
   agentId: string,
   threadId: string,
-  messageCount: number,
   onCompacting?: () => void,
   preserveNewestMessages = 0,
 ): Promise<void> {
@@ -181,12 +190,17 @@ async function maybeAutoCompactOversizedThread(
   const keepLast = autoCompactionKeepLast(cap);
   const retainedMessages = keepLast + preserveNewestMessages;
   const triggerAt = cap + (cap - keepLast);
-  if (!Number.isFinite(cap) || cap <= 0 || messageCount < triggerAt) return;
+  if (!Number.isFinite(cap) || cap <= 0) return;
+  // Only foreground rows are ever pruned; counting bridge/watcher/scheduled
+  // rows would re-trigger an LLM compaction on every turn of a busy bridge
+  // agent without ever bringing the count back under the cap.
+  const messageCount = countForegroundThreadMessages(threadId);
+  if (messageCount < triggerAt) return;
   try {
     // A pin that already keeps the hot tier within the retained range must not
     // be pulled back to the cutoff, nor re-summarised by an LLM on every turn.
     const pinSeq = getThread(threadId)?.hot_since_seq ?? null;
-    if (pinSeq !== null && countThreadMessagesFromSeq(threadId, pinSeq) <= retainedMessages) {
+    if (pinSeq !== null && countForegroundThreadMessages(threadId, pinSeq) <= retainedMessages) {
       pruneThreadMessages(threadId, retainedMessages, pinSeq);
       return;
     }
@@ -237,7 +251,6 @@ export class RunThreadError extends Error {
 
 export interface PersistedThreadRunUserMessage {
   attachments?: ContentPart[];
-  messageCountBefore: number;
   idleMsBefore: number | null;
   userMessageId: string;
   storedContent: string;
@@ -256,7 +269,6 @@ export async function persistThreadRunUserMessage(
     throw new RunThreadError(400, "message required", "message_required");
   }
 
-  const messageCountBefore = thread.message_count;
   const autoBoundaryScope = req.context_profile?.history_scope
     ?? (req.user_category === "bridge" ? "bridge" : "foreground");
   const idleMsBefore = isAutoBoundaryEligibleCategory(req.user_category)
@@ -287,7 +299,6 @@ export async function persistThreadRunUserMessage(
 
   return {
     attachments: spilledAttachments,
-    messageCountBefore,
     idleMsBefore,
     userMessageId: userMessage.msg_id,
     storedContent: stored,
@@ -486,8 +497,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     await maybeAutoCompactOversizedThread(
       agentCfg.id,
       req.thread_id,
-      req._message_count_before_user ?? thread.message_count,
       req._onCompacting,
+
       req._user_message_persisted ? 2 : 0,
     );
   }
@@ -552,7 +563,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
         && latestThread.message_count < (latestThread.auto_boundary_locked_until_msg_count ?? 0);
       if (!locked) {
         const boundary = hotTurnBoundary(req.thread_id, agentCfg, autoBoundaryScope);
-        if (boundary !== null) kickBoundaryCompaction(req.thread_id, boundary);
+        if (boundary !== null) {
+          kickBoundaryCompaction(req.thread_id, boundary, {
+            autoBoundaryLockedUntilMessageCount: hotTurnCooldownUntil(latestThread?.message_count ?? 0, agentCfg.hot_turn_limit),
+          });
+        }
       }
     }
   }

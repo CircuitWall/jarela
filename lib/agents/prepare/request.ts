@@ -38,8 +38,6 @@ export interface ThreadRunRequest {
   _onCompacting?: () => void;
   /** Internal — the submission path already committed this user's transcript row. */
   _user_message_persisted?: boolean;
-  /** Thread message count captured before an eagerly persisted user turn. */
-  _message_count_before_user?: number;
   /** Conversation idle duration captured before an eagerly persisted user turn. */
   _idle_ms_before_user?: number | null;
   /**
