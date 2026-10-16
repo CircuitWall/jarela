@@ -663,6 +663,3 @@ export async function handleBrowserRetry(req: Request): Promise<Response> {
   if (!entry.retryable || !entry.retry_payload) return jsonResponse({ error: "browser command is not retryable" }, 409);
   return awaitBrowserCommand(entry.retry_payload, parsed.data.timeout_ms ?? 30_000);
 }
-
-/** @internal — exported for the agent-side tool layer; do not import elsewhere. */
-export { CommandShape as _CommandShape };

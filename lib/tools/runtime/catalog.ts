@@ -5,10 +5,7 @@ import {
   registeredTools,
   registeredNames,
   registeredCategory,
-  registeredCapability,
-  registeredGroup,
   registeredIntegration,
-  groupForCategory,
   type Capability,
   type ToolCategory,
   type ToolGroup,
@@ -30,7 +27,7 @@ import { isBasicToolCategory, normalizeToolCategory } from "./categories";
 import { isAlwaysOnTool } from "./always-on";
 import { getIntegrationReadiness } from "@/lib/health/probe-cache";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
-import { getAllTools, getAllToolsAsync } from "./runtime";
+import { getAllTools } from "./runtime";
 
 export type ToolSource = "builtin" | "external" | "mcp";
 export type ToolStatus = "enabled" | "disabled" | "unavailable";
@@ -94,10 +91,6 @@ export function getToolSource(name: string): ToolSource {
   return "mcp";
 }
 
-export function getToolCapability(name: string): Capability {
-  return registeredCapability(name) ?? "execute";
-}
-
 export function getToolCategory(name: string): ToolCategory {
   const builtin = registeredCategory(name);
   if (builtin) return builtin;
@@ -106,16 +99,6 @@ export function getToolCategory(name: string): ToolCategory {
   if (getToolSource(name) === "external") return "Other";
   const mcpCat = getMcpToolMeta(name)?.category;
   return normalizeToolCategory(mcpCat) as ToolCategory;
-}
-
-export function getToolGroup(name: string): ToolGroup {
-  const cat = getToolCategory(name);
-  if (cat === "MCP") return null;
-  const builtinGroup = registeredGroup(name);
-  if (builtinGroup !== undefined) return builtinGroup;
-  const mcpGroup = getMcpToolMeta(name)?.group;
-  if (mcpGroup !== undefined) return mcpGroup as ToolGroup;
-  return groupForCategory(cat);
 }
 
 export function getToolCredentialsRequired(name: string): string[] {
@@ -156,13 +139,6 @@ function unconfiguredReason(entry: ToolCatalogEntry): string | null {
 
 export function getDefaultAgentToolNames(): string[] {
   return getAllTools()
-    .filter((t) => isDefaultBasicTool(t.name, getToolCategory(t.name)))
-    .map((t) => t.name);
-}
-
-export async function getDefaultAgentToolNamesAsync(): Promise<string[]> {
-  const tools = await getAllToolsAsync();
-  return tools
     .filter((t) => isDefaultBasicTool(t.name, getToolCategory(t.name)))
     .map((t) => t.name);
 }

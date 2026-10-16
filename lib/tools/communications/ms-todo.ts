@@ -21,18 +21,11 @@ import { registerLangChainPackage } from "../packages/langchain-package";
 import {
   getMicrosoftAccessToken,
   resolveMicrosoftAuth,
-  type MicrosoftAuth,
 } from "@/lib/integrations/microsoft-oauth";
 
 const msTodoReadTools = optionalTools<StructuredToolInterface>("@circuitwall/ms-todo-langchain", "msTodoReadTools");
 const msTodoWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/ms-todo-langchain", "msTodoWriteTools");
 const setAuthResolver = optionalFunction<(resolver: () => unknown) => void>("@circuitwall/ms-todo-langchain", "setAuthResolver", () => undefined);
-
-// Exposed for the integrations test endpoint, matching the gmail/outlook
-// `_resolveXxxAuth` probe convention.
-export function _resolveMsTodoAuth(): MicrosoftAuth | { error: string } {
-  return resolveMicrosoftAuth();
-}
 
 // Bridge: the package calls this on every tool invocation. We resolve
 // the user's Microsoft credentials from Jarela's encrypted store (or env

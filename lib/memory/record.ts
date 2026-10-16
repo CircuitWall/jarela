@@ -65,9 +65,7 @@ export const StructuredMemoryInputSchema = z.object({
   status: z.enum(MEMORY_STATUSES).default("active"),
 }).strict();
 
-export type StructuredMemoryInput = z.infer<typeof StructuredMemoryInputSchema>;
 export type StructuredMemoryRecord = z.infer<typeof StructuredMemoryEnvelopeV2Schema>;
-export type StructuredMemoryHistoryEntry = z.infer<typeof StructuredMemoryHistoryEntrySchema>;
 
 function normalizeStructuredMemoryCandidate(candidate: unknown): unknown {
   if (!candidate || typeof candidate !== "object") return candidate;

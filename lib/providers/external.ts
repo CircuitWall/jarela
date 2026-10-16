@@ -97,5 +97,3 @@ export function loadExternalProviders(
 ): Record<string, ModelProvider> {
   return loadExternalProvidersDetailed(builtins).providers;
 }
-
-export { type ExternalProviderCredentialField as ProviderCredentialField };
