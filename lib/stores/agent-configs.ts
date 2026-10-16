@@ -253,12 +253,17 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
   const db = getDb();
   const existing = getAgentConfig(input.id);
   const created_at = existing?.created_at ?? t;
-  const mbti = input.adaptive_mbti ?? toMbti(existing?.adaptive_mbti) ?? "INTJ";
+  const existingMbti = toMbti(existing?.adaptive_mbti);
+  const mbti = input.adaptive_mbti ?? existingMbti ?? "INTJ";
   const preset = MBTI_PRESETS[mbti];
-  const strength = input.adaptive_persona_strength ?? preset.strength;
-  const empathy = input.adaptive_empathy ?? preset.empathy;
-  const expressiveness = input.adaptive_expressiveness ?? preset.expressiveness;
-  const verbosity = input.adaptive_verbosity ?? preset.verbosity;
+  // Omitted sliders keep their tuned values; they only fall back to the
+  // preset when the type changes or the agent is new. Otherwise every
+  // partial update (approved proposals, tool edits) reset them.
+  const keepTuned = existing !== null && existing !== undefined && mbti === existingMbti;
+  const strength = input.adaptive_persona_strength ?? (keepTuned ? existing.adaptive_persona_strength : preset.strength);
+  const empathy = input.adaptive_empathy ?? (keepTuned ? existing.adaptive_empathy : preset.empathy);
+  const expressiveness = input.adaptive_expressiveness ?? (keepTuned ? existing.adaptive_expressiveness : preset.expressiveness);
+  const verbosity = input.adaptive_verbosity ?? (keepTuned ? existing.adaptive_verbosity : preset.verbosity);
   if (input.is_default) db.prepare("UPDATE agent_configs SET is_default=0").run();
   // harness_id: explicit `undefined` means "keep existing"; explicit `null`
   // means "use the global default". Empty string is normalised to null too,

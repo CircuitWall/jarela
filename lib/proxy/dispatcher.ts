@@ -215,7 +215,18 @@ function buildProxyUrl(
   const auth = username
     ? `${encodeURIComponent(username)}${password ? `:${encodeURIComponent(password)}` : ""}@`
     : "";
-  return `${scheme}://${auth}${host}:${port}`;
+  const urlHost = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  return `${scheme}://${auth}${urlHost}:${port}`;
+}
+
+// undici's EnvHttpProxyAgent has no implicit loopback exemption, so without
+// these a configured proxy would also receive local traffic (Ollama, the
+// WhatsApp bridge sidecar, the app's own loopback API).
+const LOOPBACK_NO_PROXY = ["localhost", "127.0.0.1", "::1"];
+
+function mergeNoProxy(noProxy: string | null): string {
+  const entries = (noProxy ?? "").split(/[,\s]+/).map((entry) => entry.trim()).filter(Boolean);
+  return [...new Set([...entries, ...LOOPBACK_NO_PROXY])].join(",");
 }
 
 function installProxy(url: string, noProxy: string | null, caBundle: string | null): void {
@@ -224,22 +235,24 @@ function installProxy(url: string, noProxy: string | null, caBundle: string | nu
   // We still treat the boot-time env snapshot as authoritative for the
   // "env beats DB" rule — this mutation only happens after we've
   // confirmed the user did NOT set HTTP_PROXY at launch.
+  const merged = mergeNoProxy(noProxy);
   process.env.HTTP_PROXY = url;
   process.env.HTTPS_PROXY = url;
-  if (noProxy && noProxy.trim().length > 0) {
-    process.env.NO_PROXY = noProxy.trim();
-  } else {
-    delete process.env.NO_PROXY;
-  }
+  process.env.NO_PROXY = merged;
   // ADR-0012: when the user pasted a corporate root CA, inject it on
   // both TLS legs — the proxy hop (proxyTls) for https-scheme proxies
   // signed by the corporate root, and the upstream tunnel (requestTls)
   // for proxies that MITM outbound HTTPS with the same internal CA.
   // Same blob is correct: the corporate trust chain typically signs
   // both ends.
-  const opts = caBundle
-    ? { requestTls: { ca: caBundle }, proxyTls: { ca: caBundle } }
-    : {};
+  // Pass the values explicitly too: undici prefers lowercase http_proxy /
+  // no_proxy from the environment over the uppercase ones set above.
+  const opts = {
+    httpProxy: url,
+    httpsProxy: url,
+    noProxy: merged,
+    ...(caBundle ? { requestTls: { ca: caBundle }, proxyTls: { ca: caBundle } } : {}),
+  };
   setGlobalDispatcher(new EnvHttpProxyAgent(opts));
 }
 

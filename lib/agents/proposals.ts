@@ -130,9 +130,13 @@ function applyUpdateAgentTools(payload: unknown): ApplyResult {
   const before = getAgentTools(existing);
   const mode = p.mode ?? "add";
   if (mode !== "add" && mode !== "replace") return { ok: false, detail: "mode must be add or replace" };
+  const requested = (p.tools as unknown[])
+    .filter((tool): tool is string => typeof tool === "string")
+    .map((tool) => tool.trim())
+    .filter(Boolean);
   const nextTools = mode === "replace"
-    ? [...new Set(p.tools)]
-    : [...new Set([...before, ...p.tools])];
+    ? [...new Set(requested)]
+    : [...new Set([...before, ...requested])];
   upsertAgentConfig({
     id: existing.id,
     name: existing.name,
@@ -154,13 +158,16 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     instructions_edits?: unknown;
     history_limit?: number;
     history_window_hours?: number;
+    hot_turn_limit?: number;
     warm_summary_limit?: number;
     harness_id?: string | null;
   };
   if (!p.agent_id) return { ok: false, detail: "agent_id required" };
-  if (p.warm_summary_limit !== undefined
-    && (!Number.isInteger(p.warm_summary_limit) || p.warm_summary_limit < 0)) {
-    return { ok: false, detail: "warm_summary_limit must be a nonnegative integer" };
+  for (const field of ["warm_summary_limit", "hot_turn_limit", "history_limit", "history_window_hours"] as const) {
+    const value = p[field];
+    if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+      return { ok: false, detail: `${field} must be a nonnegative integer` };
+    }
   }
   const editModes = [
     p.instructions !== undefined,
@@ -209,6 +216,7 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     model_config_name: existing.model_config_name,
     history_limit: p.history_limit ?? existing.history_limit,
     history_window_hours: p.history_window_hours ?? existing.history_window_hours,
+    hot_turn_limit: p.hot_turn_limit,
     warm_summary_limit: p.warm_summary_limit ?? existing.warm_summary_limit,
     harness_id: p.harness_id,
   });

@@ -165,3 +165,94 @@ describe("NodeSqliteSaver", () => {
     expect(tuple).toBeUndefined();
   });
 });
+
+describe("NodeSqliteSaver edge cases", () => {
+  async function chain(saver: NodeSqliteSaver, thread: string, count: number, ns = ""): Promise<string[]> {
+    const ids: string[] = [];
+    let parent: string | undefined;
+    for (let i = 0; i < count; i++) {
+      const ck = newCheckpoint();
+      await saver.put(
+        { configurable: { thread_id: thread, checkpoint_ns: ns, ...(parent ? { checkpoint_id: parent } : {}) } },
+        ck,
+        { ...META_BASE, step: i },
+      );
+      ids.push(ck.id);
+      parent = ck.id;
+    }
+    return ids;
+  }
+
+  it("links each checkpoint to its parent and returns no parent for the first one", async () => {
+    const saver = newSaver();
+    const [first, second] = await chain(saver, "t-parent", 2);
+    const latest = await saver.getTuple(cfg("t-parent"));
+    expect(latest?.checkpoint.id).toBe(second);
+    expect(latest?.parentConfig?.configurable?.checkpoint_id).toBe(first);
+    expect((await saver.getTuple(cfg("t-parent", first)))?.parentConfig).toBeUndefined();
+  });
+
+  it("keeps checkpoint namespaces (subgraphs) isolated within one thread", async () => {
+    const saver = newSaver();
+    const [root] = await chain(saver, "t-ns", 1, "");
+    const [child] = await chain(saver, "t-ns", 1, "sub:1");
+    const rootLatest = await saver.getTuple({ configurable: { thread_id: "t-ns", checkpoint_ns: "" } });
+    const childLatest = await saver.getTuple({ configurable: { thread_id: "t-ns", checkpoint_ns: "sub:1" } });
+    expect(rootLatest?.checkpoint.id).toBe(root);
+    expect(childLatest?.checkpoint.id).toBe(child);
+    expect(childLatest?.config.configurable?.checkpoint_ns).toBe("sub:1");
+  });
+
+  it("pages list() with before, newest first, without repeating the cursor", async () => {
+    const saver = newSaver();
+    const ids = await chain(saver, "t-before", 4);
+    const page = [];
+    for await (const tuple of saver.list(cfg("t-before"), { before: cfg("t-before", ids[2]), limit: 10 })) page.push(tuple.checkpoint.id);
+    expect(page).toEqual([ids[1], ids[0]]);
+  });
+
+  it("returns pending writes for the checkpoint they belong to, and replaces a retried task's writes", async () => {
+    const saver = newSaver();
+    const [first, second] = await chain(saver, "t-writes", 2);
+    await saver.putWrites(cfg("t-writes", second), [["messages", { text: "draft" }], ["status", "running"]], "task-1");
+    await saver.putWrites(cfg("t-writes", second), [["messages", { text: "final" }], ["status", "done"]], "task-1");
+    await saver.putWrites(cfg("t-writes", first), [["messages", { text: "old" }]], "task-0");
+
+    const latest = await saver.getTuple(cfg("t-writes"));
+    expect(latest?.pendingWrites).toEqual([
+      ["task-1", "messages", { text: "final" }],
+      ["task-1", "status", "done"],
+    ]);
+    const older = await saver.getTuple(cfg("t-writes", first));
+    expect(older?.pendingWrites).toEqual([["task-0", "messages", { text: "old" }]]);
+  });
+
+  it("round-trips non-ASCII and large channel values", async () => {
+    const saver = newSaver();
+    const ck = newCheckpoint();
+    const text = `你好 👋 ${"x".repeat(200_000)}`;
+    (ck.channel_values as Record<string, unknown>).messages = [{ text }];
+    await saver.put(cfg("t-big"), ck, META_BASE);
+    await saver.putWrites(cfg("t-big", ck.id), [["note", text]], "task");
+    const tuple = await saver.getTuple(cfg("t-big"));
+    expect((tuple?.checkpoint.channel_values as Record<string, unknown>).messages).toEqual([{ text }]);
+    expect(tuple?.pendingWrites?.[0][2]).toBe(text);
+  });
+
+  it("rejects writes without a checkpoint_id and puts without a thread_id", async () => {
+    const saver = newSaver();
+    await expect(saver.putWrites(cfg("t-x"), [["c", 1]], "task")).rejects.toThrow(/checkpoint_id/);
+    await expect(saver.put({ configurable: {} }, newCheckpoint(), META_BASE)).rejects.toThrow(/thread_id/);
+  });
+
+  it("deleteThread leaves other threads untouched", async () => {
+    const saver = newSaver();
+    const [keep] = await chain(saver, "t-keep", 1);
+    const [drop] = await chain(saver, "t-drop", 1);
+    await saver.putWrites(cfg("t-keep", keep), [["c", 1]], "task");
+    await saver.putWrites(cfg("t-drop", drop), [["c", 2]], "task");
+    await saver.deleteThread("t-drop");
+    expect(await saver.getTuple(cfg("t-drop"))).toBeUndefined();
+    expect((await saver.getTuple(cfg("t-keep")))?.pendingWrites).toEqual([["task", "c", 1]]);
+  });
+});

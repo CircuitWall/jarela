@@ -395,3 +395,79 @@ describe("applyAction(update_agent) instructions_append", () => {
     expect(String(result.detail)).toMatch(/one instructions mode only/);
   });
 });
+
+describe("applyAction(update_agent) edge cases", () => {
+  function seedTunedAgent(id: string) {
+    upsertAgentConfig({
+      id,
+      name: id,
+      identity: "test agent",
+      instructions: "be helpful",
+      tools: ["web_search"],
+      hot_turn_limit: 12,
+      adaptive_persona_enabled: true,
+      adaptive_mbti: "ENFP",
+      adaptive_persona_strength: 91,
+      adaptive_empathy: 7,
+      adaptive_expressiveness: 88,
+      adaptive_verbosity: 3,
+      never_reply: true,
+    });
+  }
+
+  it("applies hot_turn_limit, which the propose tool advertises", async () => {
+    seedTunedAgent("agent-hot-turns");
+    const result = await applyAction("update_agent", { agent_id: "agent-hot-turns", hot_turn_limit: 4 });
+    expect(result.ok).toBe(true);
+    expect(getAgentConfig("agent-hot-turns")!.hot_turn_limit).toBe(4);
+  });
+
+  it.each([
+    ["hot_turn_limit", -1],
+    ["hot_turn_limit", 2.5],
+    ["history_limit", 1.5],
+    ["history_limit", -5],
+    ["history_window_hours", -1],
+  ])("rejects %s=%s without writing", async (field, value) => {
+    seedTunedAgent(`agent-bad-${field}`);
+    const before = getAgentConfig(`agent-bad-${field}`)!;
+    const result = await applyAction("update_agent", { agent_id: `agent-bad-${field}`, [field]: value });
+    expect(result.ok).toBe(false);
+    expect(String(result.detail)).toContain(field);
+    expect(getAgentConfig(`agent-bad-${field}`)).toEqual(before);
+  });
+
+  it("keeps settings the proposal did not mention, including tuned persona sliders", async () => {
+    seedTunedAgent("agent-keep");
+    const before = getAgentConfig("agent-keep")!;
+    expect((await applyAction("update_agent", { agent_id: "agent-keep", identity: "renamed" })).ok).toBe(true);
+    const after = getAgentConfig("agent-keep")!;
+    expect(after.identity).toBe("renamed");
+    expect(after).toMatchObject({
+      adaptive_mbti: before.adaptive_mbti,
+      adaptive_persona_strength: 91,
+      adaptive_empathy: 7,
+      adaptive_expressiveness: 88,
+      adaptive_verbosity: 3,
+      never_reply: before.never_reply,
+      hot_turn_limit: 12,
+    });
+  });
+
+  it("keeps tuned persona sliders when only tools change", async () => {
+    seedTunedAgent("agent-keep-tools");
+    expect((await applyAction("update_agent_tools", { agent_id: "agent-keep-tools", tools: ["memory_write"] })).ok).toBe(true);
+    expect(getAgentConfig("agent-keep-tools")).toMatchObject({ adaptive_persona_strength: 91, adaptive_verbosity: 3 });
+  });
+
+  it("drops non-string tool names instead of storing them", async () => {
+    seedTunedAgent("agent-tool-junk");
+    const result = await applyAction("update_agent_tools", {
+      agent_id: "agent-tool-junk",
+      tools: ["memory_write", 42, null, "", " memory_write "],
+      mode: "replace",
+    });
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(getAgentConfig("agent-tool-junk")!.tools)).toEqual(["memory_write"]);
+  });
+});
