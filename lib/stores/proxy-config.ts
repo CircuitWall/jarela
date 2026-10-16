@@ -15,6 +15,7 @@
 // existing password" so the UI can echo back the masked form without
 // blanking the secret.
 
+import { isIPv6 } from "node:net";
 import { getDb } from "@/lib/db";
 import { decryptIfNeeded, encrypt } from "@/lib/crypto/envelope";
 import { SECRET_MASK } from "@/lib/stores/integrations";
@@ -122,11 +123,18 @@ export function saveProxyConfig(input: ProxyConfigInput): ProxyConfigStatus | { 
   const scheme: ProxyScheme = input.scheme === "https" ? "https" : "http";
 
   // Manual mode requires host + port. system / off don't.
+  let host = nullable(input.host);
   if (input.mode === "manual") {
-    if (!input.host || !input.host.trim()) return { error: "host is required in manual mode" };
-    if (input.port == null || !Number.isFinite(input.port) || input.port <= 0 || input.port > 65535) {
-      return { error: "port must be between 1 and 65535" };
+    if (!host) return { error: "host is required in manual mode" };
+    const normalisedHost = normaliseProxyHost(host);
+    if (!normalisedHost) {
+      return { error: "host must be a hostname or IP address, without scheme, port, path or credentials" };
     }
+    host = normalisedHost;
+    if (input.port == null) return { error: "port must be between 1 and 65535" };
+  }
+  if (input.port != null && (!Number.isInteger(input.port) || input.port <= 0 || input.port > 65535)) {
+    return { error: "port must be between 1 and 65535" };
   }
 
   // CA bundle: empty/null clears; non-empty must look like PEM.
@@ -167,7 +175,7 @@ export function saveProxyConfig(input: ProxyConfigInput): ProxyConfigStatus | { 
   ).run(
     input.mode,
     scheme,
-    nullable(input.host),
+    host,
     input.port ?? null,
     nullable(input.username),
     storedPassword,
@@ -205,6 +213,16 @@ function normaliseMode(m: string): ProxyMode {
 
 function normaliseScheme(s: string | null | undefined): ProxyScheme {
   return s === "https" ? "https" : "http";
+}
+
+// The dispatcher builds `${scheme}://${auth}${host}:${port}`, so a pasted URL
+// or host:port would produce an unusable proxy URL. IPv6 is stored unbracketed;
+// the dispatcher adds the brackets.
+function normaliseProxyHost(host: string): string | null {
+  const unbracketed = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  if (/^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(unbracketed)) return unbracketed;
+  if (isIPv6(unbracketed)) return unbracketed;
+  return null;
 }
 
 function nullable(v: string | null | undefined): string | null {

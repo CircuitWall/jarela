@@ -31,7 +31,7 @@ vi.mock("node:child_process", async () => {
 
 import { exec } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { getProxyConfigRaw } from "@/lib/stores/proxy-config";
+import { getProxyConfigRaw, type ProxyConfigRaw } from "@/lib/stores/proxy-config";
 import { extractSystemKeychainCAs } from "@/lib/proxy/keychain";
 
 const mockedGetProxyConfigRaw = vi.mocked(getProxyConfigRaw);
@@ -260,5 +260,123 @@ describe("applyProxyConfigFromDb — env override", () => {
     expect(r.source).toBe("env");
     // Keychain not consulted when env wins.
     expect(mockedExtract).not.toHaveBeenCalled();
+  });
+});
+
+describe("applyProxyConfigFromDb — manual mode", () => {
+  const originalEnv = { ...process.env };
+
+  function manual(overrides: Partial<ProxyConfigRaw> = {}): ProxyConfigRaw {
+    return {
+      mode: "manual",
+      scheme: "http",
+      host: "proxy.corp",
+      port: 3128,
+      username: null,
+      password: null,
+      no_proxy: null,
+      ca_bundle: null,
+      updated_at: "2026-05-22T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy"]) delete process.env[key];
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  afterEach(async () => {
+    mockedGetProxyConfigRaw.mockReturnValue(null);
+    const { applyProxyConfigFromDb } = await import("./dispatcher");
+    await applyProxyConfigFromDb();
+    process.env = { ...originalEnv };
+  });
+
+  it("percent-encodes credentials in the proxy URL and redacts the password in the result", async () => {
+    mockedGetProxyConfigRaw.mockReturnValue(manual({ username: "dom\\user", password: "p@ss:w/rd" }));
+    const { applyProxyConfigFromDb } = await import("./dispatcher");
+    const r = await applyProxyConfigFromDb();
+    expect(r.source).toBe("manual");
+    expect(process.env.HTTPS_PROXY).toBe("http://dom%5Cuser:p%40ss%3Aw%2Frd@proxy.corp:3128");
+    expect(r.proxyUrl).toBe("http://dom%5Cuser:***@proxy.corp:3128/");
+    expect(r.proxyUrl).not.toContain("p%40ss");
+  });
+
+  it("brackets an IPv6 proxy host so the URL is parseable", async () => {
+    mockedGetProxyConfigRaw.mockReturnValue(manual({ host: "fd00::1" }));
+    const { applyProxyConfigFromDb } = await import("./dispatcher");
+    const r = await applyProxyConfigFromDb();
+    expect(process.env.HTTPS_PROXY).toBe("http://[fd00::1]:3128");
+    expect(r.proxyUrl).toBe("http://[fd00::1]:3128/");
+  });
+
+  it("always bypasses loopback, merged with the user's no_proxy list", async () => {
+    mockedGetProxyConfigRaw.mockReturnValue(manual({ no_proxy: " corp.internal, .svc " }));
+    const { applyProxyConfigFromDb } = await import("./dispatcher");
+    await applyProxyConfigFromDb();
+    const entries = (process.env.NO_PROXY ?? "").split(",");
+    expect(entries).toEqual(expect.arrayContaining(["corp.internal", ".svc", "localhost", "127.0.0.1", "::1"]));
+    expect(new Set(entries).size).toBe(entries.length);
+  });
+
+  it("still reaches a local server (e.g. Ollama) directly when the proxy is unreachable", async () => {
+    const { createServer } = await import("node:http");
+    const server = createServer((_req, res) => res.end("local-ok"));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as { port: number };
+    try {
+      // Port 9 (discard) on loopback refuses connections, so any request
+      // routed through this "proxy" fails.
+      mockedGetProxyConfigRaw.mockReturnValue(manual({ host: "127.0.0.1", port: 9 }));
+      const { applyProxyConfigFromDb } = await import("./dispatcher");
+      await applyProxyConfigFromDb();
+      for (const host of ["127.0.0.1", "localhost"]) {
+        const res = await fetch(`http://${host}:${port}/`);
+        expect(await res.text()).toBe("local-ok");
+      }
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("keeps loopback direct even when a lowercase no_proxy is inherited", async () => {
+    // undici reads lowercase no_proxy before NO_PROXY.
+    process.env.no_proxy = "corp.internal";
+    const { createServer } = await import("node:http");
+    const server = createServer((_req, res) => res.end("local-ok"));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as { port: number };
+    try {
+      mockedGetProxyConfigRaw.mockReturnValue(manual({ host: "127.0.0.1", port: 9 }));
+      const { applyProxyConfigFromDb } = await import("./dispatcher");
+      await applyProxyConfigFromDb();
+      const res = await fetch(`http://127.0.0.1:${port}/`);
+      expect(await res.text()).toBe("local-ok");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("reverts to no proxy when host or port is missing", async () => {
+    mockedGetProxyConfigRaw.mockReturnValue(manual({ port: null }));
+    const { applyProxyConfigFromDb } = await import("./dispatcher");
+    const r = await applyProxyConfigFromDb();
+    expect(r.source).toBe("off");
+    expect(r.note).toMatch(/missing host\/port/);
+    expect(process.env.HTTPS_PROXY).toBeUndefined();
+  });
+
+  it("clears the proxy env when switched back to off", async () => {
+    mockedGetProxyConfigRaw.mockReturnValue(manual());
+    const { applyProxyConfigFromDb } = await import("./dispatcher");
+    await applyProxyConfigFromDb();
+    expect(process.env.HTTPS_PROXY).toBeDefined();
+    mockedGetProxyConfigRaw.mockReturnValue({ ...manual(), mode: "off" });
+    const r = await applyProxyConfigFromDb();
+    expect(r.source).toBe("off");
+    expect(process.env.HTTPS_PROXY).toBeUndefined();
+    expect(process.env.NO_PROXY).toBeUndefined();
   });
 });

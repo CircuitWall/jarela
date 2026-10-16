@@ -24,12 +24,26 @@ function rowsInRange<T extends WarmTopicSourceRow>(rows: readonly T[], topic: Su
   return rows.filter((row) => row.seq >= (topic.start_seq ?? Infinity) && row.seq <= (topic.end_seq ?? -Infinity));
 }
 
+// Unicode-aware so non-Latin subjects get distinct keys; an ASCII-only slug
+// collapsed them all to "" and the uplift skipped them. Subjects with no
+// letters or digits fall back to a stable hash.
 export function slugifyForMemoryKey(subject: string): string {
-  return subject
+  const slug = subject
+    .normalize("NFC")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+  const capped = Array.from(slug).slice(0, 80).join("").replace(/-+$/, "");
+  return capped || `fact-${fnv1a(subject)}`;
+}
+
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 /**
@@ -43,9 +57,15 @@ export function mergeTopicFacts(...lists: readonly (readonly SummaryTopicFact[])
   for (const list of lists) {
     for (const fact of list) {
       const subjectId = fact.subject.trim().toLowerCase();
-      const existingSubject = fact.key ? keyToSubject.get(fact.key) : undefined;
-      if (existingSubject && existingSubject !== subjectId) merged.delete(existingSubject);
-      merged.delete(subjectId);
+      const sameKeySubject = fact.key ? keyToSubject.get(fact.key) : undefined;
+      for (const replaced of [sameKeySubject, subjectId]) {
+        if (replaced === undefined) continue;
+        // Drop the replaced fact's key mapping too, so a later fact reusing
+        // that key cannot delete whatever now lives under this subject.
+        const previousKey = merged.get(replaced)?.key;
+        if (previousKey) keyToSubject.delete(previousKey);
+        merged.delete(replaced);
+      }
       merged.set(subjectId, fact);
       if (fact.key) keyToSubject.set(fact.key, subjectId);
     }

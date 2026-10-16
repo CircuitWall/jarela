@@ -129,6 +129,11 @@ Reasons for a dedicated table rather than reusing `memory_store`:
   `lib/providers/anthropic.ts` and `lib/providers/openai.ts`), so the
   next outbound call after `setGlobalDispatcher` picks up the new
   proxy immediately.
+- Loopback (`localhost`, `127.0.0.1`, `::1`) is always appended to
+  `NO_PROXY`, because undici has no implicit loopback exemption and local
+  providers such as Ollama would otherwise be sent to the proxy. Manual
+  mode accepts a bare hostname or IP address only (no scheme, port, path
+  or credentials); IPv6 hosts are bracketed when the proxy URL is built.
 
 #### Live-swap caveats
 

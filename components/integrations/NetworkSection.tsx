@@ -243,12 +243,12 @@ export function NetworkSection() {
             {mode !== "off" && (
               <>
                 <label className="block text-xs text-fg-subtle">
-                  No proxy (comma-separated, optional)
+                  No proxy (comma-separated, optional; localhost is always direct)
                   <input
                     type="text"
                     value={noProxy}
                     onChange={(e) => setNoProxy(e.target.value)}
-                    placeholder="localhost,127.0.0.1,.internal"
+                    placeholder=".internal,corp.example"
                     className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
                   />
                 </label>
