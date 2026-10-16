@@ -11,6 +11,79 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 2.3.0
+
+From 2.2.1 · 2026-10-16
+
+### Adoption hints
+
+- If an agent's instructions or skills tell it to leave fact capture to compaction or to avoid `memory_upsert`, remove that guidance, since agents now save facts during the turn.
+- If a scheduled task or watcher prompt asks the agent to write memory facts, keep that in the agent's own turn; automation channel summaries no longer extract facts.
+
+### Tools
+
+- `memory_upsert` — changed; description changed
+- `workflow_progress` — changed; description changed; params added: `needs_user`
+
+### Prompts
+
+- `static.agent.compaction-group` — added (`lib/agents/compaction-pipeline.ts`)
+- `static.agent.compaction-group-automation` — added (`lib/agents/compaction-pipeline.ts`)
+- `static.agent.compaction-topic-recap` — added (`lib/agents/compaction-pipeline.ts`)
+- `static.agent.compaction-topic-recap-automation` — added (`lib/agents/compaction-pipeline.ts`)
+- `static.agent.conversation-summary` — changed (`lib/agents/conversation-summary.ts`)
+
+    ```diff
+    + A topic groups every consecutive message about one subject and must
+    + span at least two messages (a request and its reply); fold a stray
+    + single message into the adjacent topic instead of giving it its own.
+    ```
+
+- `static.agent.tool-usage-sop` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…
+    - 0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…
+    ```
+
+- `system.Memory & recall` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + You have long-term memory across sessions, shared with every other Jarela agent. A record you save is available to other agents immediately. Background compaction also extracts facts later, but it runs late and can miss details, so it is a backstop, not your save step.
+    + Proactive save procedure — run it whenever information fits the active memory policy, without waiting to be asked:
+    + 1. Trigger: the user states a preference, a fact about themselves or their work, a decision, a constraint, or a correction to something saved; or a tool result verifies a durable fact. Routine status, one-off chatter, secrets, credentials, and raw transcripts never qualify.
+    + 2. Check: memory_search (or memory_read for a known key) for an existing record on the same subject. Update that stable key rather than creating a duplicate or contradictory copy.
+    + 3. Write: call memory_upsert in the same turn, before your final reply, with namespace='facts', a stable descriptive key, standalone content, concise tags, confidence='explicit' for user-stated information ('verified' when tool-backed, 'inferred' only when useful and reversible), observed_at when t…
+    + 4. Validate: the memory_upsert result must contain ok:true and the key you sent. If it failed, correct the arguments and retry once; if it still fails, tell the user it was not saved.
+    + 5. Cite: end your reply with one short line naming each saved key, for example 'Saved to memory: facts/answer-format-preference'. Omit the line when nothing was saved.
+    - You have long-term memory across sessions.
+    - - Use memory_upsert proactively for structured records. Use namespace='facts', concise tags, confidence='explicit' for user-stated information, observed_at when the information was true, and expires_at for temporary facts. Keep memory_write only for legacy/free-form notes.
+    ```
+
+- `system.Tool usage SOP` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…
+    - 0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. Use only these operation labels when describing work: read, write, execute, send, schedu…
+    ```
+
+### Commits
+
+- chore(repo): remove dead exports and the unused deepseek package
+- fix(chat): restore thread activity and bound compaction per thread
+- fix(chat): render automation recaps in the warm summary card
+- fix(chat): restore the compacting state after switching agents
+- fix(chat): allow compacting bridge-only threads, report via toasts
+- fix(scripts): align make targets and install the current working tree
+- feat(agents): add topic pipeline to automation channel summaries
+- feat(agents): add validated topic pipeline for warm compaction
+- feat(agents): add proactive, validated memory saving for agents
+- fix(chat): group older summaries into collapsible topic rows
+- feat(agents): add auto-retry for failed workflow step contracts
+- feat(chat): add per-step retry to workflow checklists
+- feat(lifecycle): add release changesets for version adoption
+- fix(chat): keep boundary locate from snapping to bottom
+
 ## 2.2.1
 
 From 2.2.0 · 2026-10-15
