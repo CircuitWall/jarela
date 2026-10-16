@@ -16,6 +16,8 @@
  * to change.
  */
 
+import { httpsUrlOrNull } from "@/lib/utils/source-link";
+
 /**
  * Who sent the message from the agent's perspective.
  *
@@ -52,6 +54,8 @@ export interface BridgePromptInput {
   sender_id: string;
   /** Best-effort sender display name. */
   sender_name: string;
+  /** Public https link that opens this chat in the platform's app, when one exists. */
+  chat_link?: string | null;
   /** The raw message text the user / counterpart / agent sent. */
   text: string;
   /**
@@ -80,6 +84,7 @@ export interface BridgePromptContext {
   isGroup: boolean;
   senderJid: string;
   senderName: string;
+  chatLink: string | null;
   body: string;
 }
 
@@ -97,6 +102,7 @@ export interface BridgePromptContext {
  *   [message_role:user|counterpart|agent]
  *   [sender_id:<id>]
  *   [sender_name:<label>]
+ *   ([chat_link:<https url>] when the platform has a permalink for the chat)
  *   ([group_name:<label>] [participant_id:<id>] [participant_name:<label>] for groups)
  *
  *   <raw text>
@@ -116,6 +122,8 @@ export function formatBridgePrompt(input: BridgePromptInput): string {
     `[sender_id:${input.sender_id}]`,
     `[sender_name:${input.sender_name}]`,
   ];
+  const chatLink = httpsUrlOrNull(input.chat_link);
+  if (chatLink) lines.push(`[chat_link:${chatLink}]`);
   if (input.event) {
     lines.push(`[event_type:${input.event.type}]`);
     lines.push(`[event_subtype:${input.event.subtype}]`);
@@ -158,6 +166,7 @@ export function parseBridgePrompt(raw: string): BridgePromptContext | null {
     isGroup: headers.chat_type === "group",
     senderJid: senderId,
     senderName: headers.sender_name || senderId || "Unknown",
+    chatLink: httpsUrlOrNull(headers.chat_link),
     body: lines.slice(i).join("\n").trimEnd(),
   };
 }

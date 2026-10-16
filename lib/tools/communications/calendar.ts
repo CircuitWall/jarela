@@ -25,6 +25,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
+import { citeAs } from "@/lib/utils/source-link";
 import {
   googleFetch,
   resolveGoogleAuth,
@@ -94,6 +95,7 @@ function slimEvent(e: CalendarEvent): Record<string, unknown> {
     })),
     meet_link: e.hangoutLink ?? null,
     html_link: e.htmlLink ?? null,
+    cite_as: citeAs(e.summary, e.htmlLink, "Calendar event"),
   };
 }
 

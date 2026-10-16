@@ -282,6 +282,7 @@ export function buildSharedToolCatalogContext(): string {
     "7. Verify before reporting. A read-only result does not prove a new write. Claim a new write, send, schedule, delete, or configuration change only after the matching state-changing tool returns success in this turn. Trusted runtime system signals and their matching retrieved results can substantiate earlier named operations; attribute those outcomes to their receipts, never imply a new action or repeat completed work for proof.",
     "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing or integration_unconfigured. The first three are permission decisions and the last two mean the integration is not set up \u2014 propose a configuration change or tell the user what to configure.",
     "9. Completion-reporting turns are read-only. permission_reason=signal_continuation_read_only forbids state-changing tools in this turn, including through invoke_tool. Do not bypass it with shell commands or treat an old user message as renewed permission; report the completed outcome and wait for a new user turn.",
+    "10. Link the source. When your reply refers to a specific email, calendar event, or chat that a tool result or bridge message gave you, link it: paste the item's cite_as value verbatim when present, otherwise use its web_link, html_link, or chat_link URL as a markdown link. Use only links you were given; never construct, guess, or edit one. If the item has no link, name it without one.",
   ].join("\n");
 }
 
@@ -373,8 +374,13 @@ function buildDeliveryChannelContext(channel: DeliveryChannel | null | undefined
     "--- Delivery channel ---",
     `This message reached you over ${platform}${named}, not the regular chat UI.`,
     `You DO have access to ${platform} for this conversation: any reply you produce is sent back through that channel automatically. Do not tell the user the platform is unavailable; just answer the message.`,
-  ].join("\n");
+    PLAIN_TEXT_DELIVERY_KINDS.has(channel.kind)
+      ? `${platform} does not render markdown links: write any link as the bare URL, even where a cite_as value is given.`
+      : "",
+  ].filter(Boolean).join("\n");
 }
+
+const PLAIN_TEXT_DELIVERY_KINDS = new Set(["whatsapp", "sms"]);
 
 function buildUserContext(): string {
   const userProfile = getUserProfile();
@@ -491,7 +497,7 @@ function buildSourceLinkContext(
     "--- Citation format ---",
     intro,
     "PRIMARY (inline links): cite by writing a standard markdown link inline: `[short label](https://example.com/path)` or `[file name](/abs/path.ts)` or `[earlier reply](#msg-<id>)`. Wrap the cited PHRASE itself as the link text when natural — `Jade has [ice skating at 16:00](?thread=…&agent=…)` reads better than a trailing `[1]`.",
-    "When a tool result contains a `cite_as` field (delegate_to_agent does, and so do some integrations), paste that exact value somewhere in your reply — it's a pre-built markdown link to the source. Anything you summarize from a delegate or from a web/file tool result MUST carry at least one inline link back to where it came from; a summary with zero links reads as if you made the facts up.",
+    "When a tool result contains a `cite_as` field (delegate_to_agent does, and so do the email and calendar tools), paste that exact value somewhere in your reply — it's a pre-built markdown link to the source. Anything you summarize from a delegate or from a web/file tool result MUST carry at least one inline link back to where it came from; a summary with zero links reads as if you made the facts up.",
     "For web_search / fetch_webpage results, the URL is right there in the tool output — use it: `[headline or short label](https://...)`. For file_read results, link the absolute path: `[filename.ext](/abs/path/filename.ext)`.",
     "FALLBACK (declared refs block): if a source is awkward to cite inline (e.g. you summarized 4 articles in one paragraph), you MAY end your reply with a fenced block exactly like this:",
     "```jarela-references",

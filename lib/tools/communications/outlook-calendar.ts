@@ -19,6 +19,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
+import { citeAs } from "@/lib/utils/source-link";
 import {
   graphFetch,
   resolveMicrosoftAuth,
@@ -81,6 +82,7 @@ function slimEvent(e: GraphEvent): Record<string, unknown> {
     show_as: e.showAs ?? null,
     teams_link: e.onlineMeeting?.joinUrl ?? null,
     web_link: e.webLink ?? null,
+    cite_as: citeAs(e.subject, e.webLink, "Outlook event"),
   };
 }
 

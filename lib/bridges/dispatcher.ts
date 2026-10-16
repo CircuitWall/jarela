@@ -87,6 +87,7 @@ export async function handleInboundMessage(
       role: msg.role,
       sender_id: senderJid,
       sender_name: senderName,
+      chat_link: adapter.chatLink?.(msg.remote_jid) ?? null,
       text: msg.text,
       silent,
       event: msg.event,

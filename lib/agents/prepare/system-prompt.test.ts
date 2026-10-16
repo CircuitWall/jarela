@@ -78,6 +78,8 @@ describe("buildSystemPrompt delivery channel", () => {
     // The directive must reassure the agent it has access to the channel —
     // that's the whole point of this block.
     expect(prompt).toMatch(/DO have access to WhatsApp/);
+    // WhatsApp shows markdown links as raw text.
+    expect(prompt).toContain("WhatsApp does not render markdown links: write any link as the bare URL, even where a cite_as value is given.");
   });
 
   it("falls back to the raw kind when no human label is mapped", () => {
@@ -95,6 +97,7 @@ describe("buildSystemPrompt delivery channel", () => {
 
     expect(prompt).toContain("--- Delivery channel ---");
     expect(prompt).toContain("carrier-pigeon");
+    expect(prompt).not.toContain("does not render markdown links");
   });
 
   it("omits the block entirely for direct chat (no delivery_channel set)", () => {
@@ -306,6 +309,13 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("6. Read large results by reference.");
     expect(ctx).toContain("7. Verify before reporting.");
     expect(ctx).toContain("8. Stop and ask.");
+    expect(ctx).toContain("10. Link the source.");
+    // Every source-link field a tool or bridge prompt emits must be named,
+    // or the model cannot tell which value links back to the item.
+    for (const field of ["cite_as", "web_link", "html_link", "chat_link"]) {
+      expect(ctx).toContain(field);
+    }
+    expect(ctx).toContain("never construct, guess, or edit one");
     expect(ctx).toContain("For substantial tasks with several dependent phases, likely cross-turn progress, or explicit verification, use workflow_progress");
     expect(ctx).toContain("every built-in Jarela workflow and every workflow you create or follow");
     expect(ctx).toContain("each step must state its input, expected output, and concrete validation criteria");

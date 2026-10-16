@@ -142,6 +142,12 @@ export interface BridgeAdapter {
    * via history yet.
    */
   lookupChat?(input: string): Promise<ChatInfo | null>;
+  /**
+   * Public https link that opens this chat in the platform's own app, or
+   * null when the platform has no permalink for it (e.g. WhatsApp groups).
+   * The dispatcher stamps it on the agent prompt so replies can link back.
+   */
+  chatLink?(remote_jid: string): string | null;
 }
 
 export interface BridgeModule extends BridgeModuleInfo {
