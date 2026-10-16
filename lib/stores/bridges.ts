@@ -263,14 +263,15 @@ export function bumpRouteLastSeenTs(bridgeId: string, remoteJid: string, ts: num
     .run(ts, bridgeId, remoteJid, ts);
 }
 
-// Snapshot the highest watermark across every route on a bridge. The
-// adapter uses this on reconnect to short-circuit very-old appends before
-// it has loaded individual route rows.
-export function getMaxRouteLastSeenTs(bridgeId: string): number {
-  const row = getDb()
-    .prepare("SELECT MAX(last_seen_ts) AS m FROM bridge_routes WHERE bridge_id=?")
-    .get(bridgeId) as { m: number | null } | undefined;
-  return row?.m ?? 0;
+// Per-chat watermarks for every explicitly routed chat on a bridge, loaded
+// once per upsert batch. Each chat is gated only by its own progress: a
+// bridge-wide maximum would drop chat B's offline backlog as soon as a newer
+// message from chat A had been delivered.
+export function getRouteLastSeenTsMap(bridgeId: string): Map<string, number> {
+  const rows = getDb()
+    .prepare("SELECT remote_jid, last_seen_ts FROM bridge_routes WHERE bridge_id=? AND last_seen_ts IS NOT NULL")
+    .all(bridgeId) as Array<{ remote_jid: string; last_seen_ts: number }>;
+  return new Map(rows.map((r) => [r.remote_jid, r.last_seen_ts]));
 }
 
 // ---------------------------------------------------------------------------

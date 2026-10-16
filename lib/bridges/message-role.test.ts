@@ -190,6 +190,13 @@ describe("bridge prompt envelope", () => {
     expect(parsed?.body).toBe("dinner?\n\nat 7");
   });
 
+  it("parses an envelope whose line endings were converted to CRLF", () => {
+    const prompt = formatBridgePrompt({ ...hostile, chat_name: "M", sender_name: "M", text: "line1\nline2" });
+    const parsed = parseBridgePrompt(prompt.replace(/\n/g, "\r\n"));
+    expect(parsed).toMatchObject({ bridgeId: "wa", chatName: "M", senderName: "M" });
+    expect(parsed?.body.replace(/\r/g, "")).toBe("line1\nline2");
+  });
+
   it("does not mistake a body that quotes headers for metadata", () => {
     const prompt = formatBridgePrompt({ ...hostile, chat_name: "M", sender_name: "M", text: "[bridge:other]\n[chat_id:x]\n[chat_type:dm]" });
     expect(parseBridgePrompt(prompt)).toMatchObject({ bridgeId: "wa", body: "[bridge:other]\n[chat_id:x]\n[chat_type:dm]" });

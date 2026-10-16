@@ -172,58 +172,81 @@ function containsText(source: string, needle: string, ignoreCase: boolean): bool
   return source.toLowerCase().includes(needle.toLowerCase());
 }
 
+const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
+const HORIZONTAL_RULE_RE = /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/;
+
+/**
+ * Drop duplicate segments from `parts`, which alternates content (even
+ * indexes) and the original separator that follows it (odd indexes).
+ * Separators are preserved verbatim, so only removed segments change the
+ * text. `keyOf` returns null for a segment that must always be kept.
+ */
+function dedupeSegments(
+  parts: readonly string[],
+  keyOf: (segmentIndex: number) => string | null,
+  keep: "first" | "last",
+): { text: string; removed: number } {
+  const contentIdx = parts.map((_, i) => i).filter((i) => i % 2 === 0);
+  const visit = keep === "first" ? contentIdx : [...contentIdx].reverse();
+  const seen = new Set<string>();
+  const dropped = new Set<number>();
+  for (const idx of visit) {
+    const key = keyOf(idx);
+    if (key === null) continue;
+    if (seen.has(key)) dropped.add(idx);
+    else seen.add(key);
+  }
+  if (dropped.size === 0) return { text: parts.join(""), removed: 0 };
+  let text = "";
+  let emitted = false;
+  for (const idx of contentIdx) {
+    if (dropped.has(idx)) continue;
+    if (emitted && idx > 0) text += parts[idx - 1];
+    text += parts[idx];
+    emitted = true;
+  }
+  return { text, removed: dropped.size };
+}
+
 function dedupeLines(
   source: string,
   opts: { trim: boolean; ignoreCase: boolean; skipBlank: boolean; keep: "first" | "last" },
 ): { text: string; removed: number } {
-  const lines = source.split(/\r?\n/);
-  const keyed = lines.map((line) => {
-    const normalized = opts.trim ? line.trim() : line;
-    return opts.ignoreCase ? normalized.toLowerCase() : normalized;
-  });
-
-  const keep = new Set<number>();
-  const visit = opts.keep === "first"
-    ? [...keyed.keys()]
-    : [...keyed.keys()].reverse();
-  const seen = new Set<string>();
-  for (const idx of visit) {
-    const key = keyed[idx];
-    if (opts.skipBlank && key.length === 0) {
-      keep.add(idx);
-      continue;
+  const parts = source.split(/(\r?\n)/);
+  // Fence markers, fenced code and horizontal rules repeat by design; a
+  // closing ``` is always a "duplicate" of the opening one.
+  const protectedIdx = new Set<number>();
+  let fence: string | null = null;
+  for (let i = 0; i < parts.length; i += 2) {
+    const marker = FENCE_RE.exec(parts[i])?.[1];
+    if (fence !== null) {
+      protectedIdx.add(i);
+      if (marker && marker[0] === fence[0] && marker.length >= fence.length && /^\s*[`~]+\s*$/.test(parts[i])) fence = null;
+    } else if (marker) {
+      protectedIdx.add(i);
+      fence = marker;
+    } else if (HORIZONTAL_RULE_RE.test(parts[i])) {
+      protectedIdx.add(i);
     }
-    if (seen.has(key)) continue;
-    seen.add(key);
-    keep.add(idx);
   }
-  const next = lines.filter((_, idx) => keep.has(idx));
-  return { text: next.join("\n"), removed: lines.length - next.length };
+  return dedupeSegments(parts, (i) => {
+    if (protectedIdx.has(i)) return null;
+    const normalized = opts.trim ? parts[i].trim() : parts[i];
+    if (opts.skipBlank && normalized.length === 0) return null;
+    return opts.ignoreCase ? normalized.toLowerCase() : normalized;
+  }, opts.keep);
 }
 
 function dedupeParagraphs(
   source: string,
   opts: { trim: boolean; ignoreCase: boolean; keep: "first" | "last" },
 ): { text: string; removed: number } {
-  const paragraphs = source
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
-  const keys = paragraphs.map((p) => {
-    const base = opts.trim ? p.trim() : p;
+  const tail = /\s*$/.exec(source)?.[0] ?? "";
+  const parts = source.slice(0, source.length - tail.length).split(/(\r?\n(?:[ \t]*\r?\n)+)/);
+  const out = dedupeSegments(parts, (i) => {
+    if (parts[i].trim().length === 0) return null;
+    const base = opts.trim ? parts[i].trim() : parts[i];
     return opts.ignoreCase ? base.toLowerCase() : base;
-  });
-  const keep = new Set<number>();
-  const visit = opts.keep === "first"
-    ? [...keys.keys()]
-    : [...keys.keys()].reverse();
-  const seen = new Set<string>();
-  for (const idx of visit) {
-    const key = keys[idx];
-    if (seen.has(key)) continue;
-    seen.add(key);
-    keep.add(idx);
-  }
-  const next = paragraphs.filter((_, idx) => keep.has(idx));
-  return { text: next.join("\n\n"), removed: paragraphs.length - next.length };
+  }, opts.keep);
+  return { text: out.text + tail, removed: out.removed };
 }

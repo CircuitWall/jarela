@@ -85,17 +85,28 @@ const SOURCE_PRODUCING_TOOLS_RESULT = new Set([
   "web_search", "fetch_webpage", "web_fetch",
 ]);
 
-// Strip query/fragment for URLs and normalize backslashes for paths so a
-// citation that drops `?utm=...` or uses forward slashes on Windows still
-// matches the visited entry. Also fold `~/...` to the resolved home dir
-// so `~/Downloads/x` and `C:\Users\andre\Downloads\x` de-dupe.
+const TRACKING_PARAM_RE = /^(?:utm(?:_.*)?|fbclid|gclid|dclid|msclkid|mc_cid|mc_eid|igshid|ref_src)$/i;
+
+// Drop tracking params and in-page anchors for URLs and normalize
+// backslashes for paths so a citation that adds `?utm_source=...` or uses
+// forward slashes on Windows still matches the visited entry. Identifying
+// query params (Outlook `?ItemID=`, `watch?v=`) and hash routes (Gmail
+// `#all/<id>`) are kept verbatim: they are case-sensitive and are the only
+// thing that distinguishes two message permalinks. Also fold `~/...` to the
+// resolved home dir so `~/Downloads/x` and `C:\Users\andre\Downloads\x` de-dupe.
 export function normalizeSource(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
   if (/^https?:\/\//i.test(trimmed)) {
     try {
       const u = new URL(trimmed);
-      return `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, "").toLowerCase();
+      const base = `${u.protocol}//${u.host}${u.pathname}`.replace(/\/+$/, "").toLowerCase();
+      const params = [...u.searchParams]
+        .filter(([key]) => !TRACKING_PARAM_RE.test(key))
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      const query = params.length > 0 ? `?${new URLSearchParams(params).toString()}` : "";
+      const hashRoute = u.hash.includes("/") ? u.hash : "";
+      return base + query + hashRoute;
     } catch {
       return trimmed.toLowerCase();
     }
@@ -436,12 +447,9 @@ ${sent}`;
 export function parseCitationVerdict(text: string): CitationClaim[] | null {
   if (!text) return null;
   const stripped = text.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "").trim();
-  const m = /\{[^]*"claims"[^]*\}/.exec(stripped);
-  if (!m) return null;
-  let parsed: unknown;
-  try { parsed = JSON.parse(m[0]); } catch { return null; }
-  if (!parsed || typeof parsed !== "object") return null;
-  const claimsRaw = (parsed as { claims?: unknown }).claims;
+  const parsed = findClaimsObject(stripped);
+  if (!parsed) return null;
+  const claimsRaw = parsed.claims;
   if (!Array.isArray(claimsRaw)) return null;
   const claims: CitationClaim[] = [];
   for (const item of claimsRaw) {
@@ -462,6 +470,43 @@ export function parseCitationVerdict(text: string): CitationClaim[] | null {
     claims.push({ text, marker, link, verified, reason, impact });
   }
   return claims;
+}
+
+// Models often wrap the verdict in prose that itself contains braces, so a
+// single greedy `{...}` match can start or end in the wrong place. Try each
+// `{` as a start and parse the balanced object it opens (string-aware).
+function findClaimsObject(text: string): { claims?: unknown } | null {
+  for (let start = text.indexOf("{"); start !== -1; start = text.indexOf("{", start + 1)) {
+    const end = balancedObjectEnd(text, start);
+    if (end === -1) continue;
+    const candidate = text.slice(start, end + 1);
+    if (!candidate.includes('"claims"')) continue;
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && "claims" in parsed) return parsed as { claims?: unknown };
+    } catch { /* try the next opening brace */ }
+  }
+  return null;
+}
+
+function balancedObjectEnd(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === "\\") i++;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
 }
 
 function collectStringsFromPayload(payload: unknown, out: Set<string>): void {
