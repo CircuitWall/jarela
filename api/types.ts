@@ -412,7 +412,16 @@ export interface ThreadDetail extends ThreadSummary {
   // A user-triggered /compact is running for this thread. Lets a client that
   // remounts mid-compaction (agent switch, reload) restore the busy state.
   manual_compaction_pending?: boolean;
+  activity?: ThreadActivity;
   warm_channel_summaries?: WarmChannelSummary[];
+}
+
+/** What a thread is doing right now — GET /threads/:id/activity. */
+export interface ThreadActivity {
+  run: { phase: string; label: string; started_at: number; agent_id: string | null } | null;
+  queue_depth: number;
+  compaction: { kind: "manual" | "auto" | "refresh"; boundary_seq: number | null; started_at: number; deadline_at: number } | null;
+  busy: boolean;
 }
 
 /** Recap of one automation channel (bridge, watcher, scheduled task) committed

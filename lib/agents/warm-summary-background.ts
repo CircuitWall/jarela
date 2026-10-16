@@ -17,6 +17,13 @@ import {
   getThreadChannelSummary,
   listThreadChannelSummaries,
 } from "@/lib/stores/threads";
+import { getOrCreateGlobal } from "@/lib/utils/global-state";
+import {
+  getCompactionAttempt,
+  isCompactionRunning,
+  runTrackedCompaction,
+  type CompactionAttempt,
+} from "@/lib/agents/thread-compaction-state";
 
 /** Automation-channel recaps committed at the thread's current boundary. */
 export function currentChannelSummaries(
@@ -38,11 +45,12 @@ export function currentChannelSummaries(
 
 const MAX_TOPIC_PREVIEW_CHARS = 24_000;
 
-const activeRefreshes = new Set<string>();
-// Boundaries an automatic compaction has proposed but not yet committed.
-// The pin only moves once the recap that replaces the cut-off messages is
-// stored, so the turn that proposes it still runs on the old boundary.
-const pendingBoundaries = new Map<string, number>();
+// Automatic ("auto"), summary-refresh ("refresh") and manual /compact
+// ("manual") attempts are tracked per thread in thread-compaction-state, so
+// every route bundle reports the same compaction and each one has a deadline.
+// An auto boundary is proposed but not committed until its recap is stored,
+// so the turn that proposes it still runs on the old boundary.
+//
 // A boundary request that arrived while a prior one for the same thread was
 // still in flight. Last-write-wins: kickBoundaryCompaction used to silently
 // drop any request that arrived while one was already running (dragging
@@ -52,19 +60,23 @@ const pendingBoundaries = new Map<string, number>();
 // later request was ignored. Queuing the latest one and re-running it once
 // the in-flight commit settles makes the boundary always converge on what
 // the caller most recently asked for.
-const queuedBoundaries = new Map<string, {
+const queuedBoundaries = getOrCreateGlobal("__jarela_queued_compaction_boundaries", () => new Map<string, {
   boundarySeq: number;
   options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount">;
-}>();
+}>());
+
+function backgroundCompactionRunning(threadId: string): boolean {
+  return isCompactionRunning(threadId, "auto") || isCompactionRunning(threadId, "refresh");
+}
 
 export function kickWarmSummaryRefresh(threadId: string): void {
-  if (!threadId || activeRefreshes.has(threadId)) return;
-  activeRefreshes.add(threadId);
-  queueMicrotask(() => {
-    void refreshWarmSummary(threadId).finally(() => {
-      activeRefreshes.delete(threadId);
-    });
-  });
+  if (!threadId || backgroundCompactionRunning(threadId)) return;
+  const thread = getThread(threadId);
+  void runTrackedCompaction(threadId, "refresh", thread?.hot_since_seq ?? null, async (attempt) => {
+    await Promise.resolve();
+    await refreshWarmSummary(threadId, attempt);
+  }).catch((err) => console.warn(`[warm-summary] refresh failed thread=${threadId}: ${String(err)}`))
+    .finally(() => drainQueuedBoundary(threadId));
 }
 
 /**
@@ -80,31 +92,27 @@ export function pendingCompactionBoundary(threadId: string): string | null {
 
 export function pendingCompactionBoundarySeq(threadId: string): number | null {
   return queuedBoundaries.get(threadId)?.boundarySeq
-    ?? pendingBoundaries.get(threadId)
-    ?? manualBoundaries.get(threadId)
+    ?? getCompactionAttempt(threadId, "auto")?.boundarySeq
+    ?? getCompactionAttempt(threadId, "manual")?.boundarySeq
     ?? null;
 }
 
-// Manual /compact runs outside the auto-compaction queue; track it so a
-// client that reloads the thread mid-compaction still sees it pending.
-const manualBoundaries = new Map<string, number>();
-
 /** A manual /compact holds the thread (the UI queues sends); auto ones don't. */
 export function isManualCompactionRunning(threadId: string): boolean {
-  return manualBoundaries.has(threadId);
+  return isCompactionRunning(threadId, "manual");
 }
 
-export async function trackManualCompaction<T>(
+/**
+ * Run a manual /compact as the thread's single manual attempt. Pass the
+ * attempt to compactThreadWarmContext so a result that arrives after the
+ * deadline is discarded rather than committed.
+ */
+export function trackManualCompaction<T>(
   threadId: string,
   boundarySeq: number,
-  run: () => Promise<T>,
+  run: (attempt: CompactionAttempt) => Promise<T>,
 ): Promise<T> {
-  manualBoundaries.set(threadId, boundarySeq);
-  try {
-    return await run();
-  } finally {
-    if (manualBoundaries.get(threadId) === boundarySeq) manualBoundaries.delete(threadId);
-  }
+  return runTrackedCompaction(threadId, "manual", boundarySeq, run);
 }
 
 /**
@@ -125,11 +133,27 @@ export function kickBoundaryCompaction(
   options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount"> = {},
 ): void {
   if (!threadId || !Number.isSafeInteger(boundarySeq) || boundarySeq <= 0) return;
-  if (activeRefreshes.has(threadId) || pendingBoundaries.has(threadId)) {
+  if (backgroundCompactionRunning(threadId)) {
     queuedBoundaries.set(threadId, { boundarySeq, options });
     return;
   }
   runBoundaryCompaction(threadId, boundarySeq, options);
+}
+
+// Called whenever a background attempt settles. A queued boundary that a
+// summary refresh was blocking used to be stranded here forever, which kept
+// the thread reporting a pending compaction until restart.
+function drainQueuedBoundary(threadId: string): void {
+  if (backgroundCompactionRunning(threadId)) return;
+  const queued = queuedBoundaries.get(threadId);
+  if (!queued) return;
+  queuedBoundaries.delete(threadId);
+  // Skip a no-op re-run if the boundary that just committed already
+  // matches what was queued — the queued request was superseded by
+  // the very commit it was waiting behind.
+  const settled = getThread(threadId);
+  const alreadySettled = queued.boundarySeq === (settled?.hot_since_seq ?? null);
+  if (!alreadySettled) runBoundaryCompaction(threadId, queued.boundarySeq, queued.options);
 }
 
 function runBoundaryCompaction(
@@ -139,38 +163,26 @@ function runBoundaryCompaction(
 ): void {
   const baseThread = getThread(threadId);
   const basePinSeq = baseThread?.hot_since_seq ?? null;
-  pendingBoundaries.set(threadId, boundarySeq);
-  activeRefreshes.add(threadId);
-  queueMicrotask(() => {
-    void commitBoundaryCompaction(threadId, boundarySeq, basePinSeq, options)
-      .catch((err) => console.warn(`[context-boundary:auto] compaction failed thread=${threadId}: ${String(err)}`))
-      .finally(() => {
-        pendingBoundaries.delete(threadId);
-        activeRefreshes.delete(threadId);
-        const queued = queuedBoundaries.get(threadId);
-        if (!queued) return;
-        queuedBoundaries.delete(threadId);
-        // Skip a no-op re-run if the boundary that just committed already
-        // matches what was queued — the queued request was superseded by
-        // the very commit it was waiting behind.
-        const settled = getThread(threadId);
-        const alreadySettled = queued.boundarySeq === (settled?.hot_since_seq ?? null);
-        if (!alreadySettled) runBoundaryCompaction(threadId, queued.boundarySeq, queued.options);
-      });
-  });
+  void runTrackedCompaction(threadId, "auto", boundarySeq, async (attempt) => {
+    await Promise.resolve();
+    await commitBoundaryCompaction(threadId, boundarySeq, basePinSeq, options, attempt);
+  })
+    .catch((err) => console.warn(`[context-boundary:auto] compaction failed thread=${threadId}: ${String(err)}`))
+    .finally(() => drainQueuedBoundary(threadId));
 }
-
 async function commitBoundaryCompaction(
   threadId: string,
   boundarySeq: number,
   basePinSeq: number | null,
   options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount">,
+  attempt?: CompactionAttempt,
 ): Promise<void> {
   const committed = await compactThreadWarmContext(threadId, boundarySeq, {
     expectedHotSinceSeq: basePinSeq,
     alignTopicBoundary: true,
     allowEmptySummary: true,
     ...options,
+    attempt,
   });
   if (!committed) return;
   console.info(
@@ -249,13 +261,14 @@ export async function findTopicBoundary(threadId: string, boundarySeq: number): 
   }
 }
 
-export async function refreshWarmSummary(threadId: string): Promise<void> {
+export async function refreshWarmSummary(threadId: string, attempt?: CompactionAttempt): Promise<void> {
   const thread = getThread(threadId);
   if (!thread?.hot_since_seq) return;
   await compactThreadWarmContext(threadId, thread.hot_since_seq, {
     expectedHotSinceSeq: thread.hot_since_seq,
     alignTopicBoundary: false,
     allowEmptySummary: true,
+    attempt,
   });
 }
 
@@ -289,6 +302,9 @@ export interface WarmContextCompactionOptions {
   alignTopicBoundary?: boolean;
   allowEmptySummary?: boolean;
   autoBoundaryLockedUntilMessageCount?: number;
+  /** The tracked attempt this compaction runs under; once it is no longer
+   *  current (deadline passed or replaced) the result is not committed. */
+  attempt?: Pick<CompactionAttempt, "isCurrent">;
   providerOverride?: {
     provider: Pick<ModelProvider, "chat">;
     modelId: string;
@@ -321,6 +337,7 @@ export async function compactThreadWarmContext(
   const boundary = boundaryRow.created_at;
   const built = await buildSummaryBefore(threadId, boundary, boundarySeq, options.providerOverride);
   if (!built) return null;
+  if (options.attempt && !options.attempt.isCurrent()) return null;
 
   const channelSummaries = await Promise.all(AUTOMATION_CHANNEL_ORDER.map(async (channel) => {
     const channelSummary = await buildAutomationChannelSummaryBefore(threadId, channel, boundarySeq, options.providerOverride);
@@ -336,6 +353,7 @@ export async function compactThreadWarmContext(
   // an empty chat summary but real channel recaps — that is still a result.
   const anySummary = !!built.summary || channelSummaries.some((c) => !!c.summary);
   if (!anySummary && !options.allowEmptySummary) return null;
+  if (options.attempt && !options.attempt.isCurrent()) return null;
 
   const committed = commitThreadWarmContext(threadId, {
     hotSince: boundary,

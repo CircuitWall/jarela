@@ -23,7 +23,7 @@ import { z } from "zod";
 import { listAgentConfigs } from "@/lib/stores/agent-configs";
 import { getDefaultModelConfig } from "@/lib/stores/model-config";
 import { listThreadsByAgent, getRecentMessagesWindow } from "@/lib/stores/threads";
-import { compactThreadWarmContext } from "@/lib/agents/warm-summary-background";
+import { compactThreadWarmContext, isManualCompactionRunning, trackManualCompaction } from "@/lib/agents/warm-summary-background";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
@@ -77,17 +77,20 @@ export async function POST(req: NextRequest, { params }: Params) {
       const msgs = getRecentMessagesWindow(t.thread_id, 0, undefined, "foreground");
       if (msgs.length <= keep_last) { skipped += 1; continue; }
       const hotStart = msgs[msgs.length - keep_last]!;
+      if (isManualCompactionRunning(t.thread_id)) { skipped += 1; continue; }
       try {
-        const committed = await compactThreadWarmContext(t.thread_id, hotStart.seq, {
-          expectedHotSinceSeq: t.hot_since_seq ?? null,
-          alignTopicBoundary: false,
-          allowEmptySummary: true,
-          providerOverride: {
-            provider,
-            modelId: using.model_id,
-            params: (using.params ?? {}) as ProviderParams,
-          },
-        });
+        const committed = await trackManualCompaction(t.thread_id, hotStart.seq, (attempt) =>
+          compactThreadWarmContext(t.thread_id, hotStart.seq, {
+            expectedHotSinceSeq: t.hot_since_seq ?? null,
+            alignTopicBoundary: false,
+            allowEmptySummary: true,
+            attempt,
+            providerOverride: {
+              provider,
+              modelId: using.model_id,
+              params: (using.params ?? {}) as ProviderParams,
+            },
+          }));
         if (committed) compacted += 1;
         else skipped += 1;
       } catch (e) {

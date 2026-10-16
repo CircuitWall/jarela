@@ -17,6 +17,7 @@ import { useChatErrorReporting } from "./useChatErrorReporting";
 import { useChatQueue, type ChatQueueApi } from "./useChatQueue";
 import { useThreadCrossDeviceSync } from "./useThreadCrossDeviceSync";
 import { useThreadData } from "./useThreadData";
+import { useThreadActivity } from "./useThreadActivity";
 import { useUserProfileAndAgent } from "./useUserProfileAndAgent";
 import { composerPlaceholder, finalizeRunFromServer } from "./chat-run-utils";
 import { useChatSubmitHandlers } from "./useChatSubmitHandlers";
@@ -90,6 +91,17 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   // server flag keeps a /compact started before an agent switch visible.
   const sessionCompacting = compacting || thread.manualCompactionPending;
 
+  const activity = useThreadActivity({
+    threadId,
+    attach: stableAttach,
+    isLive: sse.isLive,
+    lastSettledAt: sse.lastSettledAt,
+    metaApplier: thread.metaApplier,
+  });
+  // Run phases come through the attached stream; background compaction
+  // outside a run has no stream, so label it from the polled activity.
+  const backgroundCompaction = !sse.streaming && !sessionCompacting ? activity?.compaction?.kind ?? null : null;
+
   useChatErrorReporting({ sessionError, streamError: sse.error, authError: sse.authError, agentId, threadId });
 
   const streamingRef = useRef(false);
@@ -130,6 +142,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   useTrackLoading(agentConfigLoading);
 
   useActivityWhile(sessionCompacting, "Compacting session…");
+  useActivityWhile(backgroundCompaction === "auto", "Compacting earlier messages…");
+  useActivityWhile(backgroundCompaction === "refresh", "Updating summary…");
   useActivityWhile(thread.messagesLoading, "Loading chat history…");
   useActivityWhile(agentConfigLoading, "Loading agent…");
   useActivityWhile(profileLoading, "Loading profile…");

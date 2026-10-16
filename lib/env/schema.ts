@@ -86,6 +86,7 @@ export const ENV_DEFAULTS = {
   streamParseTripwire: 6,
   recallBudgetMs: 1500,
   warmSummaryBudgetMs: 5000,
+  compactionTimeoutMs: 10 * 60_000,
   maxThreadMessages: 1000,
   maxSessionArchives: 50,
   // tools
@@ -267,6 +268,17 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     requiresRestart: false,
     agentWritable: false,
     min: 60_000,
+  },
+  {
+    name: "JARELA_COMPACTION_TIMEOUT_MS",
+    type: "int",
+    default: ENV_DEFAULTS.compactionTimeoutMs,
+    description: "Deadline for one warm-context compaction of a thread; a late result is discarded and the thread is released.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 30_000,
   },
   {
     name: "JARELA_RUN_REGISTRY_TTL_MS",

@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({
   alignTopicBoundary: false,
   context: undefined as unknown,
   archived: [] as Array<{ summary: string; message_count: number }>,
+  manualRunning: false,
+  timeout: false,
 }));
 
 vi.mock("@/lib/stores/agent-configs", () => ({
@@ -24,7 +26,14 @@ vi.mock("@/lib/stores/memory", () => ({
   deleteMemory: () => false,
 }));
 vi.mock("@/lib/agents/warm-summary-background", () => ({
-  trackManualCompaction: async <T,>(_threadId: string, _seq: number, run: () => Promise<T>) => run(),
+  isManualCompactionRunning: () => state.manualRunning,
+  trackManualCompaction: async <T,>(_threadId: string, _seq: number, run: (a: { isCurrent(): boolean }) => Promise<T>) => {
+    if (state.timeout) {
+      const { CompactionTimeoutError } = await import("./thread-compaction-state");
+      throw new CompactionTimeoutError("thread-1", "manual", 1000);
+    }
+    return run({ isCurrent: () => true });
+  },
   compactThreadWarmContext: async (_threadId: string, boundarySeq: number, options: { alignTopicBoundary: boolean }) => {
     state.movedSeq = boundarySeq;
     state.movedTo = state.rows.at(-1)?.created_at ?? null;
@@ -126,5 +135,25 @@ describe("autoCompactionKeepLast", () => {
   it("reports nothing to compact for an empty thread", async () => {
     state.rows = [];
     expect(await compactAgentThread("agent-1")).toEqual({ compacted: false, reason: "nothing to compact" });
+  });
+
+  it("refuses a second manual compaction while one is running", async () => {
+    state.rows = [{ seq: 1, role: "user", content: "hi", created_at: "2026-09-25T12:00:00.000Z" }];
+    state.manualRunning = true;
+    try {
+      expect(await compactAgentThread("agent-1")).toEqual({ compacted: false, reason: "already compacting" });
+    } finally {
+      state.manualRunning = false;
+    }
+  });
+
+  it("reports a timed-out compaction instead of throwing", async () => {
+    state.rows = [{ seq: 1, role: "user", content: "hi", created_at: "2026-09-25T12:00:00.000Z" }];
+    state.timeout = true;
+    try {
+      expect(await compactAgentThread("agent-1")).toEqual({ compacted: false, reason: "timed out" });
+    } finally {
+      state.timeout = false;
+    }
   });
 });
