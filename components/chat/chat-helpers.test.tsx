@@ -115,9 +115,17 @@ describe("applyThreadMeta", () => {
         setWarmSummarySourceChars: push("warmSummarySourceChars") as (v: number | null) => void,
         setContextWindowTokens: push("contextWindowTokens") as (v: number | null) => void,
         setWarmSummaryPending: push("warmSummaryPending") as (v: boolean) => void,
+        setManualCompactionPending: push("manualCompactionPending") as (v: boolean) => void,
       },
     };
   }
+
+  it("restores a server-side manual /compact so a remounted view stays busy", () => {
+    const { meta, calls } = recorder();
+    applyThreadMeta(meta, { hot_since_seq: null, manual_compaction_pending: true });
+    applyThreadMeta(meta, { hot_since_seq: null });
+    expect(calls.manualCompactionPending).toEqual([true, false]);
+  });
 
   it("marks an observed hot_since as pending until its matching summary arrives", () => {
     const { meta, calls } = recorder();

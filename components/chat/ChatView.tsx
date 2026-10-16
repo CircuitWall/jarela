@@ -86,6 +86,9 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   attachRef.current = sse.attach;
   clearStreamingRef.current = sse.clearStreamingContent;
   clearToolEventsRef.current = sse.clearToolEvents;
+  // `compacting` lives in this component, which remounts per agent; the
+  // server flag keeps a /compact started before an agent switch visible.
+  const sessionCompacting = compacting || thread.manualCompactionPending;
 
   useChatErrorReporting({ sessionError, streamError: sse.error, authError: sse.authError, agentId, threadId });
 
@@ -119,11 +122,12 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
 
   useTrackLoading(!!sessionLoading);
   useTrackLoading(sse.streaming);
-  useTrackLoading(compacting);
+  useTrackLoading(sessionCompacting);
   useTrackLoading(thread.loadingMore);
   useTrackLoading(thread.messagesLoading);
   useTrackLoading(agentConfigLoading);
 
+  useActivityWhile(sessionCompacting, "Compacting session…");
   useActivityWhile(thread.messagesLoading, "Loading chat history…");
   useActivityWhile(agentConfigLoading, "Loading agent…");
   useActivityWhile(profileLoading, "Loading profile…");
@@ -199,7 +203,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);
 
-  const queue = useChatQueue({ threadId, streaming: sse.streaming, compacting, launchRun });
+  const queue = useChatQueue({ threadId, streaming: sse.streaming, compacting: sessionCompacting, launchRun });
   queueApiRef.current = queue;
   drainQueueRef.current = queue.drainQueueRef.current;
 
@@ -231,7 +235,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         thread.metaApplier.setHotSinceSeq(result.hot_since_seq ?? null);
         thread.metaApplier.setWarmSummary(result.warm_summary ?? null);
         thread.metaApplier.setWarmSummaryBefore(result.warm_summary_before ?? null);
-        thread.metaApplier.setWarmSummaryBeforeSeq(result.warm_summary_before_seq ?? null);
         thread.metaApplier.setWarmSummaryBeforeSeq(result.warm_summary_before_seq ?? null);
         thread.metaApplier.setWarmSummaryComputedAt(result.warm_summary_computed_at ?? null);
         thread.metaApplier.setWarmSummarySourceMessages(result.warm_summary_source_messages ?? null);
@@ -300,7 +303,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         warmSummarySourceChars={thread.warmSummarySourceChars}
         warmSummaryTopics={thread.warmSummaryTopics}
         warmSummaryPending={thread.warmSummaryPending}
-        compactionPending={thread.compactionPending || compacting}
+        compactionPending={thread.compactionPending || sessionCompacting}
         onSetContextPin={thread.setContextPin}
         streaming={sse.streaming}
         contextWindowTokens={thread.contextWindowTokens}
@@ -325,7 +328,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         onVoiceTranscript={handleVoiceTranscript}
         disabled={!agentId}
         placeholder={composerPlaceholder({
-          compacting,
+          compacting: sessionCompacting,
           sessionLoading: !!sessionLoading,
           streaming: sse.streaming,
         })}

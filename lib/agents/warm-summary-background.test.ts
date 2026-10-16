@@ -97,7 +97,7 @@ vi.mock("@/lib/agents/conversation-summary", async (importOriginal) => {
   };
 });
 
-import { kickBoundaryCompaction, compactThreadWarmContext, pendingCompactionBoundary, pendingCompactionBoundarySeq, compactAutomationChannelWarmContext, isChannelSummaryFresh, trackManualCompaction } from "./warm-summary-background";
+import { kickBoundaryCompaction, compactThreadWarmContext, pendingCompactionBoundary, pendingCompactionBoundarySeq, compactAutomationChannelWarmContext, isChannelSummaryFresh, isManualCompactionRunning, trackManualCompaction } from "./warm-summary-background";
 import { summarizeTranscript } from "@/lib/agents/conversation-summary";
 
 describe("trackManualCompaction", () => {
@@ -105,9 +105,16 @@ describe("trackManualCompaction", () => {
     let release!: () => void;
     const done = trackManualCompaction("thread-manual", 42, () => new Promise<void>((r) => { release = r; }));
     expect(pendingCompactionBoundarySeq("thread-manual")).toBe(42);
+    expect(isManualCompactionRunning("thread-manual")).toBe(true);
     release();
     await done;
     expect(pendingCompactionBoundarySeq("thread-manual")).toBeNull();
+    expect(isManualCompactionRunning("thread-manual")).toBe(false);
+  });
+
+  it("does not report automatic boundary compactions as manual", () => {
+    kickBoundaryCompaction("thread-auto-only", 5);
+    expect(isManualCompactionRunning("thread-auto-only")).toBe(false);
   });
 });
 

@@ -409,6 +409,9 @@ export interface ThreadDetail extends ThreadSummary {
   // that a compaction is in flight.
   pending_hot_since?: string | null;
   pending_hot_since_seq?: number | null;
+  // A user-triggered /compact is running for this thread. Lets a client that
+  // remounts mid-compaction (agent switch, reload) restore the busy state.
+  manual_compaction_pending?: boolean;
 }
 
 export interface SummaryTopicFact {
