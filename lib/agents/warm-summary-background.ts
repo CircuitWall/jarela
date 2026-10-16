@@ -15,7 +15,26 @@ import {
   getThread,
   getThreadMessageBySeq,
   getThreadChannelSummary,
+  listThreadChannelSummaries,
 } from "@/lib/stores/threads";
+
+/** Automation-channel recaps committed at the thread's current boundary. */
+export function currentChannelSummaries(
+  threadId: string,
+  hotSinceSeq: number | null | undefined,
+): Array<{ channel: string; summary: string; computed_at: string; topics: SummaryTopicSegment[] | null }> {
+  if (hotSinceSeq == null) return [];
+  const order: readonly string[] = AUTOMATION_CHANNEL_ORDER;
+  return listThreadChannelSummaries(threadId)
+    .filter((row) => row.summary_before_seq === hotSinceSeq && row.summary.trim().length > 0)
+    .sort((a, b) => order.indexOf(a.channel) - order.indexOf(b.channel))
+    .map((row) => ({
+      channel: row.channel,
+      summary: row.summary,
+      computed_at: row.computed_at,
+      topics: parseStoredTopics(row.topics),
+    }));
+}
 
 const MAX_TOPIC_PREVIEW_CHARS = 24_000;
 

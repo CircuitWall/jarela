@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getThread, getThreadMessageBySeq } from "@/lib/stores/threads";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
-import { pendingCompactionBoundary, pendingCompactionBoundarySeq } from "@/lib/agents/warm-summary-background";
+import { currentChannelSummaries, pendingCompactionBoundary, pendingCompactionBoundarySeq } from "@/lib/agents/warm-summary-background";
 import { parseStoredTopics } from "@/lib/agents/conversation-summary";
 
 type Params = { params: Promise<{ thread_id: string }> };
@@ -43,6 +43,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     warm_summary_source_messages: updated?.warm_summary_source_messages ?? null,
     warm_summary_source_chars: updated?.warm_summary_source_chars ?? null,
     warm_summary_topics: parseStoredTopics(updated?.warm_summary_topics),
+    warm_channel_summaries: currentChannelSummaries(thread_id, updated?.hot_since_seq),
     pending_hot_since: pendingCompactionBoundary(thread_id),
     pending_hot_since_seq: pendingCompactionBoundarySeq(thread_id),
   });

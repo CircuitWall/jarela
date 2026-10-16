@@ -1,7 +1,7 @@
 "use client";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Brain, ChevronRight, Hourglass, X, ArrowDown, Eye, EyeOff } from "lucide-react";
-import type { AgentConfig, AutomationActivityMetadata, ContentPart, Message, SummaryTopicSegment, UserProfile } from "@/api/types";
+import type { AgentConfig, AutomationActivityMetadata, ContentPart, Message, SummaryTopicSegment, UserProfile, WarmChannelSummary } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
 import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
@@ -48,6 +48,8 @@ interface Props {
   warmSummarySourceMessages?: number | null;
   warmSummarySourceChars?: number | null;
   warmSummaryTopics?: SummaryTopicSegment[] | null;
+  /** Automation-channel recaps committed at the current boundary. */
+  warmChannelSummaries?: WarmChannelSummary[];
   warmSummaryPending?: boolean;
   /** An automatic compaction is summarising earlier messages right now. */
   compactionPending?: boolean;
@@ -73,8 +75,9 @@ interface Props {
 const ALL_FILTERS_SHOWN: Record<MessageFilterKey, boolean> = Object.fromEntries(
   MESSAGE_FILTER_KEYS.map((k) => [k, true]),
 ) as Record<MessageFilterKey, boolean>;
+const NO_CHANNEL_SUMMARIES: WarmChannelSummary[] = [];
 
-export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = () => {}, onResetFilters: reset = () => {} }: Props) {
+export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries = NO_CHANNEL_SUMMARIES, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = () => {}, onResetFilters: reset = () => {} }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -505,9 +508,15 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
       ? nextHotCount < currentHotCount
       : false;
   const hasWarmSummary = !!warmSummary;
+  // A committed boundary whose chat range had nothing to summarise (e.g. a
+  // bridge-only agent): the recap, if any, lives in the channel summaries.
+  const summaryCommittedEmpty = !hasWarmSummary
+    && effectiveHotSinceSeq !== null
+    && warmSummaryBeforeSeq === effectiveHotSinceSeq;
   const summaryFresh = hasWarmSummary
     && effectiveHotSinceSeq !== null
     && warmSummaryBeforeSeq === effectiveHotSinceSeq;
+  const summaryReady = summaryFresh || summaryCommittedEmpty;
   const summaryUpdating = hasWarmSummary && !summaryFresh && !!streaming;
   const summaryStale = hasWarmSummary && !summaryFresh && !summaryUpdating;
 
@@ -1084,7 +1093,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
                 className={[
                   "text-[10px] px-1.5 py-px rounded border inline-flex items-center gap-1",
                   summaryUpdating ? "border-accent/40 bg-accent/10 text-accent" :
-                  summaryFresh ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" :
+                  summaryReady ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" :
                   summaryStale ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" :
                   "border-border bg-surface-2 text-fg-faint",
                 ].join(" ")}
@@ -1093,7 +1102,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
                   <span className="h-2 w-2 rounded-full bg-accent animate-pulse" aria-label="Summary updating" />
                 )}
                 <span>
-                  {summaryUpdating ? "updating" : summaryFresh ? "ready" : summaryStale ? "needs refresh" : "pending"}
+                  {summaryUpdating ? "updating" : summaryReady ? "ready" : summaryStale ? "needs refresh" : "pending"}
                 </span>
               </span>
             </div>
@@ -1101,6 +1110,10 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
               <p className="text-[11px] text-fg-faint">
                 {summaryFresh
                   ? "Showing the latest summary for messages above the boundary line."
+                  : summaryCommittedEmpty
+                  ? (warmChannelSummaries.length > 0
+                    ? "No chat messages above the boundary line; automation activity there is summarised below."
+                    : "Nothing above the boundary line needed summarising.")
                   : summaryStale
                   ? "This summary is from an older focus and will refresh after the next reply."
                   : "No summary yet. It will appear after the next reply."}
@@ -1114,6 +1127,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
               computedAt={warmSummaryComputedAt ?? null}
               streaming={!!streaming}
               topics={warmSummaryTopics ?? null}
+              channelSummaries={warmChannelSummaries}
             />
           </div>
         </Dialog>

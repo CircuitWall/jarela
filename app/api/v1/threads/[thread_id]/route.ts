@@ -18,7 +18,7 @@ import { getMessageUsageByIds } from "@/lib/stores/message-usage";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { messageToResponse, resolveContextWindowTokens } from "@/lib/api/serializers";
-import { isManualCompactionRunning, pendingCompactionBoundary, pendingCompactionBoundarySeq } from "@/lib/agents/warm-summary-background";
+import { currentChannelSummaries, isManualCompactionRunning, pendingCompactionBoundary, pendingCompactionBoundarySeq } from "@/lib/agents/warm-summary-background";
 import { parseStoredTopics } from "@/lib/agents/conversation-summary";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
 import { errorMessage } from "@/lib/utils/error";
@@ -84,6 +84,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   return NextResponse.json({
     ...thread,
     warm_summary_topics: parseStoredTopics(thread.warm_summary_topics),
+    warm_channel_summaries: currentChannelSummaries(thread_id, thread.hot_since_seq),
     context_window_tokens: contextWindowTokens,
     pending_hot_since: pendingCompactionBoundary(thread_id),
     pending_hot_since_seq: pendingCompactionBoundarySeq(thread_id),

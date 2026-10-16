@@ -27,6 +27,7 @@ vi.mock("@/lib/agents/context-boundary", () => ({
 vi.mock("@/lib/agents/warm-summary-background", () => ({
   pendingCompactionBoundary: () => null,
   pendingCompactionBoundarySeq: () => null,
+  currentChannelSummaries: () => [],
 }));
 vi.mock("@/lib/agents/conversation-summary", () => ({ parseStoredTopics: () => null }));
 

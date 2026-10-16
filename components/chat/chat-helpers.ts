@@ -1,5 +1,5 @@
 "use client";
-import type { ContentPart, Message, SummaryTopicSegment } from "@/api/types";
+import type { ContentPart, Message, SummaryTopicSegment, WarmChannelSummary } from "@/api/types";
 
 export interface QueuedMessage {
   id: string;
@@ -53,6 +53,7 @@ export interface ThreadMetaApplier {
   setWarmSummarySourceMessages: (v: number | null) => void;
   setWarmSummarySourceChars: (v: number | null) => void;
   setWarmSummaryTopics?: (v: SummaryTopicSegment[] | null) => void;
+  setWarmChannelSummaries?: (v: WarmChannelSummary[]) => void;
   setContextWindowTokens: (v: number | null) => void;
   setWarmSummaryPending?: (v: boolean) => void;
   setCompactionPending?: (v: boolean) => void;
@@ -69,6 +70,7 @@ export interface ThreadGetPayload {
   warm_summary_source_messages?: number | null;
   warm_summary_source_chars?: number | null;
   warm_summary_topics?: SummaryTopicSegment[] | null;
+  warm_channel_summaries?: WarmChannelSummary[];
   pending_hot_since?: string | null;
   pending_hot_since_seq?: number | null;
   manual_compaction_pending?: boolean;
@@ -161,6 +163,7 @@ export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPaylo
   meta.setWarmSummarySourceMessages(payload.warm_summary_source_messages ?? null);
   meta.setWarmSummarySourceChars(payload.warm_summary_source_chars ?? null);
   meta.setWarmSummaryTopics?.(payload.warm_summary_topics ?? null);
+  meta.setWarmChannelSummaries?.(payload.warm_channel_summaries ?? []);
   meta.setContextWindowTokens(payload.context_window_tokens ?? null);
   const summaryFresh = hotSinceSeq !== null && summaryBeforeSeq === hotSinceSeq;
   meta.setWarmSummaryPending?.(hotSinceSeq !== null && !summaryFresh);

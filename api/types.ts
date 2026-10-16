@@ -412,6 +412,16 @@ export interface ThreadDetail extends ThreadSummary {
   // A user-triggered /compact is running for this thread. Lets a client that
   // remounts mid-compaction (agent switch, reload) restore the busy state.
   manual_compaction_pending?: boolean;
+  warm_channel_summaries?: WarmChannelSummary[];
+}
+
+/** Recap of one automation channel (bridge, watcher, scheduled task) committed
+ *  at the current boundary — ADR-0044. The chat recap is `warm_summary`. */
+export interface WarmChannelSummary {
+  channel: string;
+  summary: string;
+  computed_at: string;
+  topics: SummaryTopicSegment[] | null;
 }
 
 export interface SummaryTopicFact {
@@ -444,6 +454,7 @@ export interface ThreadContextPin {
   warm_summary_source_messages: number | null;
   warm_summary_source_chars: number | null;
   warm_summary_topics: SummaryTopicSegment[] | null;
+  warm_channel_summaries?: WarmChannelSummary[];
   pending_hot_since?: string | null;
   pending_hot_since_seq?: number | null;
 }
