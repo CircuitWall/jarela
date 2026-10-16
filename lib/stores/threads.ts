@@ -688,6 +688,12 @@ export function getThreadChannelSummary(threadId: string, channel: string): Thre
     .get(threadId, channel) as ThreadChannelSummaryRow | undefined) ?? null;
 }
 
+export function listThreadChannelSummaries(threadId: string): ThreadChannelSummaryRow[] {
+  return getDb()
+    .prepare("SELECT thread_id, channel, summary, summary_before, summary_before_seq, computed_at, topics FROM thread_channel_summaries WHERE thread_id=?")
+    .all(threadId) as unknown as ThreadChannelSummaryRow[];
+}
+
 export function commitThreadChannelSummary(
   threadId: string,
   channel: string,

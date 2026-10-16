@@ -57,6 +57,7 @@ vi.mock("@/lib/stores/threads", () => ({
   },
   getMessagesByAutomationCategory: (threadId: string, channel: string) => state.automationRows[channel] ?? [],
   getThreadChannelSummary: (threadId: string, channel: string) => state.channelSummaries[channel] ?? null,
+  listThreadChannelSummaries: () => Object.values(state.channelSummaries),
   commitThreadChannelSummary: (threadId: string, channel: string, input: { summary: string; summaryBefore: string | null; summaryBeforeSeq?: number | null; topics?: string | null }) => {
     state.channelSummaries[channel] = {
       thread_id: threadId,
@@ -97,7 +98,7 @@ vi.mock("@/lib/agents/conversation-summary", async (importOriginal) => {
   };
 });
 
-import { kickBoundaryCompaction, compactThreadWarmContext, pendingCompactionBoundary, pendingCompactionBoundarySeq, compactAutomationChannelWarmContext, isChannelSummaryFresh, isManualCompactionRunning, trackManualCompaction } from "./warm-summary-background";
+import { kickBoundaryCompaction, compactThreadWarmContext, pendingCompactionBoundary, pendingCompactionBoundarySeq, compactAutomationChannelWarmContext, currentChannelSummaries, isChannelSummaryFresh, isManualCompactionRunning, trackManualCompaction } from "./warm-summary-background";
 import { summarizeTranscript } from "@/lib/agents/conversation-summary";
 
 describe("trackManualCompaction", () => {
@@ -617,6 +618,14 @@ describe("compactThreadWarmContext — automation-only threads", () => {
     expect(bridge?.sourceMessages).toBe(2);
     expect(state.commits).toHaveLength(1);
     expect(state.channelSummaries.bridge.summary).toContain("--- bridge activity summary ---");
+
+    // The UI reads exactly these recaps back for the committed boundary, so
+    // a bridge-only card shows the bridge recap rather than "pending".
+    const visible = currentChannelSummaries("thread-1", state.thread.hot_since_seq);
+    expect(visible.map((c) => c.channel)).toEqual(["bridge"]);
+    expect(visible[0].summary).toContain("table booked for friday");
+    expect(currentChannelSummaries("thread-1", (state.thread.hot_since_seq ?? 0) + 1)).toEqual([]);
+    expect(currentChannelSummaries("thread-1", null)).toEqual([]);
   });
 
   it("still declines a manual compaction when neither chat nor any channel produced a summary", async () => {

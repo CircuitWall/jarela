@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { Message, SummaryTopicSegment } from "@/api/types";
+import type { Message, SummaryTopicSegment, WarmChannelSummary } from "@/api/types";
 import { applyThreadMeta, type ThreadMetaApplier } from "./chat-helpers";
 
 interface Params {
@@ -27,6 +27,7 @@ export interface ThreadDataApi {
   warmSummarySourceMessages: number | null;
   warmSummarySourceChars: number | null;
   warmSummaryTopics: SummaryTopicSegment[] | null;
+  warmChannelSummaries: WarmChannelSummary[];
   warmSummaryPending: boolean;
   compactionPending: boolean;
   manualCompactionPending: boolean;
@@ -51,6 +52,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   const [warmSummarySourceMessages, setWarmSummarySourceMessages] = useState<number | null>(null);
   const [warmSummarySourceChars, setWarmSummarySourceChars] = useState<number | null>(null);
   const [warmSummaryTopics, setWarmSummaryTopics] = useState<SummaryTopicSegment[] | null>(null);
+  const [warmChannelSummaries, setWarmChannelSummaries] = useState<WarmChannelSummary[]>([]);
   const [warmSummaryPending, setWarmSummaryPending] = useState(false);
   const [compactionPending, setCompactionPending] = useState(false);
   const [manualCompactionPending, setManualCompactionPending] = useState(false);
@@ -64,7 +66,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     setHotSince, setHotSinceSeq, setWarmSummary, setWarmSummaryBefore, setWarmSummaryBeforeSeq,
     setWarmSummaryComputedAt, setWarmSummarySourceMessages,
     setWarmSummarySourceChars, setContextWindowTokens, setWarmSummaryPending,
-    setCompactionPending, setManualCompactionPending, setWarmSummaryTopics,
+    setCompactionPending, setManualCompactionPending, setWarmSummaryTopics, setWarmChannelSummaries,
   };
 
   useEffect(() => {
@@ -82,6 +84,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       setWarmSummarySourceMessages(null);
       setWarmSummarySourceChars(null);
       setWarmSummaryTopics(null);
+      setWarmChannelSummaries([]);
       setWarmSummaryPending(false);
       setCompactionPending(false);
       setManualCompactionPending(false);
@@ -102,6 +105,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     setWarmSummarySourceMessages(null);
     setWarmSummarySourceChars(null);
     setWarmSummaryTopics(null);
+    setWarmChannelSummaries([]);
     setWarmSummaryPending(false);
     setCompactionPending(false);
     setManualCompactionPending(false);
@@ -145,6 +149,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       setWarmSummarySourceMessages(updated.warm_summary_source_messages);
       setWarmSummarySourceChars(updated.warm_summary_source_chars);
       setWarmSummaryTopics(updated.warm_summary_topics);
+      setWarmChannelSummaries(updated.warm_channel_summaries ?? []);
       setCompactionPending(updated.pending_hot_since_seq != null);
       const summaryFresh = updated.hot_since_seq != null
         && updated.warm_summary_before_seq === updated.hot_since_seq;
@@ -212,7 +217,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     hotSinceSeq: metadataMatchesThread ? hotSinceSeq : null,
     hotSinceSeqForRun: metadataMatchesThread ? hotSinceSeq : undefined,
     warmSummary, warmSummaryBefore, warmSummaryBeforeSeq, warmSummaryComputedAt,
-    warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics,     warmSummaryPending, compactionPending, manualCompactionPending, contextWindowTokens,
+    warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries, warmSummaryPending, compactionPending, manualCompactionPending, contextWindowTokens,
     metaApplier, loadOlder, setContextPin,
   };
 }

@@ -94,6 +94,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
 
   const streamingRef = useRef(false);
   streamingRef.current = sse.streaming;
+  const currentThreadIdRef = useRef(threadId);
+  currentThreadIdRef.current = threadId;
 
   // Auto compaction starts server-side during a run; poll so the banner shows live.
   useEffect(() => {
@@ -224,7 +226,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     setCompacting(true);
     try {
       const result = await api.agents.compact(agentId, { resetContext: true });
-      if (result.compacted) {
+      // The thread may have changed while compaction ran; never apply its
+      // result to a different thread's view.
+      const compactedThreadId = threadId;
+      const stillCurrent = () => compactedThreadId !== null && currentThreadIdRef.current === compactedThreadId;
+      if (result.compacted && compactedThreadId !== null && stillCurrent()) {
         // Server moved the hot/warm pin to just after the last existing
         // message and persisted the warm summary. Mirror that in-place so
         // the warm card shows the fresh summary without wiping the visible
@@ -240,6 +246,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         thread.metaApplier.setWarmSummarySourceMessages(result.warm_summary_source_messages ?? null);
         thread.metaApplier.setWarmSummarySourceChars(result.warm_summary_source_chars ?? null);
         thread.metaApplier.setWarmSummaryTopics?.(parseWarmSummaryTopics(result.warm_summary_topics));
+        // The compact response carries only the chat recap; channel recaps
+        // (bridge, watcher, scheduled task) come with the thread metadata.
+        void api.threads.get(compactedThreadId, { limit: 1 })
+          .then((d) => { if (stillCurrent()) applyThreadMeta(thread.metaApplier, d); })
+          .catch(() => { /* best-effort */ });
       }
       notifyCompaction(result);
     } catch (err) {
@@ -302,6 +313,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         warmSummarySourceMessages={thread.warmSummarySourceMessages}
         warmSummarySourceChars={thread.warmSummarySourceChars}
         warmSummaryTopics={thread.warmSummaryTopics}
+        warmChannelSummaries={thread.warmChannelSummaries}
         warmSummaryPending={thread.warmSummaryPending}
         compactionPending={thread.compactionPending || sessionCompacting}
         onSetContextPin={thread.setContextPin}

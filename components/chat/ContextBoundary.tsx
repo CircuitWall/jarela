@@ -11,7 +11,7 @@ import ReactMarkdown from "react-markdown";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
-import type { SummaryTopicSegment } from "@/api/types";
+import type { SummaryTopicSegment, WarmChannelSummary } from "@/api/types";
 
 interface WarmSummaryCardProps {
   /** Number of messages older than the boundary that the summary covers. */
@@ -26,7 +26,15 @@ interface WarmSummaryCardProps {
   streaming: boolean;
   /** Per-topic segmentation of the same warm range, if the summarizer returned one. */
   topics?: SummaryTopicSegment[] | null;
+  /** Automation-channel recaps (bridge, watcher, scheduled task) at this boundary. */
+  channelSummaries?: WarmChannelSummary[];
 }
+
+const CHANNEL_LABELS: Record<string, string> = {
+  bridge: "Bridge",
+  watcher: "Watchers",
+  scheduled_task: "Scheduled tasks",
+};
 
 export function WarmSummaryCard({
   olderCount,
@@ -36,9 +44,11 @@ export function WarmSummaryCard({
   computedAt,
   streaming,
   topics,
+  channelSummaries = [],
 }: WarmSummaryCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const fresh = !!summary && hotSinceSeq != null && summaryBeforeSeq === hotSinceSeq;
+  const committed = hotSinceSeq != null && summaryBeforeSeq === hotSinceSeq;
+  const fresh = !!summary && committed;
   const stale = !!summary && !fresh;
   const computing = stale && streaming;
   // Summaries stored before topic segmentation still read as topics: their
@@ -52,7 +62,7 @@ export function WarmSummaryCard({
       className={[
         "relative my-4 rounded-2xl border bg-gradient-to-br shadow-sm",
         "from-accent/[0.06] via-surface-2 to-surface-2",
-        fresh ? "border-accent/30" : "border-border",
+        fresh || committed ? "border-accent/30" : "border-border",
       ].join(" ")}
     >
       <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
@@ -86,6 +96,10 @@ export function WarmSummaryCard({
           >
             <ReactMarkdown>{stripWarmHeader(summary!)}</ReactMarkdown>
           </div>
+        ) : !summary && committed ? (
+          channelSummaries.length === 0 && (
+            <div className="text-xs text-fg-faint italic">No earlier chat messages needed summarising.</div>
+          )
         ) : !summary ? (
           <div className="flex items-center gap-2 text-xs text-fg-faint italic">
             {computing && (
@@ -98,6 +112,10 @@ export function WarmSummaryCard({
             </span>
           </div>
         ) : null}
+
+        {channelSummaries.map((channel) => (
+          <ChannelSummarySection key={channel.channel} channel={channel} />
+        ))}
 
         {stale && (
           <div className="mt-2 inline-flex items-center gap-2 text-[11px] text-fg-faint">
@@ -121,6 +139,25 @@ export function WarmSummaryCard({
                     : (<><ChevronDown className="w-3 h-3" /> Show more</>)}
         </button>
       )}
+    </div>
+  );
+}
+
+function ChannelSummarySection({ channel }: { channel: WarmChannelSummary }) {
+  const topics = channel.topics && channel.topics.length > 0
+    ? channel.topics
+    : topicsFromSummarySections(channel.summary)
+      ?? [{ title: "Recap", start_at: "", end_at: "", recap: stripWarmHeader(channel.summary), facts: [] }];
+  return (
+    <div className="mt-2">
+      <div className="mb-1 text-[9px] uppercase tracking-wide text-fg-faint">
+        {CHANNEL_LABELS[channel.channel] ?? channel.channel}
+      </div>
+      <div className="flex flex-col gap-1">
+        {topics.map((topic, i) => (
+          <TopicSegmentRow key={`${channel.channel}-${topic.title}-${i}`} topic={topic} />
+        ))}
+      </div>
     </div>
   );
 }

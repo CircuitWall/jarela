@@ -93,6 +93,36 @@ describe("WarmSummaryCard topic preview", () => {
   });
 });
 
+describe("WarmSummaryCard automation-only boundary", () => {
+  const bridgeRecap = {
+    channel: "bridge",
+    summary: "<!-- jarela:warm-scope=bridge -->\nRelayed **deployment alerts** from the ops channel.",
+    computed_at: "2026-10-14T09:30:00.000Z",
+    topics: null,
+  };
+
+  it("shows the bridge recap instead of a never-arriving chat summary", () => {
+    render(<WarmSummaryCard olderCount={50} summary="" summaryBeforeSeq={10} hotSinceSeq={10} computedAt="2026-10-14T09:30:00.000Z" streaming={false} topics={null} channelSummaries={[bridgeRecap]} />);
+
+    expect(screen.getByText("Bridge")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Recap/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("deployment alerts").tagName).toBe("STRONG");
+    expect(screen.queryByText(/jarela:warm-scope/)).toBeNull();
+    expect(screen.queryByText(/Summary will appear/)).toBeNull();
+  });
+
+  it("says nothing needed summarising when the committed boundary has no recaps at all", () => {
+    render(<WarmSummaryCard olderCount={3} summary="" summaryBeforeSeq={10} hotSinceSeq={10} computedAt="2026-10-14T09:30:00.000Z" streaming={false} topics={null} />);
+    expect(screen.getByText("No earlier chat messages needed summarising.")).toBeTruthy();
+    expect(screen.queryByText(/Summary will appear/)).toBeNull();
+  });
+
+  it("keeps the placeholder while the boundary has no committed summary yet", () => {
+    render(<WarmSummaryCard olderCount={3} summary={null} summaryBeforeSeq={null} hotSinceSeq={10} computedAt={null} streaming={false} topics={null} />);
+    expect(screen.getByText("Summary will appear after your next reply.")).toBeTruthy();
+  });
+});
+
 describe("topicsFromSummarySections", () => {
   it("keeps unstructured or single-section summaries as prose", () => {
     expect(topicsFromSummarySections("Just a short recap.")).toBeNull();
