@@ -7,9 +7,40 @@ export interface QueuedMessage {
   attachments: ContentPart[];
 }
 
-export interface SystemNotice {
-  id: string;
-  text: string;
+export interface CompactionOutcome {
+  compacted: boolean;
+  reason?: string;
+  message_count?: number;
+}
+
+export interface CompactionToast {
+  kind: "info" | "success";
+  title: string;
+  body: string;
+}
+
+// Maps the /compact response to the toast the user sees. The server's reason
+// decides the text: "nothing to compact" means the thread is empty, anything
+// else means there were messages but no summary came out of them.
+export function compactionOutcomeToast(result: CompactionOutcome): CompactionToast {
+  if (result.compacted) {
+    const n = result.message_count ?? 0;
+    return {
+      kind: "success",
+      title: "Context compacted",
+      body: n > 0
+        ? `Summarised ${n} message${n === 1 ? "" : "s"} into warm context.`
+        : "Started a fresh context window.",
+    };
+  }
+  if (result.reason === "nothing to compact") {
+    return { kind: "info", title: "Nothing to compact", body: "This conversation has no messages yet." };
+  }
+  return {
+    kind: "info",
+    title: "Nothing was compacted",
+    body: "There was too little to summarise, or the model returned no usable summary. Context is unchanged.",
+  };
 }
 
 export interface ThreadMetaApplier {

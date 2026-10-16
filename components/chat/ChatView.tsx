@@ -6,11 +6,13 @@ import { useSSE } from "@/hooks/useSSE";
 import { useMessageFilters } from "@/hooks/useMessageFilters";
 import { useAppContext } from "@/contexts/AppContext";
 import { useTrackLoading, useActivityWhile } from "@/lib/ui/loading";
+import { pushToast } from "@/lib/ui/toasts";
+import { pushErrorToast } from "@/lib/ui/error-report";
 import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { AuthErrorBanner } from "./AuthErrorBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
-import { applyThreadMeta, makeQueuedId, parseWarmSummaryTopics } from "./chat-helpers";
+import { applyThreadMeta, compactionOutcomeToast, makeQueuedId, parseWarmSummaryTopics, type CompactionOutcome } from "./chat-helpers";
 import { useChatErrorReporting } from "./useChatErrorReporting";
 import { useChatQueue, type ChatQueueApi } from "./useChatQueue";
 import { useThreadCrossDeviceSync } from "./useThreadCrossDeviceSync";
@@ -203,6 +205,18 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
 
   async function handleCompact() {
     if (!agentId) return;
+    const notifyCompaction = (result: CompactionOutcome) => {
+      const toast = compactionOutcomeToast(result);
+      pushToast({
+        ...toast,
+        source: "system",
+        sourceLabel: "Chat",
+        agent_id: agentId,
+        thread_id: threadId,
+        ttl: 5000,
+        dedupeKey: `compact:${agentId}`,
+      });
+    };
     setCompacting(true);
     try {
       const result = await api.agents.compact(agentId, { resetContext: true });
@@ -223,11 +237,10 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         thread.metaApplier.setWarmSummarySourceMessages(result.warm_summary_source_messages ?? null);
         thread.metaApplier.setWarmSummarySourceChars(result.warm_summary_source_chars ?? null);
         thread.metaApplier.setWarmSummaryTopics?.(parseWarmSummaryTopics(result.warm_summary_topics));
-      } else {
-        thread.addNotice("Nothing to compact yet — send some messages first.");
       }
+      notifyCompaction(result);
     } catch (err) {
-      thread.addNotice(`Compaction failed: ${String(err)}`);
+      pushErrorToast({ title: "Compaction failed", error: err, context: { panel: "chat", action: "compact", agent_id: agentId } });
     } finally {
       setCompacting(false);
       queue.drainQueueRef.current();
@@ -260,7 +273,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         threadId={threadId}
         messages={thread.messages}
         steeredSegments={sse.steeredSegments}
-        notices={thread.notices}
         agentConfig={agentConfig}
         userProfile={userProfile}
         // streamingContent stays visible past `streaming=false` so the bubble

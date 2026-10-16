@@ -255,6 +255,8 @@ export interface CommittedWarmContext {
   sourceMessages: number;
   sourceChars: number;
   topics: SummaryTopicSegment[];
+  /** Per automation channel (ADR-0044), committed at the same boundary. */
+  channels: Array<{ channel: string; summary: string; sourceMessages: number }>;
 }
 
 export interface WarmContextCompactionOptions {
@@ -294,13 +296,22 @@ export async function compactThreadWarmContext(
   if (!boundaryRow) return null;
   const boundary = boundaryRow.created_at;
   const built = await buildSummaryBefore(threadId, boundary, boundarySeq, options.providerOverride);
-  if (!built || (!built.summary && !options.allowEmptySummary)) return null;
+  if (!built) return null;
 
   const channelSummaries = await Promise.all(AUTOMATION_CHANNEL_ORDER.map(async (channel) => {
     const channelSummary = await buildAutomationChannelSummaryBefore(threadId, channel, boundarySeq, options.providerOverride);
     if (!channelSummary) throw new Error(`Could not build ${channel} warm summary`);
-    return { channel, summary: channelSummary.summary, topics: channelSummary.topics ? JSON.stringify(channelSummary.topics) : null };
+    return {
+      channel,
+      summary: channelSummary.summary,
+      sourceMessages: channelSummary.sourceMessages,
+      topics: channelSummary.topics ? JSON.stringify(channelSummary.topics) : null,
+    };
   }));
+  // A thread whose only activity is automation (e.g. a bridge-only agent) has
+  // an empty chat summary but real channel recaps — that is still a result.
+  const anySummary = !!built.summary || channelSummaries.some((c) => !!c.summary);
+  if (!anySummary && !options.allowEmptySummary) return null;
 
   const committed = commitThreadWarmContext(threadId, {
     hotSince: boundary,
@@ -316,12 +327,13 @@ export async function compactThreadWarmContext(
       ? options.expectedWarmSummary
       : (baseThread.warm_summary ?? null),
     autoBoundaryLockedUntilMessageCount: options.autoBoundaryLockedUntilMessageCount,
-    channelSummaries,
+    channelSummaries: channelSummaries.map(({ channel, summary, topics }) => ({ channel, summary, topics })),
   });
   if (!committed) return null;
   upliftTopicFacts(built.freshTopics);
   const { freshTopics: _fresh, ...context } = built;
-  return { boundary, boundarySeq, ...context };
+  const channels = channelSummaries.map(({ channel, summary, sourceMessages }) => ({ channel, summary, sourceMessages }));
+  return { boundary, boundarySeq, ...context, channels };
 }
 
 /**

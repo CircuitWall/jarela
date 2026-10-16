@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Message } from "@/api/types";
-import { appendUnique, applyThreadMeta, type ThreadMetaApplier } from "./chat-helpers";
+import { appendUnique, applyThreadMeta, compactionOutcomeToast, type ThreadMetaApplier } from "./chat-helpers";
 
 // created_at is display-only after the seq-ordering change — every fixture
 // shares one value to prove ordering doesn't depend on it. `seq` is omitted
@@ -146,5 +146,20 @@ describe("applyThreadMeta", () => {
     });
 
     expect(calls.warmSummaryPending).toEqual([false]);
+  });
+});
+
+describe("compactionOutcomeToast", () => {
+  it("reports success with the summarised message count", () => {
+    expect(compactionOutcomeToast({ compacted: true, message_count: 2 })).toMatchObject({ kind: "success", body: "Summarised 2 messages into warm context." });
+    expect(compactionOutcomeToast({ compacted: true, message_count: 1 }).body).toBe("Summarised 1 message into warm context.");
+    expect(compactionOutcomeToast({ compacted: true, message_count: 0 }).body).toBe("Started a fresh context window.");
+  });
+
+  it("only says the conversation is empty when the server says so", () => {
+    expect(compactionOutcomeToast({ compacted: false, reason: "nothing to compact" }).title).toBe("Nothing to compact");
+    const declined = compactionOutcomeToast({ compacted: false, reason: "no summary produced" });
+    expect(declined.title).toBe("Nothing was compacted");
+    expect(declined.body).not.toMatch(/send some messages/i);
   });
 });
