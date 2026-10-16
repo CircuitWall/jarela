@@ -11,6 +11,47 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 2.4.0
+
+From 2.3.0 · 2026-10-16
+
+### Adoption hints
+
+- If an agent's instructions or skills tell it not to include links or URLs in replies, decide whether it should now cite sources with the provided `cite_as` and chat links.
+- If you listed `localhost` or `127.0.0.1` in the proxy bypass list only to reach local services, you can remove them; loopback is always direct now.
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+- `static.agent.tool-usage-sop` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 10. Link the source. When your reply refers to a specific email, calendar event, or chat that a tool result or bridge message gave you, link it: paste the item's cite_as value verbatim when present, otherwise use its web_link, html_link, or chat_link URL as a markdown link. Use only links you were …
+    ```
+
+- `system.Delivery channel` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + WhatsApp does not render markdown links: write any link as the bare URL, even where a cite_as value is given.
+    ```
+
+- `system.Tool usage SOP` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 10. Link the source. When your reply refers to a specific email, calendar event, or chat that a tool result or bridge message gave you, link it: paste the item's cite_as value verbatim when present, otherwise use its web_link, html_link, or chat_link URL as a markdown link. Use only links you were …
+    ```
+
+### Commits
+
+- fix(core): keep proxy loopback direct, unicode fact keys, agent tuning
+- fix(agents): avoid repeated compaction from bridge rows and topic pins
+- fix(core): keep per-chat backlog, permalink refs and code fences
+- fix(core): fix edge cases in edits, paging, bridges and pricing
+- feat(integrations): add source permalinks to mail, calendar, chats
+
 ## 2.3.0
 
 From 2.2.1 · 2026-10-16
