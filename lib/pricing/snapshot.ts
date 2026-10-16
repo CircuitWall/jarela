@@ -85,6 +85,7 @@ const PRICE_LINE_RE = new RegExp(
 );
 
 const GOOGLE_RESULT_RE = /href="\/url\?q=([^"&]+)[^"]*"/gi;
+const GOOGLE_OWN_HOST_RE = /^(?:www|accounts|support|maps|policies|webcache)?\.?google\.[a-z.]+$/i;
 
 type FetchAttempt = {
   url: string;
@@ -168,7 +169,8 @@ export async function refreshPricingSnapshot(opts?: { force?: boolean; ttlDays?:
   const existing = await readPricingSnapshot();
   if (!force && existing) {
     const ageDays = (Date.now() - Date.parse(existing.generated_at)) / (24 * 60 * 60 * 1000);
-    if (Number.isFinite(ageDays) && ageDays < ttlDays) {
+    // A future generated_at (clock skew, copied snapshot) must not pin the cache as fresh.
+    if (Number.isFinite(ageDays) && ageDays >= 0 && ageDays < ttlDays) {
       return { refreshed: false, reason: "fresh", snapshot: existing };
     }
   }
@@ -332,6 +334,8 @@ function parseGoogleResultLinks(html: string): string[] {
   const seen = new Set<string>();
 
   let m: RegExpExecArray | null;
+  // Shared /g regex: an early break leaves lastIndex mid-string for the next page.
+  GOOGLE_RESULT_RE.lastIndex = 0;
   while ((m = GOOGLE_RESULT_RE.exec(html)) !== null) {
     const raw = m[1] ?? "";
     let url = "";
@@ -341,7 +345,11 @@ function parseGoogleResultLinks(html: string): string[] {
       continue;
     }
     if (!/^https?:\/\//i.test(url)) continue;
-    if (/\/google\./i.test(url)) continue;
+    try {
+      if (GOOGLE_OWN_HOST_RE.test(new URL(url).hostname)) continue;
+    } catch {
+      continue;
+    }
     if (seen.has(url)) continue;
     seen.add(url);
     out.push(url);

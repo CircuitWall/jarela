@@ -1075,7 +1075,7 @@ const MEDIA_TYPE_ALLOWLIST: Record<"image" | "audio" | "video" | "document", Rea
   ]),
 };
 
-function sanitizeMediaType(
+export function sanitizeMediaType(
   raw: string | undefined,
   kind: "image" | "audio" | "video" | "document",
   fallback: string,
@@ -1093,7 +1093,7 @@ function sanitizeMediaType(
  * in several envelope variants (view-once, ephemeral, V2 versions); see
  * `unwrapMessage` for how we collapse them.
  */
-type WAMessageContent = {
+export type WAMessageContent = {
   conversation?: string;
   extendedTextMessage?: { text?: string };
   stickerMessage?: { mimetype?: string; isAnimated?: boolean };
@@ -1118,7 +1118,7 @@ type WAMessageContent = {
  * payload. Bounded recursion — these envelopes never nest deeper than 2
  * levels in practice, but we cap at 5 as defence in depth.
  */
-function unwrapMessage(msg: WAMessageContent | undefined, depth = 0): WAMessageContent | undefined {
+export function unwrapMessage(msg: WAMessageContent | undefined, depth = 0): WAMessageContent | undefined {
   if (!msg || depth > 5) return msg;
   if (msg.ephemeralMessage?.message) return unwrapMessage(msg.ephemeralMessage.message, depth + 1);
   if (msg.viewOnceMessage?.message) return unwrapMessage(msg.viewOnceMessage.message, depth + 1);
@@ -1133,7 +1133,7 @@ function unwrapMessage(msg: WAMessageContent | undefined, depth = 0): WAMessageC
  * country-code + number with no separators, no leading '+'. Accepts the
  * common human formats: "+1 (555) 123-4567", "5511 99999-0000", etc.
  */
-function normalizePhoneDigits(input: string): string {
+export function normalizePhoneDigits(input: string): string {
   return input.replace(/\D+/g, "");
 }
 
@@ -1147,7 +1147,7 @@ function normalizePhoneDigits(input: string): string {
  * the `@s.whatsapp.net` form — without this normalization, every inbound
  * `@lid` message would silently fail to match its route.
  */
-function pickRoutableJid(primary: string, alt: string | undefined): string {
+export function pickRoutableJid(primary: string, alt: string | undefined): string {
   const isRoutable = (j: string | undefined) =>
     !!j && (j.endsWith("@s.whatsapp.net") || j.endsWith("@g.us"));
   if (isRoutable(primary)) return primary;
@@ -1165,6 +1165,9 @@ export function resolveWhatsAppSender(input: {
   chatName: string | null;
   participantName: string | null;
 }): { senderJid: string; senderName: string } {
+  // Platforms send blank display names ("" or whitespace) for contacts that
+  // never set one; treat those as missing so the fallbacks still apply.
+  const named = (...names: Array<string | null>) => names.find((n) => !!n && n.trim().length > 0)?.trim();
   if (input.fromMe) {
     return {
       senderJid: input.selfJid ?? "me",
@@ -1175,12 +1178,12 @@ export function resolveWhatsAppSender(input: {
     const senderJid = input.participantJid ?? input.remoteJid;
     return {
       senderJid,
-      senderName: input.participantName ?? input.pushName ?? senderJid,
+      senderName: named(input.participantName, input.pushName) ?? senderJid,
     };
   }
   return {
     senderJid: input.remoteJid,
-    senderName: input.pushName ?? input.chatName ?? input.remoteJid,
+    senderName: named(input.pushName, input.chatName) ?? input.remoteJid,
   };
 }
 
@@ -1203,7 +1206,7 @@ export function resolveWhatsAppSender(input: {
  * Returns null for JIDs that aren't routable chats (self broadcast,
  * status@broadcast, malformed ids, empty input).
  */
-function pickContactChatJid(ct: {
+export function pickContactChatJid(ct: {
   id?: string;
   phoneNumber?: string;
   lid?: string;
@@ -1225,7 +1228,7 @@ function pickContactChatJid(ct: {
  * routable user JID — `sendMessage` won't deliver to a JID with `:NN`.
  * Returns null if the input is malformed.
  */
-function normalizeUserJid(id: unknown): string | null {
+export function normalizeUserJid(id: unknown): string | null {
   if (typeof id !== "string") return null;
   // Strip any device suffix (":NN") before the '@'.
   const at = id.indexOf("@");
@@ -1239,7 +1242,7 @@ function normalizeUserJid(id: unknown): string | null {
   return `${user}@${normHost}`;
 }
 
-function humanList(items: string[], max: number): string {
+export function humanList(items: string[], max: number): string {
   const clean = items.filter((s) => s && s.trim().length > 0);
   if (clean.length === 0) return "(none)";
   if (clean.length <= max) return clean.join(", ");

@@ -93,23 +93,27 @@ export async function readToolResultRef(args: {
   }
   const offset = Math.max(0, Math.floor(args.offset ?? 0));
   const limit = Math.min(MAX_READ_BYTES, Math.max(1, Math.floor(args.limit ?? DEFAULT_PREVIEW_BYTES)));
-  let buf: Buffer;
   try {
     const file = await fsp.open(abs, "r");
     try {
       const stat = await file.stat();
-      const readLength = Math.max(0, Math.min(limit, stat.size - offset));
-      buf = Buffer.alloc(readLength);
-      if (readLength > 0) await file.read(buf, 0, readLength, offset);
-      const nextOffset = offset + readLength;
+      // Read a few bytes either side so the window can be moved onto UTF-8
+      // character boundaries; paging must never split a multi-byte character.
+      const windowStart = Math.min(Math.max(0, offset - 3), stat.size);
+      const windowLength = Math.max(0, Math.min(stat.size - windowStart, offset - windowStart + limit + 3));
+      const buf = Buffer.alloc(windowLength);
+      if (windowLength > 0) await file.read(buf, 0, windowLength, windowStart);
+      const { start, end } = utf8Window(buf, Math.min(offset, stat.size) - windowStart, limit);
+      const actualOffset = windowStart + start;
+      const nextOffset = windowStart + end;
       return {
         ok: true,
         status: "done",
         name: args.name,
-        offset,
+        offset: actualOffset,
         limit,
         bytes: stat.size,
-        result: buf.toString("utf8"),
+        result: buf.subarray(start, end).toString("utf8"),
         next_offset: nextOffset < stat.size ? nextOffset : null,
         done: nextOffset >= stat.size,
       };
@@ -124,6 +128,25 @@ export async function readToolResultRef(args: {
       error: "no spilled tool result for that ref (it may have expired or never existed)",
     };
   }
+}
+
+const isUtf8Continuation = (byte: number | undefined) => byte !== undefined && (byte & 0xc0) === 0x80;
+
+// Moves `[start, start + limit)` inside `buf` onto character boundaries: the
+// start backs up to its lead byte, and the end backs up so it does not cut a
+// character — unless that character alone exceeds `limit`, in which case the
+// whole character is returned so paging always makes progress.
+function utf8Window(buf: Buffer, start: number, limit: number): { start: number; end: number } {
+  let s = Math.max(0, Math.min(start, buf.length));
+  while (s > 0 && isUtf8Continuation(buf[s])) s--;
+  let e = Math.min(buf.length, s + limit);
+  if (e < buf.length && isUtf8Continuation(buf[e])) {
+    let lead = e;
+    while (lead > s && isUtf8Continuation(buf[lead])) lead--;
+    if (lead > s) e = lead;
+    else while (e < buf.length && isUtf8Continuation(buf[e])) e++;
+  }
+  return { start: s, end: e };
 }
 
 export function serializeToolResult(result: unknown): string {
@@ -145,8 +168,15 @@ function buildPreview(value: string, mimeType: string): { value: unknown; bytes:
     try {
       const parsed = JSON.parse(value) as unknown;
       if (Array.isArray(parsed)) {
-        const preview = parsed.slice(0, JSON_ARRAY_PREVIEW_ITEMS);
-        return { value: preview, bytes: Buffer.byteLength(JSON.stringify(preview)), total_count: parsed.length };
+        // Cap by bytes as well as items: a few huge rows must not smuggle the
+        // whole result back inline.
+        for (let n = Math.min(parsed.length, JSON_ARRAY_PREVIEW_ITEMS); n > 0; n--) {
+          const preview = parsed.slice(0, n);
+          const bytes = Buffer.byteLength(JSON.stringify(preview));
+          if (bytes <= DEFAULT_PREVIEW_BYTES) return { value: preview, bytes, total_count: parsed.length };
+        }
+        const text = takeUtf8Prefix(value, DEFAULT_PREVIEW_BYTES);
+        return { value: text, bytes: Buffer.byteLength(text), total_count: parsed.length };
       }
     } catch {
       // Fall through to byte preview.
@@ -165,6 +195,8 @@ function takeUtf8Prefix(value: string, maxBytes: number): string {
     if (Buffer.byteLength(value.slice(0, mid)) <= maxBytes) lo = mid;
     else hi = mid - 1;
   }
+  const code = value.charCodeAt(lo - 1);
+  if (lo > 0 && code >= 0xd800 && code <= 0xdbff) lo--;
   return value.slice(0, lo);
 }
 

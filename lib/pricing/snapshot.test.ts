@@ -324,3 +324,73 @@ describe("pricing snapshot refresh", () => {
     expect(modelRate?.output_per_1m_usd).toBe(0.28);
   });
 });
+
+describe("pricing snapshot edge cases", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    readFileMock.mockReset();
+    mkdirMock.mockReset();
+    writeFileMock.mockReset();
+    vi.unstubAllGlobals();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("refreshes a snapshot stamped in the future instead of trusting it forever", async () => {
+    readFileMock.mockResolvedValueOnce(JSON.stringify({
+      generated_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+      disclaimer: "skewed",
+      ttl_days: 3,
+      sources: [],
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("input $1 / 1M tokens output $2 / 1M tokens", { status: 200 })));
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const res = await refreshPricingSnapshot({ providers: ["cohere"] });
+
+    expect(res).toMatchObject({ refreshed: true, reason: "stale" });
+  });
+
+  it("treats a corrupt snapshot file as missing", async () => {
+    readFileMock.mockResolvedValueOnce("{not json");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("input $1 / 1M tokens output $2 / 1M tokens", { status: 200 })));
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const res = await refreshPricingSnapshot({ providers: ["cohere"] });
+
+    expect(res).toMatchObject({ refreshed: true, reason: "missing" });
+  });
+
+  it("parses each source's search results independently and skips Google's own links", async () => {
+    readFileMock.mockRejectedValueOnce(new Error("ENOENT"));
+    const link = (u: string) => `<a href="/url?q=${encodeURIComponent(u)}&amp;sa=U">x</a>`;
+    const anthropicSearch = "<html>" + "x".repeat(4000)
+      + link("https://www.google.com/intl/en/policies/")
+      + Array.from({ length: 9 }, (_, i) => link(`https://a${i}.example.com/pricing`)).join("")
+      + "</html>";
+    const cohereSearch = `<html>${link("https://c.example.com/pricing")}</html>`;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("https://www.google.com/search")) {
+        if (url.includes("Anthropic")) return new Response(anthropicSearch, { status: 200 });
+        // Only Cohere's first query has results, so a leaked regex cursor cannot be masked by a retry.
+        return new Response(url.includes("1M") ? cohereSearch : "<html></html>", { status: 200 });
+      }
+      if (/^https:\/\/(a0|c)\.example\.com\//.test(url)) {
+        return new Response("input $3 / 1M tokens output $15 / 1M tokens", { status: 200 });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const res = await refreshPricingSnapshot({ force: true, providers: ["anthropic", "cohere"] });
+    const byId = new Map(res.snapshot.sources.map((s) => [s.id, s]));
+
+    expect(byId.get("anthropic")).toMatchObject({ ok: true, resolved_url: "https://a0.example.com/pricing" });
+    expect(byId.get("cohere")).toMatchObject({ ok: true, resolved_url: "https://c.example.com/pricing" });
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).not.toContain("https://www.google.com/intl/en/policies/");
+  });
+});
