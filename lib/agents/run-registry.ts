@@ -64,6 +64,11 @@ export interface ActiveRun {
   // by the agent's preModelHook before the next model call, so steering
   // reaches the model together with the tool results it should react to.
   steering: string[];
+  // What the run is doing right now ("preparing", "compacting", "thinking",
+  // "responding", "tool"), with the label the chat shows for it. Lets a
+  // client that is not attached to the stream still report the activity.
+  phase: string;
+  phase_label: string;
 }
 
 const registryState = getOrCreateGlobal("__jarela_active_run_registry", () => ({
@@ -126,6 +131,8 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     tool_started_at: new Map<string, number>(),
     tool_time_ms_done: 0,
     steering: [],
+    phase: "starting",
+    phase_label: "Starting…",
   };
   runs.set(thread_id, run);
   // Wake any GET subscribers that attached before the run was registered.
@@ -251,6 +258,27 @@ function scheduleMaxWatchdog(run: ActiveRun): void {
   }, fireIn).unref?.();
 }
 
+// Mirrors the labels hooks/useSSE.ts derives from the same chunks.
+function trackPhase(run: ActiveRun, chunk: StreamChunk): void {
+  const data = (chunk.data ?? {}) as { phase?: unknown; label?: unknown; name?: unknown; id?: unknown };
+  const set = (phase: string, label: string) => { run.phase = phase; run.phase_label = label; };
+  if (chunk.type === "status") {
+    const phase = typeof data.phase === "string" && data.phase ? data.phase : run.phase;
+    const label = typeof data.label === "string" && data.label.trim() ? data.label : "Thinking…";
+    set(phase, label);
+  } else if (chunk.type === "text_delta") {
+    set("responding", "Responding…");
+  } else if (chunk.type === "thinking_delta") {
+    if (run.inflight_tools.size === 0) set("thinking", "Thinking…");
+  } else if (chunk.type === "tool_call") {
+    const name = typeof data.name === "string" && data.name ? data.name : "tool";
+    set("tool", `Using ${name}…`);
+  } else if (chunk.type === "tool_result") {
+    const remaining = typeof data.id === "string" ? [...run.inflight_tools].filter((id) => id !== data.id) : [...run.inflight_tools];
+    if (remaining.length === 0) set("thinking", "Thinking…");
+  }
+}
+
 export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
   // Identity-check: a superseded run must not smear trailing chunks onto
   // the replacement entry in the registry.
@@ -263,6 +291,7 @@ export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
   // buffer, don't fan out to subscribers, or the SSE wire would carry
   // meaningless tick events.
   if (chunk.type === "heartbeat") return;
+  trackPhase(run, chunk);
   if (chunk.type === "text_delta") {
     run.final_text += (chunk.data.delta as string) ?? "";
   } else if (chunk.type === "reset_text") {

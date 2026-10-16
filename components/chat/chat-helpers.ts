@@ -14,7 +14,7 @@ export interface CompactionOutcome {
 }
 
 export interface CompactionToast {
-  kind: "info" | "success";
+  kind: "info" | "success" | "error";
   title: string;
   body: string;
 }
@@ -35,6 +35,12 @@ export function compactionOutcomeToast(result: CompactionOutcome): CompactionToa
   }
   if (result.reason === "nothing to compact") {
     return { kind: "info", title: "Nothing to compact", body: "This conversation has no messages yet." };
+  }
+  if (result.reason === "already compacting") {
+    return { kind: "info", title: "Already compacting", body: "A compaction for this conversation is still running." };
+  }
+  if (result.reason === "timed out") {
+    return { kind: "error", title: "Compaction timed out", body: "The summary took too long and was discarded. Context is unchanged." };
   }
   return {
     kind: "info",

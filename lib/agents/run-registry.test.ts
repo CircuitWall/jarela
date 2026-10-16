@@ -406,3 +406,25 @@ describe("steering queue (ADR-0080)", () => {
     finishRun(run, "done");
   });
 });
+
+describe("run-registry phase", () => {
+  it("tracks what the run is doing from the broadcast chunks", () => {
+    const tid = `t-phase-${Date.now()}`;
+    const run = startRun(tid, null);
+    expect([run.phase, run.phase_label]).toEqual(["starting", "Starting…"]);
+    broadcast(run, { type: "status", data: { phase: "compacting", label: "Compacting earlier messages…" } });
+    expect([run.phase, run.phase_label]).toEqual(["compacting", "Compacting earlier messages…"]);
+    broadcast(run, { type: "thinking_delta", data: { delta: "hm" } });
+    expect(run.phase).toBe("thinking");
+    broadcast(run, { type: "tool_call", data: { id: "c1", name: "web_search", args: {} } });
+    expect([run.phase, run.phase_label]).toEqual(["tool", "Using web_search…"]);
+    // Reasoning between parallel tool calls must not hide the running tool.
+    broadcast(run, { type: "thinking_delta", data: { delta: "…" } });
+    expect(run.phase).toBe("tool");
+    broadcast(run, { type: "tool_result", data: { id: "c1", result: "ok" } });
+    expect([run.phase, run.phase_label]).toEqual(["thinking", "Thinking…"]);
+    broadcast(run, { type: "text_delta", data: { delta: "Hi" } });
+    expect([run.phase, run.phase_label]).toEqual(["responding", "Responding…"]);
+    finishRun(run, "done");
+  });
+});

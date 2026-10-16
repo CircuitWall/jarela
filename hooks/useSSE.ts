@@ -32,6 +32,10 @@ type UseSSECommands = {
   ) => Promise<{ accepted: boolean }>;
   stop: () => void;
   attach: (threadId: string) => Promise<void>;
+  /** True from the moment start()/attach() opens a stream until it settles. */
+  isLive: () => boolean;
+  /** Epoch ms when the last stream settled (0 if none yet). */
+  lastSettledAt: () => number;
   clearStreamingContent: () => void;
   clearToolEvents: () => void;
   // ADR-0080 — arm with the steering message's id before the PATCH so a
@@ -228,6 +232,18 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
   // Cleared on every new start()/attach().
   const [authError, setAuthError] = useState<AuthError>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Synchronous view of whether start()/attach() owns a live stream, and when
+  // the last one settled. React's `streaming` lags a render behind, so the
+  // activity poller reads this to avoid aborting a stream that just opened
+  // or re-attaching a run whose stream has only just ended.
+  const liveRef = useRef<{ busy: boolean; settledAt: number }>({ busy: false, settledAt: 0 });
+  const markLive = useCallback(() => { liveRef.current.busy = true; }, []);
+  const markSettled = useCallback((ctrl: AbortController | null) => {
+    if (ctrl && abortRef.current !== ctrl) return;
+    liveRef.current = { busy: false, settledAt: Date.now() };
+  }, []);
+  const isLive = useCallback(() => liveRef.current.busy, []);
+  const lastSettledAt = useCallback(() => liveRef.current.settledAt, []);
   const threadIdRef = useRef<string | null>(null);
   // ADR-0080 — id of the steering message currently armed for a possible
   // continuation break, or null. Set eagerly (before the steer PATCH
@@ -379,6 +395,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    markLive();
     threadIdRef.current = threadId;
     resetBuffer();
     setStreaming(true);
@@ -424,8 +441,9 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       // them.
       setStreaming(false);
       closeActivity();
+      markSettled(ctrl);
     }
-  }, [closeActivity, consume, openActivity, resetBuffer]);
+  }, [closeActivity, consume, markLive, markSettled, openActivity, resetBuffer]);
 
   // Stop the active run. Three-part: (1) tell the server to abort the
   // agent stream so the LangGraph loop unwinds; (2) tear down local
@@ -448,9 +466,10 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     // start()/attach() — same pattern as the `done` branch in consume().
     closeActivity();
     abortRef.current?.abort();
+    markSettled(null);
     steeredContinuationIdRef.current = null;
     onDone?.();
-  }, [closeActivity, flushPending, onDone]);
+  }, [closeActivity, flushPending, markSettled, onDone]);
 
   // Attach to an in-flight run for the given thread (server-side run kept
   // going because the user switched away, or because this is a fresh
@@ -463,6 +482,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    markLive();
     threadIdRef.current = threadId;
     resetBuffer();
     setStreaming(true);
@@ -491,8 +511,9 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       // hangs in the composer and the "Reconnecting…" badge never clears.
       setStreaming(false);
       closeActivity();
+      markSettled(ctrl);
     }
-  }, [closeActivity, consume, onDone, openActivity, resetBuffer]);
+  }, [closeActivity, consume, markLive, markSettled, onDone, openActivity, resetBuffer]);
 
   // Called by the consumer after a refetch lands, so the streaming bubble
   // gets swapped for the persisted assistant message in a single render.
@@ -529,6 +550,8 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     start,
     stop,
     attach,
+    isLive,
+    lastSettledAt,
     clearStreamingContent,
     clearToolEvents,
     armSteeredContinuation,
@@ -549,6 +572,8 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     start,
     stop,
     attach,
+    isLive,
+    lastSettledAt,
     clearStreamingContent,
     clearToolEvents,
     armSteeredContinuation,
