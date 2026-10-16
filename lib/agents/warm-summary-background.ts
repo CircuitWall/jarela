@@ -70,6 +70,11 @@ export function pendingCompactionBoundarySeq(threadId: string): number | null {
 // client that reloads the thread mid-compaction still sees it pending.
 const manualBoundaries = new Map<string, number>();
 
+/** A manual /compact holds the thread (the UI queues sends); auto ones don't. */
+export function isManualCompactionRunning(threadId: string): boolean {
+  return manualBoundaries.has(threadId);
+}
+
 export async function trackManualCompaction<T>(
   threadId: string,
   boundarySeq: number,

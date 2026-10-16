@@ -56,6 +56,7 @@ export interface ThreadMetaApplier {
   setContextWindowTokens: (v: number | null) => void;
   setWarmSummaryPending?: (v: boolean) => void;
   setCompactionPending?: (v: boolean) => void;
+  setManualCompactionPending?: (v: boolean) => void;
 }
 
 export interface ThreadGetPayload {
@@ -70,6 +71,7 @@ export interface ThreadGetPayload {
   warm_summary_topics?: SummaryTopicSegment[] | null;
   pending_hot_since?: string | null;
   pending_hot_since_seq?: number | null;
+  manual_compaction_pending?: boolean;
   context_window_tokens?: number | null;
 }
 
@@ -163,6 +165,7 @@ export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPaylo
   const summaryFresh = hotSinceSeq !== null && summaryBeforeSeq === hotSinceSeq;
   meta.setWarmSummaryPending?.(hotSinceSeq !== null && !summaryFresh);
   meta.setCompactionPending?.(payload.pending_hot_since_seq != null);
+  meta.setManualCompactionPending?.(payload.manual_compaction_pending === true);
 }
 
 export function makeQueuedId(prefix = "q"): string {
