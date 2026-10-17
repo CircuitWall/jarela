@@ -38,22 +38,22 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
 
 const TAB_TITLES: Record<Tab, string> = {
   chat: "Chat",
-  dashboard: "Dashboard",
+  dashboard: "Usage",
   agents: "Agents",
-  memory: "Memory",
+  memory: "Knowledge",
   documents: "Documents",
   models: "Models",
   credentials: "Credentials",
   mcp: "MCP",
   extensions: "Extensions",
-  tools: "Tools",
-  tasks: "Tasks",
+  tools: "Capabilities",
+  tasks: "Automations",
   bridges: "Bridges",
   profile: "Profile",
   harness: "Harness",
   logs: "Logs",
   env: "Defaults",
-  settings: "Advanced settings",
+  settings: "Settings",
 };
 
 // Tiny-screen labels (<=380px). Only abbreviate where the full name is
@@ -61,38 +61,28 @@ const TAB_TITLES: Record<Tab, string> = {
 // "Me", "Setup") that overloads or contradicts the real meaning.
 const TAB_SHORT: Record<Tab, string> = {
   chat: "Chat",
-  dashboard: "Dash",
+  dashboard: "Usage",
   agents: "Agents",
-  memory: "Memory",
+  memory: "Knowledge",
   documents: "Docs",
   models: "Models",
   credentials: "Keys",
   mcp: "MCP",
   extensions: "Ext",
-  tools: "Tools",
-  tasks: "Tasks",
+  tools: "Capabilities",
+  tasks: "Automations",
   bridges: "Bridges",
   profile: "Profile",
   harness: "Tests",
   logs: "Logs",
   env: "Env",
-  settings: "Advanced",
+  settings: "Settings",
 };
 
-// Two-tier menu. "Common" surfaces the day-to-day verbs. Settings is
-// the single home for previously top-level chrome (credentials, models,
-// harness, logs, defaults, appearance, networking) — those legacy Tab
-// values still exist for deep-link compat but no longer appear in this
-// menu grid.
-//
-// Capability-presence surfaces (documents, memory, MCP, extensions,
-// bridges, built-in tool categories) all live under the "Tools" tab now —
-// they were scattered across the top-level menu before but they're all
-// answering the same question: "what can the agent see / do?". The legacy
-// top-level Tab entries remain wired so deep-links (?tab=documents&item=…)
-// still resolve, but they're hidden from the menu grid.
-const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "tools", "tasks", "profile", "settings"];
-const ADVANCED_TABS: Tab[] = [];
+// Keep everyday destinations visible; move the operational and capability
+// panels behind Full mode's Advanced section.
+const COMMON_TABS: Tab[] = ["chat", "agents", "settings", "profile"];
+const ADVANCED_TABS: Tab[] = ["dashboard", "tasks", "tools", "memory"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
 

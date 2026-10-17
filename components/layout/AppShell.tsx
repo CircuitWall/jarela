@@ -20,6 +20,7 @@ import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { LogsPanel } from "@/components/logs/LogsPanel";
 import { EnvVarsPanel } from "@/components/env/EnvVarsPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
+import { UnifiedMemoryPanel } from "@/components/memory/UnifiedMemoryPanel";
 import { HeaderActivity } from "@/components/ui/HeaderActivity";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
@@ -35,7 +36,7 @@ import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 
-const ADVANCED_TABS = new Set(["bridges", "logs", "env"]);
+const ADVANCED_TABS = new Set(["dashboard", "tasks", "tools", "memory", "bridges", "logs", "env"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
@@ -504,6 +505,11 @@ export function AppShell() {
             <AgentsPanel />
           </Activity>
         )}
+        {isFullMode && mountedTabs.has("memory") && (
+          <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
+            <UnifiedMemoryPanel />
+          </Activity>
+        )}
         {mountedTabs.has("models") && (
           <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
             <ModelsPanel />
@@ -557,7 +563,7 @@ export function AppShell() {
 
         {showMenu && (
           <div
-            className="fixed left-0 right-0 bottom-0 bg-black/30 backdrop-blur-sm z-30"
+            className="fixed left-0 right-0 bottom-0 bg-black/20 z-30"
             style={{ top: "calc(3rem + var(--app-safe-top))" }}
             onClick={() => setShowMenu(false)}
           />

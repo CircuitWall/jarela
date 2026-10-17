@@ -40,8 +40,16 @@ export function parseHref(input: string | null | undefined): ParsedHref {
 
   const params = new URLSearchParams(queryStr);
   const tabRaw = params.get("tab");
-  const tab = TABS.includes(tabRaw as Tab) ? (tabRaw as Tab) : undefined;
-  const item = params.get("item") ?? undefined;
+  let tab = TABS.includes(tabRaw as Tab) ? (tabRaw as Tab) : undefined;
+  let item = params.get("item") ?? undefined;
+  if (
+    tab === "documents" ||
+    tab === "memory" ||
+    (tab === "tools" && (item === "memory" || item === "documents"))
+  ) {
+    tab = "memory";
+    item = undefined;
+  }
   const thread = params.get("thread") ?? undefined;
   const agent = params.get("agent") ?? undefined;
   return { tab, item, thread, agent, hash, external: false };

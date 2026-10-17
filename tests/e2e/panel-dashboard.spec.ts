@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { seedMockAgent } from "./helpers";
+import { enableFullExperienceMode, seedMockAgent } from "./helpers";
 
-test.beforeEach(async ({ request }) => {
+test.beforeEach(async ({ request, page }) => {
   await seedMockAgent(request);
+  await enableFullExperienceMode(page);
 });
 
 test("dashboard sort dropdowns are populated", async ({ page }) => {
