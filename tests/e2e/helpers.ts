@@ -121,3 +121,13 @@ export async function dismissOverlayBanners(page: Page): Promise<void> {
     }
   });
 }
+
+export async function enableFullExperienceMode(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("jarela.experience.mode", "full");
+    } catch {
+      /* sandboxed origin */
+    }
+  });
+}

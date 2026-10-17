@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Bot, Plus, Trash2 } from "lucide-react";
 import type { AgentConfig, AgentConfigIn } from "@/api/types";
 import { api } from "@/api/client";
 import { useAgents } from "@/hooks/useAgents";
 import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
-import { Button } from "@/components/ui/Button";
+import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { AgentEditor } from "./AgentEditor";
 import { useAppContext } from "@/contexts/AppContext";
 
@@ -100,17 +100,9 @@ export function AgentsPanel() {
   return (
     <div className="flex flex-col h-full min-h-0">
       <>
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
-        <span className="text-[11px] text-fg-faint font-medium uppercase tracking-wide">Agents</span>
-        <Button
-          onClick={() => setEditing("new")}
-          size="sm"
-          icon={<Plus size={11} />}
-        >
-          New
-        </Button>
-      </div>
+      <PanelHeader icon={<Bot size={14} />} title="Agents">
+        <HeaderAction onClick={() => setEditing("new")} icon={<Plus size={14} />} label="New" />
+      </PanelHeader>
 
       {/* List */}
       <div ref={containerRef} className="flex-1 overflow-y-auto px-2 pb-2">

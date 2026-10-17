@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { dismissOverlayBanners, seedMockAgent, waitForAppReady } from "./helpers";
+import { dismissOverlayBanners, enableFullExperienceMode, seedMockAgent, waitForAppReady } from "./helpers";
 
 // Coverage for the Credentials consolidation (Connections folded back in
 // as a sub-tab) + Built-in tool toggles. Tests run serially: they share
@@ -21,6 +21,7 @@ test.beforeEach(async ({ request, page }) => {
     }
   }
   await dismissOverlayBanners(page);
+  await enableFullExperienceMode(page);
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
   await waitForAppReady(page);
@@ -40,7 +41,7 @@ test("Settings tab exposes Credentials + Networking sub-tabs", async ({ page }) 
   // Settings surface (v1.9.3). The old top-level "Credentials" menu
   // button is gone; everything routes through Settings.
   await openMenu(page);
-  await page.getByRole("button", { name: "Advanced settings", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
 
   const credentialsTab = page.getByRole("tab", { name: "Credentials", exact: true });
   const networkingTab = page.getByRole("tab", { name: "Networking", exact: true });
@@ -78,7 +79,7 @@ test("deep link ?tab=credentials&item=integrations (legacy) still lands on Netwo
 
 test("Built-in tools panel lists categories and toggles persist", async ({ page, request }) => {
   await openMenu(page);
-  await page.getByRole("button", { name: "Tools", exact: true }).click();
+  await page.getByRole("button", { name: "Capabilities", exact: true }).click();
   // Packages is the default sub-tab and lists every built-in category.
   await expect(page.getByRole("heading", { name: "Packages", exact: true })).toBeVisible();
 

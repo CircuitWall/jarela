@@ -30,4 +30,17 @@ describe("useUrlSync contract", () => {
       replaceStateSpy.mockRestore();
     });
   });
+
+  it.each([
+    "/?tab=documents",
+    "/?tab=tools&item=documents",
+    "/?tab=tools&item=memory",
+  ])("routes legacy Knowledge URL %s to the Advanced Knowledge panel", async (url) => {
+    window.history.replaceState(null, "", url);
+    renderHook(() => useUrlSync(), { wrapper });
+
+    await waitFor(() => {
+      expect(window.location.search).toBe("?tab=memory");
+    });
+  });
 });

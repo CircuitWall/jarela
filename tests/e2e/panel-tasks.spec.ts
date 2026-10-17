@@ -1,11 +1,12 @@
 import { test, expect } from "@playwright/test";
-import { dismissOverlayBanners, seedMockAgent } from "./helpers";
+import { dismissOverlayBanners, enableFullExperienceMode, seedMockAgent } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ request, page }) => {
   await seedMockAgent(request);
   await dismissOverlayBanners(page);
+  await enableFullExperienceMode(page);
   await page.goto("/?tab=tasks");
 });
 

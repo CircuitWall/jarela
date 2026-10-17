@@ -2,7 +2,6 @@
 import { useAppContext } from "@/contexts/AppContext";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { SkillsPanel } from "@/components/skills/SkillsPanel";
-import { UnifiedMemoryPanel } from "@/components/memory/UnifiedMemoryPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { BrowserPanel } from "@/components/tools/BrowserPanel";
 import { PackagesPanel } from "./PackagesPanel";
@@ -13,7 +12,7 @@ import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 //                   manifests, and drop-in `.cjs` files. One home for
 //                   everything that turns into a LangChain tool.
 //   - "Skills"    — markdown playbooks (repos) the agent reads/writes on demand.
-//   - "Memory"    — searchable chats and documents, plus saved facts.
+//   - Knowledge now has its own Advanced-menu destination.
 //   - "MCP"       — external Model Context Protocol servers.
 //   - "Bridges"   — mobile / messaging bridge pairings.
 //   - "Browser"   — the local Chromium extension as an agent runtime surface.
@@ -23,17 +22,15 @@ type Sub =
   | "packages"
   | "browser"
   | "skills"
-  | "memory"
   | "mcp"
   | "bridges";
 
-const SUBS: Sub[] = ["packages", "browser", "skills", "memory", "mcp", "bridges"];
+const SUBS: Sub[] = ["packages", "browser", "skills", "mcp", "bridges"];
 
 const SUB_TITLES: Record<Sub, string> = {
   packages: "Packages",
   browser: "Browser",
   skills: "Skills",
-  memory: "Memory",
   mcp: "MCP servers",
   bridges: "Bridges",
 };
@@ -43,7 +40,6 @@ const SUB_TITLES: Record<Sub, string> = {
 const LEGACY_SUBS: Record<string, Sub> = {
   builtin: "packages",
   extensions: "packages",
-  documents: "memory",
 };
 
 export function ToolsPanel() {
@@ -70,7 +66,6 @@ export function ToolsPanel() {
         {active === "packages" && <PackagesPanel />}
         {active === "browser" && <BrowserPanel />}
         {active === "skills" && <SkillsPanel />}
-        {active === "memory" && <UnifiedMemoryPanel />}
         {active === "mcp" && <MCPPanel />}
         {active === "bridges" && <BridgesPanel />}
       </div>

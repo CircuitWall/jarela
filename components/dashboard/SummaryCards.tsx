@@ -17,7 +17,7 @@ export function SummaryStrip({ data, currencyInfo, windowTokenTotal, activeDays,
   const cacheHitPct = (data.summary.cache_hit_rate * 100).toFixed(1);
   const hasCacheStats = data.summary.cache_read_tokens > 0;
   return (
-    <div className={`relative grid gap-2 ${hasCacheStats ? "md:grid-cols-5" : "md:grid-cols-4"}`}>
+    <div className={`relative grid grid-cols-2 gap-2 ${hasCacheStats ? "md:grid-cols-5" : "md:grid-cols-4"}`}>
       <InsightChip
         label="Window tokens"
         value={formatInt(windowTokenTotal)}

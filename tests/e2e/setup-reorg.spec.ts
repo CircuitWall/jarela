@@ -41,14 +41,13 @@ async function openMenu(page: import("@playwright/test").Page) {
   await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
 }
 
-test("menu separates common from advanced and Tools hosts capability sub-tabs", async ({ page }) => {
+test("menu separates common from advanced and Capabilities hosts sub-tabs", async ({ page }) => {
   await openMenu(page);
 
-  // Common tabs visible up top (MenuPanel.COMMON_TABS). Capability surfaces
-  // (Documents, Memory, Bridges, MCP, Extensions) live under Tools, and the
-  // former Credentials/Models/Test-runs/Logs/Environment entries are now sub-tabs
-  // of the consolidated Settings panel.
-  for (const label of ["Chat", "Dashboard", "Agents", "Tools", "Tasks", "Profile", "Advanced settings"]) {
+  // Common destinations are visible up top. Knowledge has its own Advanced
+  // destination, while capability surfaces live under Capabilities. The former
+  // Credentials/Models/Test-runs/Logs/Environment entries are now Settings sub-tabs.
+  for (const label of ["Chat", "Agents", "Settings", "Profile", "Usage", "Automations", "Capabilities", "Knowledge"]) {
     await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
 
@@ -67,19 +66,21 @@ test("menu separates common from advanced and Tools hosts capability sub-tabs", 
     await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(0);
   }
 
-  // Click Tools → ToolsPanel mounts with the full capability sub-tab strip.
-  await page.getByRole("button", { name: "Tools", exact: true }).click();
+  // Click Capabilities to mount the full capability sub-tab strip.
+  await page.getByRole("button", { name: "Capabilities", exact: true }).click();
   const packagesTab = page.getByRole("tab", { name: "Packages", exact: true });
   await expect(packagesTab).toBeVisible();
   await expect(page.getByRole("tab", { name: "Documents", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: "Memory", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Browser", exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "MCP servers" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Bridges", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Knowledge", exact: true })).toHaveCount(0);
   await expect(packagesTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Packages", exact: true })).toBeVisible();
 
-  // Memory is now the shared search surface for documents and chat history.
-  await page.getByRole("tab", { name: "Memory", exact: true }).click();
+  // Knowledge is the shared search surface for documents and chat history.
+  await openMenu(page);
+  await page.getByRole("button", { name: "Knowledge", exact: true }).click();
   await expect(page.getByPlaceholder("Search documents and chats…")).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Search channel" })).toBeVisible();
   await expect(page.locator("summary").getByText("Saved facts")).toBeVisible();
@@ -88,7 +89,7 @@ test("menu separates common from advanced and Tools hosts capability sub-tabs", 
 
 test("Settings panel exposes advanced sub-tabs when experience mode is full", async ({ page }) => {
   await openMenu(page);
-  await page.getByRole("button", { name: "Advanced settings", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
 
   // Always-visible sub-tabs.
   for (const label of ["Credentials", "Models", "Privacy & security", "Appearance", "Networking"]) {
@@ -102,14 +103,14 @@ test("Settings panel exposes advanced sub-tabs when experience mode is full", as
   await expect(page.getByRole("tab", { name: "Test runs", exact: true })).toHaveCount(0);
 });
 
-test("legacy Documents URLs open the unified Memory search", async ({ page }) => {
+test("legacy Documents URLs open the unified Knowledge search", async ({ page }) => {
   await page.goto("/?tab=documents");
 
   await expect(page.getByPlaceholder("Search documents and chats…")).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Memory", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Memory", exact: true })).toBeVisible();
 });
 
-test("Memory search merges document and chat hits and filters by channel", async ({ page }) => {
+test("Knowledge search merges document and chat hits and filters by channel", async ({ page }) => {
   await page.evaluate(() => {
     const originalFetch = window.fetch.bind(window);
     window.fetch = async (input, init) => {
@@ -140,8 +141,7 @@ test("Memory search merges document and chat hits and filters by channel", async
   });
 
   await openMenu(page);
-  await page.getByRole("button", { name: "Tools", exact: true }).click();
-  await page.getByRole("tab", { name: "Memory", exact: true }).click();
+  await page.getByRole("button", { name: "Knowledge", exact: true }).click();
   await page.getByPlaceholder("Search documents and chats…").fill("deploy");
   await page.getByRole("button", { name: "Search", exact: true }).click();
 
@@ -157,11 +157,17 @@ test("Memory search merges document and chat hits and filters by channel", async
 });
 
 test("Profile preset picker round-trips through the API", async ({ page, request }) => {
+  const initialPreset = await request.put("/api/v1/profile", { data: { preset: "home" } });
+  expect(initialPreset.ok()).toBeTruthy();
+
   await openMenu(page);
   await page.getByRole("button", { name: "Profile", exact: true }).click();
 
   // Persona section heading.
   await expect(page.getByText(/Filters the Credentials list/i)).toBeVisible();
+
+  const homeBtn = page.getByRole("button", { name: /^Home\b/ });
+  await expect(homeBtn).toHaveAttribute("aria-pressed", "true");
 
   // Pick the "Work" preset.
   const workBtn = page.getByRole("button", { name: /^Work\b/ });
@@ -183,9 +189,9 @@ test("Credentials list filter chip reflects the active preset", async ({ page, r
   const put = await request.put("/api/v1/profile", { data: { preset: "home" } });
   expect(put.ok()).toBeTruthy();
 
-  // Credentials now lives as a sub-tab of the Advanced settings surface.
+  // Credentials now lives as a sub-tab of Settings.
   await openMenu(page);
-  await page.getByRole("button", { name: "Advanced settings", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("tab", { name: "Credentials", exact: true }).click();
 
   // Header chip shows the human label and is clickable.
@@ -216,8 +222,7 @@ test("memory panel renders structured values and masks secret-shaped keys", asyn
   expect(seedCred.ok()).toBeTruthy();
 
   await openMenu(page);
-  await page.getByRole("button", { name: "Tools", exact: true }).click();
-  await page.getByRole("tab", { name: "Memory", exact: true }).click();
+  await page.getByRole("button", { name: "Knowledge", exact: true }).click();
 
   await page.locator("summary").filter({ hasText: "Saved facts" }).click();
 

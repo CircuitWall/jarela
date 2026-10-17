@@ -15,6 +15,7 @@ export function InteractiveTokenChart({ series, selectedDay, onSelectDay }: Toke
   const [barsReady, setBarsReady] = useState(false);
   const maxTotal = series.reduce((max, p) => Math.max(max, p.input_tokens_est + p.output_tokens_est), 0);
   const active = hovered != null ? series[hovered] : null;
+  const labelInterval = Math.max(1, Math.ceil(series.length / 7));
   const animationSignature = series.map((s) => `${s.day}:${s.input_tokens_est}:${s.output_tokens_est}`).join("|");
 
   useEffect(() => {
@@ -30,29 +31,35 @@ export function InteractiveTokenChart({ series, selectedDay, onSelectDay }: Toke
   return (
     <div>
       <div className="relative h-48 rounded-xl bg-[var(--bg-primary)]/35 p-2">
+        <div className="h-full overflow-x-auto overscroll-x-contain">
+          <div className="h-full flex items-end gap-1 pt-5" style={{ minWidth: `${series.length * 18}px` }}>
+            {series.map((point, idx) => (
+              <TokenBar
+                key={point.day}
+                point={point}
+                idx={idx}
+                maxTotal={maxTotal}
+                barsReady={barsReady}
+                hovered={hovered === idx}
+                selected={selectedDay === point.day}
+                showDateLabel={idx % labelInterval === 0 || idx === series.length - 1}
+                onHover={setHovered}
+                onSelectDay={onSelectDay}
+              />
+            ))}
+          </div>
+        </div>
         <div
-          className={`absolute right-2 top-2 inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[10px] tracking-wide transition-opacity ${
+          className={`pointer-events-none absolute right-2 top-2 inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[10px] tracking-wide transition-opacity ${
             active ? "bg-[var(--bg-secondary)]/85 text-[var(--text-primary)] opacity-100" : "text-[var(--text-secondary)] opacity-60"
           }`}
         >
-          {active
-            ? `${active.day} · ${formatInt(active.input_tokens_est + active.output_tokens_est)} tokens`
-            : "hover bars for details"}
-        </div>
-        <div className="h-full flex items-end gap-1 pt-5">
-          {series.map((point, idx) => (
-            <TokenBar
-              key={point.day}
-              point={point}
-              idx={idx}
-              maxTotal={maxTotal}
-              barsReady={barsReady}
-              hovered={hovered === idx}
-              selected={selectedDay === point.day}
-              onHover={setHovered}
-              onSelectDay={onSelectDay}
-            />
-          ))}
+          {active ? `${active.day} · ${formatInt(active.input_tokens_est + active.output_tokens_est)} tokens` : (
+            <>
+              <span className="hidden sm:inline">hover bars for details</span>
+              <span className="sm:hidden">tap bars; swipe for dates</span>
+            </>
+          )}
         </div>
       </div>
       <TokenChartLegend active={active} />
@@ -67,11 +74,12 @@ interface TokenBarProps {
   barsReady: boolean;
   hovered: boolean;
   selected: boolean;
+  showDateLabel: boolean;
   onHover: (i: number | null) => void;
   onSelectDay?: (day: string) => void;
 }
 
-function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, onHover, onSelectDay }: TokenBarProps) {
+function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, showDateLabel, onHover, onSelectDay }: TokenBarProps) {
   const total = point.input_tokens_est + point.output_tokens_est;
   const hasData = total > 0;
   const totalHeight = hasData && maxTotal > 0 ? Math.max(4, Math.round((total / maxTotal) * 150)) : 0;
@@ -152,7 +160,12 @@ function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, onHover,
         ) : null}
       </div>
       <span className={`mt-1 text-[10px] truncate w-full text-center ${hasData ? "text-[var(--text-secondary)]" : "text-[var(--text-secondary)]/50"}`}>
-        {point.day.slice(5)}
+        {showDateLabel && (
+          <>
+            <span className="hidden sm:inline">{point.day.slice(5)}</span>
+            <span className="sm:hidden">{point.day.slice(8)}</span>
+          </>
+        )}
       </span>
     </div>
   );
