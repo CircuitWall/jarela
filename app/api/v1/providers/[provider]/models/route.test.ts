@@ -88,9 +88,9 @@ describe("provider model catalogs", () => {
         hosted_on: "anthropic",
         context_length: 500000,
         max_output_tokens: 64000,
-        capabilities: { vision: true, json_mode: true },
+        capabilities: { vision: true, files: false, json_mode: true, web_search: false },
       },
-      { id: "claude-second", hosted_on: "anthropic" },
+      { id: "claude-second", hosted_on: "anthropic", capabilities: { vision: false, files: false, web_search: false } },
     ]);
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(String(fetch.mock.calls[0][0])).toBe("https://api.anthropic.com/v1/models?limit=1000");
@@ -125,8 +125,30 @@ describe("provider model catalogs", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject([
-      { id: "gemini-current", context_length: 131072, max_output_tokens: 16384 },
+      {
+        id: "gemini-current",
+        context_length: 131072,
+        max_output_tokens: 16384,
+        capabilities: { vision: false, files: false, audio: false, web_search: false },
+      },
     ]);
+    expect(fetch.mock.calls[0][1]?.headers).toMatchObject({
+      "x-goog-api-key": "synthetic-gemini-key",
+    });
+  });
+
+  it("uses a configured Gemini native base URL for catalog discovery", async () => {
+    upsertModelConfig("gemini-config", "gemini", "gemini-2.5-flash", {
+      api_key: "synthetic-gemini-key",
+      gemini_native_base_url: "https://gemini-proxy.example/v1beta",
+    }, true);
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ models: [] })));
+    vi.stubGlobal("fetch", fetch);
+
+    const response = await GET(request("gemini"), routeParams("gemini"));
+
+    expect(response.status).toBe(200);
+    expect(String(fetch.mock.calls[0][0])).toBe("https://gemini-proxy.example/v1beta/models?pageSize=1000");
     expect(fetch.mock.calls[0][1]?.headers).toMatchObject({
       "x-goog-api-key": "synthetic-gemini-key",
     });
@@ -154,7 +176,7 @@ describe("provider model catalogs", () => {
         id: "deepseek-new",
         context_length: 900000,
         max_output_tokens: 120000,
-        capabilities: { vision: true, files: true },
+        capabilities: { vision: true, files: false },
       },
     ]);
     expect(String(fetch.mock.calls[0][0])).toBe("https://api.deepseek.com/models");
