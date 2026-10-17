@@ -159,11 +159,10 @@ function EdgeArrow({ side, onClick }: { side: "left" | "right"; onClick: () => v
   return (
     <button
       type="button"
-      tabIndex={-1}
-      aria-hidden="true"
+      aria-label={`Scroll tabs ${side}`}
       onClick={onClick}
       className={
-        "absolute inset-y-0 w-8 flex items-center pointer-coarse:hidden text-fg-muted hover:text-fg from-[var(--bg-secondary)] via-[var(--bg-secondary)] to-transparent " +
+        "absolute inset-y-0 w-8 flex items-center text-fg-muted hover:text-fg from-[var(--bg-secondary)] via-[var(--bg-secondary)] to-transparent " +
         (side === "left"
           ? "bg-gradient-to-r left-0 justify-start pl-1"
           : "bg-gradient-to-l right-0 justify-end pr-1")

@@ -90,6 +90,18 @@ const themeBootstrap = `(() => {
     var t = localStorage.getItem("jarela-theme");
     if (t !== "light" && t !== "dark" && t !== "system") t = "system";
     document.documentElement.setAttribute("data-theme", t);
+    var accent = localStorage.getItem("jarela-accent-color");
+    if (["blue", "teal", "violet", "rose"].includes(accent)) {
+      document.documentElement.setAttribute("data-accent-color", accent);
+    } else {
+      document.documentElement.removeAttribute("data-accent-color");
+    }
+    var surface = localStorage.getItem("jarela-surface-style");
+    if (surface === "calm" || surface === "ambient" || surface === "liquid") {
+      document.documentElement.setAttribute("data-surface-style", surface);
+    } else {
+      document.documentElement.removeAttribute("data-surface-style");
+    }
     // Collapse any media-scoped theme-color metas Next emits to a single tag
     // so the PWA window chrome matches the user's explicit choice (not just
     // prefers-color-scheme). ThemeContext keeps this in sync on change.

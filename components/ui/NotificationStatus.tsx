@@ -85,15 +85,15 @@ export function NotificationStatus() {
     : "border-amber-500/30 bg-amber-500/10";
 
   return (
-    <div className="absolute top-9 left-0 right-0 z-30 mx-auto max-w-2xl px-4 mt-2 pointer-events-none">
-      <div role="status" className={`pointer-events-auto rounded-lg border ${bannerTone} backdrop-blur px-3 py-2 flex items-center gap-2 shadow-lg`}>
+    <div className="absolute top-9 left-0 right-0 z-30 mx-auto max-w-xl px-4 mt-2 pointer-events-none">
+      <div role="status" className={`pointer-events-auto rounded-lg border ${bannerTone} backdrop-blur px-3 py-2 flex flex-wrap items-center gap-x-2 gap-y-1 shadow-lg`}>
         {status === "denied"
           ? <BellOff size={14} className="text-rose-700 dark:text-rose-400 shrink-0" />
           : <Bell size={14} className="text-amber-700 dark:text-amber-400 shrink-0" />}
-        <p className="text-xs text-fg mr-auto">
+        <p className="min-w-0 flex-1 basis-full text-xs text-fg sm:basis-auto">
           {status === "denied"
-            ? "OS notifications are blocked. In-app pop-ups still work; for system-level alerts when Jarela isn't focused, allow Notifications via the lock icon in the URL bar."
-            : "Enable OS notifications to also get pinged when Jarela isn't focused (in-app pop-ups already work)."}
+            ? "System notifications are blocked. In-app alerts still work; change this in browser site settings."
+            : "Enable system alerts for when Jarela isn't focused."}
         </p>
         {status === "default" && (
           <button

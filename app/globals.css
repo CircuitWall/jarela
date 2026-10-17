@@ -115,6 +115,23 @@
   }
 }
 
+html[data-accent-color="blue"] {
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+}
+html[data-accent-color="teal"] {
+  --color-accent: #0f766e;
+  --color-accent-hover: #115e59;
+}
+html[data-accent-color="violet"] {
+  --color-accent: #6d28d9;
+  --color-accent-hover: #5b21b6;
+}
+html[data-accent-color="rose"] {
+  --color-accent: #be123c;
+  --color-accent-hover: #9f1239;
+}
+
 /* Tailwind v4 changed the default border colour from gray-200 to
  * currentColor. Restore the v3 behaviour so existing `border` shorthand
  * (without an explicit colour) keeps rendering as the themed divider. */
@@ -195,31 +212,27 @@ body {
  *                      pronounced top sheen.                             *
  * ---------------------------------------------------------------------- */
 .glass {
-  background-color: rgba(24, 24, 27, 0.32);
-  background-image: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.07) 0%,
-    transparent 65%
-  );
+  background-color: rgba(24, 24, 27, 0.38);
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.035) 34%, transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 68%);
   -webkit-backdrop-filter: blur(24px) saturate(2);
   backdrop-filter: blur(24px) saturate(2);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.04),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.25),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07);
 }
 .glass-elevated {
-  background-color: rgba(24, 24, 27, 0.42);
-  background-image: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.09) 0%,
-    transparent 60%
-  );
+  background-color: rgba(24, 24, 27, 0.5);
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 34%, transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, transparent 65%);
   -webkit-backdrop-filter: blur(32px) saturate(2.1);
   backdrop-filter: blur(32px) saturate(2.1);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
     0 24px 60px -12px rgba(0, 0, 0, 0.5);
 }
 .glass-bubble {
@@ -253,15 +266,19 @@ body {
  * inner edge flips to a hairline of slate so the glass reads as raised
  * rather than dissolved into the page. */
 [data-theme="light"] .glass {
-  background-color: rgba(255, 255, 255, 0.55);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, transparent 65%);
+  background-color: rgba(255, 255, 255, 0.48);
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.18) 34%, transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, transparent 65%);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
-    inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.98),
+    inset 0 0 0 1px rgba(15, 23, 42, 0.09);
 }
 [data-theme="light"] .glass-elevated {
-  background-color: rgba(255, 255, 255, 0.65);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 60%);
+  background-color: rgba(255, 255, 255, 0.58);
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.22) 34%, transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.36) 0%, transparent 60%);
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
     inset 0 0 0 1px rgba(15, 23, 42, 0.07),
@@ -276,15 +293,19 @@ body {
 }
 @media (prefers-color-scheme: light) {
   [data-theme="system"] .glass {
-    background-color: rgba(255, 255, 255, 0.55);
-    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, transparent 65%);
+    background-color: rgba(255, 255, 255, 0.48);
+    background-image:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.18) 34%, transparent 68%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, transparent 65%);
     box-shadow:
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
-      inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.98),
+      inset 0 0 0 1px rgba(15, 23, 42, 0.09);
   }
   [data-theme="system"] .glass-elevated {
-    background-color: rgba(255, 255, 255, 0.65);
-    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 60%);
+    background-color: rgba(255, 255, 255, 0.58);
+    background-image:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.22) 34%, transparent 68%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.36) 0%, transparent 60%);
     box-shadow:
       inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
       inset 0 0 0 1px rgba(15, 23, 42, 0.07),
@@ -307,6 +328,75 @@ body {
   }
   .glass-bubble-accent {
     background-color: var(--color-accent);
+  }
+}
+
+[data-surface-style="calm"] body {
+  background-image: none;
+}
+[data-surface-style="calm"] .dashboard-atmosphere {
+  display: none;
+}
+[data-surface-style="calm"] .glass,
+[data-surface-style="calm"] .glass-elevated {
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.07) 0%, transparent 65%);
+}
+[data-surface-style="calm"] .glass-bubble,
+[data-surface-style="calm"] .glass-bubble-accent {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-image: none;
+}
+[data-surface-style="calm"] .glass,
+[data-surface-style="calm"] .glass-elevated {
+  background-color: color-mix(in srgb, var(--color-surface-2) 78%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+[data-surface-style="calm"] .glass-elevated {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, transparent),
+    0 12px 32px -16px rgba(0, 0, 0, 0.35);
+}
+[data-surface-style="calm"] .glass-bubble {
+  background-color: var(--color-surface-3);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+[data-surface-style="calm"] .glass-bubble-accent {
+  background-color: color-mix(in srgb, var(--color-accent) 82%, var(--color-surface-2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent);
+}
+
+[data-surface-style="liquid"] .glass,
+[data-surface-style="liquid"] .glass-elevated {
+  background-color: color-mix(in srgb, var(--color-surface-2) 30%, transparent);
+  background-image:
+    radial-gradient(ellipse 120% 150% at 0% 0%, rgba(255, 255, 255, 0.2), transparent 54%),
+    linear-gradient(115deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.035) 24%, transparent 50%, color-mix(in srgb, var(--color-accent) 8%, transparent) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 68%);
+  -webkit-backdrop-filter: blur(22px) saturate(1.65) contrast(1.06);
+  backdrop-filter: blur(22px) saturate(1.65) contrast(1.06);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.48),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 8px 24px -18px rgba(0, 0, 0, 0.45);
+}
+[data-surface-style="liquid"] .glass-elevated {
+  background-color: color-mix(in srgb, var(--color-surface-2) 38%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.56),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 24px 60px -12px rgba(0, 0, 0, 0.42),
+    0 0 30px -22px color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  [data-surface-style="liquid"] .glass,
+  [data-surface-style="liquid"] .glass-elevated {
+    background-color: var(--color-surface-2);
+    background-image: none;
+    box-shadow: inset 0 0 0 1px var(--color-border);
   }
 }
 
