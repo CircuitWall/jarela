@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getProvider } from "@/lib/providers";
+import { modelCapabilities } from "@/lib/providers/capabilities";
 import { listModelConfigs, getModelParams } from "@/lib/stores/model-config";
 import type { ProviderCatalogModel, ProviderParams } from "@/lib/providers/types";
 import { validateBody } from "@/lib/api/responses";
@@ -264,7 +265,8 @@ async function fetchAnthropicCatalog(overrides?: ProviderParams): Promise<Catalo
     } while (afterId);
 
     return models.map((model): CatalogModel => {
-      const vision = model.capabilities?.image_input?.supported ?? true;
+      const known = modelCapabilities("anthropic", model.id);
+      const vision = model.capabilities?.image_input?.supported ?? known.vision;
       return {
         id: model.id,
         context_length: model.max_input_tokens ?? getKnownContextLength("anthropic", model.id),
@@ -272,12 +274,12 @@ async function fetchAnthropicCatalog(overrides?: ProviderParams): Promise<Catalo
         hosted_on: "anthropic",
         capabilities: {
           vision,
-          tools: true,
-          streaming: true,
-          json_mode: model.capabilities?.structured_outputs?.supported ?? false,
-          web_search: model.capabilities?.server_tools?.web_search?.supported ?? true,
-          audio: false,
-          files: model.capabilities?.pdf_input?.supported ?? vision,
+          tools: known.tools,
+          streaming: known.streaming,
+          json_mode: model.capabilities?.structured_outputs?.supported ?? known.json_mode,
+          web_search: model.capabilities?.server_tools?.web_search?.supported ?? known.web_search,
+          audio: known.audio,
+          files: model.capabilities?.pdf_input?.supported ?? known.files,
         },
       };
     });
@@ -285,8 +287,12 @@ async function fetchAnthropicCatalog(overrides?: ProviderParams): Promise<Catalo
 }
 
 async function fetchGeminiCatalog(overrides?: ProviderParams): Promise<CatalogModel[]> {
-  return fetchConfiguredCatalog("gemini", overrides, async (_params, apiKey) => {
-    const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
+  return fetchConfiguredCatalog("gemini", overrides, async (params, apiKey) => {
+    const url = endpointUrl(
+      params.gemini_native_base_url,
+      "https://generativelanguage.googleapis.com/v1beta",
+      "/models",
+    );
     url.searchParams.set("pageSize", "1000");
     const models: Array<{
       name: string;
@@ -320,15 +326,7 @@ async function fetchGeminiCatalog(overrides?: ProviderParams): Promise<CatalogMo
           context_length: model.inputTokenLimit ?? getKnownContextLength("gemini", id),
           max_output_tokens: model.outputTokenLimit ?? getKnownMaxOutputTokens("gemini", id),
           hosted_on: "google",
-          capabilities: {
-            vision: true,
-            tools: true,
-            streaming: true,
-            json_mode: true,
-            web_search: true,
-            audio: true,
-            files: true,
-          },
+          capabilities: modelCapabilities("gemini", id),
         };
       })
       .filter((model): model is CatalogModel => model !== null)
@@ -353,20 +351,17 @@ async function fetchDeepseekCatalog(overrides?: ProviderParams): Promise<Catalog
       },
     });
     return (data.data ?? []).map((model): CatalogModel => {
-      const vision = model.input_modalities?.includes("image") ?? false;
+      const known = modelCapabilities("deepseek", model.id);
+      const vision = model.input_modalities?.includes("image") ?? known.vision;
       return {
         id: model.id,
         context_length: model.context_window ?? getKnownContextLength("deepseek", model.id),
         max_output_tokens: model.max_output_tokens ?? getKnownMaxOutputTokens("deepseek", model.id),
         hosted_on: "deepseek",
         capabilities: {
+          ...known,
           vision,
-          tools: true,
-          streaming: true,
-          json_mode: true,
-          web_search: false,
-          audio: model.input_modalities?.includes("audio") ?? false,
-          files: vision,
+          audio: model.input_modalities?.includes("audio") ?? known.audio,
         },
       };
     });
