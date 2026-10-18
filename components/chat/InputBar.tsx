@@ -366,7 +366,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
         )}
 
         <textarea
-          className="flex-1 resize-none bg-surface-3/60 text-fg text-sm rounded-xl px-3 py-2 border border-border/60 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent/40 placeholder:text-fg-faint max-h-[84px] min-h-[44px] transition-colors"
+          className="flex-1 min-w-0 resize-none bg-surface-3/60 text-fg text-sm rounded-xl px-3 py-2 border border-border/60 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent/40 placeholder:text-fg-faint max-h-[84px] min-h-[44px] transition-colors"
           ref={textareaRef}
           placeholder={placeholder ?? "Message…"}
           rows={1}

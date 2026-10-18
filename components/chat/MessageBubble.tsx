@@ -2040,7 +2040,7 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
         )}
       </div>
 
-      <div className={`flex flex-col min-w-0 ${containsImageAttachment ? "max-w-[calc(100%-2.25rem)] sm:max-w-[92%] md:max-w-[86%]" : "max-w-[88%] sm:max-w-[75%]"} ${isUser ? "items-end" : "items-start"}`}>
+      <div className={`flex flex-col min-w-0 ${!isUser ? "flex-1 items-start" : containsImageAttachment ? "max-w-[calc(100%-2.25rem)] sm:max-w-[92%] md:max-w-[86%] items-end" : "max-w-[calc(100%-2.25rem)] sm:max-w-[75%] items-end"}`}>
         {(timeLabel || messageId) && (
           <div className={`flex items-center gap-1 mb-0.5 px-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity ${isUser ? "flex-row-reverse" : ""}`}>
             {timeLabel && (
