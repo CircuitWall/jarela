@@ -163,35 +163,6 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     }
   }, [threadId]);
 
-  useEffect(() => {
-    if (!threadId) return;
-    const summaryFresh = hotSinceSeq !== null && warmSummaryBeforeSeq === hotSinceSeq;
-    const summaryStale = warmSummaryPending && hotSinceSeq !== null && !summaryFresh;
-    if (!summaryStale && !compactionPending && !manualCompactionPending) {
-      if (warmSummaryPending && hotSinceSeq !== null && summaryFresh) setWarmSummaryPending(false);
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setInterval(() => {
-      void api.threads.get(threadId).then((d) => {
-        if (cancelled) return;
-        applyThreadMeta(metaApplier, d);
-        const refreshedSummaryIsFresh = d.hot_since_seq != null
-          && d.warm_summary_before_seq === d.hot_since_seq;
-        if (!d.hot_since_seq || refreshedSummaryIsFresh) {
-          setWarmSummaryPending(false);
-        }
-      }).catch((err) => {
-        if (!cancelled) console.error("warm summary refresh poll failed", err);
-      });
-    }, 1600);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, warmSummaryPending, compactionPending, manualCompactionPending, hotSince, hotSinceSeq, warmSummaryBefore, warmSummaryBeforeSeq]);
-
   const loadOlder = useCallback(async () => {
     if (!threadId || loadingMore || !hasMore || messages.length === 0) return;
     setLoadingMore(true);

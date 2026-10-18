@@ -112,6 +112,9 @@ function readSnapshotSync(): { path: string; snapshot: PricingSnapshot | null; m
   try {
     const p = snapshotPath();
     const stat = statSync(p);
+    if (cached?.path === p && cached.mtimeMs === stat.mtimeMs) {
+      return { path: p, snapshot: null, mtimeMs: stat.mtimeMs };
+    }
     const raw = readFileSync(p, "utf8");
     return { path: p, snapshot: JSON.parse(raw) as PricingSnapshot, mtimeMs: stat.mtimeMs };
   } catch {

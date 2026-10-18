@@ -61,6 +61,7 @@ import type {
   ToolConfigSlotInfo,
   TaskAssignment,
   ThreadDetail,
+  ThreadMetadata,
   ThreadSummary,
   UserProfile,
   BuiltinToolCategoryInfo,
@@ -716,6 +717,8 @@ export const api = {
       const qs = p.toString() ? `?${p}` : "";
       return request<ThreadDetail>(`/threads/${thread_id}${qs}`);
     },
+    metadata: (thread_id: string, signal?: AbortSignal) =>
+      request<ThreadMetadata>(`/threads/${thread_id}?view=metadata`, { signal }),
     delete: (thread_id: string) =>
       request<{ deleted: boolean }>(`/threads/${thread_id}`, { method: "DELETE" }),
     // What the thread is doing now (run phase, queued turns, compaction).

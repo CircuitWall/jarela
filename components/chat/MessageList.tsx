@@ -76,8 +76,9 @@ const ALL_FILTERS_SHOWN: Record<MessageFilterKey, boolean> = Object.fromEntries(
   MESSAGE_FILTER_KEYS.map((k) => [k, true]),
 ) as Record<MessageFilterKey, boolean>;
 const NO_CHANNEL_SUMMARIES: WarmChannelSummary[] = [];
+const NOOP = () => {};
 
-export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries = NO_CHANNEL_SUMMARIES, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = () => {}, onResetFilters: reset = () => {} }: Props) {
+export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries = NO_CHANNEL_SUMMARIES, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = NOOP, onResetFilters: reset = NOOP }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -102,6 +103,10 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   const [pendingHotSinceSeq, setPendingHotSinceSeq] = useState<number | null>(null);
   const [topControlsOpen, setTopControlsOpen] = useState(false);
   const [summaryPopoverOpen, setSummaryPopoverOpen] = useState(false);
+  const hasStreamingContent = !!streamingContent;
+  const hasThinkingContent = !!thinkingContent;
+  const hasLiveToolEvents = !!toolEvents?.length;
+  const hidePersistedDraft = !!streaming || hasStreamingContent;
 
   const retryWorkflowStep = useMemo(
     () => onRetryMessage
@@ -116,7 +121,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   // they're handled below by gating the inline ToolList / ThinkingLine.
   const visibleMessages = useMemo(() => {
     return messages.filter((m) => {
-      if (m.role === "assistant" && m.transcript_status === "in_progress" && (streaming || !!streamingContent)) return false;
+      if (m.role === "assistant" && m.transcript_status === "in_progress" && hidePersistedDraft) return false;
       const cat = m.category;
       if (!cat) return true;
       if (cat === "scheduled_task") return filters.scheduled_task;
@@ -129,7 +134,53 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
       // never silently drop content the server thinks should be visible.
       return true;
     });
-  }, [messages, streaming, streamingContent, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
+  }, [messages, hidePersistedDraft, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
+
+  const historyRows = useMemo(() => {
+    const attachedActivities = new Map<string, AutomationActivityMetadata>();
+    const hiddenActivityIds = new Set<string>();
+    for (let i = 0; i < visibleMessages.length - 1; i++) {
+      const activityMessage = visibleMessages[i];
+      const activity = activityMessage.metadata?.automation_activity;
+      if (!activity) continue;
+      const related = visibleMessages[i + 1];
+      const matches = !related.metadata?.automation_activity && (
+        activity.source_kind === "bridge"
+          ? related.role === "user"
+            && related.metadata?.bridge_conversation?.key === activity.source_id
+          : related.role === "assistant" && related.category === activity.source_kind
+      );
+      if (!matches) continue;
+      attachedActivities.set(related.id, activity);
+      hiddenActivityIds.add(activityMessage.id);
+    }
+    const segmentsById = new Map(steeredSegments?.map((segment) => [segment.id, segment]));
+    let previousRole: Message["role"] | null = null;
+    return visibleMessages.map((msg, i) => {
+      if (hiddenActivityIds.has(msg.id)) return null;
+      const startsTurn = previousRole == null || previousRole !== msg.role;
+      previousRole = msg.role;
+      const steeredSegment = segmentsById.get(msg.id);
+      return (
+        <HistoryRow
+          key={msg.id}
+          message={msg}
+          steeredSegment={steeredSegment}
+          segmentShowAvatar={i === 0 || visibleMessages[i - 1].role !== "assistant"}
+          attachedActivity={attachedActivities.get(msg.id)}
+          startsTurn={startsTurn}
+          separated={startsTurn && i > 0}
+          threadId={threadId ?? null}
+          agentConfig={agentConfig}
+          userProfile={userProfile}
+          showToolEvents={filters.tool_use}
+          contextWindowTokens={contextWindowTokens ?? null}
+          isLatest={i === visibleMessages.length - 1 && !hasStreamingContent}
+          onRetry={onRetryMessage}
+        />
+      );
+    });
+  }, [visibleMessages, steeredSegments, threadId, agentConfig, userProfile, filters.tool_use, contextWindowTokens, hasStreamingContent, onRetryMessage]);
 
   const hiddenCount = messages.length - visibleMessages.length;
   const effectiveHotSinceSeq = hotSinceSeq ?? null;
@@ -536,7 +587,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   // perceive this as "chat is empty". Auto-reset once per thread snapshot so
   // content remains visible without requiring manual recovery.
   useEffect(() => {
-    if (messages.length === 0 || streamingContent) return;
+    if (messages.length === 0 || hasStreamingContent) return;
     if (visibleMessages.length > 0) return;
     if (hiddenCount !== messages.length) return;
     const lastId = messages[messages.length - 1]?.id ?? "none";
@@ -544,7 +595,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
     if (autoRecoveredRef.current === key) return;
     autoRecoveredRef.current = key;
     reset();
-  }, [threadId, messages, visibleMessages.length, hiddenCount, streamingContent, reset]);
+  }, [threadId, messages, visibleMessages.length, hiddenCount, hasStreamingContent, reset]);
 
   // Surface a category chip in the toolbar only if it can actually do
   // something useful right now: scheduled_task/bridge/synthetic chips
@@ -563,10 +614,10 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
       else if (m.category === "synthetic") set.add("synthetic");
       if (m.tool_events && m.tool_events.length > 0) set.add("tool_use");
     }
-    if (thinkingContent) set.add("thinking");
-    if (toolEvents && toolEvents.length > 0) set.add("tool_use");
+    if (hasThinkingContent) set.add("thinking");
+    if (hasLiveToolEvents) set.add("tool_use");
     return MESSAGE_FILTER_KEYS.filter((k) => set.has(k));
-  }, [messages, thinkingContent, toolEvents]);
+  }, [messages, hasThinkingContent, hasLiveToolEvents]);
 
   // Tracks whether the user was at the bottom on the most recent scroll event.
   // After every render, if true, we snap to bottom — which means: while the
@@ -920,30 +971,6 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
         // "+ N more we don't know about yet" — older pages are likely unloaded.
         const olderCountLabel = olderInVisible + (hasMore ? 1 : 0);
 
-        const attachedActivities = new Map<string, AutomationActivityMetadata>();
-        const hiddenActivityIds = new Set<string>();
-        for (let i = 0; i < visibleMessages.length - 1; i++) {
-          const activityMessage = visibleMessages[i];
-          const activity = activityMessage.metadata?.automation_activity;
-          if (!activity) continue;
-          const related = visibleMessages[i + 1];
-          const matches = !related.metadata?.automation_activity && (
-            activity.source_kind === "bridge"
-              ? related.role === "user"
-                && related.metadata?.bridge_conversation?.key === activity.source_id
-              : related.role === "assistant" && related.category === activity.source_kind
-          );
-          if (!matches) continue;
-          attachedActivities.set(related.id, activity);
-          hiddenActivityIds.add(activityMessage.id);
-        }
-        const previousVisibleRoles = new Map<string, Message["role"] | null>();
-        let previousVisibleRole: Message["role"] | null = null;
-        for (const message of visibleMessages) {
-          previousVisibleRoles.set(message.id, previousVisibleRole);
-          if (!hiddenActivityIds.has(message.id)) previousVisibleRole = message.role;
-        }
-
         const renderBoundary = (key: string) => (
           <div
             key={key}
@@ -969,54 +996,12 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
           </div>
         );
 
-        const nodes = visibleMessages.flatMap((msg, i) => {
-          const out = [] as React.ReactNode[];
-          if (hasBoundary && !pinAfterAll && i === boundaryIndex) {
-            out.push(renderBoundary(`boundary-${msg.id}`));
-          }
-          if (hiddenActivityIds.has(msg.id)) return out;
-          const previousRole = previousVisibleRoles.get(msg.id);
-          const startsTurn = previousRole == null || previousRole !== msg.role;
-          const steeredSegment = steeredSegments?.find((segment) => segment.id === msg.id);
-          if (steeredSegment) {
-            out.push(
-              <StreamingBubble
-                key={`steered-${steeredSegment.id}`}
-                content={steeredSegment.content}
-                threadId={threadId ?? null}
-                agentConfig={agentConfig ?? null}
-                showAvatar={i === 0 || visibleMessages[i - 1].role !== "assistant"}
-              />,
-            );
-          }
-          out.push(
-            <div
-              key={msg.id}
-              id={typeof msg.seq === "number" ? String(msg.seq) : `msg-${msg.id}`}
-              data-message-id={msg.id}
-              data-hot-candidate="1"
-              data-message-seq={msg.seq}
-              data-created-at={msg.created_at}
-              className={startsTurn && i > 0 ? "mt-3" : undefined}
-            >
-              <MessageBubble
-                message={msg}
-                attachedActivity={attachedActivities.get(msg.id)}
-                threadId={threadId ?? null}
-                agentConfig={agentConfig}
-                userProfile={userProfile}
-                showAvatar={startsTurn}
-                showToolEvents={filters.tool_use}
-                contextWindowTokens={contextWindowTokens ?? null}
-                isLatest={i === visibleMessages.length - 1 && !streamingContent}
-                onRetry={onRetryMessage}
-              />
-            </div>,
-          );
-          return out;
-        });
-        if (hasBoundary && pinAfterAll) nodes.push(renderBoundary("boundary-tail"));
-        return nodes;
+        if (!hasBoundary) return historyRows;
+        return [
+          ...historyRows.slice(0, boundaryIndex),
+          renderBoundary(pinAfterAll ? "boundary-tail" : `boundary-${visibleMessages[boundaryIndex].id}`),
+          ...historyRows.slice(boundaryIndex),
+        ];
       })()}
       <LiveTurnActivity
         thinkingContent={thinkingContent}
@@ -1240,11 +1225,60 @@ function LiveTurnActivity({
   );
 }
 
-// Streaming-bubble wrapper. Wraps the in-flight assistant bubble so the
-// `message` object passed to MessageBubble keeps a stable identity across
-// renders that don't actually change the streaming text — without this
-// the inline `{ role, content, streaming: true }` literal in the parent
-// JSX would defeat MessageBubble's React.memo on every parent re-render.
+const HistoryRow = memo(function HistoryRow({
+  message, steeredSegment, segmentShowAvatar, attachedActivity, startsTurn, separated,
+  threadId, agentConfig, userProfile, showToolEvents, contextWindowTokens, isLatest, onRetry,
+}: {
+  message: Message;
+  steeredSegment?: SteeredSegment;
+  segmentShowAvatar: boolean;
+  attachedActivity?: AutomationActivityMetadata;
+  startsTurn: boolean;
+  separated: boolean;
+  threadId: string | null;
+  agentConfig?: AgentConfig | null;
+  userProfile?: UserProfile | null;
+  showToolEvents: boolean;
+  contextWindowTokens: number | null;
+  isLatest: boolean;
+  onRetry?: Props["onRetryMessage"];
+}) {
+  return (
+    <>
+      {steeredSegment && (
+        <StreamingBubble
+          content={steeredSegment.content}
+          threadId={threadId}
+          agentConfig={agentConfig ?? null}
+          showAvatar={segmentShowAvatar}
+        />
+      )}
+      <div
+        id={typeof message.seq === "number" ? String(message.seq) : `msg-${message.id}`}
+        data-message-id={message.id}
+        data-hot-candidate="1"
+        data-message-seq={message.seq}
+        data-created-at={message.created_at}
+        className={separated ? "mt-3" : undefined}
+      >
+        <MessageBubble
+          message={message}
+          attachedActivity={attachedActivity}
+          threadId={threadId}
+          agentConfig={agentConfig}
+          userProfile={userProfile}
+          showAvatar={startsTurn}
+          showToolEvents={showToolEvents}
+          contextWindowTokens={contextWindowTokens}
+          isLatest={isLatest}
+          onRetry={onRetry}
+        />
+      </div>
+    </>
+  );
+});
+
+// Keep the synthetic message identity stable when only the parent updates.
 const StreamingBubble = memo(function StreamingBubble({
   content,
   threadId,

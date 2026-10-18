@@ -59,6 +59,12 @@ Read messages (paged or "after a marker") for one thread. `before`/`after`
 are message `seq` values (the server-assigned monotonic order), not
 timestamps — pass the `seq` of the oldest/newest message you already have.
 
+Pass `view=metadata` to read only thread metadata, context boundaries, summaries,
+and activity, without querying or serializing messages or their usage snapshots.
+This response omits `messages` and `has_more`. The default `view=messages`
+preserves the full paged response. Unknown views return HTTP 400.
+Both views use `Cache-Control: no-store` so live state stays current.
+
 ### `PATCH /api/v1/threads/[thread_id]`
 
 Rename or rebind the thread to a different agent.

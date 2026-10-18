@@ -378,9 +378,7 @@ export interface MessageUsage {
   cost_usd: number | null;
 }
 
-export interface ThreadDetail extends ThreadSummary {
-  messages: Message[];
-  has_more: boolean;
+export interface ThreadMetadata extends ThreadSummary {
   // Effective context-window size (in tokens) for this thread's current
   // agent + model config. Used by the chat UI to scale the per-turn
   // context-usage bar against the same cap the agent applies at run time.
@@ -414,6 +412,11 @@ export interface ThreadDetail extends ThreadSummary {
   manual_compaction_pending?: boolean;
   activity?: ThreadActivity;
   warm_channel_summaries?: WarmChannelSummary[];
+}
+
+export interface ThreadDetail extends ThreadMetadata {
+  messages: Message[];
+  has_more: boolean;
 }
 
 /** What a thread is doing right now — GET /threads/:id/activity. */

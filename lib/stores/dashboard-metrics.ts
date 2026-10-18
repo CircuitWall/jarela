@@ -12,6 +12,16 @@ import {
 
 const CHARS_PER_TOKEN = 4;
 const DEFAULT_WINDOW_DAYS = 30;
+const METRICS_CACHE_MS = 5_000;
+
+let metricsCache: {
+  db: ReturnType<typeof getDb>;
+  changes: number;
+  dataVersion: number;
+  tables: PricingTables;
+  createdAt: number;
+  metrics: DashboardMetrics;
+} | null = null;
 
 export interface DashboardTierTokens {
   hot_tokens: number;
@@ -256,10 +266,25 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   const now = new Date();
   const boundedDays = Number.isFinite(days) ? Math.min(120, Math.max(7, Math.floor(days))) : DEFAULT_WINDOW_DAYS;
   const since = new Date(now.getTime() - (boundedDays * 24 * 60 * 60 * 1000)).toISOString();
+  const db = getDb();
+  const tables = getPricingTables();
+  // total_changes covers this connection; data_version covers other writers.
+  const { changes } = db.prepare("SELECT total_changes() AS changes").get() as { changes: number };
+  const { data_version: dataVersion } = db.prepare("PRAGMA data_version").get() as { data_version: number };
+  if (metricsCache?.db === db && metricsCache.changes === changes
+    && metricsCache.dataVersion === dataVersion && metricsCache.tables === tables
+    && metricsCache.metrics.days === boundedDays
+    && metricsCache.metrics.generated_at.slice(0, 10) === now.toISOString().slice(0, 10)
+    && now.getTime() - metricsCache.createdAt >= 0
+    && now.getTime() - metricsCache.createdAt < METRICS_CACHE_MS) {
+    return metricsCache.metrics;
+  }
 
-  const usageRows = getDb()
+  const usageRows = db
     .prepare(
-      `SELECT m.created_at, m.role, m.content, m.tool_events, m.thread_id, t.agent_id,
+      `SELECT m.created_at, m.role,
+              CASE WHEN mu.input_tokens IS NULL THEN m.content ELSE '' END AS content,
+              m.tool_events, m.thread_id, t.agent_id,
               a.name AS agent_name, mc.provider AS provider,
               mc.model_id AS model_id,
                   COALESCE(ta.model_config_name, a.model_config_name, dmc.name) AS model_config_name,
@@ -313,7 +338,6 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     }
   }
 
-  const tables = getPricingTables();
   const { byProvider, generatedAt } = tables;
   const dayMap = seedDayBuckets(now, boundedDays);
   const agentMap = new Map<string, AgentBucket>();
@@ -645,7 +669,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     };
   }
 
-  return {
+  const metrics: DashboardMetrics = {
     generated_at: now.toISOString(),
     days: boundedDays,
     summary: {
@@ -701,6 +725,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       notes: "Dashboard cost is recalculated from captured provider token usage and the latest matching rates. The original per-turn cost snapshots remain unchanged; legacy rows use content-length token estimates.",
     },
   };
+  metricsCache = { db, changes, dataVersion, tables, createdAt: now.getTime(), metrics };
+  return metrics;
 }
 
 function seedDayBuckets(now: Date, days: number): Map<string, DayBucket> {
