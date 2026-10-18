@@ -25,15 +25,16 @@ for (const selectedThread of [false, true]) {
     const reads = new Map<string, number>();
     page.on("request", (request) => {
       const url = new URL(request.url());
-      if (request.method() === "GET" && paths.includes(url.pathname) && !url.search) {
+      const transcriptDelta = url.pathname === paths[3] && url.searchParams.has("after");
+      if (request.method() === "GET" && paths.includes(url.pathname) && (!url.search || transcriptDelta)) {
         reads.set(url.pathname, (reads.get(url.pathname) ?? 0) + 1);
       }
     });
     await page.goto(selectedThread ? `/?agent=${agent}&thread=${thread.thread_id}` : "/");
     await waitForAppReady(page);
     await expect(page.getByPlaceholder("Message…")).toBeEnabled();
-    // Boot and chat share the initial page. The idle stream's completion
-    // deliberately requests one fresh page, rather than reusing startup data.
+    // Boot and chat share the initial page. Idle completion requests fresh
+    // data, optionally using an after cursor when confirmed rows are available.
     await expect.poll(() => reads.get(paths[3])).toBe(2);
     for (const path of paths.slice(0, 2)) expect(reads.get(path), path).toBe(1);
     expect(reads.get(paths[2]) ?? 0).toBe(selectedThread ? 0 : 1);
