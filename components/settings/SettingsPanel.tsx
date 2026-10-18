@@ -92,7 +92,7 @@ export function SettingsPanel() {
   }));
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col">
       <SubTabBar
         ariaLabel="Settings sub-section"
         tabs={tabItems}
@@ -120,7 +120,7 @@ export function SettingsPanel() {
 // future change to either panel without touching this file.
 function PrivacySecurityPanel() {
   return (
-    <div className="h-full overflow-y-auto no-scrollbar max-w-lg mx-auto w-full px-4 py-3">
+    <div className="h-full w-full overflow-y-auto px-4 py-3 no-scrollbar">
       <SettingsGroup defaultOpenId="pin">
         <SecurityPanel />
         <RedactionPanel />

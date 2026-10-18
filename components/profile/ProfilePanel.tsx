@@ -42,7 +42,7 @@ export function ProfilePanel() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col">
       <PanelHeader icon={<User size={14} />} title="Profile">
         {isEssential && (
           <button
@@ -56,7 +56,7 @@ export function ProfilePanel() {
           </button>
         )}
       </PanelHeader>
-      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar max-w-lg mx-auto w-full">
+      <div ref={containerRef} className="min-h-0 flex-1 overflow-y-auto no-scrollbar">
         <ProfileEditor />
       </div>
     </div>
