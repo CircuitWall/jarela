@@ -32,11 +32,11 @@ for (const selectedThread of [false, true]) {
     await page.goto(selectedThread ? `/?agent=${agent}&thread=${thread.thread_id}` : "/");
     await waitForAppReady(page);
     await expect(page.getByPlaceholder("Message…")).toBeEnabled();
-    for (const path of paths.slice(0, 2)) expect(reads.get(path), path).toBe(1);
-    expect(reads.get(paths[2]) ?? 0).toBe(selectedThread ? 0 : 1);
     // Boot and chat share the initial page. The idle stream's completion
     // deliberately requests one fresh page, rather than reusing startup data.
-    expect(reads.get(paths[3])).toBe(2);
+    await expect.poll(() => reads.get(paths[3])).toBe(2);
+    for (const path of paths.slice(0, 2)) expect(reads.get(path), path).toBe(1);
+    expect(reads.get(paths[2]) ?? 0).toBe(selectedThread ? 0 : 1);
   });
 }
 
