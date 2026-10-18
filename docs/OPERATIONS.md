@@ -47,6 +47,31 @@ The Tasks view separates scheduled tasks from event-driven tasks so each kind of
 
 Chat is the per-agent workspace for conversations and their results. Keep related follow-up work in the same thread so its existing context remains available.
 
+At agent startup, the picker and chat share in-flight profile, agent config,
+thread resolution, and recent-message reads. Successful startup responses are
+reused for up to five seconds, with at most 16 entries retained in browser
+memory. Explicit thread links warm the selected conversation instead of the
+default one. Normal refreshes and pagination remain fresh; client writes and
+run submissions invalidate startup data. This warmup makes no provider calls
+and does not preload other agents or the full conversation history.
+
+To time local embedding inference and memory search without opening user data
+or calling a remote provider, install the local model first, then run in
+PowerShell:
+
+```powershell
+$env:JARELA_BENCHMARK_EMBEDDINGS = "1"
+npm test -- lib\embeddings\performance.test.ts --silent=false --reporter=verbose
+Remove-Item Env:\JARELA_BENCHMARK_EMBEDDINGS
+```
+
+The opt-in benchmark disables model downloads and uses an in-memory SQLite
+database. It reports cold pipeline initialization, warm inference, embedding
+cache hits, and searches over 1,000 and 10,000 synthetic vectors. Repeated
+vectors stress broad-match scanning/ranking rather than retrieval quality;
+timings exclude HTTP transport and remote-provider latency. Cold cases have
+one sample, so their p95 is not a statistically meaningful tail estimate.
+
 Live context-summary polling reads metadata only, pauses while the page is
 hidden, and waits for each request to finish before scheduling the next.
 Historical chat rows are reused during streamed token updates; message edits,

@@ -10,6 +10,36 @@ test.beforeEach(async ({ request }) => {
   await seedMockAgent(request);
 });
 
+for (const selectedThread of [false, true]) {
+  test(`first agent load shares startup reads (${selectedThread ? "selected thread" : "default thread"})`, async ({ page, request }) => {
+    const { agent } = await seedMockAgent(request);
+    const threadResponse = await request.get(`/api/v1/agents/${agent}/thread`);
+    expect(threadResponse.ok()).toBeTruthy();
+    const thread = await threadResponse.json() as ThreadSummary;
+    const paths = [
+      "/api/v1/profile",
+      `/api/v1/agents/${agent}`,
+      `/api/v1/agents/${agent}/thread`,
+      `/api/v1/threads/${thread.thread_id}`,
+    ];
+    const reads = new Map<string, number>();
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (request.method() === "GET" && paths.includes(url.pathname) && !url.search) {
+        reads.set(url.pathname, (reads.get(url.pathname) ?? 0) + 1);
+      }
+    });
+    await page.goto(selectedThread ? `/?agent=${agent}&thread=${thread.thread_id}` : "/");
+    await waitForAppReady(page);
+    await expect(page.getByPlaceholder("Message…")).toBeEnabled();
+    for (const path of paths.slice(0, 2)) expect(reads.get(path), path).toBe(1);
+    expect(reads.get(paths[2]) ?? 0).toBe(selectedThread ? 0 : 1);
+    // Boot and chat share the initial page. The idle stream's completion
+    // deliberately requests one fresh page, rather than reusing startup data.
+    expect(reads.get(paths[3])).toBe(2);
+  });
+}
+
 test("composer sends a message and the mock reply renders", async ({ page }) => {
   await page.goto("/");
 

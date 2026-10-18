@@ -4838,3 +4838,6 @@ GitHub Release workflow failed (broken `INSTALL.md` path); superseded by
 ## [0.1.0] - 2026-05-23
 
 Initial Docker Hub publication: `andrewgewu/jarela:0.1.0` (multi-arch).
+- Reuse short-lived startup reads between the agent picker and chat so the
+  first agent load warms profile, configuration, and conversation data without
+  duplicate requests. Writes and run submissions invalidate the handoff.

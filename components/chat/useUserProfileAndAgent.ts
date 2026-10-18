@@ -18,7 +18,12 @@ export function useUserProfileAndAgent(agentId: string | null): Result {
 
   useEffect(() => {
     setProfileLoading(true);
-    api.profile.get().then(setUserProfile).catch(console.error).finally(() => setProfileLoading(false));
+    let cancelled = false;
+    api.profile.get({ startup: true })
+      .then((profile) => { if (!cancelled) setUserProfile(profile); })
+      .catch((error) => { if (!cancelled) console.error(error); })
+      .finally(() => { if (!cancelled) setProfileLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -27,8 +32,14 @@ export function useUserProfileAndAgent(agentId: string | null): Result {
       setAgentConfigLoading(false);
       return;
     }
+    let cancelled = false;
+    setAgentConfig(null);
     setAgentConfigLoading(true);
-    api.agents.get(agentId).then(setAgentConfig).catch(console.error).finally(() => setAgentConfigLoading(false));
+    api.agents.get(agentId, { startup: true })
+      .then((config) => { if (!cancelled) setAgentConfig(config); })
+      .catch((error) => { if (!cancelled) console.error(error); })
+      .finally(() => { if (!cancelled) setAgentConfigLoading(false); });
+    return () => { cancelled = true; };
   }, [agentId]);
 
   return { userProfile, profileLoading, agentConfig, agentConfigLoading };
