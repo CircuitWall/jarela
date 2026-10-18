@@ -24,6 +24,11 @@ Advanced settings are grouped into tabs for **Credentials**, **Models**, **Priva
 
 The Dashboard summarizes token use, estimated cost, cache activity, and tool reliability over a selectable time window. It also includes daily trends and model/provider breakdowns. Cost figures are estimates based on the configured pricing data, not billing statements.
 
+Repeated dashboard computations reuse the last result for up to five seconds
+when the database, pricing snapshot, date, and selected window are unchanged.
+Database writes or pricing changes invalidate that server-side result. The
+existing browser response cache can retain metrics for up to 30 seconds.
+
 ![Jarela usage dashboard with token, cost, and tool reliability summaries](assets/operations-dashboard.png)
 
 ## Inspect tools
@@ -42,4 +47,31 @@ The Tasks view separates scheduled tasks from event-driven tasks so each kind of
 
 Chat is the per-agent workspace for conversations and their results. Keep related follow-up work in the same thread so its existing context remains available.
 
+Live context-summary polling reads metadata only, pauses while the page is
+hidden, and waits for each request to finish before scheduling the next.
+Historical chat rows are reused during streamed token updates; message edits,
+filters, context boundaries, and load-older navigation still update normally.
+
 ![Jarela chat showing an agent conversation](assets/operations-chat.png)
+
+## Database performance
+
+SQLite uses WAL mode. On upgrade, Jarela automatically creates indexes matching
+message sequence pagination, dashboard date windows, thread-list ordering,
+latest usage snapshots, memory lists, background retention, and signal cleanup
+(see [ADR-0103](adr/0103-responsive-transcript-query-indexes.md)). An existing
+large database may take longer on its first startup while those indexes build.
+No manual migration, database relocation, or durability-setting changes are
+needed.
+
+Lease recovery also has dedicated deadline indexes. The embedding queue finds
+its next wakeup using indexed minima instead of scanning every pending or
+processing job. Existing agent uniqueness and checkpoint primary-key indexes
+are reused rather than duplicated. Leading-wildcard memory searches still
+require checking candidate values; ordinary indexes do not accelerate substring
+matching itself.
+
+For a repeatable synthetic comparison, run
+`node scripts/benchmark-database-reads.mjs`. It uses only an in-memory database,
+checks that results are unchanged, and reports median timings and query plans
+before and after the indexes. These timings are not a live-workload guarantee.

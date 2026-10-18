@@ -35,6 +35,9 @@ export function runMigrations(db: DatabaseSync): void {
     -- (getMessages, getRecentMessagesWindow, getMessagesPage, clear).
     -- Without this every read full-scans the messages table.
     CREATE INDEX IF NOT EXISTS idx_messages_thread_id ON messages(thread_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_messages_thread_seq ON messages(thread_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_threads_updated ON threads(updated_at DESC);
     CREATE TABLE IF NOT EXISTS runtime_operations (
       id TEXT PRIMARY KEY,
       kind TEXT NOT NULL,
@@ -58,6 +61,9 @@ export function runMigrations(db: DatabaseSync): void {
       created_at INTEGER NOT NULL,
       UNIQUE(kind,operation_id,agent_id,thread_id)
     );
+    CREATE INDEX IF NOT EXISTS idx_runtime_operations_thread_state ON runtime_operations(thread_id,state);
+    CREATE INDEX IF NOT EXISTS idx_signal_events_thread ON signal_events(thread_id);
+    CREATE INDEX IF NOT EXISTS idx_signal_events_operation ON signal_events(operation_id);
     CREATE TABLE IF NOT EXISTS signal_deliveries (
       event_id TEXT PRIMARY KEY REFERENCES signal_events(id) ON DELETE CASCADE,
       wake_eligible INTEGER NOT NULL DEFAULT 0,
@@ -72,6 +78,7 @@ export function runMigrations(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS idx_signal_events_target ON signal_events(agent_id,thread_id,seq);
     CREATE INDEX IF NOT EXISTS idx_signal_deliveries_due ON signal_deliveries(state,available_at);
+    CREATE INDEX IF NOT EXISTS idx_signal_deliveries_lease ON signal_deliveries(state,lease_until);
     CREATE TABLE IF NOT EXISTS background_tool_results (
       key TEXT PRIMARY KEY REFERENCES runtime_operations(id) ON DELETE CASCADE,
       thread_id TEXT NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
@@ -83,6 +90,7 @@ export function runMigrations(db: DatabaseSync): void {
       expires_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_background_results_owner ON background_tool_results(thread_id,expires_at);
+    CREATE INDEX IF NOT EXISTS idx_background_results_expiry ON background_tool_results(expires_at);
     CREATE TABLE IF NOT EXISTS memory_store (
       namespace  TEXT NOT NULL,
       key        TEXT NOT NULL,
@@ -91,6 +99,8 @@ export function runMigrations(db: DatabaseSync): void {
       updated_at TEXT NOT NULL,
       PRIMARY KEY (namespace, key)
     );
+    CREATE INDEX IF NOT EXISTS idx_memory_namespace_updated ON memory_store(namespace,updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_memory_updated ON memory_store(updated_at DESC);
     CREATE TABLE IF NOT EXISTS model_configs (
       name       TEXT PRIMARY KEY,
       provider   TEXT NOT NULL,
@@ -660,6 +670,7 @@ function ensureMessageUsageTable(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS idx_message_usage_created_at ON message_usage(created_at);
     CREATE INDEX IF NOT EXISTS idx_message_usage_agent_id   ON message_usage(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_message_usage_thread_created ON message_usage(thread_id,created_at DESC);
   `);
 }
 
@@ -703,6 +714,8 @@ function ensureMessageEmbeddingJobsTable(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS idx_message_embedding_jobs_due
       ON message_embedding_jobs(state, available_at_ms, lease_until_ms);
+    CREATE INDEX IF NOT EXISTS idx_message_embedding_jobs_lease
+      ON message_embedding_jobs(state, lease_until_ms);
     INSERT OR IGNORE INTO message_embedding_jobs (message_id, created_at, updated_at)
       SELECT msg_id, created_at, created_at FROM messages WHERE embedding IS NULL;
   `);

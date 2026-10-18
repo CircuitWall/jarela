@@ -4,14 +4,16 @@ import { render, screen, fireEvent, within, waitFor } from "@testing-library/rea
 import { MessageList } from "./MessageList";
 import type { Message } from "@/api/types";
 
+const renderCounts = vi.hoisted(() => new Map<string, number>());
 vi.mock("./MessageBubble", () => ({
   MessageBubble: ({ message, attachedActivity, showAvatar }: {
-    message: Pick<Message, "content">;
+    message: Pick<Message, "id" | "content">;
     attachedActivity?: { source_kind: string };
     showAvatar?: boolean;
-  }) => (
-    <div data-activity-kind={attachedActivity?.source_kind} data-show-avatar={String(showAvatar)}>{message.content}</div>
-  ),
+  }) => {
+    renderCounts.set(message.id, (renderCounts.get(message.id) ?? 0) + 1);
+    return <div data-activity-kind={attachedActivity?.source_kind} data-show-avatar={String(showAvatar)}>{message.content}</div>;
+  },
 }));
 
 vi.mock("./ToolList", () => ({
@@ -65,6 +67,45 @@ function installPointerCapture(button: HTMLButtonElement) {
 }
 
 describe("MessageList conversation focus", () => {
+  it("does not re-render historical rows as streaming tokens or thinking arrive", () => {
+    renderCounts.clear();
+    const messages = [
+      mkMessage("history1", "user", "earlier prompt", "2026-10-18T08:00:00.000Z"),
+      mkMessage("history2", "assistant", "earlier answer", "2026-10-18T08:00:01.000Z"),
+    ];
+    const { rerender } = render(
+      <MessageList messages={messages} streaming streamingContent="A" thinkingContent="thinking" />,
+    );
+    const firstCounts = messages.map((m) => renderCounts.get(m.id));
+    rerender(<MessageList messages={messages} streaming streamingContent="A longer reply" thinkingContent="more thinking" />);
+    expect(messages.map((m) => renderCounts.get(m.id))).toEqual(firstCounts);
+    expect(screen.getByText("A longer reply")).toBeTruthy();
+  });
+
+  it("updates history when a persisted message changes", () => {
+    const messages = [mkMessage("history3", "assistant", "before edit", "2026-10-18T08:00:00.000Z")];
+    const { rerender } = render(<MessageList messages={messages} />);
+    rerender(<MessageList messages={[{ ...messages[0], content: "after edit" }]} />);
+    expect(screen.getByText("after edit")).toBeTruthy();
+    expect(screen.queryByText("before edit")).toBeNull();
+  });
+
+  it("preserves historical message nodes when the context boundary moves", () => {
+    const messages = [
+      mkMessage("history4", "user", "first message", "2026-10-18T08:00:00.000Z"),
+      mkMessage("history5", "assistant", "second message", "2026-10-18T08:00:01.000Z"),
+    ];
+    const { container, rerender } = render(<MessageList messages={messages} hotSinceSeq={4} />);
+    const first = container.querySelector('[data-message-id="history4"]');
+    const second = container.querySelector('[data-message-id="history5"]');
+    rerender(<MessageList messages={messages} hotSinceSeq={5} />);
+    expect(container.querySelector('[data-message-id="history4"]')).toBe(first);
+    expect(container.querySelector('[data-message-id="history5"]')).toBe(second);
+    const boundary = container.querySelector("[data-focus-boundary='1']");
+    expect(first!.compareDocumentPosition(boundary!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(boundary!.compareDocumentPosition(second!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it.each([
     ["bridge", "bridge-1:chat-1", "user", "bridge", { bridge_conversation: { key: "bridge-1:chat-1" } }],
     ["scheduled_task", "task-1", "assistant", "scheduled_task", undefined],

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Speed up chat pagination, dashboard date windows, and thread lists with
+  automatically created SQLite indexes. The first startup after upgrading a
+  large database may take longer while indexes build.
+- Index latest usage, memory ordering, signal cleanup, background retention,
+  and expired leases; find the next embedding wakeup with indexed lookups
+  instead of scanning the active queue.
+- Reduce chat refresh work with metadata-only, visibility-aware polling and
+  reuse historical message rows during streaming updates.
+- Reuse unchanged dashboard computations briefly, avoid loading snapshotted
+  message bodies for token estimates, and skip rereading unchanged pricing
+  snapshots. Database writes and pricing changes invalidate server-side metrics.
+
 ## [2.4.0] - 2026-10-16
 
 ### Added

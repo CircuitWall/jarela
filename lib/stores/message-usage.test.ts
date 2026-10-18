@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-message-usage-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { recordMessageUsage, getMessageUsageByIds } = await import("./message-usage");
+const { recordMessageUsage, getMessageUsageByIds, getLatestMessageUsageForThread } = await import("./message-usage");
+const { getDb } = await import("@/lib/db");
 const getMessageUsage = (id: string) => getMessageUsageByIds([id]).get(id) ?? null;
 
 afterAll(() => {
@@ -14,6 +15,25 @@ afterAll(() => {
 });
 
 describe("message_usage snapshot store (ADR-0041)", () => {
+  it("returns the latest usage for only the requested thread", () => {
+    const db = getDb();
+    for (const [id, thread, timestamp] of [
+      ["ordered-old", "ordered-thread", "2026-10-01T00:00:00.000Z"],
+      ["ordered-other", "other-thread", "2026-10-18T00:00:00.000Z"],
+      ["ordered-new", "ordered-thread", "2026-10-10T00:00:00.000Z"],
+    ]) {
+      recordMessageUsage({
+        message_id: id, thread_id: thread, agent_id: "synthetic", agent_name: "Synthetic",
+        provider: "synthetic", model_id: "synthetic", model_config_name: null,
+        input_tokens: 1, output_tokens: 1, input_rate_usd_per_mtok: null,
+        output_rate_usd_per_mtok: null, cost_usd: 0,
+      });
+      db.prepare("UPDATE message_usage SET created_at=? WHERE message_id=?").run(timestamp, id);
+    }
+    expect(getLatestMessageUsageForThread("ordered-thread")?.message_id).toBe("ordered-new");
+    expect(getLatestMessageUsageForThread("missing-thread")).toBeNull();
+  });
+
   it("records and reads back a usage snapshot", () => {
     recordMessageUsage({
       message_id: "m1",

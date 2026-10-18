@@ -9,7 +9,7 @@ vi.mock("@/api/client", () => ({
   api: {
     threads: {
       activity: (...args: unknown[]) => mocks.activity(...args),
-      get: (...args: unknown[]) => mocks.getThread(...args),
+      metadata: (...args: unknown[]) => mocks.getThread(...args),
     },
   },
 }));
@@ -87,7 +87,7 @@ describe("useThreadActivity", () => {
     expect(meta.setCompactionPending).toHaveBeenCalledWith(true);
     expect(meta.setManualCompactionPending).toHaveBeenCalledWith(true);
     await tick(1_500);
-    expect(mocks.getThread).toHaveBeenCalledWith("t1", { limit: 1 });
+    expect(mocks.getThread).toHaveBeenCalledWith("t1");
     expect(meta.setManualCompactionPending).toHaveBeenLastCalledWith(false);
   });
 

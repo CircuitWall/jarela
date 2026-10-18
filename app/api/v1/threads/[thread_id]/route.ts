@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import {
   deleteThread,
   getMessagesAfter,
@@ -23,6 +24,7 @@ import { parseStoredTopics } from "@/lib/agents/conversation-summary";
 import { getThreadActivity } from "@/lib/agents/thread-activity";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
 import { errorMessage } from "@/lib/utils/error";
+import { errorResponse, noStoreJson } from "@/lib/api/responses";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -41,34 +43,15 @@ export async function GET(req: NextRequest, { params }: Params) {
   if (!thread) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
 
   const url = new URL(req.url);
+  const view = z.enum(["messages", "metadata"]).default("messages")
+    .safeParse(url.searchParams.get("view") ?? undefined);
+  if (!view.success) return errorResponse("Invalid thread view", 400);
   const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || DEFAULT_PAGE));
   // Cursors are the message `seq` (SQLite rowid) — a monotonic order key,
   // not a timestamp — so pagination can't skip/duplicate rows on a
   // created_at collision.
   const before = parseSeqParam(url.searchParams.get("before"));
   const after  = parseSeqParam(url.searchParams.get("after"));
-
-  // `after` is a forward-fetch shortcut: caller (typically ChatView's
-  // run-completion handler) already has the recent messages and just wants
-  // the freshly-persisted ones. has_more is fixed to false because the
-  // forward window is not paginated — caller already has everything older.
-  let messages: MessageRow[];
-  let has_more: boolean;
-  if (after !== undefined) {
-    messages = getMessagesAfter(thread_id, after, limit);
-    has_more = false;
-  } else {
-    const page = getMessagesPage(thread_id, limit, before);
-    messages = page.messages;
-    has_more = page.has_more;
-  }
-
-  // Attach per-assistant-turn usage so the chat UI can render a context
-  // utilisation bar without an extra round-trip per message. User turns
-  // and legacy assistant rows (pre-message_usage table) simply omit the
-  // field.
-  const assistantIds = messages.filter((m) => m.role === "assistant").map((m) => m.msg_id);
-  const usageById = getMessageUsageByIds(assistantIds);
 
   // Resolve the agent's effective context-window size once for the whole
   // thread. The bar scales against this cap so the visual matches the
@@ -82,7 +65,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     DEFAULT_CONTEXT_WINDOW_TOKENS,
   );
 
-  return NextResponse.json({
+  const metadata = {
     ...thread,
     warm_summary_topics: parseStoredTopics(thread.warm_summary_topics),
     warm_channel_summaries: currentChannelSummaries(thread_id, thread.hot_since_seq),
@@ -91,6 +74,26 @@ export async function GET(req: NextRequest, { params }: Params) {
     pending_hot_since_seq: pendingCompactionBoundarySeq(thread_id),
     manual_compaction_pending: isManualCompactionRunning(thread_id),
     activity: getThreadActivity(thread_id),
+  };
+  if (view.data === "metadata") return noStoreJson(metadata);
+
+  // `after` is a forward-fetch shortcut: caller already has the recent
+  // messages and just wants the freshly persisted ones.
+  let messages: MessageRow[];
+  let has_more: boolean;
+  if (after !== undefined) {
+    messages = getMessagesAfter(thread_id, after, limit);
+    has_more = false;
+  } else {
+    const page = getMessagesPage(thread_id, limit, before);
+    messages = page.messages;
+    has_more = page.has_more;
+  }
+  const assistantIds = messages.filter((m) => m.role === "assistant").map((m) => m.msg_id);
+  const usageById = getMessageUsageByIds(assistantIds);
+
+  return noStoreJson({
+    ...metadata,
     // No server-side filtering: clients receive every message with its
     // `category` tag and apply the chat-panel filter toolbar on the
     // render side. Keeping the raw transcript over the wire means audit

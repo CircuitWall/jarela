@@ -73,9 +73,9 @@ export function useThreadActivity({ threadId, attach, isLive, lastSettledAt, met
         // pull the new boundary and recap.
         d.metaApplier.setCompactionPending?.(false);
         d.metaApplier.setManualCompactionPending?.(false);
-        api.threads.get(threadId, { limit: 1 })
+        api.threads.metadata(threadId)
           .then((meta) => { if (!cancelled) applyThreadMeta(deps.current.metaApplier, meta); })
-          .catch(() => { /* next poll retries */ });
+          .catch((err) => { if (!cancelled) console.error("activity metadata refresh failed", err); });
       }
 
       schedule(next.busy ? BUSY_POLL_MS : IDLE_POLL_MS);

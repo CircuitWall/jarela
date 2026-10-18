@@ -87,6 +87,33 @@ describe("message embedding jobs", () => {
     expect(nextMessageEmbeddingDelayMs(currentTime)).toBeGreaterThan(0);
   });
 
+  it("finds the earliest pending deadline or processing lease without including terminal jobs", () => {
+    const nowMs = Date.now();
+    expect(nextMessageEmbeddingDelayMs(nowMs)).toBeNull();
+    for (const id of ["pending", "processing", "done", "no-lease"]) {
+      addMessage(id, "synthetic embedding input");
+      enqueueMessageEmbeddingJob(id, "synthetic embedding input");
+    }
+    const db = getDb();
+    db.prepare("UPDATE message_embedding_jobs SET available_at_ms=? WHERE message_id='pending'").run(nowMs + 3000);
+    db.prepare("UPDATE message_embedding_jobs SET state='processing',lease_until_ms=? WHERE message_id='processing'")
+      .run(nowMs + 1000);
+    db.exec("UPDATE message_embedding_jobs SET state='done',available_at_ms=0 WHERE message_id='done'");
+    db.exec("UPDATE message_embedding_jobs SET state='processing',lease_until_ms=NULL WHERE message_id='no-lease'");
+    expect(nextMessageEmbeddingDelayMs(nowMs)).toBe(1000);
+    db.exec("DELETE FROM message_embedding_jobs WHERE message_id='processing'");
+    expect(nextMessageEmbeddingDelayMs(nowMs)).toBe(3000);
+    db.exec("DELETE FROM message_embedding_jobs WHERE message_id='pending'");
+    expect(nextMessageEmbeddingDelayMs(nowMs)).toBeNull();
+  });
+
+  it("returns zero for an already-expired processing lease", () => {
+    addMessage("expired", "synthetic expired embedding input");
+    enqueueMessageEmbeddingJob("expired", "synthetic expired embedding input");
+    getDb().exec("UPDATE message_embedding_jobs SET state='processing',lease_until_ms=1 WHERE message_id='expired'");
+    expect(nextMessageEmbeddingDelayMs(100)).toBe(0);
+  });
+
   it("cascades pending work when its source message is deleted", () => {
     addMessage("msg-4", "message pending embedding");
     enqueueMessageEmbeddingJob("msg-4", "message pending embedding");

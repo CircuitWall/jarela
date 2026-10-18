@@ -17,6 +17,7 @@ import { useChatErrorReporting } from "./useChatErrorReporting";
 import { useChatQueue, type ChatQueueApi } from "./useChatQueue";
 import { useThreadCrossDeviceSync } from "./useThreadCrossDeviceSync";
 import { useThreadData } from "./useThreadData";
+import { useThreadMetadataPolling } from "./useThreadMetadataPolling";
 import { useThreadActivity } from "./useThreadActivity";
 import { useUserProfileAndAgent } from "./useUserProfileAndAgent";
 import { composerPlaceholder, finalizeRunFromServer } from "./chat-run-utils";
@@ -109,21 +110,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   const currentThreadIdRef = useRef(threadId);
   currentThreadIdRef.current = threadId;
 
-  // Auto compaction starts server-side during a run; poll so the banner shows live.
-  useEffect(() => {
-    if (!threadId || !sse.streaming) return;
-    let cancelled = false;
-    const timer = window.setInterval(() => {
-      void api.threads.get(threadId, { limit: 1 }).then((d) => {
-        if (!cancelled) applyThreadMeta(thread.metaApplier, d);
-      }).catch(() => { /* best-effort */ });
-    }, 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, sse.streaming]);
+  useThreadMetadataPolling(
+    threadId,
+    sse.streaming || thread.warmSummaryPending || thread.compactionPending || thread.manualCompactionPending,
+    thread.metaApplier,
+  );
 
   useThreadCrossDeviceSync({
     threadId,
@@ -262,9 +253,9 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         thread.metaApplier.setWarmSummaryTopics?.(parseWarmSummaryTopics(result.warm_summary_topics));
         // The compact response carries only the chat recap; channel recaps
         // (bridge, watcher, scheduled task) come with the thread metadata.
-        void api.threads.get(compactedThreadId, { limit: 1 })
+        void api.threads.metadata(compactedThreadId)
           .then((d) => { if (stillCurrent()) applyThreadMeta(thread.metaApplier, d); })
-          .catch(() => { /* best-effort */ });
+          .catch((err) => console.error("compaction metadata refresh failed", err));
       }
       notifyCompaction(result);
     } catch (err) {

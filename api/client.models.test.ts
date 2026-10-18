@@ -77,4 +77,14 @@ describe("api request HTTP cache mode", () => {
 
     expect((fetchMock.mock.calls[0][1] as RequestInit).cache).toBe("default");
   });
+
+  it("fetches live thread metadata without loading a message page", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ thread_id: "t1" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.threads.metadata("t1");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/threads/t1?view=metadata");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).cache).toBe("no-store");
+  });
 });

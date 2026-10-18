@@ -102,9 +102,11 @@ export function claimMessageEmbeddingJobs(
 
 export function nextMessageEmbeddingDelayMs(nowMs = Date.now()): number | null {
   const row = getDb().prepare(
-    `SELECT MIN(CASE WHEN state='pending' THEN available_at_ms ELSE lease_until_ms END) AS next_at_ms
-     FROM message_embedding_jobs
-     WHERE state IN ('pending','processing')`,
+    `SELECT MIN(next_at_ms) AS next_at_ms FROM (
+       SELECT MIN(available_at_ms) AS next_at_ms FROM message_embedding_jobs WHERE state='pending'
+       UNION ALL
+       SELECT MIN(lease_until_ms) AS next_at_ms FROM message_embedding_jobs WHERE state='processing'
+     )`,
   ).get() as { next_at_ms?: number | null } | undefined;
   return typeof row?.next_at_ms === "number" ? Math.max(0, row.next_at_ms - nowMs) : null;
 }
