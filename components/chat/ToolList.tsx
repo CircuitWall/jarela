@@ -434,83 +434,87 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
   const transcriptSteps = group.steps.length > 0 ? group.steps : delegateTranscript?.steps ?? stepsFromResult(displayedResult);
   return (
     <div className="min-w-0 max-w-full">
-      <MetaRow fullWidth onClick={() => setOpen((v) => !v)} expanded={open}>
-        <CollapseChevron open={open} size={9} className="text-fg-faint/70" />
-        <ToolIcon toolName={group.name} />
-        <span className="font-medium text-fg-muted shrink-0">{group.name}</span>
-        <span
-          className="relative truncate text-fg-faint font-normal flex-1 min-w-0"
-          title={summaryTitle || undefined}
-          style={{
-            // Fade the tail of the args summary into the surface so the
-            // status pills + progress bar on the right stay legible even
-            // when the args fill the available space.
-            WebkitMaskImage:
-              "linear-gradient(to right, black 0, black calc(100% - 28px), transparent 100%)",
-            maskImage:
-              "linear-gradient(to right, black 0, black calc(100% - 28px), transparent 100%)",
-          }}
-        >
-          {summary}
+      <MetaRow fullWidth onClick={() => setOpen((v) => !v)} expanded={open} className="flex-wrap">
+        <span className="flex min-w-0 flex-1 basis-40 items-center gap-1.5">
+          <CollapseChevron open={open} size={9} className="text-fg-faint/70" />
+          <ToolIcon toolName={group.name} />
+          <span className="min-w-0 max-w-[50%] truncate font-medium text-fg-muted" title={group.name}>{group.name}</span>
+          <span
+            className="relative truncate text-fg-faint font-normal flex-1 min-w-0"
+            title={summaryTitle || undefined}
+            style={{
+              // Fade the tail of the args summary into the surface so the
+              // status pills + progress bar on the right stay legible even
+              // when the args fill the available space.
+              WebkitMaskImage:
+                "linear-gradient(to right, black 0, black calc(100% - 28px), transparent 100%)",
+              maskImage:
+                "linear-gradient(to right, black 0, black calc(100% - 28px), transparent 100%)",
+            }}
+          >
+            {summary}
+          </span>
         </span>
-        {group.status === "async" && (
-          <Badge
-            tone="info"
-            className="uppercase tracking-wide"
-            title="running in the background"
-          >
-            bg
-          </Badge>
-        )}
-        {codexJob?.status === "running" && (
-          <Badge tone="info" className="uppercase tracking-wide" title="Codex job is updating live">
-            live
-          </Badge>
-        )}
-        {codexJob?.status === "running" && (
-          <button
-            type="button"
-            onClick={(event) => { event.stopPropagation(); void cancelCodexJob(); }}
-            className="control-tap shrink-0 text-fg-faint hover:text-rose-600 dark:hover:text-rose-300"
-            title="Cancel Codex task"
-            aria-label="Cancel Codex task"
-          >
-            <X size={12} />
-          </button>
-        )}
-        {group.readByAgent && (
-          <Badge
-            tone="neutral"
-            className="uppercase tracking-wide"
-            title="agent read the background result"
-          >
-            read
-          </Badge>
-        )}
-        {isToolResultRefEnvelope(group.result) && (
-          <Badge
-            tone="info"
-            className="uppercase tracking-wide"
-            title="large result is shown as a preview with a file reference"
-          >
-            preview
-          </Badge>
-        )}
-        {delegateTranscript?.awaitingUserAnswers && (
-          <Badge
-            tone="warning"
-            className="uppercase tracking-wide"
-            title="Claude asked design questions and is waiting for the user"
-          >
-            asks
-          </Badge>
-        )}
-        <StatusIndicator
-          status={group.status}
-          deadlineMs={group.deadlineMs}
-          startedAt={startedAt}
-          stepCount={transcriptSteps.length}
-        />
+        <span className="ml-auto flex max-w-full flex-wrap items-center gap-1.5">
+          {group.status === "async" && (
+            <Badge
+              tone="info"
+              className="uppercase tracking-wide"
+              title="running in the background"
+            >
+              bg
+            </Badge>
+          )}
+          {codexJob?.status === "running" && (
+            <Badge tone="info" className="uppercase tracking-wide" title="Codex job is updating live">
+              live
+            </Badge>
+          )}
+          {codexJob?.status === "running" && (
+            <button
+              type="button"
+              onClick={(event) => { event.stopPropagation(); void cancelCodexJob(); }}
+              className="control-tap shrink-0 text-fg-faint hover:text-rose-600 dark:hover:text-rose-300"
+              title="Cancel Codex task"
+              aria-label="Cancel Codex task"
+            >
+              <X size={12} />
+            </button>
+          )}
+          {group.readByAgent && (
+            <Badge
+              tone="neutral"
+              className="uppercase tracking-wide"
+              title="agent read the background result"
+            >
+              read
+            </Badge>
+          )}
+          {isToolResultRefEnvelope(group.result) && (
+            <Badge
+              tone="info"
+              className="uppercase tracking-wide"
+              title="large result is shown as a preview with a file reference"
+            >
+              preview
+            </Badge>
+          )}
+          {delegateTranscript?.awaitingUserAnswers && (
+            <Badge
+              tone="warning"
+              className="uppercase tracking-wide"
+              title="Claude asked design questions and is waiting for the user"
+            >
+              asks
+            </Badge>
+          )}
+          <StatusIndicator
+            status={group.status}
+            deadlineMs={group.deadlineMs}
+            startedAt={startedAt}
+            stepCount={transcriptSteps.length}
+          />
+        </span>
       </MetaRow>
       {delegateTranscript ? (
         <DelegateTurnCards
@@ -526,7 +530,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
         <LiveTranscript steps={transcriptSteps} />
       )}
       {open && (
-        <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
+        <div className="mt-0.5 min-w-0 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px] [overflow-wrap:anywhere]">
           <WorkflowProgressDetails group={group} />
           {!hasWorkflowView(group) && (<>
           {hasVisibleArgs(group.args) ? (
@@ -1073,16 +1077,16 @@ function DetailSection({
     <div className="min-w-0">
       <div className="text-[10px] uppercase tracking-wide text-fg-faint mb-0.5">{label}</div>
       {kvEntries ? (
-        <dl className={`grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[11px] font-mono ${toneClass}`}>
+        <dl className={`grid grid-cols-[fit-content(35%)_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[11px] font-mono ${toneClass}`}>
           {kvEntries.map(([k, v]) => (
             <div key={k} className="contents">
-              <dt className="text-fg-faint">{k}</dt>
-              <dd className="min-w-0 break-words whitespace-pre-wrap">{renderKvValue(v)}</dd>
+              <dt className="min-w-0 text-fg-faint">{k}</dt>
+              <dd className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{renderKvValue(v)}</dd>
             </div>
           ))}
         </dl>
       ) : (
-        <pre className={`text-[11px] font-mono whitespace-pre-wrap break-words max-w-full ${toneClass}`}>
+        <pre className={`text-[11px] font-mono whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full ${toneClass}`}>
           {formatPayload(value)}
         </pre>
       )}
@@ -1198,11 +1202,11 @@ function renderKvValue(v: unknown): ReactNode {
     const entries = Object.entries(obj).filter(([k]) => !HIDDEN_ARG_KEYS.has(k));
     if (entries.length === 0) return <span className="text-fg-faint">{"{}"}</span>;
     return (
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5">
+      <dl className="grid grid-cols-[fit-content(35%)_minmax(0,1fr)] gap-x-2 gap-y-0.5">
         {entries.map(([k, vv]) => (
           <div key={k} className="contents">
-            <dt className="text-fg-faint">{k}</dt>
-            <dd className="min-w-0 break-words whitespace-pre-wrap">{renderKvValue(vv)}</dd>
+            <dt className="min-w-0 text-fg-faint">{k}</dt>
+            <dd className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{renderKvValue(vv)}</dd>
           </div>
         ))}
       </dl>

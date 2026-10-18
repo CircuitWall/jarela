@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Let assistant replies use the available chat width and keep long tool names,
+  status indicators, expanded tool details, and the composer within narrow screens.
+
 ### Changed
 
 - Speed up chat pagination, dashboard date windows, and thread lists with

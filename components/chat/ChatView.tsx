@@ -287,7 +287,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   });
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <MessageList
         threadId={threadId}
         messages={thread.messages}

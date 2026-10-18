@@ -1210,8 +1210,8 @@ function LiveTurnActivity({
   if (!showThinking && !streamingContent && !showTools && !showDots) return null;
   return (
     <div data-testid="live-turn-activity" className="mt-1 flex w-full min-w-0 flex-col gap-1">
-      {showDots && <ThinkingDots />}
-      {showThinking && <ThinkingLine text={thinkingContent} />}
+      {showDots && <div className="min-w-0 pl-9"><ThinkingDots /></div>}
+      {showThinking && <div className="min-w-0 pl-9"><ThinkingLine text={thinkingContent} /></div>}
       {streamingContent && (
         <StreamingBubble
           content={streamingContent}
@@ -1220,7 +1220,7 @@ function LiveTurnActivity({
           showAvatar={showStreamingAvatar}
         />
       )}
-      {showTools && <ToolList events={toolEvents} />}
+      {showTools && <div className="min-w-0 pl-9"><ToolList events={toolEvents} /></div>}
     </div>
   );
 }
