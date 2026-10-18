@@ -7,13 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-18
+
+### Added
+
+- Add appearance presets and accent-color choices, and reorganize configuration
+  panels for a more consistent workspace.
+
 ### Fixed
 
 - Let assistant replies use the available chat width and keep long tool names,
   status indicators, expanded tool details, and the composer within narrow screens.
+- Align configuration panel widths on desktop and mobile.
+- Refresh provider model catalogs and capability metadata.
+- Resolve optional tool packages from the workspace when their package entry
+  point is unavailable.
 
 ### Changed
 
+- Reuse short-lived startup reads between the agent picker and chat so the
+  first agent load warms profile, configuration, and conversation data without
+  duplicate requests. Writes and run submissions invalidate the handoff.
 - Speed up chat pagination, dashboard date windows, and thread lists with
   automatically created SQLite indexes. The first startup after upgrading a
   large database may take longer while indexes build.
@@ -4838,6 +4852,3 @@ GitHub Release workflow failed (broken `INSTALL.md` path); superseded by
 ## [0.1.0] - 2026-05-23
 
 Initial Docker Hub publication: `andrewgewu/jarela:0.1.0` (multi-arch).
-- Reuse short-lived startup reads between the agent picker and chat so the
-  first agent load warms profile, configuration, and conversation data without
-  duplicate requests. Writes and run submissions invalidate the handoff.

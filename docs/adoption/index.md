@@ -11,6 +11,160 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 2.5.0
+
+From 2.4.0 · 2026-10-18
+
+### Tools
+
+- `confluence_add_comment` — added; params added: `async_run`, `body_storage`, `body_text`, `deadline_ms`, `page_id`, `parent_comment_id`, `stream`; now required: `page_id`
+- `confluence_add_label` — added; params added: `async_run`, `deadline_ms`, `labels`, `page_id`, `stream`; now required: `labels`, `page_id`
+- `confluence_create_page` — added; params added: `async_run`, `body_storage`, `body_text`, `deadline_ms`, `parent_id`, `space_key`, `stream`, `title`; now required: `space_key`, `title`
+- `confluence_delete_attachment` — added; params added: `async_run`, `attachment_id`, `confirm`, `deadline_ms`, `purge`, `stream`; now required: `attachment_id`
+- `confluence_delete_comment` — added; params added: `async_run`, `comment_id`, `deadline_ms`, `kind`, `stream`; now required: `comment_id`, `kind`
+- `confluence_delete_page` — added; params added: `async_run`, `confirm`, `deadline_ms`, `page_id`, `purge`, `stream`; now required: `page_id`
+- `confluence_get_attachment_content` — added; params added: `as_text`, `async_run`, `deadline_ms`, `download_link`, `stream`; now required: `download_link`
+- `confluence_get_comments` — added; params added: `async_run`, `deadline_ms`, `include_inline`, `page_id`, `stream`; now required: `page_id`
+- `confluence_get_labels` — added; params added: `async_run`, `cursor`, `deadline_ms`, `limit`, `page_id`, `stream`; now required: `page_id`
+- `confluence_get_page` — added; params added: `async_run`, `deadline_ms`, `page_id`, `stream`; now required: `page_id`
+- `confluence_get_page_ancestors` — added; params added: `async_run`, `deadline_ms`, `page_id`, `stream`; now required: `page_id`
+- `confluence_get_page_by_title` — added; params added: `async_run`, `deadline_ms`, `include_body`, `space_key`, `stream`, `title`; now required: `space_key`, `title`
+- `confluence_get_page_children` — added; params added: `async_run`, `cursor`, `deadline_ms`, `limit`, `page_id`, `stream`; now required: `page_id`
+- `confluence_list_attachments` — added; params added: `async_run`, `cursor`, `deadline_ms`, `limit`, `page_id`, `stream`; now required: `page_id`
+- `confluence_list_spaces` — added; params added: `async_run`, `cursor`, `deadline_ms`, `limit`, `status`, `stream`, `type`
+- `confluence_move_page` — added; params added: `async_run`, `deadline_ms`, `page_id`, `position`, `stream`, `target_id`; now required: `page_id`, `position`, `target_id`
+- `confluence_remove_label` — added; params added: `async_run`, `deadline_ms`, `label`, `page_id`, `stream`; now required: `label`, `page_id`
+- `confluence_search` — added; params added: `async_run`, `cql`, `deadline_ms`, `max_results`, `stream`; now required: `cql`
+- `confluence_update_comment` — added; params added: `async_run`, `body_storage`, `body_text`, `comment_id`, `deadline_ms`, `kind`, `stream`, `version_message`, `version_number`; now required: `comment_id`, `kind`
+- `confluence_update_page` — added; params added: `async_run`, `body_storage`, `body_text`, `deadline_ms`, `page_id`, `stream`, `title`, `version_message`, `version_number`; now required: `page_id`
+- `confluence_upload_attachment` — added; params added: `async_run`, `comment`, `content_base64`, `content_text`, `deadline_ms`, `filename`, `minor_edit`, `page_id`, `stream`; now required: `filename`, `page_id`
+- `github_add_comment` — added; params added: `async_run`, `body`, `deadline_ms`, `number`, `owner`, `repo`, `stream`; now required: `body`, `number`, `owner`, `repo`
+- `github_create_issue` — added; params added: `assignees`, `async_run`, `body`, `deadline_ms`, `labels`, `owner`, `repo`, `stream`, `title`; now required: `owner`, `repo`, `title`
+- `github_create_pull` — added; params added: `async_run`, `base`, `body`, `deadline_ms`, `draft`, `head`, `maintainer_can_modify`, `owner`, `repo`, `stream`, `title`; now required: `base`, `head`, `owner`, `repo`, `title`
+- `github_create_review` — added; params added: `async_run`, `body`, `commit_id`, `deadline_ms`, `event`, `number`, `owner`, `repo`, `stream`; now required: `event`, `number`, `owner`, `repo`
+- `github_get_file` — added; params added: `async_run`, `deadline_ms`, `owner`, `path`, `ref`, `repo`, `stream`; now required: `owner`, `path`, `repo`
+- `github_get_issue` — added; params added: `async_run`, `deadline_ms`, `number`, `owner`, `repo`, `stream`; now required: `number`, `owner`, `repo`
+- `github_get_pull` — added; params added: `async_run`, `deadline_ms`, `number`, `owner`, `repo`, `stream`; now required: `number`, `owner`, `repo`
+- `github_get_repo` — added; params added: `async_run`, `deadline_ms`, `owner`, `repo`, `stream`; now required: `owner`, `repo`
+- `github_list_branches` — added; params added: `async_run`, `deadline_ms`, `max_results`, `owner`, `repo`, `stream`; now required: `owner`, `repo`
+- `github_list_issue_comments` — added; params added: `async_run`, `deadline_ms`, `max_results`, `number`, `owner`, `repo`, `stream`; now required: `number`, `owner`, `repo`
+- `github_list_pull_files` — added; params added: `async_run`, `deadline_ms`, `max_results`, `number`, `owner`, `repo`, `stream`; now required: `number`, `owner`, `repo`
+- `github_list_pull_reviews` — added; params added: `async_run`, `deadline_ms`, `max_results`, `number`, `owner`, `repo`, `stream`; now required: `number`, `owner`, `repo`
+- `github_list_pulls` — added; params added: `async_run`, `base`, `deadline_ms`, `head`, `max_results`, `owner`, `repo`, `state`, `stream`; now required: `owner`, `repo`
+- `github_merge_pull` — added; params added: `async_run`, `commit_message`, `commit_title`, `deadline_ms`, `method`, `number`, `owner`, `repo`, `sha`, `stream`; now required: `number`, `owner`, `repo`
+- `github_request_reviewers` — added; params added: `async_run`, `deadline_ms`, `number`, `owner`, `repo`, `reviewers`, `stream`, `team_reviewers`; now required: `number`, `owner`, `repo`
+- `github_search_code` — added; params added: `async_run`, `deadline_ms`, `max_results`, `q`, `repo`, `stream`; now required: `q`
+- `github_search_issues` — added; params added: `async_run`, `deadline_ms`, `max_results`, `q`, `repo`, `stream`; now required: `q`
+- `github_update_issue` — added; params added: `assignees`, `async_run`, `body`, `deadline_ms`, `labels`, `number`, `owner`, `repo`, `state`, `state_reason`, `stream`, `title`; now required: `number`, `owner`, `repo`
+- `github_update_pull` — added; params added: `async_run`, `base`, `body`, `deadline_ms`, `maintainer_can_modify`, `number`, `owner`, `repo`, `state`, `stream`, `title`; now required: `number`, `owner`, `repo`
+- `icloud_calendar_create_event` — added; params added: `alerts`, `all_day`, `async_run`, `attendees`, `availability`, `calendar_url`, `deadline_ms`, `description`, `end`, `location`, `rrule`, `start`, `status`, `stream`, `summary`, `travel_time`, `url`; now required: `calendar_url`, `end`, `start`, `summary`
+- `icloud_calendar_delete_event` — added; params added: `async_run`, `calendar_url`, `deadline_ms`, `stream`, `uid`; now required: `calendar_url`, `uid`
+- `icloud_calendar_get_event` — added; params added: `async_run`, `calendar_url`, `deadline_ms`, `stream`, `uid`; now required: `calendar_url`, `uid`
+- `icloud_calendar_list_calendars` — added; params added: `async_run`, `deadline_ms`, `stream`
+- `icloud_calendar_list_events` — added; params added: `async_run`, `calendar_url`, `deadline_ms`, `stream`, `time_max`, `time_min`; now required: `calendar_url`, `time_max`, `time_min`
+- `icloud_calendar_update_event` — added; params added: `alerts`, `async_run`, `availability`, `calendar_url`, `deadline_ms`, `description`, `end`, `location`, `rrule`, `start`, `status`, `stream`, `summary`, `travel_time`, `uid`, `url`; now required: `calendar_url`, `uid`
+- `icloud_mail_create_draft` — added; params added: `async_run`, `bcc`, `body_html`, `body_text`, `cc`, `deadline_ms`, `in_reply_to`, `stream`, `subject`, `to`; now required: `body_text`, `subject`, `to`
+- `icloud_mail_delete_message` — added; params added: `async_run`, `deadline_ms`, `mailbox`, `stream`, `uid`; now required: `mailbox`, `uid`
+- `icloud_mail_flag_message` — added; params added: `async_run`, `deadline_ms`, `flagged`, `mailbox`, `seen`, `stream`, `uid`; now required: `mailbox`, `uid`
+- `icloud_mail_get_message` — added; params added: `async_run`, `deadline_ms`, `include_html`, `mailbox`, `stream`, `uid`; now required: `uid`
+- `icloud_mail_list_folders` — added; params added: `async_run`, `deadline_ms`, `stream`
+- `icloud_mail_list_messages` — added; params added: `async_run`, `before`, `deadline_ms`, `limit`, `mailbox`, `query`, `since`, `stream`, `unseen_only`
+- `icloud_mail_move_message` — added; params added: `async_run`, `deadline_ms`, `from_mailbox`, `stream`, `to_mailbox`, `uid`; now required: `from_mailbox`, `to_mailbox`, `uid`
+- `icloud_reminders_complete` — added; params added: `async_run`, `calendar_url`, `deadline_ms`, `stream`, `uid`; now required: `calendar_url`, `uid`
+- `icloud_reminders_create` — added; params added: `async_run`, `calendar_url`, `deadline_ms`, `description`, `due`, `stream`, `summary`; now required: `calendar_url`, `summary`
+- `icloud_reminders_list` — added; params added: `async_run`, `calendar_url`, `deadline_ms`, `include_completed`, `stream`; now required: `calendar_url`
+- `icloud_reminders_list_lists` — added; params added: `async_run`, `deadline_ms`, `stream`
+- `jira_add_comment` — added; params added: `async_run`, `body`, `deadline_ms`, `issue_key`, `stream`; now required: `body`, `issue_key`
+- `jira_add_remote_link` — added; params added: `async_run`, `deadline_ms`, `global_id`, `icon_url`, `issue_key`, `stream`, `summary`, `title`, `url`; now required: `issue_key`, `title`, `url`
+- `jira_add_worklog` — added; params added: `async_run`, `comment`, `deadline_ms`, `issue_key`, `started`, `stream`, `time_spent`; now required: `issue_key`, `time_spent`
+- `jira_align_add_comment` — added; params added: `async_run`, `body`, `deadline_ms`, `item_id`, `stream`, `type`; now required: `body`, `item_id`, `type`
+- `jira_align_create_dependency` — added; params added: `async_run`, `deadline_ms`, `dependency_type`, `description`, `predecessor_id`, `stream`, `successor_id`; now required: `predecessor_id`, `successor_id`
+- `jira_align_create_entity` — added; params added: `async_run`, `deadline_ms`, `description`, `end_date`, `entity_type`, `name`, `parent_id`, `portfolio_id`, `program_id`, `start_date`, `stream`; now required: `entity_type`, `name`
+- `jira_align_create_item` — added; params added: `async_run`, `deadline_ms`, `description`, `owner`, `parent_id`, `program_id`, `stream`, `team_id`, `title`, `type`; now required: `title`, `type`
+- `jira_align_delete_comment` — added; params added: `async_run`, `comment_id`, `confirm`, `deadline_ms`, `item_id`, `stream`, `type`; now required: `comment_id`, `confirm`, `item_id`, `type`
+- `jira_align_delete_dependency` — added; params added: `async_run`, `confirm`, `deadline_ms`, `dependency_id`, `stream`; now required: `confirm`, `dependency_id`
+- `jira_align_delete_entity` — added; params added: `async_run`, `confirm`, `deadline_ms`, `entity_id`, `entity_type`, `stream`; now required: `confirm`, `entity_id`, `entity_type`
+- `jira_align_delete_item` — added; params added: `async_run`, `confirm`, `deadline_ms`, `item_id`, `stream`, `type`; now required: `confirm`, `item_id`, `type`
+- `jira_align_get_entity` — added; params added: `async_run`, `deadline_ms`, `entity_id`, `entity_type`, `stream`; now required: `entity_id`, `entity_type`
+- `jira_align_get_item` — added; params added: `async_run`, `deadline_ms`, `item_id`, `stream`, `type`; now required: `item_id`, `type`
+- `jira_align_list_children` — added; params added: `async_run`, `child_type`, `deadline_ms`, `max_results`, `parent_id`, `stream`; now required: `child_type`, `parent_id`
+- `jira_align_list_comments` — added; params added: `async_run`, `deadline_ms`, `item_id`, `max_results`, `stream`, `type`; now required: `item_id`, `type`
+- `jira_align_list_dependencies` — added; params added: `async_run`, `deadline_ms`, `direction`, `item_id`, `max_results`, `stream`; now required: `item_id`
+- `jira_align_list_entities` — added; params added: `async_run`, `deadline_ms`, `entity_type`, `filter`, `max_results`, `name_filter`, `stream`; now required: `entity_type`
+- `jira_align_search_items` — added; params added: `async_run`, `deadline_ms`, `filter`, `max_results`, `owner`, `program_id`, `state`, `stream`, `team_id`, `type`, `updated_since`; now required: `type`
+- `jira_align_transition_item` — added; params added: `async_run`, `deadline_ms`, `item_id`, `state`, `stream`, `type`; now required: `item_id`, `type`
+- `jira_align_update_comment` — added; params added: `async_run`, `body`, `comment_id`, `deadline_ms`, `item_id`, `stream`, `type`; now required: `body`, `comment_id`, `item_id`, `type`
+- `jira_align_update_entity` — added; params added: `async_run`, `deadline_ms`, `entity_id`, `entity_type`, `fields`, `stream`; now required: `entity_id`, `entity_type`, `fields`
+- `jira_align_update_item` — added; params added: `async_run`, `deadline_ms`, `fields`, `item_id`, `stream`, `type`; now required: `fields`, `item_id`, `type`
+- `jira_create_component` — added; params added: `assignee_type`, `async_run`, `deadline_ms`, `description`, `lead_account_id`, `name`, `project_key`, `stream`; now required: `name`, `project_key`
+- `jira_create_issue` — added; params added: `assignee_account_id`, `async_run`, `custom_fields`, `deadline_ms`, `description`, `issue_type`, `labels`, `parent_key`, `project_key`, `stream`, `summary`; now required: `project_key`, `summary`
+- `jira_create_issues_bulk` — added; params added: `async_run`, `deadline_ms`, `issues`, `stream`; now required: `issues`
+- `jira_create_sprint` — added; params added: `async_run`, `board_id`, `deadline_ms`, `end_date`, `goal`, `name`, `start_date`, `stream`; now required: `board_id`, `name`
+- `jira_create_version` — added; params added: `async_run`, `deadline_ms`, `description`, `name`, `project_key`, `release_date`, `released`, `start_date`, `stream`; now required: `name`, `project_key`
+- `jira_delete_attachment` — added; params added: `async_run`, `attachment_id`, `deadline_ms`, `stream`; now required: `attachment_id`
+- `jira_delete_comment` — added; params added: `async_run`, `comment_id`, `deadline_ms`, `issue_key`, `stream`; now required: `comment_id`, `issue_key`
+- `jira_delete_issue` — added; params added: `async_run`, `deadline_ms`, `delete_subtasks`, `issue_key`, `stream`; now required: `issue_key`
+- `jira_delete_link` — added; params added: `async_run`, `deadline_ms`, `kind`, `link_id`, `link_type`, `stream`; now required: `link_id`
+- `jira_delete_sprint` — added; params added: `async_run`, `confirm`, `deadline_ms`, `sprint_id`, `stream`; now required: `confirm`, `sprint_id`
+- `jira_find_user` — added; params added: `async_run`, `deadline_ms`, `query`, `stream`; now required: `query`
+- `jira_get_attachment_content` — added; params added: `as_text`, `async_run`, `content_url`, `deadline_ms`, `stream`; now required: `content_url`
+- `jira_get_board` — added; params added: `async_run`, `board_id`, `deadline_ms`, `stream`; now required: `board_id`
+- `jira_get_changelog` — added; params added: `async_run`, `deadline_ms`, `issue_key`, `max_results`, `start_at`, `stream`; now required: `issue_key`
+- `jira_get_comments` — added; params added: `async_run`, `deadline_ms`, `issue_key`, `max_results`, `order_by`, `start_at`, `stream`; now required: `issue_key`
+- `jira_get_issue` — added; params added: `async_run`, `custom_fields`, `deadline_ms`, `expand`, `include_comments`, `issue_key`, `stream`; now required: `issue_key`
+- `jira_get_project` — added; params added: `async_run`, `deadline_ms`, `include_components`, `include_issue_types`, `include_versions`, `project_key`, `stream`; now required: `project_key`
+- `jira_get_sprint` — added; params added: `async_run`, `deadline_ms`, `sprint_id`, `stream`; now required: `sprint_id`
+- `jira_link_issues` — added; params added: `async_run`, `comment`, `deadline_ms`, `from_issue`, `link_type`, `stream`, `to_issue`
+- `jira_list_boards` — added; params added: `async_run`, `deadline_ms`, `max_results`, `name`, `project`, `stream`, `type`
+- `jira_list_components` — added; params added: `async_run`, `deadline_ms`, `project_key`, `stream`; now required: `project_key`
+- `jira_list_meta` — added; params added: `async_run`, `deadline_ms`, `kind`, `stream`
+- `jira_list_projects` — added; params added: `async_run`, `category_id`, `deadline_ms`, `max_results`, `query`, `start_at`, `stream`
+- `jira_list_sprints` — added; params added: `async_run`, `board_id`, `deadline_ms`, `max_results`, `state`, `stream`; now required: `board_id`
+- `jira_list_versions` — added; params added: `async_run`, `deadline_ms`, `max_results`, `order_by`, `project_key`, `start_at`, `stream`; now required: `project_key`
+- `jira_list_worklogs` — added; params added: `async_run`, `deadline_ms`, `issue_key`, `max_results`, `start_at`, `stream`; now required: `issue_key`
+- `jira_move_issues_to_backlog` — added; params added: `async_run`, `board_id`, `deadline_ms`, `issue_keys`, `stream`; now required: `issue_keys`
+- `jira_move_issues_to_sprint` — added; params added: `async_run`, `deadline_ms`, `issue_keys`, `sprint_id`, `stream`; now required: `issue_keys`, `sprint_id`
+- `jira_rank_issues` — added; params added: `async_run`, `deadline_ms`, `issues`, `rank_after_issue`, `rank_before_issue`, `rank_custom_field_id`, `stream`; now required: `issues`
+- `jira_search` — added; params added: `async_run`, `deadline_ms`, `fields`, `jql`, `max_results`, `stream`; now required: `jql`
+- `jira_transition_issue` — added; params added: `async_run`, `deadline_ms`, `issue_key`, `stream`, `transition_name`; now required: `issue_key`
+- `jira_update_comment` — added; params added: `async_run`, `body`, `comment_id`, `deadline_ms`, `issue_key`, `stream`; now required: `body`, `comment_id`, `issue_key`
+- `jira_update_issue` — added; params added: `assignee_account_id`, `assignee_email`, `async_run`, `custom_fields`, `deadline_ms`, `description`, `fix_versions`, `issue_key`, `labels`, `labels_add`, `labels_remove`, `parent_key`, `priority`, `stream`, `summary`; now required: `issue_key`
+- `jira_update_sprint` — added; params added: `async_run`, `deadline_ms`, `end_date`, `goal`, `name`, `sprint_id`, `start_date`, `state`, `stream`; now required: `sprint_id`
+- `jira_update_version` — added; params added: `archived`, `async_run`, `deadline_ms`, `description`, `name`, `release_date`, `released`, `start_date`, `stream`, `version_id`; now required: `version_id`
+- `jira_upload_attachment` — added; params added: `async_run`, `content_base64`, `content_text`, `deadline_ms`, `filename`, `issue_key`, `stream`; now required: `filename`, `issue_key`
+- `ms_todo_add_checklist_item` — added; params added: `async_run`, `deadline_ms`, `is_checked`, `list_id`, `name`, `stream`, `task_id`; now required: `list_id`, `name`, `task_id`
+- `ms_todo_complete_task` — added; params added: `async_run`, `deadline_ms`, `list_id`, `stream`, `task_id`; now required: `list_id`, `task_id`
+- `ms_todo_create_list` — added; params added: `async_run`, `deadline_ms`, `name`, `stream`; now required: `name`
+- `ms_todo_create_task` — added; params added: `async_run`, `body`, `categories`, `deadline_ms`, `due_iso`, `due_time_zone`, `importance`, `list_id`, `reminder_iso`, `reminder_time_zone`, `stream`, `title`; now required: `list_id`, `title`
+- `ms_todo_delete_list` — added; params added: `async_run`, `deadline_ms`, `list_id`, `stream`; now required: `list_id`
+- `ms_todo_delete_task` — added; params added: `async_run`, `deadline_ms`, `list_id`, `stream`, `task_id`; now required: `list_id`, `task_id`
+- `ms_todo_get_task` — added; params added: `async_run`, `deadline_ms`, `list_id`, `stream`, `task_id`; now required: `list_id`, `task_id`
+- `ms_todo_list_checklist_items` — added; params added: `async_run`, `deadline_ms`, `list_id`, `stream`, `task_id`; now required: `list_id`, `task_id`
+- `ms_todo_list_lists` — added; params added: `async_run`, `deadline_ms`, `stream`
+- `ms_todo_list_tasks` — added; params added: `async_run`, `deadline_ms`, `due_after`, `due_before`, `importance`, `list_id`, `max_results`, `status`, `stream`; now required: `list_id`
+- `ms_todo_update_list` — added; params added: `async_run`, `deadline_ms`, `list_id`, `name`, `stream`; now required: `list_id`, `name`
+- `ms_todo_update_task` — added; params added: `async_run`, `body`, `categories`, `clear_due`, `clear_reminder`, `deadline_ms`, `due_iso`, `due_time_zone`, `importance`, `list_id`, `reminder_iso`, `reminder_time_zone`, `status`, `stream`, `task_id`, `title`; now required: `list_id`, `task_id`
+
+### Prompts
+
+- `system.Enabled tools` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + You can execute the 83 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 166 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    - You can execute the 83 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 39 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    ```
+
+### Commits
+
+- perf(chat): reuse startup reads when opening an agent
+- fix(chat): use available width and contain tool pill content
+- perf(db): use indexed reads and reuse chat history renders
+- fix(ui): align configuration panel widths
+- fix(packages): use workspace fallback for optional packages
+- feat(ui): add appearance presets and reorganize panels
+- fix(models): align live catalog capability metadata
+- fix(models): update provider model catalogs
+
 ## 2.4.0
 
 From 2.3.0 · 2026-10-16
