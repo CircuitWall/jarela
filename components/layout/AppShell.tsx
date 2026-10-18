@@ -305,6 +305,7 @@ export function AppShell() {
         agents={agents}
         agentsLoaded={agentsLoaded}
         activeAgentId={state.activeAgentId}
+        preferredThreadId={state.activeThreadId}
         onPickAgent={(id) => {
           dispatch({ type: "SET_AGENT", agentId: id });
           dispatch({ type: "SET_TAB", tab: "chat" });

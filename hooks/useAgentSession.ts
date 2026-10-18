@@ -15,7 +15,7 @@ export function useAgentSession(
   const [error, setError] = useState<string | null>(null);
   const requestSeqRef = useRef(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (opts?: { startup?: boolean }) => {
     if (!agentId) {
       setThreadId(null);
       setError(null);
@@ -32,7 +32,9 @@ export function useAgentSession(
       // prefer it as long as it still belongs to this agent.
       if (preferredThreadId) {
         try {
-          const d = await api.threads.get(preferredThreadId, { limit: 1 });
+          const d = opts?.startup
+            ? await api.threads.get(preferredThreadId, { startup: true })
+            : await api.threads.metadata(preferredThreadId);
           if (mySeq !== requestSeqRef.current) return;
           if (d.agent_id === agentId) {
             setThreadId(preferredThreadId);
@@ -43,7 +45,7 @@ export function useAgentSession(
         }
       }
 
-      const t = await api.agents.getThread(agentId);
+      const t = await api.agents.getThread(agentId, opts);
       if (mySeq !== requestSeqRef.current) return;
       setThreadId(t.thread_id);
     } catch (err) {
@@ -70,7 +72,7 @@ export function useAgentSession(
       return;
     }
 
-    void refresh();
+    void refresh({ startup: true });
 
   }, [agentId, preferredThreadId, refresh]);
 

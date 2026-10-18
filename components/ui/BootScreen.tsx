@@ -61,6 +61,7 @@ interface Props {
   agents: AgentConfig[];
   agentsLoaded: boolean;
   activeAgentId: string | null;
+  preferredThreadId?: string | null;
   onPickAgent: (agentId: string) => void;
   // Boot picker is a chat-tab gate; suppress on non-chat tabs so it doesn't overlay them.
   suppressed?: boolean;
@@ -78,7 +79,7 @@ interface Props {
 // Replaces the previous splash + ChatView empty-state agent picker. The
 // header (z-40) is hidden while this is visible so the user lands on a
 // focused, one-purpose screen.
-export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, suppressed }: Props) {
+export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThreadId, onPickAgent, suppressed }: Props) {
   // Capture which agent we transitioned through so the icon can keep
   // showing during the fade-out, even if a parent state shift would
   // otherwise clear it.
@@ -96,7 +97,6 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
   const [adoptionBusy, setAdoptionBusy] = useState<VersionAdoptionAction | null>(null);
   const [adoptionLiveLabel, setAdoptionLiveLabel] = useState<string | null>(null);
   const adoptionRef = useRef<VersionAdoptionState | null>(null);
-  const prefetchStartedRef = useRef(false);
   const adoptionRunStartedRef = useRef<string | null>(null);
   const adoptionAbortRef = useRef<AbortController | null>(null);
   adoptionRef.current = adoption;
@@ -244,9 +244,8 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
   // half-rendered chat that has to fetch the same data anyway.
   useEffect(() => {
     const id = activeAgentId ?? pickedId;
-    if (!id || !agentsLoaded) return;
-    if (prefetchStartedRef.current) return;
-    prefetchStartedRef.current = true;
+    if (!id || !agentsLoaded || done) return;
+    setDismissing(false);
 
     setSteps([
       { key: "profile", label: "loading your profile", status: "active" },
@@ -259,22 +258,36 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
 
     void (async () => {
       await Promise.allSettled([
-        api.profile.get().finally(() => {
+        api.profile.get({ startup: true }).catch((error: unknown) => {
+          console.error("startup profile warmup failed", error);
+        }).finally(() => {
           if (!cancelled) markStep("profile", "done");
         }),
         api.agents
-          .get(id)
+          .get(id, { startup: true })
+          .catch((error: unknown) => {
+            console.error("startup agent warmup failed", error);
+          })
           .finally(() => {
             if (!cancelled) markStep("agent", "done");
           }),
         (async () => {
           try {
-            const t = await api.agents.getThread(id);
+            if (preferredThreadId) {
+              try {
+                const preferred = await api.threads.get(preferredThreadId, { startup: true });
+                if (preferred.agent_id === id) return;
+              } catch (error) {
+                console.error("startup selected conversation warmup failed", error);
+              }
+            }
+            const t = await api.agents.getThread(id, { startup: true });
             if (cancelled) return;
             markStep("thread", "done");
             markStep("messages", "active");
-            await api.threads.get(t.thread_id);
-          } catch {
+            await api.threads.get(t.thread_id, { startup: true });
+          } catch (error) {
+            console.error("startup conversation warmup failed", error);
             // Errors here are non-fatal for boot — ChatView will surface
             // them with its own retry path. Just mark the steps done so
             // we don't block the user behind the splash forever.
@@ -301,7 +314,7 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
       cancelled = true;
       if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
     };
-  }, [activeAgentId, pickedId, agentsLoaded, markStep]);
+  }, [activeAgentId, pickedId, preferredThreadId, agentsLoaded, markStep, done]);
 
   if (done) return null;
   if (suppressed) return null;

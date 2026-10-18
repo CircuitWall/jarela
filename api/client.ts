@@ -370,11 +370,41 @@ async function parseJsonResponse<T>(res: Response): Promise<T> {
   return JSON.parse(await new Response(stream).text()) as T;
 }
 
-async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+const STARTUP_TTL_MS = 5_000;
+const startupReads = new Map<string, { promise: Promise<unknown>; settledAt: number | null }>();
+
+function startupRead<T>(path: string): Promise<T> {
+  const now = Date.now();
+  for (const [key, entry] of startupReads) {
+    if (entry.settledAt !== null && (now < entry.settledAt || now - entry.settledAt >= STARTUP_TTL_MS)) {
+      startupReads.delete(key);
+    }
+  }
+  const cached = startupReads.get(path);
+  if (cached) return cached.promise.then((value) => structuredClone(value as T));
+  // Bound retained startup data when agents are switched rapidly.
+  const oldestKey = startupReads.keys().next().value;
+  if (startupReads.size >= 16 && oldestKey !== undefined) startupReads.delete(oldestKey);
+  const entry = { promise: Promise.resolve<unknown>(undefined), settledAt: null as number | null };
+  entry.promise = request<T>(path, { startup: true }).then((value) => {
+    entry.settledAt = Date.now();
+    return value;
+  }).catch((error: unknown) => {
+    if (startupReads.get(path) === entry) startupReads.delete(path);
+    throw error;
+  });
+  startupReads.set(path, entry);
+  return entry.promise.then((value) => structuredClone(value as T));
+}
+
+async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number; startup?: boolean }): Promise<T> {
+  const mutation = !!init?.method && init.method !== "GET";
+  if (mutation) startupReads.clear();
+  else if (!init?.startup) startupReads.delete(path);
   const cfg = runtimeConfig();
   const maxAttempts = Math.max(1, cfg.httpMaxAttempts);
   const timeoutMs = init?.timeoutMs ?? cfg.httpRequestTimeoutMs;
-  const { timeoutMs: _ignoreTimeoutMs, ...fetchInit } = init ?? {};
+  const { timeoutMs: _ignoreTimeoutMs, startup: _ignoreStartup, ...fetchInit } = init ?? {};
   const callerSignal = fetchInit.signal ?? null;
 
   let lastErr: unknown = null;
@@ -435,6 +465,7 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
       if (attempt < maxAttempts && isRetryable(err)) continue;
       throw err;
     } finally {
+      if (mutation) startupReads.clear();
       clearTimeout(timer);
       callerSignal?.removeEventListener("abort", onCallerAbort);
     }
@@ -447,7 +478,10 @@ export const api = {
   agents: {
     list: (opts?: { force?: boolean }) =>
       cachedList(agentListCache, () => request<AgentConfig[]>("/agents"), setAgentListCache, opts?.force === true),
-    get: (id: string) => request<AgentConfig>(`/agents/${encodeURIComponent(id)}`),
+    get: (id: string, opts?: { startup?: boolean }) => {
+      const path = `/agents/${encodeURIComponent(id)}`;
+      return opts?.startup ? startupRead<AgentConfig>(path) : request<AgentConfig>(path);
+    },
     create: async (data: AgentConfigIn) => {
       const created = await request<AgentConfig>("/agents", { method: "POST", body: JSON.stringify(data) });
       if (agentListCache.data) setAgentListCache([...agentListCache.data, created]);
@@ -468,8 +502,10 @@ export const api = {
       }
       return res;
     },
-    getThread: (id: string) =>
-      request<ThreadSummary>(`/agents/${encodeURIComponent(id)}/thread`),
+    getThread: (id: string, opts?: { startup?: boolean }) => {
+      const path = `/agents/${encodeURIComponent(id)}/thread`;
+      return opts?.startup ? startupRead<ThreadSummary>(path) : request<ThreadSummary>(path);
+    },
     compact: (id: string, options?: { resetContext?: boolean }) =>
       request<{
         compacted: boolean;
@@ -706,7 +742,7 @@ export const api = {
     list: (limit = 50, offset = 0) => request<ThreadSummary[]>(`/threads?limit=${limit}&offset=${offset}`),
     create: (agent_id: string, title?: string) =>
       request<ThreadSummary>("/threads", { method: "POST", body: JSON.stringify({ agent_id, title }) }),
-    get: (thread_id: string, opts?: { limit?: number; before?: number; after?: number }) => {
+    get: (thread_id: string, opts?: { limit?: number; before?: number; after?: number; startup?: boolean }) => {
       const p = new URLSearchParams();
       if (opts?.limit) p.set("limit", String(opts.limit));
       if (opts?.before !== undefined) p.set("before", String(opts.before));
@@ -715,7 +751,8 @@ export const api = {
       // user+assistant pair instead of re-pulling the whole most-recent page.
       if (opts?.after !== undefined) p.set("after", String(opts.after));
       const qs = p.toString() ? `?${p}` : "";
-      return request<ThreadDetail>(`/threads/${thread_id}${qs}`);
+      const path = `/threads/${thread_id}${qs}`;
+      return opts?.startup ? startupRead<ThreadDetail>(path) : request<ThreadDetail>(path);
     },
     metadata: (thread_id: string, signal?: AbortSignal) =>
       request<ThreadMetadata>(`/threads/${thread_id}?view=metadata`, { signal }),
@@ -896,7 +933,8 @@ export const api = {
   },
 
   profile: {
-    get: () => request<UserProfile>("/profile"),
+    get: (opts?: { startup?: boolean }) =>
+      opts?.startup ? startupRead<UserProfile>("/profile") : request<UserProfile>("/profile"),
     update: (data: Partial<Pick<UserProfile, "name" | "icon" | "about" | "preset">>) =>
       request<UserProfile>("/profile", { method: "PUT", body: JSON.stringify(data) }),
     setLocationConsent: (consent: boolean) =>
@@ -1400,6 +1438,7 @@ export async function submitRun(
   channels?: string[],
   hot_since_seq?: number | null,
 ): Promise<SubmitResult> {
+  startupReads.clear();
   const payload: {
     message: string;
     stream_options?: StreamOptions;
@@ -1416,7 +1455,7 @@ export async function submitRun(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(runPayload),
     signal,
-  });
+  }).finally(() => startupReads.clear());
   // 2xx = accepted (currently always 202); 409 = already running. We treat
   // every other status as a hard error so the consumer's catch fires.
   if (res.status === 202) {

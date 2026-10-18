@@ -110,7 +110,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     setCompactionPending(false);
     setManualCompactionPending(false);
     setContextWindowTokens(null);
-    api.threads.get(threadId).then((d) => {
+    api.threads.get(threadId, { startup: true }).then((d) => {
       if (cancelled) return;
       setMessages(d.messages);
       setHasMore(d.has_more);
