@@ -22,12 +22,40 @@ function managedPackagePath(packageName: string): string {
   return join(getPackagesDir(), "node_modules", packageName);
 }
 
+interface ResolvedOptionalPackage {
+  req: OptionalRequire;
+  path: string;
+}
+
+function resolveOptionalPackage(packageName: string): ResolvedOptionalPackage | null {
+  const managedReq = createRuntimeRequire(join(getPackagesDir(), "_anchor"));
+  try {
+    return {
+      req: managedReq,
+      path: managedReq.resolve(managedPackagePath(packageName)),
+    };
+  } catch {
+    // Workspace builds expose bundled @circuitwall packages from the app root.
+  }
+
+  if (process.env.JARELA_PACKAGES_DIR?.trim()) return null;
+  if (!packageName.startsWith("@circuitwall/")) return null;
+
+  const appReq = createRuntimeRequire(join(process.cwd(), "package.json"));
+  try {
+    return { req: appReq, path: appReq.resolve(packageName) };
+  } catch {
+    return null;
+  }
+}
+
 export function loadOptionalPackage<T extends AnyModule>(packageName: string): T | null {
   const override = testOverrides.get(packageName);
   if (override) return override as T;
+  const resolved = resolveOptionalPackage(packageName);
+  if (!resolved) return null;
   try {
-    const req = createRuntimeRequire(join(getPackagesDir(), "_anchor"));
-    return req(managedPackagePath(packageName)) as T;
+    return resolved.req(resolved.path) as T;
   } catch (err) {
     // Keep the optional boundary non-fatal, but leave the actual load failure
     // visible so missing peer dependencies are diagnosable from server logs.
@@ -68,9 +96,10 @@ export function optionalFunction<T extends (...args: any[]) => any>(
 }
 
 export function isOptionalPackageInstalled(packageName: string): boolean {
+  const resolved = resolveOptionalPackage(packageName);
+  if (!resolved) return false;
   try {
-    const req = createRuntimeRequire(join(getPackagesDir(), "_anchor"));
-    req(managedPackagePath(packageName));
+    resolved.req(resolved.path);
     return true;
   } catch (err) {
     console.error(`[optional-package] failed to load ${packageName}: ${err instanceof Error ? err.message : String(err)}`);
