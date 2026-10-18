@@ -469,7 +469,7 @@ export function AppShell() {
         </button>
       </header>
 
-      <div className="flex-1 relative overflow-hidden">
+      <div className="mx-auto flex-1 relative w-full max-w-7xl overflow-hidden">
         {/*
           Each tab is wrapped in <Activity> on its first visit, then kept
           mounted so scroll position, expanded rows, and local form/filter
@@ -512,12 +512,16 @@ export function AppShell() {
         )}
         {mountedTabs.has("models") && (
           <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
-            <ModelsPanel />
+            <div className="mx-auto h-full w-full max-w-5xl min-w-0">
+              <ModelsPanel />
+            </div>
           </Activity>
         )}
         {mountedTabs.has("credentials") && (
           <Activity mode={state.activeTab === "credentials" ? "visible" : "hidden"}>
-            <CredentialsPanel />
+            <div className="mx-auto h-full w-full max-w-5xl min-w-0">
+              <CredentialsPanel />
+            </div>
           </Activity>
         )}
         {mountedTabs.has("mcp") && (
@@ -547,12 +551,16 @@ export function AppShell() {
         )}
         {isFullMode && mountedTabs.has("logs") && (
           <Activity mode={state.activeTab === "logs" ? "visible" : "hidden"}>
-            <LogsPanel />
+            <div className="mx-auto h-full w-full max-w-5xl min-w-0">
+              <LogsPanel />
+            </div>
           </Activity>
         )}
         {isFullMode && mountedTabs.has("env") && (
           <Activity mode={state.activeTab === "env" ? "visible" : "hidden"}>
-            <EnvVarsPanel />
+            <div className="mx-auto h-full w-full max-w-5xl min-w-0">
+              <EnvVarsPanel />
+            </div>
           </Activity>
         )}
         {mountedTabs.has("settings") && (
