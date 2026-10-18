@@ -353,6 +353,2762 @@
         }
       ],
       "tools": []
+    },
+    {
+      "version": "2.5.0",
+      "previous_version": "2.4.0",
+      "date": "2026-10-18",
+      "hints": [],
+      "commits": [
+        "perf(chat): reuse startup reads when opening an agent",
+        "fix(chat): use available width and contain tool pill content",
+        "perf(db): use indexed reads and reuse chat history renders",
+        "fix(ui): align configuration panel widths",
+        "fix(packages): use workspace fallback for optional packages",
+        "feat(ui): add appearance presets and reorganize panels",
+        "fix(models): align live catalog capability metadata",
+        "fix(models): update provider model catalogs"
+      ],
+      "prompts": [
+        {
+          "id": "system.Enabled tools",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "You can execute the 83 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 166 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "removed_lines": [
+            "You can execute the 83 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 39 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "confluence_add_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Add a footer comment to a Confluence page (v2). Pass exactly one of `body_text` or `body_storage`. Pass `parent_comment_id` (from confluence_get_comments) to reply in a thread.",
+          "params_added": [
+            "async_run",
+            "body_storage",
+            "body_text",
+            "deadline_ms",
+            "page_id",
+            "parent_comment_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_add_label",
+          "change": "added",
+          "description_changed": false,
+          "description": "Add one or more labels to a Confluence page (additive — does not replace existing labels). Uses the v1 endpoint (v2 only reads labels as of 2026).",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "labels",
+            "page_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "labels",
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_create_page",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a Confluence page (v2). Pass `space_key` (e.g. 'ENG') — auto-resolved to v2 spaceId. Pass exactly one of `body_text` (plain text → storage XHTML automatically) or `body_storage` (raw XHTML for advanced edits). `parent_id` makes it a child page. Disable to make the agent unable to author Confluence pages.",
+          "params_added": [
+            "async_run",
+            "body_storage",
+            "body_text",
+            "deadline_ms",
+            "parent_id",
+            "space_key",
+            "stream",
+            "title"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "space_key",
+            "title"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_delete_attachment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Delete a Confluence attachment by id (v2). Default soft-deletes (trash, restorable). Pass purge=true for permanent deletion, which **also requires `confirm` to equal attachment_id** as a guardrail.",
+          "params_added": [
+            "async_run",
+            "attachment_id",
+            "confirm",
+            "deadline_ms",
+            "purge",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "attachment_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_delete_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete a Confluence comment (v2). Pass `kind: 'footer' | 'inline'`. **Destructive — no undo.** Disable to make the agent unable to delete comments.",
+          "params_added": [
+            "async_run",
+            "comment_id",
+            "deadline_ms",
+            "kind",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "comment_id",
+            "kind"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_delete_page",
+          "change": "added",
+          "description_changed": false,
+          "description": "Delete a Confluence page (v2). Default soft-deletes (page goes to trash, restorable). Pass purge=true for permanent deletion, which **also requires `confirm` to equal page_id** as a guardrail. Disable to make the agent unable to delete pages.",
+          "params_added": [
+            "async_run",
+            "confirm",
+            "deadline_ms",
+            "page_id",
+            "purge",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_get_attachment_content",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch an attachment's bytes by its download_link (from confluence_list_attachments). Returns UTF-8 text (capped at 50KB) for text-like content types, or base64 for binary. Override the auto-detection via `as_text`.",
+          "params_added": [
+            "as_text",
+            "async_run",
+            "deadline_ms",
+            "download_link",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "download_link"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_get_comments",
+          "change": "added",
+          "description_changed": false,
+          "description": "List footer comments (and inline comments by default) on a Confluence page. Returns id, version, author_id, created_at, body_storage, parent_comment_id (for threading). Tolerates the known v2 inline-comments 404 bug — surfaces it as `inline_warning` rather than failing.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "include_inline",
+            "page_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_get_labels",
+          "change": "added",
+          "description_changed": false,
+          "description": "List labels on a Confluence page (cursor-paginated). Default limit 50 (max 250).",
+          "params_added": [
+            "async_run",
+            "cursor",
+            "deadline_ms",
+            "limit",
+            "page_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_get_page",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a Confluence page by id (v2). Returns title, space_id, parent_id, version, and BOTH body_storage (round-trippable into confluence_update_page) and body_view (rendered HTML, easier to summarize). Each body capped at 20KB.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "page_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_get_page_ancestors",
+          "change": "added",
+          "description_changed": false,
+          "description": "Return the parent chain (root → leaf) for a Confluence page. Useful for breadcrumbs and understanding where a page lives in the tree.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "page_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_get_page_by_title",
+          "change": "added",
+          "description_changed": false,
+          "description": "Find Confluence page(s) by exact title within a space. Auto-resolves `space_key` (e.g. 'ENG') to the v2 space id. Returns up to 5 matches; pass `include_body: true` to also include storage XHTML.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "include_body",
+            "space_key",
+            "stream",
+            "title"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "space_key",
+            "title"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_get_page_children",
+          "change": "added",
+          "description_changed": false,
+          "description": "List direct children of a Confluence page (cursor-paginated). Pass `cursor` from a prior call's `next_cursor` to fetch the next page. Default limit 25 (max 250).",
+          "params_added": [
+            "async_run",
+            "cursor",
+            "deadline_ms",
+            "limit",
+            "page_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_list_attachments",
+          "change": "added",
+          "description_changed": false,
+          "description": "List attachments on a Confluence page (cursor-paginated). Returns id, title, media_type, file_size, download_link. Use confluence_get_attachment_content with the download_link to fetch bytes.",
+          "params_added": [
+            "async_run",
+            "cursor",
+            "deadline_ms",
+            "limit",
+            "page_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_list_spaces",
+          "change": "added",
+          "description_changed": false,
+          "description": "List Confluence spaces (cursor-paginated). Returns id, key, name, type, status, homepage_id. Useful for discovering space keys to pass to confluence_create_page or confluence_get_page_by_title.",
+          "params_added": [
+            "async_run",
+            "cursor",
+            "deadline_ms",
+            "limit",
+            "status",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_move_page",
+          "change": "added",
+          "description_changed": false,
+          "description": "Reorder/reparent a Confluence page (v2). `position`: 'before' or 'after' to place as a sibling of `target_id`; 'append' to make it a child of `target_id`. Non-destructive.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "page_id",
+            "position",
+            "stream",
+            "target_id"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id",
+            "position",
+            "target_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_remove_label",
+          "change": "added",
+          "description_changed": false,
+          "description": "Remove a single label from a Confluence page. Uses the v1 endpoint (v2 Label group is still read-only as of 2026). Counterpart to confluence_add_label.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "label",
+            "page_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "label",
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_search",
+          "change": "added",
+          "description_changed": false,
+          "description": "Search Confluence pages with CQL (Confluence Query Language). Examples: 'type=page AND title~\"runbook\"', 'space=ENG AND lastmodified > now(\"-7d\")'.",
+          "params_added": [
+            "async_run",
+            "cql",
+            "deadline_ms",
+            "max_results",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "cql"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_update_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Edit an existing Confluence comment (v2). Pass `kind: 'footer' | 'inline'` to route to the correct endpoint. Same `body_text` xor `body_storage` pattern as confluence_add_comment. If version_number is omitted, the tool auto-fetches the current version and sends current+1 (Confluence requires strict +1 increments).",
+          "params_added": [
+            "async_run",
+            "body_storage",
+            "body_text",
+            "comment_id",
+            "deadline_ms",
+            "kind",
+            "stream",
+            "version_message",
+            "version_number"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "comment_id",
+            "kind"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_update_page",
+          "change": "added",
+          "description_changed": false,
+          "description": "Update an existing Confluence page (v2). Pass exactly one of `body_text` or `body_storage`. If `version_number` is omitted, the tool auto-fetches the current version and sends current+1 (Confluence requires strict +1 increments; gaps cause 409). If `title` is omitted, the existing title is preserved. Avoid back-to-back updates within ~1 second — Confluence may return 409 even with the correct version. Disable to make the agent read-only on pages.",
+          "params_added": [
+            "async_run",
+            "body_storage",
+            "body_text",
+            "deadline_ms",
+            "page_id",
+            "stream",
+            "title",
+            "version_message",
+            "version_number"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_upload_attachment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Attach a file to a Confluence page. Pass content_base64 for binary or content_text for plain UTF-8. Uses the v1 multipart endpoint (v2 has no attachment-create endpoint as of 2026). Disable to make the agent unable to add attachments.",
+          "params_added": [
+            "async_run",
+            "comment",
+            "content_base64",
+            "content_text",
+            "deadline_ms",
+            "filename",
+            "minor_edit",
+            "page_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "filename",
+            "page_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_add_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Post a comment on an issue or pull request (GitHub treats both the same). **PREFER THIS over shell-exec'ing the `gh` CLI.** Body is rendered as GitHub-flavored Markdown.",
+          "params_added": [
+            "async_run",
+            "body",
+            "deadline_ms",
+            "number",
+            "owner",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "body",
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_create_issue",
+          "change": "added",
+          "description_changed": false,
+          "description": "Open a new issue in a repository. **PREFER THIS over shell-exec'ing the `gh` CLI.** Labels and assignees must already exist on the repo — invalid values produce a 422.",
+          "params_added": [
+            "assignees",
+            "async_run",
+            "body",
+            "deadline_ms",
+            "labels",
+            "owner",
+            "repo",
+            "stream",
+            "title"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "owner",
+            "repo",
+            "title"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_create_pull",
+          "change": "added",
+          "description_changed": false,
+          "description": "Open a pull request. **PREFER THIS over shell-exec'ing the `gh` CLI.** `head` is the branch with your changes (use `user:branch` for cross-fork PRs); `base` is the branch you want to merge into. Returns 422 if the head/base pair has no diff or if the branches don't exist.",
+          "params_added": [
+            "async_run",
+            "base",
+            "body",
+            "deadline_ms",
+            "draft",
+            "head",
+            "maintainer_can_modify",
+            "owner",
+            "repo",
+            "stream",
+            "title"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "base",
+            "head",
+            "owner",
+            "repo",
+            "title"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_create_review",
+          "change": "added",
+          "description_changed": false,
+          "description": "Submit a pull-request review (approve / request changes / leave a comment). **PREFER THIS over shell-exec'ing the `gh` CLI.** `event=APPROVE` doesn't require a body. `event=REQUEST_CHANGES` requires a body. Line-level inline review comments aren't supported by this tool yet — use the GitHub UI for those.",
+          "params_added": [
+            "async_run",
+            "body",
+            "commit_id",
+            "deadline_ms",
+            "event",
+            "number",
+            "owner",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "event",
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_get_file",
+          "change": "added",
+          "description_changed": false,
+          "description": "Read a file's contents from a repo at an optional ref (branch / tag / commit SHA). **PREFER THIS over shell-exec'ing the `gh` CLI.** Returns up to 20 KB of UTF-8 text; longer files are truncated with `truncated: true`. Binary files return `binary: true` and `size_bytes` instead of `content`. GitHub itself rejects files larger than ~1 MB on this endpoint.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "owner",
+            "path",
+            "ref",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "owner",
+            "path",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_get_issue",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a single issue (or PR — same endpoint) by number. Returns body capped at 20KB, plus labels, assignees, and timestamps. **PREFER THIS over shell-exec'ing the `gh` CLI.**",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "number",
+            "owner",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_get_pull",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch detail on a single pull request — head/base SHAs, mergeable state, additions/deletions, changed files count, review comment count. **PREFER THIS over shell-exec'ing the `gh` CLI.** Note: `mergeable` may be null on a freshly-pushed PR; GitHub computes it asynchronously.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "number",
+            "owner",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_get_repo",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch repo summary (default branch, visibility, description, topics, star/fork counts, open-issue count). **PREFER THIS over shell-exec'ing the `gh` CLI.** Useful before opening an issue (to confirm the repo exists / pick the right default branch).",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "owner",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_list_branches",
+          "change": "added",
+          "description_changed": false,
+          "description": "List branches in a repository with their head SHAs and protection state. **PREFER THIS over shell-exec'ing the `gh` CLI.** Useful before opening a PR (confirm the head branch exists and is the SHA you expect).",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "max_results",
+            "owner",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_list_issue_comments",
+          "change": "added",
+          "description_changed": false,
+          "description": "List comments on an issue or PR. **PREFER THIS over shell-exec'ing the `gh` CLI.** Each comment body is capped at 8 KB; `truncated: true` flags ones that hit the cap.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "max_results",
+            "number",
+            "owner",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_list_pull_files",
+          "change": "added",
+          "description_changed": false,
+          "description": "List files changed in a pull request, with per-file additions/deletions and (capped) patch text. **PREFER THIS over shell-exec'ing the `gh` CLI.** Each patch caps at 8 KB; `patch_truncated: true` means the diff was longer than that. GitHub itself caps the response at 3000 files.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "max_results",
+            "number",
+            "owner",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_list_pull_reviews",
+          "change": "added",
+          "description_changed": false,
+          "description": "List reviews submitted on a pull request (approvals, change-requests, comment-only). **PREFER THIS over shell-exec'ing the `gh` CLI.** Use this to check whether a PR is approved before calling github_merge_pull.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "max_results",
+            "number",
+            "owner",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_list_pulls",
+          "change": "added",
+          "description_changed": false,
+          "description": "List pull requests for a repository, optionally filtered by state / head branch / base branch. **PREFER THIS over shell-exec'ing the `gh` CLI.** For richer detail on a single PR (mergeable, review state, file count) call github_get_pull.",
+          "params_added": [
+            "async_run",
+            "base",
+            "deadline_ms",
+            "head",
+            "max_results",
+            "owner",
+            "repo",
+            "state",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_merge_pull",
+          "change": "added",
+          "description_changed": false,
+          "description": "Merge a pull request. **PREFER THIS over shell-exec'ing the `gh` CLI.** `method` selects the merge strategy (default `merge`); pass `sha` to refuse the merge if the PR head has been force-pushed since you last looked. 405 means the PR isn't mergeable yet (still in CI / has conflicts / needs review); 409 means the `sha` guard tripped.",
+          "params_added": [
+            "async_run",
+            "commit_message",
+            "commit_title",
+            "deadline_ms",
+            "method",
+            "number",
+            "owner",
+            "repo",
+            "sha",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_request_reviewers",
+          "change": "added",
+          "description_changed": false,
+          "description": "Request review on a pull request from one or more users and/or teams. **PREFER THIS over shell-exec'ing the `gh` CLI.** GitHub silently drops invalid usernames / team slugs — check the returned `requested_users` / `requested_teams` to see who actually got a notification.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "number",
+            "owner",
+            "repo",
+            "reviewers",
+            "stream",
+            "team_reviewers"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_search_code",
+          "change": "added",
+          "description_changed": false,
+          "description": "Search file contents across GitHub. **PREFER THIS over shell-exec'ing the `gh` CLI.** Pass `repo` (\"owner/name\") to scope to one repo; the tool prepends `repo:owner/name `. The `q` body accepts GitHub's full code-search syntax: 'language:ts symbolName', 'extension:py path:tests assert', etc. Each hit returns a 400-char snippet around the match. Note: GitHub code search has stricter rate limits than other endpoints (10/min for unauthenticated, 30/min for authenticated).",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "max_results",
+            "q",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "q"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_search_issues",
+          "change": "added",
+          "description_changed": false,
+          "description": "Search GitHub issues AND pull requests with the same query syntax as the github.com search bar. **PREFER THIS over shell-exec'ing the `gh` CLI.** Pass `repo` (\"owner/name\") to scope the search to a single repo — the tool prepends `repo:owner/name ` automatically. The `q` body accepts the full GitHub search vocabulary: 'is:issue is:open assignee:@me', 'is:pr review-requested:@me', 'label:bug created:>2026-01-01', etc. `is_pr` in the response distinguishes PRs from issues.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "max_results",
+            "q",
+            "repo",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "q"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_update_issue",
+          "change": "added",
+          "description_changed": false,
+          "description": "Edit an issue or PR (same endpoint): change title, body, labels, assignees, or close/reopen via `state`. **PREFER THIS over shell-exec'ing the `gh` CLI.** Pass `state: \"closed\"` with `state_reason: \"completed\"` for done-as-intended, or `\"not_planned\"` for won't-fix.",
+          "params_added": [
+            "assignees",
+            "async_run",
+            "body",
+            "deadline_ms",
+            "labels",
+            "number",
+            "owner",
+            "repo",
+            "state",
+            "state_reason",
+            "stream",
+            "title"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "github_update_pull",
+          "change": "added",
+          "description_changed": false,
+          "description": "Edit a pull request: title, body, base branch, or close/reopen. **PREFER THIS over shell-exec'ing the `gh` CLI.** To MERGE a PR use github_merge_pull — `state` here only opens / closes.",
+          "params_added": [
+            "async_run",
+            "base",
+            "body",
+            "deadline_ms",
+            "maintainer_can_modify",
+            "number",
+            "owner",
+            "repo",
+            "state",
+            "stream",
+            "title"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "number",
+            "owner",
+            "repo"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_calendar_create_event",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create an event on an iCloud calendar. `start` and `end` are ISO timestamps; pass `all_day: true` and date-only strings (YYYY-MM-DD) for all-day events. Optional `rrule` sets recurrence specs (e.g. 'FREQ=WEEKLY;BYDAY=MO,FR'). Optional `alerts` sets primary & secondary reminders (e.g. ['15m', '1h'] or ['-PT15M', '-PT1H']). Optional `travel_time` sets Apple travel duration (e.g. '15m', '30m').",
+          "params_added": [
+            "alerts",
+            "all_day",
+            "async_run",
+            "attendees",
+            "availability",
+            "calendar_url",
+            "deadline_ms",
+            "description",
+            "end",
+            "location",
+            "rrule",
+            "start",
+            "status",
+            "stream",
+            "summary",
+            "travel_time",
+            "url"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "calendar_url",
+            "end",
+            "start",
+            "summary"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_calendar_delete_event",
+          "change": "added",
+          "description_changed": false,
+          "description": "Delete an event by UID. For a recurring series this removes every occurrence; per-instance deletion (EXDATE) is not supported in this release.",
+          "params_added": [
+            "async_run",
+            "calendar_url",
+            "deadline_ms",
+            "stream",
+            "uid"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "calendar_url",
+            "uid"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_calendar_get_event",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a single event by UID, including the raw iCalendar source.",
+          "params_added": [
+            "async_run",
+            "calendar_url",
+            "deadline_ms",
+            "stream",
+            "uid"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "calendar_url",
+            "uid"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_calendar_list_calendars",
+          "change": "added",
+          "description_changed": false,
+          "description": "List iCloud event calendars (VEVENT collections). Returns the URL to pass to other calendar tools, plus a display name and color.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_calendar_list_events",
+          "change": "added",
+          "description_changed": false,
+          "description": "List events in a calendar between two ISO timestamps. The calendar URL comes from `icloud_calendar_list_calendars`. Returns each event's uid, summary, start, end, location, description, and href.",
+          "params_added": [
+            "async_run",
+            "calendar_url",
+            "deadline_ms",
+            "stream",
+            "time_max",
+            "time_min"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "calendar_url",
+            "time_max",
+            "time_min"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_calendar_update_event",
+          "change": "added",
+          "description_changed": false,
+          "description": "Patch fields on an existing event. Only the supplied fields are overwritten — others are preserved. Pass `rrule` to update recurrence, `alerts` for primary/secondary alerts, or `travel_time` for Apple travel time. Pass 'NONE' / empty array to remove recurrence, alerts, or travel time.",
+          "params_added": [
+            "alerts",
+            "async_run",
+            "availability",
+            "calendar_url",
+            "deadline_ms",
+            "description",
+            "end",
+            "location",
+            "rrule",
+            "start",
+            "status",
+            "stream",
+            "summary",
+            "travel_time",
+            "uid",
+            "url"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "calendar_url",
+            "uid"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_mail_create_draft",
+          "change": "added",
+          "description_changed": false,
+          "description": "Save a new draft to the iCloud Drafts folder. This intentionally does not send mail — iCloud SMTP is not wired in this release. The draft can be reviewed and sent from Apple Mail on the user's device.",
+          "params_added": [
+            "async_run",
+            "bcc",
+            "body_html",
+            "body_text",
+            "cc",
+            "deadline_ms",
+            "in_reply_to",
+            "stream",
+            "subject",
+            "to"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "body_text",
+            "subject",
+            "to"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_mail_delete_message",
+          "change": "added",
+          "description_changed": false,
+          "description": "Move a message to the iCloud Trash (recoverable for ~30 days, then auto-purged by Apple). Resolves the localised Trash folder via the SPECIAL-USE `\\Trash` flag — works regardless of UI language. To permanently delete, the user must empty Trash from Mail.app or iCloud.com.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "mailbox",
+            "stream",
+            "uid"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "mailbox",
+            "uid"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_mail_flag_message",
+          "change": "added",
+          "description_changed": false,
+          "description": "Add or remove standard IMAP flags on a message — typically `\\Seen` (read/unread) and `\\Flagged` (starred). Pass `seen=true` to mark read, `seen=false` to mark unread; same for `flagged`.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "flagged",
+            "mailbox",
+            "seen",
+            "stream",
+            "uid"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "mailbox",
+            "uid"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_mail_get_message",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a single message by UID. Returns headers, plain-text body, and an attachments index. Set include_html=true to also pull the HTML alternative (skipped by default to keep responses small).",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "include_html",
+            "mailbox",
+            "stream",
+            "uid"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "uid"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_mail_list_folders",
+          "change": "added",
+          "description_changed": false,
+          "description": "List iCloud Mail folders (mailboxes) with message + unread counts. Use the SPECIAL-USE flag (`\\Drafts`, `\\Sent`, `\\Trash`, `\\Junk`, `\\Archive`) to identify well-known folders — iCloud localises the display names but the flags are stable.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_mail_list_messages",
+          "change": "added",
+          "description_changed": false,
+          "description": "Search messages in an iCloud Mail folder. Returns the most recent results first. `query` does a body+subject substring search (IMAP SEARCH BODY semantics — iCloud does not implement Gmail-style operators). Date bounds are ISO strings (e.g. `2026-06-01`).",
+          "params_added": [
+            "async_run",
+            "before",
+            "deadline_ms",
+            "limit",
+            "mailbox",
+            "query",
+            "since",
+            "stream",
+            "unseen_only"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_mail_move_message",
+          "change": "added",
+          "description_changed": false,
+          "description": "Move a message to a different folder. To send a message to trash, use `icloud_mail_delete_message` (it resolves the localised Trash folder via SPECIAL-USE).",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "from_mailbox",
+            "stream",
+            "to_mailbox",
+            "uid"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "from_mailbox",
+            "to_mailbox",
+            "uid"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_reminders_complete",
+          "change": "added",
+          "description_changed": false,
+          "description": "Mark a reminder (VTODO) as completed.",
+          "params_added": [
+            "async_run",
+            "calendar_url",
+            "deadline_ms",
+            "stream",
+            "uid"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "calendar_url",
+            "uid"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_reminders_create",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a reminder (VTODO) in an iCloud Reminders list.",
+          "params_added": [
+            "async_run",
+            "calendar_url",
+            "deadline_ms",
+            "description",
+            "due",
+            "stream",
+            "summary"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "calendar_url",
+            "summary"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_reminders_list",
+          "change": "added",
+          "description_changed": false,
+          "description": "List reminders (VTODO items) in a Reminders list. The calendar URL comes from a CalDAV collection whose components include `VTODO` — use `icloud_calendar_list_calendars` and filter on `components.includes('VTODO')`, or call `icloud_reminders_list_lists`.",
+          "params_added": [
+            "async_run",
+            "calendar_url",
+            "deadline_ms",
+            "include_completed",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "calendar_url"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_reminders_list_lists",
+          "change": "added",
+          "description_changed": false,
+          "description": "List iCloud Reminders lists (VTODO calendar collections). Returns the URL to pass to the other reminders tools.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "jira_add_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Add a comment to a Jira issue. Plain text is auto-converted to ADF (Atlassian Document Format). **PREFER THIS over shell-exec'ing the jira CLI.**",
+          "params_added": [
+            "async_run",
+            "body",
+            "deadline_ms",
+            "issue_key",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "body",
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_add_remote_link",
+          "change": "added",
+          "description_changed": false,
+          "description": "Attach a web/external link to a Jira issue (Confluence pages, GitHub PRs, dashboards, Slack threads, any URL). Distinct from jira_link_issues, which links one Jira issue to another. Pass `global_id` to make the link idempotent — re-posting with the same global_id updates the existing link rather than creating a duplicate. **PREFER THIS over pasting URLs into the description.**",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "global_id",
+            "icon_url",
+            "issue_key",
+            "stream",
+            "summary",
+            "title",
+            "url"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_key",
+            "title",
+            "url"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_add_worklog",
+          "change": "added",
+          "description_changed": false,
+          "description": "Log time spent on a Jira issue. time_spent uses Jira's duration syntax: '1h', '30m', '2d 4h', etc. started is an ISO 8601 timestamp (defaults to now). comment is plain text auto-converted to ADF.",
+          "params_added": [
+            "async_run",
+            "comment",
+            "deadline_ms",
+            "issue_key",
+            "started",
+            "stream",
+            "time_spent"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_key",
+            "time_spent"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_add_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Post a comment on a Jira Align work item. **`type` is required** to route to the correct /<type>s/{id}/comments resource. Plain text body. Note: not all instances expose comments as a sub-resource on every type — check your Swagger if this 404s.",
+          "params_added": [
+            "async_run",
+            "body",
+            "deadline_ms",
+            "item_id",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "body",
+            "item_id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_create_dependency",
+          "change": "added",
+          "description_changed": false,
+          "description": "Link two Jira Align work items as a dependency: the predecessor must complete before the successor can. `dependency_type` defaults to the instance default (typically 'FS' / finish-to-start) when omitted. Items can be of any type — JA dependencies cross the epic/feature/story hierarchy. **Disable this tool to make the agent read-only.** Note: dependency endpoint shape varies across JA versions — if this 4xx's, check your instance's Swagger.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "dependency_type",
+            "description",
+            "predecessor_id",
+            "stream",
+            "successor_id"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "predecessor_id",
+            "successor_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_create_entity",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a Jira Align hierarchy entity: program, team, release, sprint (PI), portfolio, or value stream. Use to spin up a new program/team or schedule a new sprint. Optional dates must be ISO-8601 (e.g. '2026-07-01'). **Disable this tool to make the agent read-only.**",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "description",
+            "end_date",
+            "entity_type",
+            "name",
+            "parent_id",
+            "portfolio_id",
+            "program_id",
+            "start_date",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "entity_type",
+            "name"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_create_item",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a Jira Align work item in a given type's collection. Set `type` to one of epic|capability|feature|story|theme|task|defect|objective. Pass `parent_id` to attach to an existing hierarchy. **Disable this tool to make the agent read-only.**",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "description",
+            "owner",
+            "parent_id",
+            "program_id",
+            "stream",
+            "team_id",
+            "title",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "title",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_delete_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete a comment from a Jira Align work item. **Irreversible.** **`type` is required.** The agent must also pass `confirm` set to the same `comment_id` — a deliberate two-arg gate so a mis-issued tool call can't wipe a comment. **Leave this tool disabled unless the user explicitly wants delete capability.**",
+          "params_added": [
+            "async_run",
+            "comment_id",
+            "confirm",
+            "deadline_ms",
+            "item_id",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "comment_id",
+            "confirm",
+            "item_id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_delete_dependency",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently remove a Jira Align dependency link. **Irreversible.** Use jira_align_list_dependencies first to find the dependency_id. The agent must pass `confirm` equal to `dependency_id` — a two-arg gate against accidental deletes. **Leave this tool disabled unless the user explicitly wants delete capability.**",
+          "params_added": [
+            "async_run",
+            "confirm",
+            "deadline_ms",
+            "dependency_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "confirm",
+            "dependency_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_delete_entity",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete a Jira Align hierarchy entity (program/team/release/sprint/portfolio/value stream). **Irreversible** and may cascade — deleting a program can affect every work item scoped to it. The agent must pass `confirm` equal to `entity_id` — a two-arg gate against accidental deletes. **Leave this tool disabled unless the user explicitly wants delete capability.**",
+          "params_added": [
+            "async_run",
+            "confirm",
+            "deadline_ms",
+            "entity_id",
+            "entity_type",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "confirm",
+            "entity_id",
+            "entity_type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_delete_item",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete a Jira Align work item. **Irreversible.** **`type` is required** to route to the correct collection. The agent must also pass `confirm` set to the same `item_id` — a deliberate two-arg gate so a mis-issued tool call can't wipe an item. **Leave this tool disabled unless the user explicitly wants delete capability.**",
+          "params_added": [
+            "async_run",
+            "confirm",
+            "deadline_ms",
+            "item_id",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "confirm",
+            "item_id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_get_entity",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a single Jira Align hierarchy entity by id: program, team, release, sprint (PI), portfolio, or value stream. Returns id, name, description, state, hierarchy refs, dates.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "entity_id",
+            "entity_type",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "entity_id",
+            "entity_type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_get_item",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a Jira Align work item by id. **Must specify `type`** — Jira Align v2 has no generic /items endpoint, so the type tells us which collection to hit (epic|capability|feature|story|theme|task|defect|objective). Returns title, state, hierarchy refs (parent/program/team/release/sprint), owner, and timestamps. Use jira_align_list_children to walk the tree.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "item_id",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "item_id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_list_children",
+          "change": "added",
+          "description_changed": false,
+          "description": "List the direct children of a Jira Align work item. **Both `parent_id` and `child_type` are required** — the API has no generic `/items/{id}/children` route, so we query the child collection with a parentId filter. Use the standard hierarchy: theme → epic → capability → feature → story (instances may differ; check your portfolio config). For deeper trees, call this once per level.",
+          "params_added": [
+            "async_run",
+            "child_type",
+            "deadline_ms",
+            "max_results",
+            "parent_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "child_type",
+            "parent_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_list_comments",
+          "change": "added",
+          "description_changed": false,
+          "description": "List comments on a Jira Align work item. **`type` is required** to route to the correct /<type>s/{id}/comments resource. Returns id, body, author, and timestamps. Call this to discover a comment_id before jira_align_update_comment / jira_align_delete_comment.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "item_id",
+            "max_results",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "item_id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_list_dependencies",
+          "change": "added",
+          "description_changed": false,
+          "description": "List Jira Align dependencies (links between work items) involving a given item. By default returns both inbound and outbound; pass direction='predecessor' for items the given item depends on (blockers), or direction='successor' for items that depend on the given item (dependents). Returns id, predecessor_id, successor_id, dependency_type, state. Use this to find a dependency_id before calling jira_align_delete_dependency.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "direction",
+            "item_id",
+            "max_results",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "item_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_list_entities",
+          "change": "added",
+          "description_changed": false,
+          "description": "List non-work-item Jira Align entities of a given type: programs, teams, releases, sprints (PIs), portfolios, or value streams. Use to resolve human names → ids before passing to work-item tools, or to enumerate available programs/teams when planning work. Filter by `name_filter` (contains-match) or by raw OData `filter` for advanced cases.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "entity_type",
+            "filter",
+            "max_results",
+            "name_filter",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "entity_type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_search_items",
+          "change": "added",
+          "description_changed": false,
+          "description": "Search Jira Align work items of a given type, with optional state/owner/program/team filters. **`type` is required** — JA v2 has no cross-type item collection, so each search hits one /<type>s endpoint. Use `filter` to pass an OData expression for fields this tool doesn't model (e.g. custom fields). Returns a compact list (id, title, state, owner). Pass updated_since='-7d' or an ISO date for recency.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "filter",
+            "max_results",
+            "owner",
+            "program_id",
+            "state",
+            "stream",
+            "team_id",
+            "type",
+            "updated_since"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_transition_item",
+          "change": "added",
+          "description_changed": false,
+          "description": "Move a Jira Align work item to a new workflow state (e.g. 'In Progress' → 'Done'). Call without `state` to list valid transitions for the item's type. **`type` is required.**",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "item_id",
+            "state",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "item_id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_update_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Edit the body of an existing comment on a Jira Align work item. **`type` is required** to route to /<type>s/{item_id}/comments/{comment_id}. Use jira_align_list_comments first to find the comment_id. **Disable this tool to make the agent read-only.**",
+          "params_added": [
+            "async_run",
+            "body",
+            "comment_id",
+            "deadline_ms",
+            "item_id",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "body",
+            "comment_id",
+            "item_id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_update_entity",
+          "change": "added",
+          "description_changed": false,
+          "description": "Patch fields on a Jira Align hierarchy entity (program/team/release/sprint/portfolio/value stream). Only the listed fields are touched. Use camelCase JA REST field names (name, description, parentId, startDate, endDate, isActive, …). **Disable this tool to make the agent read-only.**",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "entity_id",
+            "entity_type",
+            "fields",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "entity_id",
+            "entity_type",
+            "fields"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_align_update_item",
+          "change": "added",
+          "description_changed": false,
+          "description": "Patch fields on a Jira Align item (title, description, owner, programId, teamId, parentId, custom fields, …). Only the listed fields are touched. **`type` is required** to route the PATCH to the correct /<type>s/{id} resource. **Disable this tool to make the agent read-only.**",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "fields",
+            "item_id",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "fields",
+            "item_id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_create_component",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a component on a Jira project. assignee_type controls default assignee for issues with this component: 'PROJECT_DEFAULT' | 'COMPONENT_LEAD' | 'PROJECT_LEAD' | 'UNASSIGNED'.",
+          "params_added": [
+            "assignee_type",
+            "async_run",
+            "deadline_ms",
+            "description",
+            "lead_account_id",
+            "name",
+            "project_key",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "name",
+            "project_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_create_issue",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a new Jira issue. Defaults to issue_type='Task'. Pass parent_key to create a sub-task or attach a Story to an Epic. Custom fields accept display names or customfield_NNNNN ids. **PREFER THIS over shell-exec'ing the jira CLI.**",
+          "params_added": [
+            "assignee_account_id",
+            "async_run",
+            "custom_fields",
+            "deadline_ms",
+            "description",
+            "issue_type",
+            "labels",
+            "parent_key",
+            "project_key",
+            "stream",
+            "summary"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "project_key",
+            "summary"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_create_issues_bulk",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create up to 50 Jira issues in a single API call. Each entry takes the same shape as jira_create_issue (project_key, summary, description, issue_type, parent_key, labels, assignee_account_id, custom_fields). Returns per-issue keys plus any partial errors. **PREFER THIS over many sequential jira_create_issue calls** when creating ≥3 tickets.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "issues",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issues"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_create_sprint",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a future sprint on a board. New sprints always start in 'future' state — use jira_update_sprint with state='active' to start it. start_date/end_date are ISO 8601 strings; they're optional but required by Atlassian before you can start the sprint.",
+          "params_added": [
+            "async_run",
+            "board_id",
+            "deadline_ms",
+            "end_date",
+            "goal",
+            "name",
+            "start_date",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "board_id",
+            "name"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_create_version",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a new version on a Jira project. Pass the project key — we resolve it to the numeric id. start_date / release_date are 'YYYY-MM-DD'. Set released=true to mark released on creation.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "description",
+            "name",
+            "project_key",
+            "release_date",
+            "released",
+            "start_date",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "name",
+            "project_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_delete_attachment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete an attachment from a Jira issue by id. **Destructive — no undo.** Look up the id via jira_get_issue.attachments[].id. Disable to make the agent unable to delete attachments.",
+          "params_added": [
+            "async_run",
+            "attachment_id",
+            "deadline_ms",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "attachment_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_delete_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete a comment from a Jira issue. **Destructive — no undo.** Look up the id via jira_get_issue (include_comments: true) or jira_get_comments. Disable to make the agent unable to delete comments.",
+          "params_added": [
+            "async_run",
+            "comment_id",
+            "deadline_ms",
+            "issue_key",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "comment_id",
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_delete_issue",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete a Jira issue. **DESTRUCTIVE — there is no undo from the API.** By default, Jira refuses to delete an issue that has sub-tasks; pass delete_subtasks=true to delete them too. Disable this tool entirely to make the agent unable to delete tickets.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "delete_subtasks",
+            "issue_key",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_delete_link",
+          "change": "added",
+          "description_changed": false,
+          "description": "Delete an issue link (Jira-to-Jira, default) or a remote/web link. Look up the id first with jira_get_issue (issue_links[].id or remote_links[].id — pass `expand: ['remoteLinks']` for the latter). For remote links, also pass the issue key as `link_type` since the API is scoped per-issue.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "kind",
+            "link_id",
+            "link_type",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "link_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_delete_sprint",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete a sprint. **Irreversible** — issues are unassigned from the sprint but the sprint's velocity/burndown data is lost. The agent must pass `confirm` set to the same `sprint_id` to proceed (two-arg gate). **Leave this tool disabled unless the user explicitly wants delete capability.**",
+          "params_added": [
+            "async_run",
+            "confirm",
+            "deadline_ms",
+            "sprint_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "confirm",
+            "sprint_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_find_user",
+          "change": "added",
+          "description_changed": false,
+          "description": "Look up Jira Cloud users by email or display-name fragment. Returns accountId values you can pass to jira_update_issue's assignee_account_id. Use when you only have an email.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "query",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "query"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_get_attachment_content",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a Jira issue attachment's bytes by content_url (from jira_get_issue.attachments[].content_url). Returns UTF-8 text capped at 50KB for text-like content types, or base64 for binary. Override the auto-detection via `as_text`. Mirrors confluence_get_attachment_content.",
+          "params_added": [
+            "as_text",
+            "async_run",
+            "content_url",
+            "deadline_ms",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "content_url"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_get_board",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch board metadata and configuration in one call: id, name, type, project_key, plus filter id, sub-query JQL, estimation field, and ranking custom field. Use this when you need to know how issues are estimated or ranked on a specific board.",
+          "params_added": [
+            "async_run",
+            "board_id",
+            "deadline_ms",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "board_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_get_changelog",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a Jira issue's history (paginated). Each entry has author, timestamp, and a list of field-level changes (field name, from, to). Useful for 'what changed yesterday?' audits and for surfacing the previous value of a field.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "issue_key",
+            "max_results",
+            "start_at",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_get_comments",
+          "change": "added",
+          "description_changed": false,
+          "description": "Paginated comment list for a Jira issue. Use this when an issue has more comments than the embedded list returned by jira_get_issue (Jira caps that at ~50). order_by accepts 'created' or '-created' for ascending/descending. ADF bodies auto-flattened.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "issue_key",
+            "max_results",
+            "order_by",
+            "start_at",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_get_issue",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a single Jira issue by key (e.g. 'PROJ-123'). Returns full detail including description, parent, sub-tasks, issue_links (with link ids for jira_delete_link), and attachment metadata. Pass `expand: ['remoteLinks']` to also fetch web/Confluence/GitHub links. Pass `custom_fields` (display names like 'Vulnerability Description', or `customfield_NNNNN` ids) to include them in the response under a `custom_fields` map. Pass `include_comments: true` to include flattened comment bodies (author, timestamps, text). ADF/rich-text is auto-flattened. **PREFER THIS over shell-exec'ing the jira CLI.**",
+          "params_added": [
+            "async_run",
+            "custom_fields",
+            "deadline_ms",
+            "expand",
+            "include_comments",
+            "issue_key",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_get_project",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a single Jira project by key. Optionally include versions, components, and/or issue types in the response — saves separate calls for the common 'tell me about this project' use case.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "include_components",
+            "include_issue_types",
+            "include_versions",
+            "project_key",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "project_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_get_sprint",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch a single sprint by id. Returns name, state, goal, start/end/complete dates. Use jira_search with `sprint = {id}` to list its issues.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "sprint_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "sprint_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_link_issues",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create an issue link between two Jira issues (Blocks, Relates, Duplicates, Cloners, etc.). The link reads left-to-right: 'from_issue <outward verb> to_issue'. For example, { from_issue: 'A-1', to_issue: 'B-2', link_type: 'Blocks' } means 'A-1 blocks B-2' (and 'B-2 is blocked by A-1' shows on the other side automatically). Call without arguments to list available link types for the site. **PREFER THIS over shell-exec'ing the jira CLI or hitting REST directly.** Disable to make the agent read-only.",
+          "params_added": [
+            "async_run",
+            "comment",
+            "deadline_ms",
+            "from_issue",
+            "link_type",
+            "stream",
+            "to_issue"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "jira_list_boards",
+          "change": "added",
+          "description_changed": false,
+          "description": "List Jira agile boards (Scrum or Kanban). Filter by project key, name fragment, or board type. Returns id, name, type, project_key. Use the id with jira_list_sprints / jira_get_backlog / etc.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "max_results",
+            "name",
+            "project",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "jira_list_components",
+          "change": "added",
+          "description_changed": false,
+          "description": "List components on a Jira project. Returns id, name, description, lead, default assignee type. Components are not paginated by Jira — the full list returns in one call.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "project_key",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "project_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_list_meta",
+          "change": "added",
+          "description_changed": false,
+          "description": "List values for a Jira site-wide enum: issue types, priorities, statuses, or resolutions. Pass `kind` = 'issue_type' | 'priority' | 'status' | 'resolution'. Omit `kind` to list available kinds. Use this before jira_create_issue / jira_update_issue when you don't know the exact name on this site.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "kind",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "jira_list_projects",
+          "change": "added",
+          "description_changed": false,
+          "description": "List Jira projects (paginated). Filter by name fragment via `query` or by category. Returns id, key, name, type, style ('classic'|'next-gen'), lead.",
+          "params_added": [
+            "async_run",
+            "category_id",
+            "deadline_ms",
+            "max_results",
+            "query",
+            "start_at",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "jira_list_sprints",
+          "change": "added",
+          "description_changed": false,
+          "description": "List sprints on a board. Filter by state ('active', 'closed', 'future'). Returns sprint id, name, state, goal, dates, origin_board_id. To list issues IN a sprint, use jira_search with JQL `sprint = {id}` — that's faster and supports custom field selection.",
+          "params_added": [
+            "async_run",
+            "board_id",
+            "deadline_ms",
+            "max_results",
+            "state",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "board_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_list_versions",
+          "change": "added",
+          "description_changed": false,
+          "description": "List versions on a Jira project (paginated). Returns id, name, released/archived flags, dates. Use jira_create_version to add a new one and jira_update_version to release/archive.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "max_results",
+            "order_by",
+            "project_key",
+            "start_at",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "project_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_list_worklogs",
+          "change": "added",
+          "description_changed": false,
+          "description": "List worklog entries on a Jira issue (paginated). Returns id, author, time_spent (display string + seconds), started, comment. Use to compute totals or audit time tracking.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "issue_key",
+            "max_results",
+            "start_at",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_move_issues_to_backlog",
+          "change": "added",
+          "description_changed": false,
+          "description": "Remove issues from their current sprint and put them back on the backlog. Up to 50 issues per call. Pass `board_id` for Kanban boards (the unscoped endpoint only works for Scrum). For Scrum, board_id is optional but recommended for clarity.",
+          "params_added": [
+            "async_run",
+            "board_id",
+            "deadline_ms",
+            "issue_keys",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_keys"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_move_issues_to_sprint",
+          "change": "added",
+          "description_changed": false,
+          "description": "Move issues into a sprint. Up to 50 issues per call. Issues already in another sprint are transparently moved (no separate remove step needed). Use jira_move_issues_to_backlog to remove issues from sprints without putting them in a new one.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "issue_keys",
+            "sprint_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_keys",
+            "sprint_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_rank_issues",
+          "change": "added",
+          "description_changed": false,
+          "description": "Rank up to 50 issues relative to a single anchor issue (before XOR after). Pass rank_custom_field_id only on sites that have a non-default rank field — get it from jira_get_board.configuration.ranking_field. Order within `issues[]` is preserved.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "issues",
+            "rank_after_issue",
+            "rank_before_issue",
+            "rank_custom_field_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issues"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_search",
+          "change": "added",
+          "description_changed": false,
+          "description": "Search Jira issues using JQL. **PREFER THIS over shell-exec'ing the jira CLI** — this tool uses the configured Atlassian credentials directly via REST. Returns key, summary, status, assignee. JQL examples: 'assignee = currentUser() AND resolution = Unresolved', 'project = ABC AND status = \"In Progress\"', 'updated >= -7d ORDER BY updated DESC'.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "fields",
+            "jql",
+            "max_results",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "jql"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_transition_issue",
+          "change": "added",
+          "description_changed": false,
+          "description": "Transition a Jira issue's status (e.g. 'In Progress' → 'Done'). Call without transition_name to list available transitions for the issue. **PREFER THIS over shell-exec'ing the jira CLI.**",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "issue_key",
+            "stream",
+            "transition_name"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_update_comment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Edit an existing comment on a Jira issue. Plain-text body is auto-converted to ADF (same as jira_add_comment). The author and created timestamp are preserved; updated reflects this edit.",
+          "params_added": [
+            "async_run",
+            "body",
+            "comment_id",
+            "deadline_ms",
+            "issue_key",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "body",
+            "comment_id",
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_update_issue",
+          "change": "added",
+          "description_changed": false,
+          "description": "Edit fields on an existing Jira issue: summary, description, priority, assignee, fix versions, labels, and arbitrary custom fields (including 'Due Date' and 'Story Points' on sites where those are custom). Pass only the fields you want to change. Description is auto-converted from plain text to ADF. Labels support either full replace (`labels`) or incremental `labels_add`/`labels_remove`. Assignee can be set by `assignee_account_id` or by `assignee_email` (auto-resolved); pass null/\"unassigned\" to clear. Custom fields accept display names ('Due Date') or ids ('customfield_10015'); values are …",
+          "params_added": [
+            "assignee_account_id",
+            "assignee_email",
+            "async_run",
+            "custom_fields",
+            "deadline_ms",
+            "description",
+            "fix_versions",
+            "issue_key",
+            "labels",
+            "labels_add",
+            "labels_remove",
+            "parent_key",
+            "priority",
+            "stream",
+            "summary"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_update_sprint",
+          "change": "added",
+          "description_changed": false,
+          "description": "Update a sprint's name, goal, dates, or state. State transitions: future→active (start) or active→closed (complete). Other transitions are rejected client-side with the list of legal next states. Pass only the fields you want to change. **Disable to make the agent unable to start/complete sprints.**",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "end_date",
+            "goal",
+            "name",
+            "sprint_id",
+            "start_date",
+            "state",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "sprint_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_update_version",
+          "change": "added",
+          "description_changed": false,
+          "description": "Edit a version: rename, change dates, mark released/unreleased, mark archived/unarchived. Pass only the fields you want to change. To 'release' a version, pass released=true (and release_date if not already set). To unrelease, pass released=false. **Disable to make the agent unable to release versions.**",
+          "params_added": [
+            "archived",
+            "async_run",
+            "deadline_ms",
+            "description",
+            "name",
+            "release_date",
+            "released",
+            "start_date",
+            "stream",
+            "version_id"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "version_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "jira_upload_attachment",
+          "change": "added",
+          "description_changed": false,
+          "description": "Upload a file as an attachment to a Jira issue. Pass content_base64 for binary files (PNG, PDF, ZIP, etc.) or content_text for plain UTF-8 text (logs, CSVs, JSON). The agent itself reads/encodes the source file — this tool only handles the upload. **PREFER THIS over pasting file contents into a comment.** Disable to make the agent unable to add attachments.",
+          "params_added": [
+            "async_run",
+            "content_base64",
+            "content_text",
+            "deadline_ms",
+            "filename",
+            "issue_key",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "filename",
+            "issue_key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_add_checklist_item",
+          "change": "added",
+          "description_changed": false,
+          "description": "Append a checklist sub-item (step) to a Microsoft To Do task. Pass `is_checked: true` to add an already-completed step (rare; usually omit).",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "is_checked",
+            "list_id",
+            "name",
+            "stream",
+            "task_id"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id",
+            "name",
+            "task_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_complete_task",
+          "change": "added",
+          "description_changed": false,
+          "description": "Mark a Microsoft To Do task as completed (status='completed'). Convenience wrapper around ms_todo_update_task for the dominant 'tick it off' case. Graph automatically populates completedDateTime.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "list_id",
+            "stream",
+            "task_id"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id",
+            "task_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_create_list",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a new Microsoft To Do task list. Returns the new list's id and metadata. List names must be unique per user; reusing a name yields a 409.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "name",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "name"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_create_task",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create a new Microsoft To Do task. `due_iso` and `reminder_iso` are RFC3339 strings interpreted in UTC unless paired with an IANA timezone. Setting `reminder_iso` automatically turns on the reminder. Use ms_todo_list_lists to find the target list_id; pass the default list's id to put the task in the user's main 'Tasks' inbox.",
+          "params_added": [
+            "async_run",
+            "body",
+            "categories",
+            "deadline_ms",
+            "due_iso",
+            "due_time_zone",
+            "importance",
+            "list_id",
+            "reminder_iso",
+            "reminder_time_zone",
+            "stream",
+            "title"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id",
+            "title"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_delete_list",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete a Microsoft To Do task list and all its tasks. The default list and well-known lists cannot be deleted. This action is irreversible — confirm with the user before invoking.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "list_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_delete_task",
+          "change": "added",
+          "description_changed": false,
+          "description": "Permanently delete a Microsoft To Do task. This action is irreversible — confirm with the user before invoking. For 'mark as done' use ms_todo_complete_task instead.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "list_id",
+            "stream",
+            "task_id"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id",
+            "task_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_get_task",
+          "change": "added",
+          "description_changed": false,
+          "description": "Fetch one Microsoft To Do task by id. Returns the same slim shape as ms_todo_list_tasks but with the full body field included.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "list_id",
+            "stream",
+            "task_id"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id",
+            "task_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_list_checklist_items",
+          "change": "added",
+          "description_changed": false,
+          "description": "List the checklist sub-items (steps) of a Microsoft To Do task. Each item has its own id, display name, and is_checked flag. Useful for breaking a complex task into ordered steps.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "list_id",
+            "stream",
+            "task_id"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id",
+            "task_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_list_lists",
+          "change": "added",
+          "description_changed": false,
+          "description": "List the user's Microsoft To Do task lists. Returns id, name, ownership, shared flag, and wellknownListName (e.g. 'defaultList' for the Tasks inbox, 'flaggedEmails' for the auto-list of flagged Outlook mail). Use the returned `id` with the other ms_todo_* tools as `list_id`. Call this first when the user refers to a list by name.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_list_tasks",
+          "change": "added",
+          "description_changed": false,
+          "description": "List tasks in a Microsoft To Do list with optional filters. Defaults: newest first, top 50, no filter. Filter by `status` (notStarted | inProgress | completed | waitingOnOthers | deferred), `importance` (low | normal | high), and/or a `due_before`/`due_after` window (RFC3339). Call ms_todo_list_lists first to resolve the user's list name to an id.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "due_after",
+            "due_before",
+            "importance",
+            "list_id",
+            "max_results",
+            "status",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_update_list",
+          "change": "added",
+          "description_changed": false,
+          "description": "Rename an existing Microsoft To Do task list. The default 'Tasks' list (wellknownListName=defaultList) cannot be renamed and returns a 400.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "list_id",
+            "name",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id",
+            "name"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "ms_todo_update_task",
+          "change": "added",
+          "description_changed": false,
+          "description": "Patch a Microsoft To Do task. Only supplied fields are changed; omit fields to leave them alone. Pass `clear_due: true` or `clear_reminder: true` to remove a date that was previously set. Use ms_todo_complete_task for the common 'mark done' case — it's a thin wrapper over this with status='completed'.",
+          "params_added": [
+            "async_run",
+            "body",
+            "categories",
+            "clear_due",
+            "clear_reminder",
+            "deadline_ms",
+            "due_iso",
+            "due_time_zone",
+            "importance",
+            "list_id",
+            "reminder_iso",
+            "reminder_time_zone",
+            "status",
+            "stream",
+            "task_id",
+            "title"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "list_id",
+            "task_id"
+          ],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
