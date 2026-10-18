@@ -14,6 +14,7 @@ const {
   registerDefaultPackages,
   _resetDefaultPackages,
 } = await import("./default-packages");
+const { registeredTools, registeredCategory, registeredCapability } = await import("../runtime/registry");
 
 const { setPackageDisabled, listDisabledPackages } = await import(
   "@/lib/stores/disabled-packages"
@@ -50,6 +51,26 @@ describe("default LangChain packages", () => {
 
   it("reports integrations as uninstalled when the managed directory is empty", () => {
     expect(listDefaultPackages().every((p) => p.installed === false)).toBe(true);
+  });
+
+  it("registers workspace packages with their declared categories and capabilities", () => {
+    const previousPackagesDir = process.env.JARELA_PACKAGES_DIR;
+    process.env.JARELA_PACKAGES_DIR = "";
+    try {
+      registerDefaultPackages();
+
+      expect(listDefaultPackages().every((p) => p.installed)).toBe(true);
+      const tools = registeredTools();
+      expect(tools.length).toBeGreaterThan(0);
+      for (const tool of tools) {
+        expect(registeredCategory(tool.name)).toBeDefined();
+        expect(["read", "write", "execute"]).toContain(registeredCapability(tool.name));
+      }
+    } finally {
+      _resetDefaultPackages();
+      if (previousPackagesDir === undefined) delete process.env.JARELA_PACKAGES_DIR;
+      else process.env.JARELA_PACKAGES_DIR = previousPackagesDir;
+    }
   });
 
   it("findDefaultPackage returns the descriptor for a known id", () => {
