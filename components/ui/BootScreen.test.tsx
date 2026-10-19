@@ -33,6 +33,7 @@ it("does not restart boot prefetch after dismissal when the agent changes", asyn
   const { rerender, container } = render(
     <BootScreen agents={[]} agentsLoaded activeAgentId="first" onPickAgent={onPickAgent} />,
   );
+  expect(container.querySelector('[data-testid="boot-screen"]')?.getAttribute("role")).toBe("status");
   await act(async () => {});
   await act(async () => { await vi.advanceTimersByTimeAsync(750); });
   expect(container.innerHTML).toBe("");

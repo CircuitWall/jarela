@@ -42,7 +42,7 @@ test("boot screen shows version adoption checklist without moving the brand chro
 
   await page.goto("/");
 
-  const boot = page.locator('[role="status"][aria-live="polite"].fixed.inset-0');
+  const boot = page.getByTestId("boot-screen");
   await expect(boot).toBeVisible({ timeout: 15_000 });
 
   await expect(boot.locator('img[src="/logo-mark-transparent.png"], img[src="/logo-mark-transparent-dark.png"]').first()).toBeAttached();
@@ -63,7 +63,7 @@ test("opening after automatic adoption uses the default agent without duplicate 
 
   await page.goto("/");
 
-  const boot = page.locator('[role="status"][aria-live="polite"].fixed.inset-0');
+  const boot = page.getByTestId("boot-screen");
   await boot.getByText("Version check").waitFor({ state: "visible", timeout: 5_000 }).catch(() => undefined);
   const openDefaultAgent = boot.getByRole("button", { name: "Open E2E Mock" }).last();
   await expect(openDefaultAgent).toBeEnabled({ timeout: 20_000 });
