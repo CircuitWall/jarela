@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow ordinary summary headings without triggering an action-fabrication retry.
 - Keep open navigation menus above error notifications so overlapping toasts do
   not block Settings or other menu controls.
+- Retry transient Windows file-lock failures while removing traced standalone
+  artifacts during postbuild cleanup, without accepting incomplete bundles.
 
 ### Changed
 
