@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-10-19
+
+### Fixed
+
+- Show launch progress while waiting for the local server to respond.
+- Restore dashboard backgrounds, text, borders, chart colors, and selected
+  controls in light and dark themes.
+
 ## [2.5.0] - 2026-10-18
 
 ### Added

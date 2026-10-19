@@ -11,6 +11,23 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 2.5.1
+
+From 2.5.0 · 2026-10-19
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- fix(ui): add launch progress while waiting for the server
+- fix(dashboard): restore theme colors across dashboard sections
+
 ## 2.5.0
 
 From 2.4.0 · 2026-10-18

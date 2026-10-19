@@ -3109,6 +3109,18 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "2.5.1",
+      "previous_version": "2.5.0",
+      "date": "2026-10-19",
+      "hints": [],
+      "commits": [
+        "fix(ui): add launch progress while waiting for the server",
+        "fix(dashboard): restore theme colors across dashboard sections"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }
