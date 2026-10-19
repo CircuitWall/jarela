@@ -19,6 +19,7 @@ import { SYSTEM_SIGNAL_WAKE_PROMPT } from "@/lib/lifecycle/system-signals";
 import { buildConversationSummaryMessages, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
 import { buildTopicGroupingMessages, buildTopicRecapMessages } from "@/lib/agents/compaction-pipeline";
 import type { ProviderMessage } from "@/lib/providers/types";
+import { buildFabricationNudge, buildCitationRetryNudge } from "./retry-prompts";
 
 export interface StaticPrompt {
   id: string;
@@ -57,6 +58,18 @@ export function listStaticPrompts(): StaticPrompt[] {
   const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
   const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
   const prompts: StaticPrompt[] = [
+    {
+      id: "agent.retry-fabrication",
+      source: "lib/agents/retry-prompts.ts",
+      purpose: "Repairs an unsupported action claim while retaining the complete substantive answer.",
+      text: buildFabricationNudge("Example action claim has no confirmed tool result"),
+    },
+    {
+      id: "agent.retry-citation",
+      source: "lib/agents/retry-prompts.ts",
+      purpose: "Repairs unsupported citations while retaining the complete substantive answer.",
+      text: buildCitationRetryNudge([{ text: "Example claim", reason: "No verified source" }]),
+    },
     {
       id: "agent.system-signal-wakeup",
       source: "lib/lifecycle/system-signals.ts",

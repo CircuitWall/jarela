@@ -110,6 +110,52 @@ describe("useSSE contract", () => {
     expect(result.current.streamingContent).not.toContain("flagged reply");
   });
 
+  it.each(["success", "failure"])("keeps the comparison visible while correction is pending (%s)", async (outcome) => {
+    const table = "| Option | Cost |\n| --- | --- |\n| A | 10 |\n| B | 20 |\n| C | 30 |\n| D | 40 |\n| E | 50 |";
+    const draft = `${table}\nI saved the comparison.`;
+    const corrected = `${table}\nThe comparison has not been saved.`;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    subscribeRunMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield JSON.stringify({ type: "text_delta", delta: draft });
+        yield JSON.stringify({ type: "tool_call", id: "read-1", name: "memory_read", arguments: {} });
+        yield JSON.stringify({ type: "tool_result", id: "read-1", name: "memory_read", result: null });
+        yield JSON.stringify({ type: "status", label: "Checking answer..." });
+        await gate;
+        if (outcome === "failure") {
+          yield JSON.stringify({ type: "error", code: "correction_failed", message: "Correction failed; draft remains unverified." });
+          return;
+        }
+        yield JSON.stringify({ type: "reset_text" });
+        yield JSON.stringify({ type: "text_delta", delta: corrected });
+        yield JSON.stringify({ type: "done" });
+      },
+    });
+    submitRunMock.mockResolvedValue({ accepted: true });
+    const onDone = vi.fn();
+    const { result } = renderHook(() => useSSE(onDone));
+    let run!: Promise<{ accepted: boolean }>;
+    try {
+      act(() => { run = result.current.start("comparison-thread", "Compare five options."); });
+      await waitFor(() => expect(result.current.streamingContent).toBe(draft));
+      expect(result.current.streaming).toBe(true);
+      expect(onDone).not.toHaveBeenCalled();
+      expect(result.current.toolEvents).toHaveLength(2);
+
+      await act(async () => { release(); await run; });
+      expect(result.current.streaming).toBe(false);
+      expect(result.current.streamingContent).toBe(outcome === "success" ? corrected : draft);
+      expect(result.current.streamingContent).toContain(table);
+      expect(onDone).toHaveBeenCalledTimes(1);
+      expect(result.current.toolEvents).toHaveLength(2);
+      expect(result.current.error).toBe(outcome === "failure" ? "Correction failed; draft remains unverified." : null);
+    } finally {
+      release();
+      await act(async () => { await run; });
+    }
+  });
+
   it("records tool_progress events alongside tool_call/tool_result (ADR-0073)", async () => {
     submitRunMock.mockResolvedValue({ accepted: true });
     subscribeRunMock.mockReturnValue(streamWithProgress());

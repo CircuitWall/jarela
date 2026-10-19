@@ -62,6 +62,33 @@ test("menu tray uses position:fixed when open", async ({ page }) => {
   expect(position).toBe("fixed");
 });
 
+test("navigation stays clickable underneath an overlapping error notification", async ({ page }) => {
+  await page.goto("/");
+  await waitForAppReady(page);
+  await page.getByPlaceholder("Message…").fill("Trigger the scripted provider failure.\nMOCK:error=synthetic-navigation-error");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const notification = page.getByRole("button", { name: "Open notification: Chat stream error", exact: true });
+  await expect(notification).toBeVisible({ timeout: 15_000 });
+
+  await page.locator("header button").filter({ has: page.locator("svg") }).last().click();
+  const settings = page.getByRole("button", { name: "Settings", exact: true });
+  const settingsBounds = await settings.boundingBox();
+  const notificationBounds = await notification.boundingBox();
+  expect(settingsBounds).not.toBeNull();
+  expect(notificationBounds).not.toBeNull();
+  const center = {
+    x: settingsBounds!.x + settingsBounds!.width / 2,
+    y: settingsBounds!.y + settingsBounds!.height / 2,
+  };
+  expect(center.x).toBeGreaterThan(notificationBounds!.x);
+  expect(center.x).toBeLessThan(notificationBounds!.x + notificationBounds!.width);
+  expect(center.y).toBeGreaterThan(notificationBounds!.y);
+  expect(center.y).toBeLessThan(notificationBounds!.y + notificationBounds!.height);
+  await settings.click();
+  await expect(page.getByRole("tab", { name: "Credentials", exact: true })).toBeVisible();
+  await expect(notification).toBeVisible();
+});
+
 test("update banner (when shown) anchors below the header", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });

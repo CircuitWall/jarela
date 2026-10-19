@@ -137,6 +137,7 @@ describe("prompt registry coverage", () => {
       "lib/agents/prepare/system-prompt.ts",
       "lib/agents/harness/presets.ts",
       "lib/lifecycle/system-signals.ts",
+      "lib/agents/retry-prompts.ts",
     ];
     for (const source of declaring) {
       expect(registered, `${source} declares a prompt but is not in prompt-registry.ts`).toContain(source);
@@ -156,6 +157,16 @@ describe("prompt registry coverage", () => {
       expect(p.id, `${p.source} prompt has no id`).toMatch(/^[a-z][a-z0-9.:_-]*$/);
       expect(p.purpose.length, `${p.id} has no purpose`).toBeGreaterThan(10);
       expect(p.text.trim().length, `${p.id} is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  it("requires correction retries to preserve the complete answer", () => {
+    for (const id of ["agent.retry-fabrication", "agent.retry-citation"]) {
+      const prompt = staticPrompts.find((entry) => entry.id === id)?.text ?? "";
+      expect(prompt).toContain("complete corrected answer to the original user request");
+      expect(prompt).toContain("Preserve all valid explanations, calculations, tables, and conclusions");
+      expect(prompt).toContain("Do not return only a correction or a tool confirmation");
+      expect(prompt).not.toContain("Do NOT restate");
     }
   });
 

@@ -450,7 +450,7 @@ async function* streamWithConfigImpl(
           }
           yield {
             type: "tool_result",
-            data: { id: chunk.tool_call_id, name: chunk.name ?? "", result },
+            data: { id: chunk.tool_call_id, name: chunk.name ?? "", result, status: chunk.status },
           };
           // Next AI text should be visually separated from the pre-tool prose.
           needsParagraphBreak = true;

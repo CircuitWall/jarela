@@ -22,8 +22,11 @@ const { collectStream } = await import("./stream-collector");
 const { deleteModelConfig, upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 const { resetConfigCache } = await import("@/lib/env/config");
-const { createThread, getMessagesPage } = await import("@/lib/stores/threads");
+const { createThread, getMessagesPage, getMessages } = await import("@/lib/stores/threads");
+const { createAssistantTranscriptDraft, persistAssistantDraftChunk } = await import("./transcript-draft");
 const { spillFileBuffer } = await import("@/lib/attachments/spill");
+const { transientRetryStream } = await import("./run-retry");
+const stallClassifier = await import("./hallucination-classifier");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -38,6 +41,48 @@ function chunks(...items: StreamChunk[]): AsyncIterable<StreamChunk> {
 }
 
 describe("prepareThreadRun transient retry", () => {
+  it("cancels backoff without preparing another attempt", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const prepareRetry = vi.fn(async () => ({ stream: chunks({ type: "done", data: {} }) }));
+    try {
+      const collected = collectStream(transientRetryStream(
+        chunks({ type: "error", data: { code: "rate_limited", message: "429", retry_after_ms: 60_000 } }),
+        { thread_id: "backoff-test", message: "hello", signal: controller.signal },
+        1,
+        prepareRetry,
+      ));
+      await vi.advanceTimersByTimeAsync(0);
+      controller.abort();
+      expect(await collected).toMatchObject({ terminal: "error", aborted: true, errorCode: "aborted" });
+      expect(prepareRetry).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("honors a negative model verdict with no explanation instead of falling back to regex", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "negative-stall-verdict", name: "Classifier", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null,
+      anti_hallucination_mode: "model", anti_hallucination_model_config: "default",
+    });
+    const thread = createThread("negative-stall-verdict");
+    const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({ stalled: false, reason: "" });
+    try {
+      streamWithConfigMock.mockReturnValue(chunks({ type: "text_delta", data: { delta: "Let me check." } }, { type: "done", data: {} }));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id, message: "Explain this phrase.",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      const collected = await collectStream(prepared.stream);
+      expect(collected.assistantContent).toBe("Let me check.");
+      expect(streamWithConfigMock).toHaveBeenCalledTimes(1);
+    } finally {
+      classifier.mockRestore();
+    }
+  });
+
   it("blocks state-changing tools on a completion turn even when the old user request asked for a restart", async () => {
     upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
     upsertAgentConfig({ id: "completion-read-only", name: "Completion", identity: "helper", instructions: "Be helpful.", tools: ["restart_server", "local_exec"], model_config_name: null });
@@ -650,7 +695,8 @@ describe("prepareThreadRun transient retry", () => {
     const collected = await collectStream(prepared.stream);
     expect(collected.terminal).toBe("done");
     expect(streamWithConfigMock).toHaveBeenCalledTimes(1);
-    expect(collected.usedTools).toEqual([toolName, toolName, toolName]);
+    expect(collected.usedTools).toEqual([toolName, toolName]);
+    expect(collected.toolEvents.filter((event) => event.phase === "call")).toHaveLength(3);
     expect(collected.assistantContent).toContain("Retry guard skipped automatic retry");
     expect(collected.assistantContent).toContain(toolName);
     expect(collected.assistantContent).not.toContain("↻ Auto-retry");
@@ -866,6 +912,134 @@ describe("prepareThreadRun transient retry", () => {
     expect(collected.assistantContent).toBe(
       "Treating this as a proposal since no tool was called: the bug is a missing null check on line 12.",
     );
+  });
+
+  it.each([
+    ["failed", [
+      { type: "text_delta", data: { delta: "partial correction" } },
+      { type: "error", data: { code: "stream_error", message: "synthetic failure" } },
+    ]],
+    ["empty", [
+      { type: "text_delta", data: { delta: "" } },
+      { type: "done", data: {} },
+    ]],
+    ["interrupted", [
+      { type: "text_delta", data: { delta: "partial correction" } },
+      { type: "done", data: { aborted: true } },
+    ]],
+  ] as const)("keeps the original draft when replacement is %s", async (outcome, replacement) => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    const agentId = `replacement-${outcome}`;
+    upsertAgentConfig({ id: agentId, name: "Replacement", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null });
+    const thread = createThread(agentId);
+    const draft = "Option A costs 10 units. Option B costs 20 units. I saved the comparison.";
+    streamWithConfigMock
+      .mockReturnValueOnce(chunks({ type: "text_delta", data: { delta: draft } }, { type: "done", data: {} }))
+      .mockReturnValueOnce(chunks(...replacement));
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id, message: "Compare the options.",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    const events: StreamChunk[] = [];
+    const collected = await collectStream(prepared.stream, { onChunk: (chunk) => events.push(chunk) });
+    expect(collected.assistantContent).toBe(draft);
+    if (outcome === "empty") expect(collected).toMatchObject({ terminal: "error", errorCode: "correction_failed" });
+    expect(events.some((event) => event.type === "reset_text")).toBe(false);
+    expect(events.filter((event) => event.type === "text_delta")).toHaveLength(1);
+  });
+
+  it("provides the whole draft and commits replacement text only after completion", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({ id: "replacement-complete", name: "Replacement", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null });
+    const thread = createThread("replacement-complete");
+    const draft = `Comparison details: ${"x".repeat(2_100)}\nFinal table row: option B costs 20 units. I saved the comparison.`;
+    let completed = false;
+    streamWithConfigMock
+      .mockReturnValueOnce(chunks({ type: "text_delta", data: { delta: draft } }, { type: "done", data: {} }))
+      .mockImplementationOnce(() => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: "text_delta", data: { delta: "The complete comparison. " } } as StreamChunk;
+          completed = true;
+          yield { type: "text_delta", data: { delta: "It was not saved." } } as StreamChunk;
+          yield { type: "done", data: {} } as StreamChunk;
+        },
+      }));
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id, message: "Compare the options.",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    const events: StreamChunk[] = [];
+    const collected = await collectStream(prepared.stream, {
+      onChunk: (chunk) => {
+        if (chunk.type === "reset_text") expect(completed).toBe(true);
+        events.push(chunk);
+      },
+    });
+    expect(JSON.stringify(streamWithConfigMock.mock.calls[1][1])).toContain("Final table row: option B costs 20 units");
+    expect(events.slice(-3).map((chunk) => chunk.type)).toEqual(["reset_text", "text_delta", "done"]);
+    expect(events.some((chunk) => chunk.type === "status" && chunk.data.label === "Checking answer...")).toBe(true);
+    expect(collected.assistantContent).toBe("The complete comparison. It was not saved.");
+  });
+
+  it.each(["success", "failure"])("persists the complete comparison across correction and finalization (%s)", async (outcome) => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    const agentId = `persisted-comparison-${outcome}`;
+    upsertAgentConfig({ id: agentId, name: "Persistence", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null });
+    const thread = createThread(agentId);
+    const table = "| Option | Cost |\n| --- | --- |\n| A | 10 |\n| B | 20 |\n| C | 30 |\n| D | 40 |\n| E | 50 |";
+    const draftText = `${table}\nI saved the comparison.`;
+    const repairedText = `${table}\nThe comparison has not been saved.`;
+    let release!: () => void;
+    let markPending!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const pending = new Promise<void>((resolve) => { markPending = resolve; });
+    streamWithConfigMock
+      .mockReturnValueOnce(chunks({ type: "text_delta", data: { delta: draftText } }, { type: "done", data: {} }))
+      .mockImplementationOnce(() => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: "text_delta", data: { delta: table } } as StreamChunk;
+          markPending();
+          await gate;
+          if (outcome === "failure") {
+            yield { type: "error", data: { code: "stream_error", message: "synthetic correction failure" } } as StreamChunk;
+            return;
+          }
+          yield { type: "text_delta", data: { delta: "\nThe comparison has not been saved." } } as StreamChunk;
+          yield { type: "done", data: {} } as StreamChunk;
+        },
+      }));
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id, message: "Compare five options.",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    const draft = createAssistantTranscriptDraft(thread.thread_id);
+    const collecting = collectStream(prepared.stream, { onChunk: (chunk) => persistAssistantDraftChunk(draft, chunk) });
+    try {
+      await pending;
+      expect(getMessages(thread.thread_id).find((message) => message.msg_id === draft.msg_id))
+        .toMatchObject({ content: draftText, transcript_status: "in_progress" });
+      release();
+      const collected = await collecting;
+      expect(collected.terminal).toBe(outcome === "success" ? "done" : "error");
+      persistAssistantMessage(
+        thread.thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents,
+        null, collected.usage, prepared.context_snapshot, prepared.source_manifest, null, null, undefined,
+        { draftMessageId: draft.msg_id, transcriptStatus: outcome === "success" ? "completed" : "failed" },
+      );
+      const assistants = getMessages(thread.thread_id).filter((message) => message.role === "assistant");
+      expect(assistants).toHaveLength(1);
+      expect(assistants[0].msg_id).toBe(draft.msg_id);
+      expect(assistants[0].content).toContain(table);
+      expect(assistants[0].transcript_status).toBe(outcome === "success" ? "completed" : "failed");
+      if (outcome === "success") expect(assistants[0].content).toBe(repairedText);
+      else {
+        expect(assistants[0].content.startsWith(draftText)).toBe(true);
+        expect(assistants[0].content).toContain("Output validator flagged");
+      }
+    } finally {
+      release();
+      await collecting;
+    }
   });
 
   it("keeps the flagged reply when preparing its replacement fails", async () => {

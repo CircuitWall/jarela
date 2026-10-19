@@ -206,6 +206,10 @@ describe("validateAssistantOutput", () => {
   });
 
   describe("summary_without_action", () => {
+    it("allows an ordinary summary that makes no action claim", () => {
+      expect(validateAssistantOutput("## Summary\nOption A costs 10 units; option B costs 20 units.", [], [])).toEqual({ ok: true });
+    });
+
     it("flags 'Summary of changes' in zero-tool turn", () => {
       const r = validateAssistantOutput(
         "## Summary of changes\nI made the following edits...",

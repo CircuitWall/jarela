@@ -12,7 +12,8 @@
 import type { StreamChunk } from "@/lib/agents/base";
 import type { RouteDecisionMetadata } from "@/api/types";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
-import { unwrapInvokedToolName, type AssistantUsageSnapshot } from "@/lib/agents/run-thread";
+import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
+import { ToolOutcomes } from "./tool-outcomes";
 import { errorMessage } from "@/lib/utils/error";
 
 export interface CollectedRun {
@@ -58,28 +59,15 @@ export async function collectStream(
     terminal: "done",
   };
 
-  // `invoke_tool` is `execute`-capability regardless of its target (it's a
-  // dispatcher, lib/tools/system/invoke-tool.ts), and it never throws — a
-  // rejected/errored proxy call still comes back as a normal tool_result.
-  // Recording the literal wrapper name in usedTools would make every
-  // downstream write-detection check (persistAssistantMessage's stall/
-  // fabrication footers, isWriteLikeToolName) treat any proxied call —
-  // succeeded or not, read or write — as "a write tool ran". Resolve each
-  // call to its real target name, and only count it once its result confirms
-  // the underlying call wasn't rejected/errored. A call with no result yet
-  // (stream ended mid-call) fails open and is still counted, matching prior
-  // behavior for that case.
-  const toolCallNames = new Map<string, string>();
-  const failedProxyCallIds = new Set<string>();
+  const toolOutcomes = new ToolOutcomes();
   const finalizeUsedTools = () => {
-    result.usedTools = [...toolCallNames.entries()]
-      .filter(([id]) => !failedProxyCallIds.has(id))
-      .map(([, name]) => name);
+    result.usedTools = toolOutcomes.successfulNames();
   };
 
   try {
     for await (const chunk of stream) {
       opts.onChunk?.(chunk);
+      toolOutcomes.observe(chunk);
       switch (chunk.type) {
         case "text_delta": {
           result.assistantContent += (chunk.data.delta as string) ?? "";
@@ -95,12 +83,7 @@ export async function collectStream(
         case "tool_call": {
           const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
           const rawName = d.name ?? "";
-          const args = d.arguments && typeof d.arguments === "object"
-            ? d.arguments as Record<string, unknown>
-            : {};
           const id = d.id ?? `call-${result.toolEvents.length}`;
-          const name = unwrapInvokedToolName(rawName, args);
-          if (name) toolCallNames.set(id, name);
           result.toolEvents.push({
             id,
             phase: "call",
@@ -112,12 +95,6 @@ export async function collectStream(
         case "tool_result": {
           const d = chunk.data as { id?: string; name?: string; result?: unknown };
           const id = d.id ?? `result-${result.toolEvents.length}`;
-          if (d.name === "invoke_tool") {
-            const payload = d.result as { ok?: unknown } | null | undefined;
-            if (payload && typeof payload === "object" && payload.ok === false) {
-              failedProxyCallIds.add(id);
-            }
-          }
           result.toolEvents.push({
             id,
             phase: "result",

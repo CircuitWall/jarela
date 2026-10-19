@@ -87,19 +87,19 @@ describe("buildRetryContextSummary", () => {
 });
 
 describe("buildFabricationNudge", () => {
-  it("tells the model the flagged reply was discarded and not to restate it", () => {
+  it("requires a complete corrected answer without losing valid content", () => {
     const nudge = buildFabricationNudge("You wrote \"(via web_search)\" but did not call \"web_search\" this turn.");
-    expect(nudge).toContain("discarded");
-    expect(nudge).toContain("Do NOT restate");
+    expect(nudge).toContain("complete corrected answer");
+    expect(nudge).toContain("Preserve all valid explanations, calculations, tables, and conclusions");
+    expect(nudge).toContain("Do not return only a correction or a tool confirmation");
     expect(nudge).toContain("(via web_search)");
     expect(nudge).not.toMatch(/redo this turn/i);
   });
 
   it("omits the trailing reason clause when no reason is given", () => {
     const nudge = buildFabricationNudge("");
-    expect(nudge).toBe(
-      "↻ Auto-retry: output validator flagged your reply. The flagged reply has been discarded — the user will see ONLY what you write next, not the original. Do NOT restate, summarize, or repeat any part of the previous answer. Emit ONLY the fix: call the tool that's actually missing, or state the corrected claim in one or two sentences.",
-    );
+    expect(nudge).toContain("flagged your reply. Return a complete corrected answer");
+    expect(nudge).not.toContain("reply —");
   });
 });
 
