@@ -17,7 +17,7 @@ export function pruneStandaloneFootprint(standalone, { platform = process.platfo
   const removed = [];
   const remove = (path) => {
     if (!existsSync(path)) return;
-    rmSync(path, { recursive: true, force: true });
+    rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     removed.push(path);
   };
   remove(join(standalone, ".git"));

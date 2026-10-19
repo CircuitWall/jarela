@@ -1,8 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { findStandaloneFootprintProblems, pruneStandaloneFootprint } from "./standalone-footprint.mjs";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const fs = await importOriginal();
+  return { ...fs, rmSync: vi.fn(fs.rmSync) };
+});
 
 const target = { platform: "linux", arch: "x64" };
 let dir;
@@ -58,6 +63,35 @@ describe("findStandaloneFootprintProblems", () => {
 });
 
 describe("pruneStandaloneFootprint", () => {
+  it("uses bounded native retries when removing traced Git metadata", () => {
+    setup();
+    mkdirSync(join(dir, ".git"));
+    pruneStandaloneFootprint(dir, target);
+    expect(rmSync).toHaveBeenCalledWith(join(dir, ".git"), {
+      recursive: true, force: true, maxRetries: 5, retryDelay: 100,
+    });
+  });
+
+  it("removes read-only traced Git files while preserving the target binding", () => {
+    setup();
+    const objects = join(dir, ".git", "objects");
+    mkdirSync(objects, { recursive: true });
+    const object = join(objects, "synthetic-object");
+    writeFileSync(object, "synthetic git object");
+    chmodSync(object, 0o444);
+    expect(pruneStandaloneFootprint(dir, target)).toEqual([join(dir, ".git")]);
+    expect(findStandaloneFootprintProblems(dir, target)).toEqual([]);
+  });
+
+  it("still rejects a bundle when cleanup fails after native retries", () => {
+    setup();
+    mkdirSync(join(dir, ".git"));
+    const error = Object.assign(new Error("synthetic permission failure"), { code: "EPERM" });
+    vi.mocked(rmSync).mockImplementationOnce(() => { throw error; });
+    expect(() => pruneStandaloneFootprint(dir, target)).toThrow(error);
+    expect(existsSync(join(dir, ".git"))).toBe(true);
+  });
+
   it("removes traced extras and keeps only the target binding", () => {
     setup();
     mkdirSync(join(dir, ".git", "objects"), { recursive: true });
