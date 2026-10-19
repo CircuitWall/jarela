@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve substantive chat answers during automatic correction and replace the
+  draft only after a complete repair succeeds. Failed or empty repairs keep the
+  draft and report the failure instead of erasing it.
+- Stop retry backoff promptly on cancellation, respect negative classifier
+  verdicts without explanations, and do not treat failed or unresolved tools as
+  confirmed successes. Keep duplicate-effect guards for uncertain writes.
+- Keep browser-extension field capture, context, replacement, and cleanup working
+  across nested open shadow roots after the focused field loses focus.
+- Allow ordinary summary headings without triggering an action-fabrication retry.
+- Keep open navigation menus above error notifications so overlapping toasts do
+  not block Settings or other menu controls.
+
+### Changed
+
+- Separate thread retries, message content rendering, extension form editing, and
+  Jira Agile tools into focused modules while preserving existing entry points.
+
 ## [2.5.1] - 2026-10-19
 
 ### Fixed

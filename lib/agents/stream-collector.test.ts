@@ -1,12 +1,36 @@
 import { describe, expect, it } from "vitest";
 import { collectStream } from "./stream-collector";
 import type { StreamChunk } from "./base";
+import { ToolOutcomes } from "./tool-outcomes";
 
 async function* fromArray(chunks: StreamChunk[]): AsyncIterable<StreamChunk> {
   for (const c of chunks) yield c;
 }
 
 describe("collectStream", () => {
+  it.each([
+    ["unresolved", undefined, undefined, [], ["memory_upsert"]],
+    ["native error", "error", "write failed", [], ["memory_upsert"]],
+    ["structured failure", "success", { ok: false, error: "write failed" }, [], ["memory_upsert"]],
+    ["confirmed success", "success", { ok: true }, ["memory_upsert"], ["memory_upsert"]],
+    ["rejected", "success", { ok: false, status: "rejected" }, [], []],
+  ])("distinguishes %s from possible state changes", (_name, status, result, successful, possible) => {
+    const outcomes = new ToolOutcomes();
+    outcomes.observe({ type: "tool_call", data: { id: "write-1", name: "memory_upsert", arguments: {} } });
+    if (result !== undefined) outcomes.observe({ type: "tool_result", data: { id: "write-1", name: "memory_upsert", result, status } });
+    expect(outcomes.successfulNames()).toEqual(successful);
+    expect(outcomes.possiblyChangedNames()).toEqual(possible);
+  });
+
+  it("does not treat a successful proxy envelope as proof that its target succeeded", async () => {
+    const out = await collectStream(fromArray([
+      { type: "tool_call", data: { id: "proxy-1", name: "invoke_tool", arguments: { name: "memory_upsert" } } },
+      { type: "tool_result", data: { id: "proxy-1", name: "invoke_tool", result: { ok: true, result: JSON.stringify({ ok: false, error: "not saved" }) } } },
+      { type: "done", data: {} },
+    ]));
+    expect(out.usedTools).toEqual([]);
+  });
+
   it("accumulates text_delta and returns terminal=done", async () => {
     const out = await collectStream(fromArray([
       { type: "text_delta", data: { delta: "Hello " } },
@@ -130,7 +154,7 @@ describe("collectStream", () => {
       expect(out.usedTools).toEqual([]);
     });
 
-    it("still includes a proxied call with no matching result yet (e.g. run aborted mid-call) — fails open, not closed", async () => {
+    it("does not treat a proxied call with no result as confirmed success", async () => {
       const out = await collectStream(fromArray([
         {
           type: "tool_call",
@@ -138,16 +162,16 @@ describe("collectStream", () => {
         },
         { type: "done", data: {} },
       ]));
-      expect(out.usedTools).toEqual(["memory_write"]);
+      expect(out.usedTools).toEqual([]);
     });
 
-    it("leaves a direct (non-proxied) tool call unaffected regardless of its result shape", async () => {
+    it("excludes failed direct calls from confirmed successes", async () => {
       const out = await collectStream(fromArray([
         { type: "tool_call", data: { id: "call-1", name: "web_search", arguments: { q: "x" } } },
         { type: "tool_result", data: { id: "call-1", name: "web_search", result: { ok: false } } },
         { type: "done", data: {} },
       ]));
-      expect(out.usedTools).toEqual(["web_search"]);
+      expect(out.usedTools).toEqual([]);
     });
 
     it("does not let one rejected proxied call suppress a different, genuinely successful one", async () => {

@@ -4,7 +4,7 @@ import type { ValidationResult } from "./types";
 import { isWriteToolNameSegment } from "@/lib/agents/action-vocabulary";
 
 const SUMMARY_PATTERNS: RegExp[] = [
-  /^#{1,6}\s*Summary(?:\s+of\s+changes)?\b/im,
+  /^#{1,6}\s*Summary\s+of\s+changes\b/im,
   /\bI(?:'ve|\s+have)\s+completed\b/i,
   /\bWhat\s+I\s+did\b/i,
 ];

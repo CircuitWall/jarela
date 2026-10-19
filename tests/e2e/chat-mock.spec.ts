@@ -69,6 +69,73 @@ test("composer sends a message and the mock reply renders", async ({ page }) => 
   await expect(page.getByText(marker).last()).toBeVisible({ timeout: 20_000 });
 });
 
+test("ordinary summaries survive streaming, persistence, and reload without a correction retry", async ({ page, request }) => {
+  const { agent } = await seedMockAgent(request);
+  const response = await request.get(`/api/v1/agents/${agent}/thread`);
+  expect(response.ok()).toBeTruthy();
+  const thread = await response.json() as ThreadSummary;
+  const marker = `summary-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const heading = `Summary ${marker}: A costs 10; B costs 20; C costs 30; D costs 40; E costs 50.`;
+  const reply = `## ${heading}`;
+  await page.goto(`/?agent=${agent}&thread=${thread.thread_id}`);
+  await waitForAppReady(page);
+  await page.getByPlaceholder("Message…").fill(`Compare the five options.\nMOCK:reply=${reply}\nMOCK:slow=15`);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+
+  await expect.poll(async () => {
+    const transcript = await request.get(`/api/v1/threads/${thread.thread_id}`);
+    expect(transcript.ok()).toBeTruthy();
+    const detail = await transcript.json() as ThreadDetail;
+    const message = detail.messages.find((row) => row.role === "assistant" && row.content === reply);
+    return message?.transcript_status;
+  }, { timeout: 20_000 }).toBe("completed");
+  await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+  await page.reload();
+  await waitForAppReady(page);
+  await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+});
+
+test("stopping a slow stream persists an interrupted partial answer across reload", async ({ page, request }) => {
+  const { agent } = await seedMockAgent(request);
+  const response = await request.get(`/api/v1/agents/${agent}/thread`);
+  expect(response.ok()).toBeTruthy();
+  const thread = await response.json() as ThreadSummary;
+  const marker = `stop-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const finalMarker = `${marker}-finished`;
+  const reply = `${marker} ${"streaming-word ".repeat(80)}${finalMarker}`;
+  await page.goto(`/?agent=${agent}&thread=${thread.thread_id}`);
+  await waitForAppReady(page);
+  await page.getByPlaceholder("Message…").fill(`Stream the scripted answer slowly.\nMOCK:reply=${reply}\nMOCK:slow=100`);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect.poll(async () => {
+    const transcript = await request.get(`/api/v1/threads/${thread.thread_id}`);
+    expect(transcript.ok()).toBeTruthy();
+    const detail = await transcript.json() as ThreadDetail;
+    return detail.messages.some((row) => row.role === "assistant" && String(row.content).includes(marker));
+  }).toBe(true);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+
+  let messageId = "";
+  await expect.poll(async () => {
+    const transcript = await request.get(`/api/v1/threads/${thread.thread_id}`);
+    expect(transcript.ok()).toBeTruthy();
+    const detail = await transcript.json() as ThreadDetail;
+    const message = detail.messages.find((row) => row.role === "assistant" && String(row.content).includes(marker));
+    messageId = message?.id ?? "";
+    if (message?.transcript_status === "interrupted") {
+      expect(String(message.content)).toContain("Interrupted by user");
+      expect(String(message.content)).not.toContain(finalMarker);
+    }
+    return message?.transcript_status;
+  }, { timeout: 15_000 }).toBe("interrupted");
+  await page.reload();
+  await waitForAppReady(page);
+  const message = page.locator(`[data-message-id="${messageId}"]`);
+  await expect(message).toContainText(marker);
+  await expect(message).toContainText("Interrupted by user");
+  await expect(message).not.toContainText(finalMarker);
+});
+
 test("chat uses the available width and contains long tool content", async ({ page, request }) => {
   const { agent } = await seedMockAgent(request);
   const threadResponse = await request.get(`/api/v1/agents/${agent}/thread`);
