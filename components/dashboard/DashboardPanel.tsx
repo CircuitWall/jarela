@@ -52,7 +52,7 @@ export function DashboardPanel() {
   const toggleDay = (day: string) => setSelectedDay((prev) => (prev === day ? null : day));
 
   return (
-    <div className="relative h-full overflow-y-auto p-4 md:p-6 space-y-4">
+    <div className="relative h-full overflow-y-auto p-4 md:p-6 space-y-4 [--bg-primary:var(--color-surface)] [--bg-secondary:var(--color-surface-2)] [--text-primary:var(--color-fg)] [--text-secondary:var(--color-fg-muted)] [--border:var(--color-border)] [--accent:var(--color-accent)]">
       <div className="mx-auto max-w-7xl space-y-4">
         <div className="dashboard-atmosphere pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-cyan-500/10 blur-3xl" />
