@@ -82,7 +82,7 @@ async function dismissVersionAdoption(request: APIRequestContext): Promise<void>
 // the overlay actually unmounts before driving the UI in tests that
 // click headers, menus, or modals.
 export async function waitForAppReady(page: Page, timeout = 30_000): Promise<void> {
-  const overlay = page.locator('[role="status"][aria-live="polite"].fixed.inset-0');
+  const overlay = page.getByTestId("boot-screen");
   if (await overlay.isVisible().catch(() => false)) {
     const phaseTile = overlay.locator('button[aria-label^="Open "], button[aria-label^="Opening "]').first();
     const phase = await Promise.race([

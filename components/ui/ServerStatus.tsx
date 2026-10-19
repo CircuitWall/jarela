@@ -36,6 +36,7 @@ async function ping(): Promise<boolean> {
 }
 
 export function ServerStatus() {
+  const [launching, setLaunching] = useState(true);
   const [down, setDown] = useState(false);
   const wasDownRef = useRef(false);
   const failureCountRef = useRef(0);
@@ -61,6 +62,7 @@ export function ServerStatus() {
         return;
       }
       failureCountRef.current = 0;
+      setLaunching(false);
       if (wasDownRef.current) {
         // Server recovered after the overlay actually showed — full reload
         // to drop any stale in-memory state (EventSource queues, agent
@@ -89,27 +91,27 @@ export function ServerStatus() {
     };
   }, []);
 
-  if (!down) return null;
+  if (!launching && !down) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div role="status" aria-live="polite" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div className="mx-4 max-w-sm w-full flex flex-col items-center gap-3 rounded-xl border border-border bg-surface text-fg px-6 py-5 text-center shadow-lg">
-        <CloudOff size={28} className="text-amber-500" />
-        <div className="text-sm font-medium">Server unavailable</div>
+        {down ? <CloudOff size={28} className="text-amber-500" /> : <Loader2 size={28} className="animate-spin text-fg-muted" />}
+        <div className="text-sm font-medium">{down ? "Server unavailable" : "Launching Jarela"}</div>
         <div className="text-xs text-fg-muted">
-          Lost connection to Jarela. Retrying…
+          {down ? "Cannot connect to Jarela. Retrying..." : "Waiting for the local server..."}
         </div>
         <div className="flex items-center gap-2 text-xs text-fg-subtle">
           <Loader2 size={14} className="animate-spin" />
-          <span>Reconnecting</span>
+          <span>{down ? "Reconnecting" : "Starting up"}</span>
         </div>
-        <button
+        {down && <button
           type="button"
           onClick={() => window.location.reload()}
           className="mt-1 text-xs underline text-fg-subtle hover:text-fg"
         >
           Reload now
-        </button>
+        </button>}
       </div>
     </div>
   );

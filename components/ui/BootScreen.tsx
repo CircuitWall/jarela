@@ -403,6 +403,7 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
 
   return (
     <div
+      data-testid="boot-screen"
       role="status"
       aria-live="polite"
       aria-hidden={dismissing}

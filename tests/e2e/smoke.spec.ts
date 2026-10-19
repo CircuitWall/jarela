@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedMockAgent } from "./helpers";
+import { seedMockAgent, waitForAppReady } from "./helpers";
 
 test.beforeEach(async ({ request }) => {
   await seedMockAgent(request);
@@ -32,4 +32,27 @@ test("app shell renders without console errors", async ({ page }) => {
 test("health endpoint responds", async ({ request }) => {
   const r = await request.get("/api/v1/health");
   expect(r.ok()).toBeTruthy();
+});
+
+test("app readiness distinguishes the boot picker from launch progress", async ({ page }) => {
+  let releaseHealth!: () => void;
+  const healthReady = new Promise<void>((resolve) => { releaseHealth = resolve; });
+  await page.route("**/api/v1/health", async (route) => {
+    await healthReady;
+    await route.continue();
+  });
+
+  try {
+    await page.goto("/");
+    await expect(page.getByText("Launching Jarela", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("boot-screen")).toBeVisible();
+    await expect(page.locator('[role="status"][aria-live="polite"].fixed.inset-0')).toHaveCount(2);
+    const ready = waitForAppReady(page);
+    releaseHealth();
+    await ready;
+    await expect(page.getByText("Launching Jarela", { exact: true })).toHaveCount(0);
+    await expect(page.getByPlaceholder("Message…")).toBeEnabled();
+  } finally {
+    releaseHealth();
+  }
 });
