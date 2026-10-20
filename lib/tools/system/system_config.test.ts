@@ -1,13 +1,51 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StructuredToolInterface } from "@langchain/core/tools";
+import { toJsonSchema } from "@langchain/core/utils/json_schema";
+import { envSchemaByName } from "@/lib/env/schema";
+import { envToolValueSchema } from "@/lib/env/value-schema";
 
 const mocks = vi.hoisted(() => ({ tools: [] as StructuredToolInterface[], operation: vi.fn((): string | null => "00000000-0000-4000-8000-000000000001") }));
 vi.mock("../packages/langchain-package", () => ({ registerLangChainPackage: (value: { tools: { execute: StructuredToolInterface[] } }) => { mocks.tools.push(...value.tools.execute); } }));
 vi.mock("@/lib/lifecycle/system-signals", () => ({ recordThreadSignal: vi.fn() }));
 vi.mock("@/lib/stores/system-signals", () => ({ restartOperationIdForThread: mocks.operation }));
 await import("./system_config");
+const setEnv = mocks.tools.find((candidate) => candidate.name === "set_env_var")!;
 const restart = mocks.tools.find((candidate) => candidate.name === "restart_server")!;
 afterEach(() => { vi.unstubAllGlobals(); mocks.operation.mockReset().mockReturnValue("00000000-0000-4000-8000-000000000001"); });
+
+describe("set_env_var schema", () => {
+  it("exposes only schema-writable names and their declared values", () => {
+    expect(setEnv.schema.safeParse({ name: "JARELA_LOG_LEVEL", value: "warn" }).success).toBe(true);
+    expect(setEnv.schema.safeParse({ name: "JARELA_LOG_LEVEL", value: "trace" }).success).toBe(false);
+    expect(setEnv.schema.safeParse({ name: "JARELA_PORT", value: "4312" }).success).toBe(false);
+    expect(setEnv.schema.safeParse({ name: "JARELA_MAX_STALL_RETRIES", value: "6" }).success).toBe(false);
+    expect(setEnv.schema.safeParse({ name: "JARELA_MAX_STALL_RETRIES", value: 5 }).success).toBe(true);
+    expect(setEnv.schema.safeParse({ name: "JARELA_MAX_STALL_RETRIES", value: 6 }).success).toBe(false);
+    expect(setEnv.schema.safeParse({ name: "JARELA_RUN_IDLE_MS", value: 5000 }).success).toBe(true);
+  });
+
+  it("serializes the declared choices and bounds for model-facing tool metadata", () => {
+    const schemaText = JSON.stringify(toJsonSchema(setEnv.schema));
+
+    expect(schemaText).toContain("JARELA_LOG_LEVEL");
+    expect(schemaText).toContain("debug");
+    expect(schemaText).toContain("JARELA_MAX_STALL_RETRIES");
+    expect(schemaText).toContain("minimum 0");
+    expect(schemaText).toContain("maximum 5");
+    expect(schemaText).toContain('"minimum":0');
+    expect(schemaText).toContain('"maximum":5');
+  });
+
+  it("accepts legacy whitespace and casing for boolean tool values", () => {
+    const def = envSchemaByName().get("JARELA_DISABLE_UPDATE_CHECK");
+    expect(def).toBeDefined();
+    if (!def) return;
+
+    const schema = envToolValueSchema(def);
+    expect(schema.safeParse(" TRUE ").success).toBe(true);
+    expect(schema.safeParse(" false ").success).toBe(true);
+  });
+});
 
 describe("restart replay prevention", () => {
   it("blocks completion-triggered restarts before any network request", async () => {

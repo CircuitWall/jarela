@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
+  getMcpServer,
   listMcpServers,
   upsertMcpServer,
 } from "@/lib/stores/mcp-servers";
 import { invalidateMcpTools } from "@/lib/mcp/client";
 import { mcpServerToResponse } from "@/lib/api/serializers";
-import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
+import { createdResponse, cachedJson, errorResponse, validateBody } from "@/lib/api/responses";
 
 const SpecSchema = z.record(z.string(), z.unknown());
 
@@ -24,6 +25,9 @@ export function GET() {
 export async function POST(req: NextRequest) {
   const body = await validateBody(req, CreateBody);
   if (body instanceof NextResponse) return body;
+  if (getMcpServer(body.name)) {
+    return errorResponse(`MCP server "${body.name}" already exists`, 409);
+  }
   const row = upsertMcpServer({
     name: body.name,
     transport: body.transport,

@@ -1,8 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { homedir } from "node:os";
-import { searchUpstream } from "@/lib/mcp/upstream-registry";
+import { importServerJson, searchUpstream } from "@/lib/mcp/upstream-registry";
 import type { RegistryEntry } from "@/lib/mcp/registry";
 import { errorMessage } from "@/lib/utils/error";
+import { errorResponse, validateBody } from "@/lib/api/responses";
+import { z } from "zod";
+
+const ImportBody = z.object({
+  manifest: z.string().min(1, "Paste a server.json manifest.").max(1_000_000, "Manifest must be 1 MB or smaller."),
+});
 
 // Proxies the official MCP registry (registry.modelcontextprotocol.io). The
 // picker UI calls this with `?q=...&cursor=...` and gets back already-translated
@@ -39,6 +45,22 @@ export async function GET(req: NextRequest) {
       { error: "registry-unreachable", detail: errorMessage(err) },
       { status: 503 },
     );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  const body = await validateBody(req, ImportBody);
+  if (body instanceof NextResponse) return body;
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(body.manifest);
+  } catch {
+    return errorResponse("The pasted server.json is not valid JSON.", 400);
+  }
+  try {
+    return NextResponse.json({ entry: importServerJson(manifest) });
+  } catch (err) {
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }
 

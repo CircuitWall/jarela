@@ -24,32 +24,55 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 // pass through unknowns than reject a server because the schema bumped a minor
 // version.
 
-const ArgumentZ = z.object({
-  type: z.enum(["positional", "named"]).optional(),
-  name: z.string().optional(),
-  value: z.string().optional(),
-  isRequired: z.boolean().optional(),
-  isSecret: z.boolean().optional(),
+const InputFields = {
+  choices: z.array(z.string()).optional(),
   default: z.string().optional(),
   description: z.string().optional(),
+  format: z.enum(["string", "number", "boolean", "filepath"]).optional(),
+  isRequired: z.boolean().optional(),
+  isSecret: z.boolean().optional(),
+  placeholder: z.string().optional(),
+  value: z.string().optional(),
+};
+
+interface UpstreamInput {
+  choices?: string[];
+  default?: string;
+  description?: string;
+  format?: "string" | "number" | "boolean" | "filepath";
+  isRequired?: boolean;
+  isSecret?: boolean;
+  placeholder?: string;
+  value?: string;
+  variables?: Record<string, UpstreamInput>;
+}
+
+const InputZ: z.ZodType<UpstreamInput> = z.lazy(() =>
+  z.object({
+    ...InputFields,
+    variables: z.record(z.string(), InputZ).optional(),
+  }),
+);
+
+const ArgumentZ = z.object({
+  ...InputFields,
+  variables: z.record(z.string(), InputZ).optional(),
+  type: z.enum(["positional", "named"]).optional(),
+  name: z.string().optional(),
+  valueHint: z.string().optional(),
+  isRepeated: z.boolean().optional(),
 });
 
 const EnvVarZ = z.object({
+  ...InputFields,
+  variables: z.record(z.string(), InputZ).optional(),
   name: z.string(),
-  description: z.string().optional(),
-  default: z.string().optional(),
-  isSecret: z.boolean().optional(),
-  isRequired: z.boolean().optional(),
-  format: z.string().optional(),
-  value: z.string().optional(),
 });
 
 const HeaderZ = z.object({
+  ...InputFields,
   name: z.string(),
-  value: z.string().optional(),
-  description: z.string().optional(),
-  isRequired: z.boolean().optional(),
-  isSecret: z.boolean().optional(),
+  variables: z.record(z.string(), InputZ).optional(),
 });
 
 const PackageZ = z.object({
@@ -57,6 +80,7 @@ const PackageZ = z.object({
   registryBaseUrl: z.string().optional(),
   identifier: z.string(),
   version: z.string().optional(),
+  fileSha256: z.string().optional(),
   runtimeHint: z.string().optional(),
   transport: z.object({ type: z.string() }).optional(),
   runtimeArguments: z.array(ArgumentZ).optional(),
@@ -68,6 +92,7 @@ const RemoteZ = z.object({
   type: z.string(),
   url: z.string(),
   headers: z.array(HeaderZ).optional(),
+  variables: z.record(z.string(), InputZ).optional(),
 });
 
 const ServerZ = z.object({
@@ -75,7 +100,8 @@ const ServerZ = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
   version: z.string().optional(),
-  repository: z.object({ url: z.string().optional(), source: z.string().optional() }).optional(),
+  websiteUrl: z.string().optional(),
+  repository: z.object({ url: z.string().optional(), source: z.string().optional(), id: z.string().optional(), subfolder: z.string().optional() }).optional(),
   packages: z.array(PackageZ).optional(),
   remotes: z.array(RemoteZ).optional(),
 });
@@ -253,6 +279,21 @@ export async function getUpstreamByName(serverName: string, fresh = false): Prom
   return entry;
 }
 
+export function importServerJson(raw: unknown): RegistryEntry {
+  const wrapped = EntryZ.safeParse(raw);
+  const parsedServer = ServerZ.safeParse(wrapped.success ? wrapped.data.server : raw);
+  if (!parsedServer.success) {
+    throw new Error(`Invalid MCP server.json: ${parsedServer.error.issues[0]?.message ?? "schema mismatch"}`);
+  }
+  const entry = toRegistryEntry({ server: parsedServer.data });
+  if (!entry) {
+    throw new Error(
+      "This server.json has no install method supported by Jarela. Supported packages are npm, PyPI, and OCI; supported remotes use Streamable HTTP. Legacy SSE remotes are not supported.",
+    );
+  }
+  return entry;
+}
+
 async function fetchJson(url: URL): Promise<unknown> {
   const res = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": "Jarela/1.0 (+mcp-registry)" },
@@ -270,25 +311,26 @@ export function toRegistryEntry(entry: UpstreamEntry): RegistryEntry | null {
   const display = s.title ?? lastSegment(s.name);
   const description = s.description ?? "";
 
-  // Prefer stdio packages (npm > pypi > oci > others); fall back to remote.
+  // Prefer supported stdio packages (npm > pypi > oci); otherwise use Streamable HTTP.
   const pkg = pickPackage(s.packages);
   if (pkg) {
     const built = buildStdio(pkg);
-    if (!built) return null;
-    return {
-      id,
-      name: display,
-      description,
-      category: inferCategory(s.name),
-      source: inferSource(s.name),
-      url: s.repository?.url,
-      transport: "stdio",
-      spec: built.spec,
-      variables: dedupeVars(built.variables),
-    };
+    if (built) {
+      return {
+        id,
+        name: display,
+        description,
+        category: inferCategory(s.name),
+        source: inferSource(s.name),
+        url: s.websiteUrl ?? s.repository?.url,
+        transport: "stdio",
+        spec: built.spec,
+        variables: dedupeVars(built.variables),
+      };
+    }
   }
 
-  const remote = s.remotes?.find((r) => r.type === "streamable-http") ?? s.remotes?.[0];
+  const remote = s.remotes?.find((r) => r.type === "streamable-http");
   if (remote) {
     const built = buildHttp(remote);
     return {
@@ -297,7 +339,7 @@ export function toRegistryEntry(entry: UpstreamEntry): RegistryEntry | null {
       description,
       category: inferCategory(s.name),
       source: inferSource(s.name),
-      url: s.repository?.url,
+      url: s.websiteUrl ?? s.repository?.url,
       transport: "http",
       spec: built.spec,
       variables: dedupeVars(built.variables),
@@ -309,8 +351,10 @@ export function toRegistryEntry(entry: UpstreamEntry): RegistryEntry | null {
 
 function pickPackage(pkgs: UpstreamServer["packages"]): NonNullable<UpstreamServer["packages"]>[number] | undefined {
   if (!pkgs?.length) return undefined;
-  const order = ["npm", "pypi", "oci", "mcpb"];
-  return [...pkgs].sort((a, b) => {
+  const order = ["npm", "pypi", "oci"];
+  return [...pkgs].filter((pkg) =>
+    order.includes(pkg.registryType) && (!pkg.transport || pkg.transport.type === "stdio"),
+  ).sort((a, b) => {
     const ai = order.indexOf(a.registryType); const bi = order.indexOf(b.registryType);
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
   })[0];
@@ -323,16 +367,12 @@ function buildStdio(pkg: NonNullable<UpstreamServer["packages"]>[number]): Built
   const env: Record<string, string> = {};
   for (const v of pkg.environmentVariables ?? []) {
     if (isUserSupplied(v)) {
-      variables.push({
-        key: v.name,
-        label: v.description ?? v.name,
-        placeholder: placeholderFor(v.format, v.name),
-        secret: v.isSecret,
-        default: v.default,
-      });
-      env[v.name] = `\${${v.name}}`;
+      const key = variableKey(v.name);
+      variables.push(toRegistryVariable(key, v, v.name));
+      env[v.name] = `\${${key}}`;
     } else if (v.value !== undefined) {
-      env[v.name] = renderTemplate(v.value, variables);
+      if (v.variables) addInputVariables(v.variables, variables);
+      env[v.name] = renderTemplate(v.value, variables, v.isSecret);
     } else if (v.default !== undefined) {
       env[v.name] = v.default;
     }
@@ -374,15 +414,21 @@ function buildStdio(pkg: NonNullable<UpstreamServer["packages"]>[number]): Built
 function buildHttp(remote: NonNullable<UpstreamServer["remotes"]>[number]): Built {
   const variables: RegistryVariable[] = [];
   const headers: Record<string, string> = {};
+  for (const [name, input] of Object.entries(remote.variables ?? {})) {
+    variables.push(toRegistryVariable(variableKey(name), input, name));
+  }
+  const url = renderTemplate(remote.url, variables);
   for (const h of remote.headers ?? []) {
+    if (h.variables) addInputVariables(h.variables, variables);
     if (h.value !== undefined) {
       headers[h.name] = renderTemplate(h.value, variables, h.isSecret);
     } else if (isUserSupplied(h)) {
-      variables.push({ key: h.name, label: h.description ?? h.name, secret: h.isSecret });
-      headers[h.name] = `\${${h.name}}`;
+      const key = variableKey(`MCP_HEADER_${h.name}`);
+      variables.push(toRegistryVariable(key, h, h.name));
+      headers[h.name] = `\${${key}}`;
     }
   }
-  const spec: Record<string, unknown> = { url: remote.url };
+  const spec: Record<string, unknown> = { url };
   if (Object.keys(headers).length > 0) spec.headers = headers;
   return { spec, variables };
 }
@@ -395,10 +441,11 @@ function renderArgs(
   for (const a of args ?? []) {
     if (a.type === "named" && a.name) out.push(a.name);
     if (a.value !== undefined) {
+      addInputVariables(a.variables, variables);
       out.push(renderTemplate(a.value, variables, a.isSecret));
     } else if (isUserSupplied(a)) {
-      const key = a.name ?? `ARG_${out.length}`;
-      variables.push({ key, label: a.description ?? key, secret: a.isSecret, default: a.default });
+      const key = variableKey(a.name ?? a.valueHint ?? `ARG_${out.length}`);
+      variables.push(toRegistryVariable(key, a, a.name ?? a.valueHint ?? key));
       out.push(`\${${key}}`);
     } else if (a.default !== undefined) {
       out.push(a.default);
@@ -407,13 +454,43 @@ function renderArgs(
   return out;
 }
 
+function addInputVariables(
+  inputs: Record<string, UpstreamInput> | undefined,
+  variables: RegistryVariable[],
+): void {
+  for (const [name, input] of Object.entries(inputs ?? {})) {
+    variables.push(toRegistryVariable(variableKey(name), input, name));
+  }
+}
+
+function toRegistryVariable(key: string, input: UpstreamInput, fallbackLabel: string): RegistryVariable {
+  return {
+    key,
+    label: input.description ?? fallbackLabel,
+    placeholder: input.placeholder ?? placeholderFor(input.format, fallbackLabel),
+    secret: input.isSecret,
+    default: input.default,
+    choices: input.choices,
+    format: input.format,
+    required: input.isRequired ?? (input.isSecret === true || input.default === undefined),
+  };
+}
+
+function variableKey(raw: string): string {
+  const key = raw.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  return /^[A-Z_]/.test(key) ? key : `MCP_${key}`;
+}
+
 // Upstream uses `{varName}` templates inside string values. Convert to our
 // `${VARNAME}` placeholder syntax and register each referenced variable.
 function renderTemplate(value: string, variables: RegistryVariable[], secret?: boolean): string {
   return value.replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, (_, name: string) => {
-    const key = name.toUpperCase();
-    if (!variables.find((v) => v.key === key)) {
-      variables.push({ key, label: name, secret });
+    const key = variableKey(name);
+    const existing = variables.find((v) => v.key === key);
+    if (existing) {
+      existing.required = true;
+    } else {
+      variables.push({ key, label: name, secret, required: true });
     }
     return `\${${key}}`;
   });
@@ -421,8 +498,8 @@ function renderTemplate(value: string, variables: RegistryVariable[], secret?: b
 
 function isUserSupplied(field: { isRequired?: boolean; isSecret?: boolean; default?: string; value?: string }): boolean {
   if (field.value !== undefined) return false;
-  if (field.isRequired) return true;
-  if (field.isSecret) return true;
+  if (field.isRequired !== undefined) return field.isRequired;
+  if (field.isSecret === true) return true;
   return field.default === undefined;
 }
 
@@ -438,6 +515,9 @@ function dedupeVars(vars: RegistryVariable[]): RegistryVariable[] | undefined {
       placeholder: existing.placeholder ?? v.placeholder,
       secret: existing.secret || v.secret,
       default: existing.default ?? v.default,
+      required: existing.required || v.required,
+      choices: existing.choices ?? v.choices,
+      format: existing.format ?? v.format,
     });
   }
   return Array.from(map.values());

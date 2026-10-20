@@ -10,7 +10,7 @@ const originalUsageStrategy = process.env.JARELA_USAGE_STRATEGY;
 const originalRouterPolicy = process.env.JARELA_MODEL_ROUTER_POLICY;
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { PATCH } = await import("./route");
+const { GET, PATCH } = await import("./route");
 const { readOverrides } = await import("@/lib/env/overrides");
 
 function patchRequest(body: unknown): NextRequest {
@@ -40,6 +40,18 @@ beforeEach(async () => {
   delete entries.JARELA_MODEL_ROUTER_POLICY;
   const { writeOverrides } = await import("@/lib/env/overrides");
   await writeOverrides({ version: 1, entries });
+});
+
+describe("GET /api/v1/env", () => {
+  it("exposes preflight phase separately from restart requirements", async () => {
+    const response = await GET();
+    const { entries } = await response.json() as { entries: Array<{ name: string; phase: string; requiresRestart: boolean }> };
+    const port = entries.find((entry) => entry.name === "JARELA_PORT");
+    const runtimeRateLimits = entries.find((entry) => entry.name === "JARELA_PROVIDER_RATE_LIMITS");
+
+    expect(port).toMatchObject({ phase: "preflight", requiresRestart: true });
+    expect(runtimeRateLimits).toMatchObject({ phase: "postflight", requiresRestart: true });
+  });
 });
 
 describe("PATCH /api/v1/env", () => {

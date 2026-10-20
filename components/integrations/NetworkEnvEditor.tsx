@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Edit3, Network, RotateCcw, Save, ServerCog } from "lucide-react";
 import { refreshRuntimeConfig } from "@/api/runtime-config";
+import { EnvValueInput, ENV_TYPE_LABEL } from "@/components/env/EnvValueInput";
 
 import { confirmAction } from "@/lib/ui/confirm";
 
@@ -14,6 +15,7 @@ interface EnvRow {
   overridden: boolean;
   description: string;
   category: string;
+  phase: "preflight" | "postflight";
   tier: "A" | "B" | "C";
   requiresRestart: boolean;
   agentWritable: boolean;
@@ -121,8 +123,7 @@ export function NetworkEnvEditor() {
         <span className="ml-auto text-[10px] text-fg-faint">{rows.length} vars</span>
       </div>
       <p className="text-xs text-fg-muted mb-3">
-        Bind address, port, and HTTP timeouts. Changes to bind-time
-        values require a server restart.
+        Port and bind address are preflight settings read when the server starts. You can stage them here, then restart to apply them. Other network controls are postflight runtime settings; restart badges mark exceptions.
       </p>
 
       {restartNeeded && (
@@ -156,6 +157,9 @@ export function NetworkEnvEditor() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <code className="text-[12px] font-mono text-fg">{row.name}</code>
+                    <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-fg-faint/10 text-fg-faint" title={`Value type: ${ENV_TYPE_LABEL[row.type]}`}>
+                      {ENV_TYPE_LABEL[row.type]}
+                    </span>
                     {row.overridden && (
                       <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
                         overridden
@@ -166,21 +170,28 @@ export function NetworkEnvEditor() {
                         restart
                       </span>
                     )}
+                    {row.phase === "preflight" && (
+                      <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-sky-500/20 text-sky-700 dark:text-sky-300">
+                        preflight
+                      </span>
+                    )}
                   </div>
                   <div className="mt-0.5 text-[11px] text-fg-muted">{row.description}</div>
                   {editing?.name === row.name ? (
                     <div className="mt-1.5 flex items-center gap-1.5">
-                      <input
-                        type={row.type === "int" ? "number" : "text"}
+                      <EnvValueInput
+                        type={row.type}
                         value={editing.value}
-                        onChange={(e) => setEditing({ name: row.name, value: e.target.value })}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") onSave();
-                          if (e.key === "Escape") setEditing(null);
-                        }}
+                        onChange={(value) => setEditing({ name: row.name, value })}
+                        enumValues={row.enumValues}
                         min={row.min}
                         max={row.max}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") onSave();
+                          if (event.key === "Escape") setEditing(null);
+                        }}
                         autoFocus
+                        ariaLabel={row.name}
                         className="px-2 py-1 rounded border border-border bg-surface text-fg text-[11px] font-mono w-48"
                       />
                       <button
