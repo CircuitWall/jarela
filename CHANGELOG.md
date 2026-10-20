@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-10-20
+
 ### Fixed
 
 - Preserve substantive chat answers during automatic correction and replace the
