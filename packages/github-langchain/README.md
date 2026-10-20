@@ -110,9 +110,11 @@ Exported for reuse outside the LangChain tool wrappers:
 
 ## API notes
 
-- **Token scopes:** `repo` covers private + public repo content + issues + PRs;
-  `read:org` is needed for team-based reviewer requests. Fine-grained tokens
-  must explicitly grant each resource.
+- **Token permissions:** classic `repo` covers private + public repo content +
+  issues + PRs; `public_repo` is enough for public-only access. Fine-grained
+  tokens need Contents: read, Issues: read/write, and Pull requests: read/write
+  for the advertised tools. `read:org` is only needed for team-based reviewer
+  requests, not simply because a repository belongs to an organization.
 - **Code search rate limits:** GitHub's `/search/code` endpoint has stricter
   limits (10/min unauthenticated, 30/min authenticated) than the rest of the
   REST API.

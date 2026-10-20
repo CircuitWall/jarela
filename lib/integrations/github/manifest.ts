@@ -19,8 +19,10 @@ export const githubManifest: IntegrationManifest = {
       check: "credentials",
       detail:
         "A Personal Access Token (classic or fine-grained) created at github.com/settings/tokens. " +
-        "Required scopes: `repo` (or `public_repo` for public-only), plus `read:org` if you target org repos.",
-      docs_url: "https://github.com/settings/tokens",
+        "Classic tokens need `repo` (or `public_repo` for public-only). Fine-grained tokens need " +
+        "Contents: read, Issues: read/write, and Pull requests: read/write on the selected repositories. " +
+        "`read:org` is only needed for organization-specific operations such as team reviewer lookup.",
+      docs_url: "https://docs.github.com/en/rest/overview/permissions-required-for-fine-grained-personal-access-tokens",
     },
   ],
   steps: [
@@ -29,8 +31,9 @@ export const githubManifest: IntegrationManifest = {
       title: "Create a GitHub Personal Access Token",
       description:
         "Open github.com/settings/tokens → Generate new token. For classic tokens, tick `repo` (or " +
-        "`public_repo` for public repos only) and `read:org`. For fine-grained tokens, pick the repos and " +
-        "grant Issues: Read+Write and Pull requests: Read+Write. Copy the token immediately — GitHub only " +
+        "`public_repo` for public repos only); add `read:org` only if you need organization team reviewer " +
+        "lookup. For fine-grained tokens, pick the repos and grant Contents: Read-only, Issues: Read+Write, " +
+        "and Pull requests: Read+Write. Copy the token immediately — GitHub only " +
         "shows it once.",
       docs_url: "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
     },

@@ -18,7 +18,7 @@ import {
 import { adfToText } from "./flatten";
 import { upsertRemoteDocument, type UpsertResult } from "./upsert";
 
-interface AtlassianAuth { url: string; email: string; apiToken: string }
+interface AtlassianAuth { url: string; email: string; apiToken: string; cloudId?: string }
 const atlassianFetch = optionalFunction<(auth: AtlassianAuth, path: string, init?: RequestInit) => Promise<unknown>>(
   "@circuitwall/atlassian-langchain",
   "atlassianFetch",

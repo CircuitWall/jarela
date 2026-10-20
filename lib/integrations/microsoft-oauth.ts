@@ -41,6 +41,8 @@ const TENANT = process.env.OUTLOOK_TENANT?.trim() || "common";
 //   - Mail.ReadWrite  → search/read mail, create drafts, mark read,
 //                       move to folders (incl. DeletedItems).
 //   - Mail.Send       → send mail when the user explicitly asks for it.
+//   - Files.Read.All  → Microsoft Search over OneDrive/SharePoint files.
+//   - Sites.Read.All  → Microsoft Search over SharePoint lists and sites.
 //   - Calendars.ReadWrite → list/get/create/update/delete events on the
 //                           user's existing calendars.
 //   - Tasks.ReadWrite → list/get/create/update/complete/delete Microsoft
@@ -52,6 +54,8 @@ export const MICROSOFT_SCOPES = [
   "User.Read",
   "Mail.ReadWrite",
   "Mail.Send",
+  "Files.Read.All",
+  "Sites.Read.All",
   "Calendars.ReadWrite",
   "Tasks.ReadWrite",
   "People.Read",
@@ -210,7 +214,7 @@ const SCOPE_HINTS: Array<{ prefix: string; scope: string }> = [
   { prefix: "/me/contacts", scope: "Contacts.Read" },
   { prefix: "/me/drive", scope: "Files.Read" },
   { prefix: "/me/insights", scope: "Sites.Read.All" },
-  { prefix: "/search/query", scope: "Mail.Read Files.Read.All" },
+  { prefix: "/search/query", scope: "Mail.Read / Calendars.Read for mail and events; Files.Read.All for files; Sites.Read.All for lists and sites" },
   { prefix: "/me", scope: "User.Read" },
 ];
 
@@ -252,7 +256,18 @@ export async function graphFetch(
   path: string,
   init?: RequestInit,
 ): Promise<unknown> {
-  const url = path.startsWith("http") ? path : `https://graph.microsoft.com/v1.0${path}`;
+  let target: URL;
+  try {
+    target = path.startsWith("http")
+      ? new URL(path)
+      : new URL(`https://graph.microsoft.com/v1.0${path}`);
+  } catch {
+    return { error: "Microsoft Graph request URL is invalid." };
+  }
+  if (target.origin !== "https://graph.microsoft.com" || target.username || target.password) {
+    return { error: "Microsoft Graph requests must target graph.microsoft.com; refusing to forward credentials." };
+  }
+  const url = target.toString();
   let attempt = 0;
   let triedReauth = false;
 

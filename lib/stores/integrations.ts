@@ -93,6 +93,7 @@ export const INTEGRATIONS = {
     description: "Used by jira_* and confluence_* tools. Get an API token at id.atlassian.com → Security → API tokens.",
     fields: [
       { key: "url", label: "Site URL", placeholder: "https://your-team.atlassian.net", secret: false, required: true },
+      { key: "cloud_id", label: "Cloud ID (scoped API tokens only)", placeholder: "UUID from your Atlassian cloudId", secret: false, required: false },
       { key: "email", label: "Account email", placeholder: "you@company.com", secret: false, required: true },
       { key: "api_token", label: "API token", placeholder: "ATATT3xFfGF0…", secret: true, required: true },
     ],

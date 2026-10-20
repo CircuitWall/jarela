@@ -39,6 +39,7 @@ import {
 //   ATLASSIAN_URL=https://your-team.atlassian.net
 //   ATLASSIAN_EMAIL=you@example.com
 //   ATLASSIAN_API_TOKEN=...
+//   ATLASSIAN_CLOUD_ID=... (only for scoped API tokens)
 
 // Option B — supply your own resolver (e.g. read from a secrets store):
 setAuthResolver(() => ({
@@ -136,6 +137,11 @@ tool yet. Returns the parsed JSON, or `{ error, url }` on non-2xx.
 
 Atlassian Cloud uses HTTP Basic with **email + API token** (NOT password).
 Create one at <https://id.atlassian.com/manage-profile/security/api-tokens>.
+Scoped API tokens also require the site's Cloud ID. Set `ATLASSIAN_CLOUD_ID`
+or include `cloudId` in the auth resolver; Jira and Confluence requests are
+routed through their respective `api.atlassian.com/ex/{product}/{cloudId}`
+gateways. Select scopes for both products that match the tools you enable.
+See Atlassian's [API token guidance](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/).
 Server / Data Center editions are not currently supported — open an issue
 if you need them.
 

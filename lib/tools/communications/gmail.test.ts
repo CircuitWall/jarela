@@ -59,6 +59,19 @@ describe("gmail source links", () => {
 });
 
 describe("gmail tools", () => {
+  it("rejects external absolute Google API URLs before refreshing or sending a bearer token", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await googleFetch(
+      { client_id: "test-client", client_secret: "test-secret", refresh_token: "external-url-test-refresh-token" },
+      "Gmail",
+      "https://gmail.googleapis.com/gmail/v1/users/me",
+      "https://attacker.example/collect",
+    );
+    expect(result.error).toMatch(/gmail.googleapis.com/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("decodes gzip Google API responses without a Content-Encoding header", async () => {
     const baseUrl = "https://gmail.googleapis.com/gmail/v1/users/me";
     const fetchMock = vi.fn()

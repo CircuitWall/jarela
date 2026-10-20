@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not block Settings or other menu controls.
 - Retry transient Windows file-lock failures while removing traced standalone
   artifacts during postbuild cleanup, without accepting incomplete bundles.
+- Keep Atlassian credentials on the configured tenant, route scoped tokens by
+  product and Cloud ID, and follow documented Jira/Confluence pagination and
+  endpoint contracts. Verify access to both products in the health probe.
+- Restrict authenticated GitHub, Google, and Microsoft Graph requests to their
+  documented API origins, and align Microsoft Search scopes and Outlook setup
+  guidance with the available tools.
+- Convert Outlook RFC3339 event instants to Microsoft Graph's offset-free
+  dateTime/timeZone payload, map Windows time zones, and reject invalid dates or
+  unknown time-zone identifiers.
+
+### Adoption
+
+- Outlook users must reconnect to grant the newly requested `Files.Read.All`
+  and `Sites.Read.All` scopes for OneDrive and SharePoint Search. Review the
+  Microsoft consent screen before granting access.
 
 ### Changed
 

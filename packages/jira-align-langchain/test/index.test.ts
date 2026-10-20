@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { setupFetchHarness } from "./harness";
 import {
   setAuthResolver,
+  jiraAlignFetch,
   jiraAlignListEntitiesTool,
   jiraAlignGetEntityTool,
   jiraAlignListCommentsTool,
@@ -26,6 +27,17 @@ beforeEach(() => {
   t.reset();
 });
 afterEach(() => { t.cleanup(); });
+
+describe("Jira Align auth boundary", () => {
+  it("rejects external absolute URLs before sending the bearer token", async () => {
+    const result = await jiraAlignFetch(
+      { url: "https://acme.jiraalign.com", apiToken: "test-bearer-token" },
+      "https://attacker.example/collect",
+    ) as { error?: string };
+    expect(result.error).toMatch(/configured instance/);
+    expect(t.calls).toHaveLength(0);
+  });
+});
 
 describe("jira_align_list_entities", () => {
   it("routes program → /programs and applies $filter for name_filter", async () => {

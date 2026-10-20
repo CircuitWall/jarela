@@ -151,9 +151,18 @@ export async function graphFetch(
   pathOrUrl: string,
   init?: RequestInit,
 ): Promise<unknown> {
+  let target: URL;
+  try {
+    target = pathOrUrl.startsWith("http") ? new URL(pathOrUrl) : new URL(`${GRAPH_BASE}${pathOrUrl}`);
+  } catch {
+    return { error: "Microsoft Graph request URL is invalid." };
+  }
+  if (target.origin !== "https://graph.microsoft.com" || target.username || target.password) {
+    return { error: "Microsoft Graph requests must target graph.microsoft.com; refusing to forward credentials." };
+  }
+  const url = target.toString();
   const token = await resolveAccessToken();
   if (typeof token !== "string") return token;
-  const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${GRAPH_BASE}${pathOrUrl}`;
   try {
     const res = await fetch(url, {
       ...init,

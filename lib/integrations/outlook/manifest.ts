@@ -4,19 +4,20 @@ export const outlookManifest: IntegrationManifest = {
   id: "outlook",
   name: "Outlook + Microsoft Calendar + To Do",
   summary:
-    "Lets the agent search/read mail, create drafts (never send), move messages between " +
+    "Lets the agent search/read mail, create drafts, and send mail when explicitly asked, move messages between " +
     "folders, read or modify Microsoft 365 calendar events, and manage Microsoft To Do " +
-    "task lists and tasks. Drafts-only by design — the integration intentionally cannot " +
-    "send mail on the user's behalf.",
+    "task lists and tasks.",
   category: "mail",
   prerequisites: [
     {
       check: "oauth_app",
       detail:
-        "An Azure app registration with delegated Mail.ReadWrite, Calendars.ReadWrite, " +
-        "Tasks.ReadWrite, User.Read, and offline_access permissions. Both personal Microsoft " +
-        "accounts and M365 work/school accounts are supported via the 'common' tenant.",
-      docs_url: "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+        "An Azure app registration with delegated Mail.ReadWrite, Mail.Send, Calendars.ReadWrite, " +
+        "Tasks.ReadWrite, People.Read, Files.Read.All, Sites.Read.All, User.Read, and offline_access " +
+        "permissions. Files.Read.All and Sites.Read.All enable Microsoft Search across OneDrive/SharePoint. " +
+        "Mail, calendar, and To Do work with personal and M365 accounts; Microsoft Search requires a " +
+        "work/school account. Both account types are supported via the 'common' tenant.",
+      docs_url: "https://learn.microsoft.com/en-us/graph/api/search-query?view=graph-rest-1.0",
     },
     {
       check: "custom",
@@ -47,7 +48,8 @@ export const outlookManifest: IntegrationManifest = {
       title: "Grant the required Graph permissions",
       description:
         "API permissions → Add a permission → Microsoft Graph → Delegated permissions. " +
-        "Add Mail.ReadWrite, Calendars.ReadWrite, Tasks.ReadWrite, User.Read, offline_access. " +
+        "Add Mail.ReadWrite, Mail.Send, Calendars.ReadWrite, Tasks.ReadWrite, People.Read, " +
+        "Files.Read.All, Sites.Read.All, User.Read, offline_access. " +
         "No admin consent required for personal accounts; M365 tenants may need an admin to consent.",
     },
     {
