@@ -12,7 +12,7 @@
 import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import { spawnSync } from "node:child_process";
 
-type AtlassianAuth = { url: string; email: string; apiToken: string };
+type AtlassianAuth = { url: string; email: string; apiToken: string; cloudId?: string };
 type GitHubAuth = { token: string };
 type JiraAlignAuth = { url: string; apiToken: string };
 // Trigger registration of the default LangChain package auth resolvers
@@ -104,23 +104,38 @@ export async function probeAtlassian(): Promise<HealthResult> {
   const auth = resolvePackageAuth<AtlassianAuth>("atlassian");
   if ("error" in auth) return unconfigured(auth.error);
   try {
-    const res = await fetch(`${auth.url}/rest/api/3/myself`, {
-      headers: {
-        Authorization: "Basic " + Buffer.from(`${auth.email}:${auth.apiToken}`).toString("base64"),
-        Accept: "application/json",
-      },
+    const authHeaders = {
+      Authorization: "Basic " + Buffer.from(`${auth.email}:${auth.apiToken}`).toString("base64"),
+      Accept: "application/json",
+    };
+    const productUrl = (product: "jira" | "confluence", path: string) => auth.cloudId
+      ? `https://api.atlassian.com/ex/${product}/${encodeURIComponent(auth.cloudId)}${path}`
+      : `${auth.url.replace(/\/+$/, "")}${path}`;
+    const jiraRes = await fetch(productUrl("jira", "/rest/api/3/myself"), {
+      headers: authHeaders,
       signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
     });
-    if (res.status === 401 || res.status === 403) {
-      return authFailed(`Atlassian rejected the API token (${res.status}). Regenerate at id.atlassian.com → Security → API tokens.`);
+    if (jiraRes.status === 401) return authFailed("Jira rejected the Atlassian API token. Check the email, token, and token expiry.");
+    if (jiraRes.status === 403) return authFailed("Jira API access is forbidden. Check the token's Jira scopes and the account's site access.");
+    if (jiraRes.status === 429) return transient("Jira rate-limited the Atlassian probe (429).");
+    if (!jiraRes.ok) {
+      const body = await jiraRes.text().catch(() => "");
+      return probeError(`Jira ${jiraRes.status}: ${body.slice(0, 200)}`);
     }
-    if (res.status === 429) return transient(`Atlassian rate-limited the probe (429).`);
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      return probeError(`Atlassian ${res.status}: ${body.slice(0, 200)}`);
+    const me = await readJsonResponse<{ displayName?: string; emailAddress?: string; accountId?: string }>(jiraRes);
+
+    const confluenceRes = await fetch(productUrl("confluence", "/wiki/api/v2/spaces?limit=1"), {
+      headers: authHeaders,
+      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
+    });
+    if (confluenceRes.status === 401) return authFailed("Confluence rejected the Atlassian API token. Check the token's Confluence scopes and expiry.");
+    if (confluenceRes.status === 403) return authFailed("Confluence API access is forbidden. Check the token's Confluence scopes and the account's site access.");
+    if (confluenceRes.status === 429) return transient("Confluence rate-limited the Atlassian probe (429).");
+    if (!confluenceRes.ok) {
+      const body = await confluenceRes.text().catch(() => "");
+      return probeError(`Confluence ${confluenceRes.status}: ${body.slice(0, 200)}`);
     }
-    const me = await readJsonResponse<{ displayName?: string; emailAddress?: string; accountId?: string }>(res);
-    return ok({ displayName: me.displayName, email: me.emailAddress, accountId: me.accountId });
+    return ok({ displayName: me.displayName, email: me.emailAddress, accountId: me.accountId, confluenceAccess: true });
   } catch (err) {
     return transient(describeError(err));
   }

@@ -77,6 +77,15 @@ afterEach(() => {
 });
 
 describe("graphFetch resilience", () => {
+  it("rejects external absolute URLs before refreshing or sending a Graph token", async () => {
+    const { graphFetch, resolveMicrosoftAuth } = await import("@/lib/integrations/microsoft-oauth");
+    const auth = resolveMicrosoftAuth() as { client_id: string; client_secret: string; refresh_token: string };
+    const result = await graphFetch(auth, "https://attacker.example/collect") as { error?: string };
+    expect(result.error).toMatch(/graph.microsoft.com/);
+    expect(graphCalls).toHaveLength(0);
+    expect(tokenCalls).toBe(0);
+  });
+
   it("retries once on 401 after refreshing the access token", { timeout: 10_000 }, async () => {
     const { graphFetch, resolveMicrosoftAuth } = await import("@/lib/integrations/microsoft-oauth");
     const auth = resolveMicrosoftAuth() as { client_id: string; client_secret: string; refresh_token: string };
@@ -206,6 +215,20 @@ describe("ms_graph_get", () => {
 });
 
 describe("ms_search", () => {
+  it("requests scopes for its default mail, event, file, and SharePoint search types", async () => {
+    const { MICROSOFT_SCOPES } = await import("@/lib/integrations/microsoft-oauth");
+    expect(MICROSOFT_SCOPES).toContain("Mail.ReadWrite");
+    expect(MICROSOFT_SCOPES).toContain("Calendars.ReadWrite");
+    expect(MICROSOFT_SCOPES).toContain("Files.Read.All");
+    expect(MICROSOFT_SCOPES).toContain("Sites.Read.All");
+  });
+
+  it("rejects entity types whose scopes are not requested", async () => {
+    const { search } = await loadTools();
+    expect(search.schema.safeParse({ query: "q4", entity_types: ["chatMessage"] }).success).toBe(false);
+    expect(search.schema.safeParse({ query: "q4", entity_types: ["person"] }).success).toBe(false);
+  });
+
   it("POSTs /search/query with default entity types and slims hits", async () => {
     const { search } = await loadTools();
     queueGraph({
@@ -258,12 +281,12 @@ describe("ms_search", () => {
     });
   });
 
-  it("respects custom entity_types and size", async () => {
+  it("respects a supported custom entity type and size", async () => {
     const { search } = await loadTools();
     queueGraph({ status: 200, body: { value: [] } });
-    await search.invoke({ query: "alice", entity_types: ["person"], size: 3 });
+    await search.invoke({ query: "alice", entity_types: ["site"], size: 3 });
     const sent = JSON.parse(graphCalls[0].init.body as string);
-    expect(sent.requests[0].entityTypes).toEqual(["person"]);
+    expect(sent.requests[0].entityTypes).toEqual(["site"]);
     expect(sent.requests[0].size).toBe(3);
   });
 

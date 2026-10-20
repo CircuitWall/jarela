@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { atlassianFetch, authHeader, parseJsonSafe, resolveAuth, type AtlassianAuth } from "../shared";
+import { atlassianFetch, authHeader, fetchAtlassianAttachment, parseJsonSafe, resolveAuth, type AtlassianAuth } from "../shared";
 import { coerceCustomFieldValue, extractFieldValue, loadJiraFields, resolveCustomFieldNames, simplifyADF, textToADF, type JiraFieldDef } from "./jira-formatters";
 
 import { jiraListBoardsTool, jiraGetBoardTool, jiraListSprintsTool, jiraGetSprintTool, jiraCreateSprintTool, jiraUpdateSprintTool, jiraDeleteSprintTool, jiraMoveIssuesToSprintTool, jiraMoveIssuesToBacklogTool, jiraRankIssuesTool } from "./jira-agile-tools";
@@ -8,14 +8,14 @@ import { jiraListBoardsTool, jiraGetBoardTool, jiraListSprintsTool, jiraGetSprin
 export { validateSprintTransition, jiraListBoardsTool, jiraGetBoardTool, jiraListSprintsTool, jiraGetSprintTool, jiraCreateSprintTool, jiraUpdateSprintTool, jiraDeleteSprintTool, jiraMoveIssuesToSprintTool, jiraMoveIssuesToBacklogTool, jiraRankIssuesTool } from "./jira-agile-tools";
 
 export const jiraSearchTool = tool(
-  async ({ jql, max_results, fields }) => {
+  async ({ jql, max_results, fields, next_page_token }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const limit = Math.min(max_results ?? 25, 100);
     const fieldList = fields ?? ["summary", "status", "assignee", "priority", "created", "updated"];
     const data = await atlassianFetch(auth, `/rest/api/3/search/jql`, {
       method: "POST",
-      body: JSON.stringify({ jql, maxResults: limit, fields: fieldList }),
+      body: JSON.stringify({ jql, maxResults: limit, fields: fieldList, ...(next_page_token ? { nextPageToken: next_page_token } : {}) }),
     }) as { issues?: Array<Record<string, unknown>>; nextPageToken?: string; error?: string };
     if (data.error) return JSON.stringify(data);
     return JSON.stringify({
@@ -41,6 +41,7 @@ export const jiraSearchTool = tool(
       jql: z.string().describe("JQL query string"),
       max_results: z.number().optional().describe("Max issues (default 25, max 100)"),
       fields: z.array(z.string()).optional().describe("Field names to fetch; defaults to common ones"),
+      next_page_token: z.string().optional().describe("Continuation token returned by the previous search response."),
     }),
   },
 );
@@ -1046,10 +1047,8 @@ export const jiraGetAttachmentContentTool = tool(
   async ({ content_url, as_text }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
-    const fullUrl = content_url.startsWith("http")
-      ? content_url
-      : `${auth.url}${content_url.startsWith("/") ? "" : "/"}${content_url}`;
-    const res = await fetch(fullUrl, { headers: { Authorization: authHeader(auth) } });
+    const res = await fetchAtlassianAttachment(auth, content_url);
+    if (!(res instanceof Response)) return JSON.stringify(res);
     if (!res.ok) {
       const errText = await res.text();
       return JSON.stringify({ error: `Atlassian ${res.status}: ${errText.slice(0, 500)}` });

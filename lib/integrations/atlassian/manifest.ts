@@ -20,8 +20,9 @@ export const atlassianManifest: IntegrationManifest = {
       check: "credentials",
       detail:
         "An API token created at id.atlassian.com → Security → API tokens. " +
-        "The token is bound to your account email — you'll provide both.",
-      docs_url: "https://id.atlassian.com/manage-profile/security/api-tokens",
+        "The token is bound to your account email — you'll provide both. For a scoped token, " +
+        "also provide the Atlassian Cloud ID so Jira and Confluence use their product API gateways.",
+      docs_url: "https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/",
     },
   ],
   steps: [
@@ -38,7 +39,8 @@ export const atlassianManifest: IntegrationManifest = {
       title: "Save the credentials in Jarela",
       description:
         "Propose enabling the integration. The user will be asked for the site URL, " +
-        "their account email, and the API token. The token is stored encrypted at rest.",
+        "their account email, and the API token. Scoped tokens also need the Cloud ID. " +
+        "The token is stored encrypted at rest.",
       proposes: "enable_integration",
     },
     {

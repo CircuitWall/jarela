@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   setAuthResolver,
+  atlassianFetch,
+  jiraSearchTool,
+  jiraGetAttachmentContentTool,
   resolveCustomFieldNames,
   extractFieldValue,
   confluenceTextToStorage,
@@ -8,7 +11,9 @@ import {
   confluenceCreatePageTool,
   confluenceUpdatePageTool,
   confluenceGetPageTool,
+  confluenceSearchTool,
   confluenceGetCommentsTool,
+  confluenceAddCommentTool,
   confluenceUploadAttachmentTool,
   confluenceMovePageTool,
   confluenceGetAttachmentContentTool,
@@ -62,6 +67,11 @@ function installFetch() {
 beforeEach(() => {
   calls = [];
   responses = [];
+  setAuthResolver(() => ({
+    url: "https://test.atlassian.net",
+    email: "tester@example.com",
+    apiToken: "test-token",
+  }));
   installFetch();
 });
 
@@ -334,10 +344,10 @@ describe("confluence_get_page", () => {
     const out = await confluenceGetPageTool.invoke({ page_id: "p1" });
 
     expect(calls[0].url).toBe(
-      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=STORAGE&include-version=true",
+      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=storage&include-version=true",
     );
     expect(calls[1].url).toBe(
-      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=VIEW&include-version=true",
+      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=view&include-version=true",
     );
     expect(JSON.parse(out)).toEqual({
       id: "p1",
@@ -381,6 +391,49 @@ describe("confluence_get_comments", () => {
     expect(parsed.footer_comments[0]).toMatchObject({ id: "c1", version: 1, body_storage: "<p>ok</p>" });
     expect(parsed.inline_comments).toEqual([]);
     expect(parsed.inline_warning).toMatch(/404/);
+  });
+});
+
+describe("Confluence API contract regressions", () => {
+  it("uses the documented CQL search route and unwraps page results", async () => {
+    responses.push({ body: {
+      size: 1,
+      totalSize: 8,
+      results: [{ content: { id: "page-1", type: "page", title: "Runbook", _links: { webui: "/spaces/ENG/pages/1" } } }],
+      _links: { next: "/wiki/rest/api/search?cursor=page%2F2" },
+    } });
+    const result = JSON.parse(await confluenceSearchTool.invoke({ cql: "type = page", cursor: "page/1" }));
+    expect(calls[0].url).toContain("/wiki/rest/api/search?");
+    expect(new URL(calls[0].url).searchParams.get("cursor")).toBe("page/1");
+    expect(result).toMatchObject({
+      total: 8,
+      next_cursor: "page/2",
+      results: [{ id: "page-1", type: "page", title: "Runbook", url: "https://test.atlassian.net/wiki/spaces/ENG/pages/1" }],
+    });
+  });
+
+  it("uses the Confluence reply payload without pageId and returns comment cursors", async () => {
+    responses.push({ body: { id: "reply-1", parentCommentId: "parent-1" } });
+    await confluenceAddCommentTool.invoke({ page_id: "page-1", parent_comment_id: "parent-1", body_text: "reply" });
+    const commentBody = JSON.parse(calls[0].init.body as string);
+    expect(commentBody.parentCommentId).toBe("parent-1");
+    expect(commentBody).not.toHaveProperty("pageId");
+
+    calls = [];
+    responses.push({ body: { results: [], _links: { next: "?cursor=footer-2" } } });
+    const listed = JSON.parse(await confluenceGetCommentsTool.invoke({
+      page_id: "page-1", include_inline: false, footer_cursor: "footer-1", limit: 40,
+    }));
+    expect(new URL(calls[0].url).searchParams.get("cursor")).toBe("footer-1");
+    expect(listed.footer_next_cursor).toBe("footer-2");
+  });
+
+  it("rejects external Confluence attachment links without issuing a request", async () => {
+    const result = JSON.parse(await confluenceGetAttachmentContentTool.invoke({
+      download_link: "https://attacker.example/file", as_text: true,
+    }));
+    expect(result.error).toMatch(/configured site/);
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -436,10 +489,75 @@ describe("confluence_move_page", () => {
       target_id: "p99",
     });
     expect(calls[0].url).toBe(
-      "https://test.atlassian.net/wiki/api/v2/pages/p1/move/append/p99",
+      "https://test.atlassian.net/wiki/rest/api/content/p1/move/append/p99",
     );
     expect(calls[0].init.method).toBe("PUT");
     expect(JSON.parse(out)).toEqual({ ok: true, page_id: "p1", position: "append", target_id: "p99" });
+  });
+});
+
+describe("Atlassian auth boundaries", () => {
+  it("rejects external absolute URLs before sending credentials", async () => {
+    const result = await atlassianFetch(
+      { url: "https://test.atlassian.net", email: "test@example.com", apiToken: "test-token" },
+      "https://attacker.example/file",
+    ) as { error?: string };
+    expect(result.error).toMatch(/configured site/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("routes scoped Jira and Confluence calls through their product gateway paths", async () => {
+    setAuthResolver(() => ({
+      url: "https://test.atlassian.net", email: "test@example.com", apiToken: "test-token", cloudId: "cloud-123",
+    }));
+    responses.push({ body: {} }, { body: {} });
+    await atlassianFetch({ url: "https://test.atlassian.net", email: "test@example.com", apiToken: "test-token", cloudId: "cloud-123" }, "/rest/api/3/myself");
+    await atlassianFetch({ url: "https://test.atlassian.net", email: "test@example.com", apiToken: "test-token", cloudId: "cloud-123" }, "/wiki/api/v2/spaces?limit=1");
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://api.atlassian.com/ex/jira/cloud-123/rest/api/3/myself",
+      "https://api.atlassian.com/ex/confluence/cloud-123/wiki/api/v2/spaces?limit=1",
+    ]);
+  });
+
+  it("routes Jira secure attachment URLs through the scoped Jira gateway", async () => {
+    responses.push({ body: "attachment", headers: { "content-type": "text/plain" } });
+    setAuthResolver(() => ({
+      url: "https://test.atlassian.net", email: "tester@example.com", apiToken: "test-token", cloudId: "cloud-123",
+    }));
+    await jiraGetAttachmentContentTool.invoke({
+      content_url: "https://test.atlassian.net/secure/attachment/123/file.txt", as_text: true,
+    });
+    expect(calls[0].url).toBe("https://api.atlassian.com/ex/jira/cloud-123/secure/attachment/123/file.txt");
+  });
+
+  it("passes Jira search continuation tokens to the enhanced search endpoint", async () => {
+    responses.push({ body: { issues: [], nextPageToken: "next-token" } });
+    const result = JSON.parse(await jiraSearchTool.invoke({ jql: "project = DEMO", next_page_token: "next-token" }));
+    expect(JSON.parse(calls[0].init.body as string).nextPageToken).toBe("next-token");
+    expect(result.next_page_token).toBe("next-token");
+  });
+
+  it("rejects external Jira attachment URLs without issuing a request", async () => {
+    const result = JSON.parse(await jiraGetAttachmentContentTool.invoke({
+      content_url: "https://attacker.example/file", as_text: true,
+    }));
+    expect(result.error).toMatch(/configured site/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does not forward Atlassian credentials to an attachment CDN redirect", async () => {
+    responses.push(
+      { status: 302, body: "", headers: { location: "https://cdn.example/file" } },
+      { body: "attachment text", headers: { "content-type": "text/plain" } },
+    );
+    await jiraGetAttachmentContentTool.invoke({
+      content_url: "https://test.atlassian.net/secure/attachment/1/file.txt", as_text: true,
+    });
+    const firstHeaders = new Headers(calls[0].init.headers);
+    const redirectHeaders = new Headers(calls[1].init.headers);
+    expect(firstHeaders.has("Authorization")).toBe(true);
+    expect(redirectHeaders.has("Authorization")).toBe(false);
+    expect(calls[0].init.redirect).toBe("manual");
   });
 });
 

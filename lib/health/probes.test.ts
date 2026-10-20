@@ -46,6 +46,7 @@ function wipe(): void {
   delete process.env.ATLASSIAN_URL;
   delete process.env.ATLASSIAN_EMAIL;
   delete process.env.ATLASSIAN_API_TOKEN;
+  delete process.env.ATLASSIAN_CLOUD_ID;
   delete process.env.GITHUB_TOKEN;
   delete process.env.GH_TOKEN;
   delete process.env.JIRA_ALIGN_URL;
@@ -123,6 +124,37 @@ describe("health probes", () => {
     it("500 error", async () => {
       mockFetch(() => new Response("boom", { status: 500 }));
       expect((await probeAtlassian()).status).toBe("error");
+    });
+    it("checks both products and routes scoped tokens to each product gateway", async () => {
+      saveIntegration("atlassian", {
+        url: "https://example.atlassian.net", email: "a@b", api_token: "ok", cloud_id: "cloud-123",
+      });
+      const urls: string[] = [];
+      mockFetch((input) => {
+        urls.push(String(input));
+        return jsonResponse(urls.length === 1
+          ? { displayName: "Test", emailAddress: "a@b", accountId: "x" }
+          : { results: [] });
+      });
+      const result = await probeAtlassian();
+      expect(result.status).toBe("ok");
+      expect(result.detail?.confluenceAccess).toBe(true);
+      expect(urls).toEqual([
+        "https://api.atlassian.com/ex/jira/cloud-123/rest/api/3/myself",
+        "https://api.atlassian.com/ex/confluence/cloud-123/wiki/api/v2/spaces?limit=1",
+      ]);
+    });
+    it("does not report healthy when Confluence access is denied", async () => {
+      let requestCount = 0;
+      mockFetch(() => {
+        requestCount++;
+        return requestCount === 1
+          ? jsonResponse({ displayName: "Test", emailAddress: "a@b", accountId: "x" })
+          : new Response("forbidden", { status: 403 });
+      });
+      const result = await probeAtlassian();
+      expect(result.status).toBe("auth_failed");
+      expect(result.error).toMatch(/Confluence/);
     });
   });
 

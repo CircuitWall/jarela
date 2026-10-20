@@ -4,9 +4,10 @@
  * carries over between providers.
  *
  * Graph differences vs Google Calendar worth knowing:
- *   - Each event's start/end is { dateTime, timeZone } where timeZone is
- *     a Windows-time-zone string by default ("Pacific Standard Time"),
- *     not IANA. We pass an explicit `Prefer: outlook.timezone="UTC"`
+ *   - Each event's start/end is { dateTime, timeZone }; dateTime is a local
+ *     wall-clock value without an offset. Inputs are RFC3339 instants and
+ *     are converted to that shape in the requested IANA or Windows zone (UTC by default).
+ *     We pass an explicit `Prefer: outlook.timezone="UTC"`
  *     header so reads come back in UTC and the agent doesn't have to
  *     navigate two TZ namespaces.
  *   - Listing events in a window uses /calendarView (auto-expands
@@ -18,6 +19,7 @@
  */
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { findIanaFromWindows } from "winzones";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { citeAs } from "@/lib/utils/source-link";
 import {
@@ -38,6 +40,72 @@ interface GraphCalendar {
 interface GraphDateTimeTimeZone {
   dateTime?: string;
   timeZone?: string;
+}
+
+const RFC3339_DATETIME = /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})T(?<hour>\d{2}):(?<minute>\d{2}):(?<second>\d{2})(?<fraction>\.\d+)?(?<zone>Z|(?<sign>[+-])(?<offsetHour>\d{2}):(?<offsetMinute>\d{2}))$/;
+
+function isValidRfc3339DateTime(value: string): boolean {
+  const match = RFC3339_DATETIME.exec(value);
+  const fields = match?.groups;
+  if (!fields) return false;
+  const year = Number(fields.year);
+  const month = Number(fields.month);
+  const day = Number(fields.day);
+  const hour = Number(fields.hour);
+  const minute = Number(fields.minute);
+  const second = Number(fields.second);
+  const offsetHour = Number(fields.offsetHour ?? 0);
+  const offsetMinute = Number(fields.offsetMinute ?? 0);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  return month >= 1 && month <= 12
+    && day >= 1 && day <= daysInMonth[month - 1]
+    && hour <= 23 && minute <= 59 && second <= 59
+    && offsetHour <= 23 && offsetMinute <= 59;
+}
+
+const rfc3339DateTime = z.string().refine(
+  isValidRfc3339DateTime,
+  "Use a valid full RFC3339 datetime with an offset, such as 2026-05-19T16:00:00-07:00 or 2026-05-19T23:00:00Z",
+);
+
+function toGraphDateTime(value: string, timeZone: string): GraphDateTimeTimeZone | { error: string } {
+  const instant = new Date(value);
+  if (Number.isNaN(instant.getTime())) return { error: `invalid RFC3339 datetime: ${value}` };
+  const fractionalSecond = RFC3339_DATETIME.exec(value)?.groups?.fraction ?? "";
+  let ianaTimeZone = timeZone;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: ianaTimeZone });
+  } catch {
+    ianaTimeZone = findIanaFromWindows(timeZone)?.[0] ?? "";
+  }
+  try {
+    if (!ianaTimeZone) throw new RangeError("Unknown timezone");
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      calendar: "gregory",
+      numberingSystem: "latn",
+      timeZone: ianaTimeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(instant);
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const { year, month, day, hour, minute, second } = values;
+    if (!year || !month || !day || !hour || !minute || !second) {
+      return { error: "could not convert datetime to Microsoft Graph local time" };
+    }
+    return {
+      dateTime: `${year}-${month}-${day}T${hour}:${minute}:${second}${fractionalSecond}`,
+      timeZone,
+    };
+  } catch {
+    return { error: `unsupported timezone "${timeZone}"; use an IANA or Windows timezone such as America/Los_Angeles or Pacific Standard Time` };
+  }
 }
 
 interface GraphAttendee {
@@ -210,14 +278,15 @@ export const outlookCalendarCreateEventTool = tool(
       isOnlineMeeting?: boolean;
       onlineMeetingProvider?: string;
     }
-    // Graph uses Windows TZ names by default but also accepts IANA names
-    // when the body specifies them per-field. Default to UTC if the
-    // caller omits time_zone (matches the list endpoint's behavior).
     const tz = time_zone ?? "UTC";
+    const start = toGraphDateTime(start_iso, tz);
+    const end = toGraphDateTime(end_iso, tz);
+    if ("error" in start) return JSON.stringify(start);
+    if ("error" in end) return JSON.stringify(end);
     const body: EventBody = {
       subject: eventSubject,
-      start: { dateTime: start_iso, timeZone: tz },
-      end: { dateTime: end_iso, timeZone: tz },
+      start,
+      end,
     };
     if (description) body.body = { contentType: "text", content: description };
     if (location) body.location = { displayName: location };
@@ -247,7 +316,7 @@ export const outlookCalendarCreateEventTool = tool(
     name: "outlook_calendar_create_event",
     description:
       "Create an Outlook calendar event. Datetimes are RFC3339 strings; pair " +
-      "with `time_zone` (IANA like 'America/Los_Angeles' or Windows TZ like " +
+      "with `time_zone` (IANA like 'America/Los_Angeles' or Windows ID like " +
       "'Pacific Standard Time') so Outlook interprets them correctly. Defaults " +
       "to UTC if omitted. Attendees are automatically sent invites. Set " +
       "`add_teams_link: true` to provision a Teams meeting URL (requires a " +
@@ -257,12 +326,12 @@ export const outlookCalendarCreateEventTool = tool(
       calendar_id: z.string().optional().describe("Calendar id (default: user's default calendar)"),
       subject: z.string().min(1).optional().describe("Event title shown on the calendar (alias: summary)"),
       summary: z.string().min(1).optional().describe("Alias for subject (Google Calendar vocabulary)"),
-      start_iso: z.string().describe("Start datetime, RFC3339"),
-      end_iso: z.string().describe("End datetime, RFC3339 (must be after start)"),
+      start_iso: rfc3339DateTime.describe("Start instant, RFC3339 with offset"),
+      end_iso: rfc3339DateTime.describe("End instant, RFC3339 with offset (must be after start)"),
       description: z.string().optional().describe("Long-form event body (plain text)"),
       location: z.string().optional().describe("Free-text location string"),
       attendees: z.array(z.string().email()).optional().describe("Invitee email addresses"),
-      time_zone: z.string().optional().describe("IANA or Windows timezone (default 'UTC')"),
+      time_zone: z.string().optional().describe("IANA or Windows timezone used to express the instant in Graph (default 'UTC')"),
       add_teams_link: z.boolean().optional().describe("Provision a Teams meeting URL on this event"),
     }),
   },
@@ -282,8 +351,16 @@ export const outlookCalendarUpdateEventTool = tool(
     if (eventSubject !== undefined) patch.subject = eventSubject;
     if (description !== undefined) patch.body = { contentType: "text", content: description };
     if (location !== undefined) patch.location = { displayName: location };
-    if (start_iso !== undefined) patch.start = { dateTime: start_iso, timeZone: tz };
-    if (end_iso !== undefined) patch.end = { dateTime: end_iso, timeZone: tz };
+    if (start_iso !== undefined) {
+      const start = toGraphDateTime(start_iso, tz);
+      if ("error" in start) return JSON.stringify(start);
+      patch.start = start;
+    }
+    if (end_iso !== undefined) {
+      const end = toGraphDateTime(end_iso, tz);
+      if ("error" in end) return JSON.stringify(end);
+      patch.end = end;
+    }
     if (attendees !== undefined) {
       patch.attendees = attendees.map((address) => ({
         emailAddress: { address },
@@ -316,12 +393,12 @@ export const outlookCalendarUpdateEventTool = tool(
       event_id: z.string().describe("Event id"),
       subject: z.string().optional().describe("New event title (alias: summary)"),
       summary: z.string().optional().describe("Alias for subject (Google Calendar vocabulary)"),
-      start_iso: z.string().optional().describe("New start datetime, RFC3339"),
-      end_iso: z.string().optional().describe("New end datetime, RFC3339"),
+      start_iso: rfc3339DateTime.optional().describe("New start instant, RFC3339 with offset"),
+      end_iso: rfc3339DateTime.optional().describe("New end instant, RFC3339 with offset"),
       description: z.string().optional().describe("New event body (plain text)"),
       location: z.string().optional().describe("New location string"),
       attendees: z.array(z.string().email()).optional().describe("Replacement attendee list"),
-      time_zone: z.string().optional().describe("IANA or Windows TZ applied to start/end (default 'UTC')"),
+      time_zone: z.string().optional().describe("IANA or Windows timezone used to express the instant in Graph (default 'UTC')"),
     }),
   },
 );

@@ -25,11 +25,17 @@ export const atlassianDefaultPackage: DefaultPackageDescriptor = {
       setAuthResolver,
       resolveAuthFromEnv,
       mapStoreFields: (raw) => raw.url && raw.email && raw.api_token
-        ? { url: raw.url.replace(/\/+$/, ""), email: raw.email, apiToken: raw.api_token }
+        ? {
+            url: raw.url.replace(/\/+$/, ""),
+            email: raw.email,
+            apiToken: raw.api_token,
+            ...(raw.cloud_id ? { cloudId: raw.cloud_id } : {}),
+          }
         : null,
       notConfiguredError:
         "Atlassian not configured. Open Settings → Credentials and add your Atlassian site URL, " +
-        "email, and API token. (Or set ATLASSIAN_URL / ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN env vars.)",
+        "email, and API token. Scoped API tokens also need the Cloud ID. " +
+        "(Or set ATLASSIAN_URL / ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN and optional ATLASSIAN_CLOUD_ID env vars.)",
     },
   }),
 };

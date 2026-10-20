@@ -74,7 +74,16 @@ async function ghFetch(
   path: string,
   init?: RequestInit,
 ): Promise<unknown> {
-  const url = path.startsWith("http") ? path : `${API}${path}`;
+  let target: URL;
+  try {
+    target = new URL(path, `${API}/`);
+  } catch {
+    return { error: "GitHub request URL is invalid." };
+  }
+  if (target.origin !== API || target.username || target.password) {
+    return { error: "GitHub requests must target api.github.com; refusing to forward credentials." };
+  }
+  const url = target.toString();
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -148,13 +157,15 @@ export function decodeContentsBlob(content: string, encoding: string | undefined
 // Trim repo URLs on issue/PR responses to user-facing html_urls (the API
 // returns api.github.com/repos/... which is useless for a human).
 type GhUser = { login?: string } | null;
-type GhLabel = { name?: string };
+type GhLabel = { name?: string } | string;
 
 function liteUser(u: unknown): string | null {
   return (u as GhUser)?.login ?? null;
 }
 function liteLabels(labels: unknown): string[] {
-  return (labels as GhLabel[] | undefined ?? []).map((l) => l.name).filter(Boolean) as string[];
+  return (labels as GhLabel[] | undefined ?? [])
+    .map((label) => typeof label === "string" ? label : label.name)
+    .filter(Boolean) as string[];
 }
 
 type GhIssueLite = {
@@ -547,10 +558,11 @@ export const githubListIssueCommentsTool = tool(
 // ── Pull-request write ─────────────────────────────────────────────────────
 
 export const githubCreatePullTool = tool(
-  async ({ owner, repo, title, head, base, body, draft, maintainer_can_modify }) => {
+  async ({ owner, repo, title, head, head_repo, base, body, draft, maintainer_can_modify }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const payload: Record<string, unknown> = { title, head, base };
+    if (head_repo !== undefined) payload.head_repo = head_repo;
     if (body !== undefined) payload.body = body;
     if (draft !== undefined) payload.draft = draft;
     if (maintainer_can_modify !== undefined) payload.maintainer_can_modify = maintainer_can_modify;
@@ -573,6 +585,9 @@ export const githubCreatePullTool = tool(
       repo: z.string(),
       title: z.string(),
       head: z.string().describe("Source branch ('feature/x' for same-repo, 'user:branch' for fork PRs)"),
+      head_repo: z.string().optional().describe(
+        "Source repository name when head is in another repository owned by the same organization (required by GitHub in that case).",
+      ),
       base: z.string().describe("Target branch (typically 'main')"),
       body: z.string().optional().describe("PR description (Markdown)"),
       draft: z.boolean().optional().describe("Open as draft (default false)"),

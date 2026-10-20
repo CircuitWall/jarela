@@ -1,26 +1,33 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 
-import { atlassianFetch, authHeader, parseJsonSafe, resolveAuth, type AtlassianAuth } from "../shared";
+import { atlassianFetch, authHeader, fetchAtlassianAttachment, parseJsonSafe, resolveAuth, type AtlassianAuth } from "../shared";
 
 export const confluenceSearchTool = tool(
-  async ({ cql, max_results }) => {
+  async ({ cql, max_results, cursor }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const limit = Math.min(max_results ?? 15, 50);
+    const params = new URLSearchParams({ cql, limit: String(limit) });
+    if (cursor) params.set("cursor", cursor);
     const data = await atlassianFetch(
       auth,
-      `/wiki/rest/api/content/search?cql=${encodeURIComponent(cql)}&limit=${limit}`,
-    ) as { results?: Array<Record<string, unknown>>; size?: number; error?: string };
+      `/wiki/rest/api/search?${params}`,
+    ) as { results?: Array<Record<string, unknown>>; size?: number; totalSize?: number; _links?: { next?: string }; error?: string };
     if (data.error) return JSON.stringify(data);
     return JSON.stringify({
-      total: data.size,
-      results: (data.results ?? []).map((r: Record<string, unknown>) => ({
-        id: r.id,
-        type: r.type,
-        title: r.title,
-        url: `${auth.url}/wiki${((r._links as Record<string, unknown>)?.webui) ?? ""}`,
-      })),
+      total: data.totalSize ?? data.size,
+      next_cursor: parseV2NextCursor(data._links?.next),
+      results: (data.results ?? []).map((result: Record<string, unknown>) => {
+        const page = (result.content as Record<string, unknown> | undefined) ?? result;
+        const links = page._links as Record<string, unknown> | undefined;
+        return {
+          id: page.id,
+          type: page.type,
+          title: page.title ?? result.title,
+          url: `${auth.url}/wiki${(links?.webui as string | undefined) ?? ""}`,
+        };
+      }),
     });
   },
   {
@@ -31,6 +38,7 @@ export const confluenceSearchTool = tool(
     schema: z.object({
       cql: z.string().describe("CQL query string"),
       max_results: z.number().optional().describe("Max results (default 15, max 50)"),
+      cursor: z.string().optional().describe("Continuation cursor returned by the previous search response."),
     }),
   },
 );
@@ -43,11 +51,11 @@ export const confluenceGetPageTool = tool(
     const [storageData, viewData] = await Promise.all([
       atlassianFetch(
         auth,
-        `/wiki/api/v2/pages/${encodedPageId}?body-format=STORAGE&include-version=true`,
+        `/wiki/api/v2/pages/${encodedPageId}?body-format=storage&include-version=true`,
       ) as Promise<Record<string, unknown> & { error?: string }>,
       atlassianFetch(
         auth,
-        `/wiki/api/v2/pages/${encodedPageId}?body-format=VIEW&include-version=true`,
+        `/wiki/api/v2/pages/${encodedPageId}?body-format=view&include-version=true`,
       ) as Promise<Record<string, unknown> & { error?: string }>,
     ]);
     if (storageData.error) return JSON.stringify(storageData);
@@ -91,7 +99,7 @@ export const confluenceGetPageByTitleTool = tool(
     const sid = await resolveSpaceId(auth, space_key);
     if (typeof sid !== "string") return JSON.stringify(sid);
     const params = new URLSearchParams({ title, "space-id": sid, limit: "5" });
-    if (include_body) params.set("body-format", "STORAGE");
+    if (include_body) params.set("body-format", "storage");
     const data = await atlassianFetch(auth, `/wiki/api/v2/pages?${params}`) as
       | { results?: Array<Record<string, unknown>>; error?: string };
     if (!Array.isArray(data?.results)) return JSON.stringify(data);
@@ -223,18 +231,23 @@ export const confluenceListSpacesTool = tool(
 );
 
 export const confluenceGetCommentsTool = tool(
-  async ({ page_id, include_inline }) => {
+  async ({ page_id, include_inline, footer_cursor, inline_cursor, limit }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const pageLimit = Math.min(limit ?? 100, 250);
+    const footerParams = new URLSearchParams({ "body-format": "storage", limit: String(pageLimit) });
+    if (footer_cursor) footerParams.set("cursor", footer_cursor);
     const footerData = await atlassianFetch(
       auth,
-      `/wiki/api/v2/pages/${encodeURIComponent(page_id)}/footer-comments?body-format=STORAGE&limit=100`,
-    ) as { results?: Array<Record<string, unknown>>; error?: string };
-    let inlineData: { results?: Array<Record<string, unknown>>; error?: string } | undefined;
+      `/wiki/api/v2/pages/${encodeURIComponent(page_id)}/footer-comments?${footerParams}`,
+    ) as { results?: Array<Record<string, unknown>>; _links?: { next?: string }; error?: string };
+    let inlineData: { results?: Array<Record<string, unknown>>; _links?: { next?: string }; error?: string } | undefined;
     if (include_inline !== false) {
+      const inlineParams = new URLSearchParams({ "body-format": "storage", limit: String(pageLimit) });
+      if (inline_cursor) inlineParams.set("cursor", inline_cursor);
       inlineData = await atlassianFetch(
         auth,
-        `/wiki/api/v2/pages/${encodeURIComponent(page_id)}/inline-comments?body-format=STORAGE&limit=100`,
+        `/wiki/api/v2/pages/${encodeURIComponent(page_id)}/inline-comments?${inlineParams}`,
       ) as { results?: Array<Record<string, unknown>>; error?: string };
     }
     if (footerData.error && !Array.isArray(footerData.results)) return JSON.stringify(footerData);
@@ -253,6 +266,8 @@ export const confluenceGetCommentsTool = tool(
     return JSON.stringify({
       footer_comments: (footerData.results ?? []).map(flatten),
       inline_comments: inlineData && Array.isArray(inlineData.results) ? inlineData.results.map(flatten) : [],
+      footer_next_cursor: parseV2NextCursor(footerData._links?.next),
+      inline_next_cursor: parseV2NextCursor(inlineData?._links?.next),
       ...(inlineData && inlineData.error ? { inline_warning: inlineData.error } : {}),
     });
   },
@@ -265,6 +280,9 @@ export const confluenceGetCommentsTool = tool(
     schema: z.object({
       page_id: z.string(),
       include_inline: z.boolean().optional().describe("Default true; pass false to skip inline-comments."),
+      footer_cursor: z.string().optional().describe("Footer-comment continuation cursor from the prior result."),
+      inline_cursor: z.string().optional().describe("Inline-comment continuation cursor from the prior result."),
+      limit: z.number().optional().describe("Per-list page size (default 100, max 250)."),
     }),
   },
 );
@@ -342,12 +360,11 @@ export const confluenceGetAttachmentContentTool = tool(
   async ({ download_link, as_text }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
-    const fullUrl = download_link.startsWith("http")
+    const attachmentPath = download_link.startsWith("http") || download_link.startsWith("/wiki")
       ? download_link
-      : download_link.startsWith("/wiki")
-        ? `${auth.url}${download_link}`
-        : `${auth.url}/wiki${download_link.startsWith("/") ? "" : "/"}${download_link}`;
-    const res = await fetch(fullUrl, { headers: { Authorization: authHeader(auth) } });
+      : `/wiki${download_link.startsWith("/") ? "" : "/"}${download_link}`;
+    const res = await fetchAtlassianAttachment(auth, attachmentPath);
+    if (!(res instanceof Response)) return JSON.stringify(res);
     if (!res.ok) {
       const errText = await res.text();
       return JSON.stringify({ error: `Atlassian ${res.status}: ${errText.slice(0, 500)}` });
@@ -510,10 +527,9 @@ export const confluenceAddCommentTool = tool(
     const body = resolveBody({ body_text, body_storage });
     if ("error" in body) return JSON.stringify(body);
     const payload: Record<string, unknown> = {
-      pageId: page_id,
       body: { representation: body.representation, value: body.value },
+      ...(parent_comment_id ? { parentCommentId: parent_comment_id } : { pageId: page_id }),
     };
-    if (parent_comment_id) payload.parentCommentId = parent_comment_id;
     const data = await atlassianFetch(auth, `/wiki/api/v2/footer-comments`, {
       method: "POST",
       body: JSON.stringify(payload),
@@ -546,7 +562,7 @@ export const confluenceMovePageTool = tool(
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const data = await atlassianFetch(
       auth,
-      `/wiki/api/v2/pages/${encodeURIComponent(page_id)}/move/${encodeURIComponent(position)}/${encodeURIComponent(target_id)}`,
+      `/wiki/rest/api/content/${encodeURIComponent(page_id)}/move/${encodeURIComponent(position)}/${encodeURIComponent(target_id)}`,
       { method: "PUT" },
     ) as { error?: string } | string | Record<string, unknown>;
     if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
@@ -555,7 +571,7 @@ export const confluenceMovePageTool = tool(
   {
     name: "confluence_move_page",
     description:
-      "Reorder/reparent a Confluence page (v2). `position`: 'before' or 'after' to place as a sibling " +
+      "Reorder/reparent a Confluence page. `position`: 'before' or 'after' to place as a sibling " +
       "of `target_id`; 'append' to make it a child of `target_id`. Non-destructive.",
     schema: z.object({
       page_id: z.string(),

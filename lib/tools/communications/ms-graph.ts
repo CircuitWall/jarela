@@ -182,7 +182,10 @@ const msSearchTool = tool(
       body: JSON.stringify(body),
     })) as { value?: SearchContainer[]; error?: string };
     if (result && typeof result === "object" && "error" in result && result.error) {
-      return JSON.stringify({ error: result.error });
+      return JSON.stringify({
+        error: result.error,
+        requested_entity_types: entityTypes,
+      });
     }
 
     const containers = result.value ?? [];
@@ -205,11 +208,12 @@ const msSearchTool = tool(
   {
     name: "ms_search",
     description:
-      "Search across Microsoft 365 workloads (mail, calendar events, OneDrive/SharePoint files, " +
-      "lists, people, Teams chats) in one call via Microsoft Search. Returns slimmed hits with " +
+      "Search Microsoft 365 mail, calendar events, OneDrive/SharePoint files, lists, and sites " +
+      "in one call. Requires a work or school account; personal Microsoft accounts are not " +
+      "supported by Microsoft Search. Use ms_people_resolve for people lookup. Returns slimmed hits with " +
       "{kind,id,title,summary,url,last_modified,rank}. Defaults to entity_types=" +
       "['message','event','driveItem','listItem']. Override entity_types for narrower searches " +
-      "(e.g. ['chatMessage'] for Teams, ['person'] for people, ['site'] for SharePoint sites).",
+      "(e.g. ['site'] for SharePoint sites).",
     schema: z.object({
       query: z.string().min(1).max(300).regex(SAFE_SEARCH_QUERY, "Use a simple Microsoft Search query without quotes, braces, or newlines").describe("Free-text search query. Keep it simple; quotes/braces/newlines are rejected to avoid malformed KQL."),
       entity_types: z
@@ -219,17 +223,11 @@ const msSearchTool = tool(
             "event",
             "driveItem",
             "listItem",
-            "list",
             "site",
-            "person",
-            "chatMessage",
-            "bookmark",
-            "acronym",
-            "qna",
           ]),
         )
         .optional()
-        .describe("Which workloads to search. Default: message,event,driveItem,listItem"),
+        .describe("Which workloads to search. Supported: message,event,driveItem,listItem,site. File and SharePoint results need their corresponding delegated scopes."),
       size: z.number().int().min(1).max(25).optional().describe("Max hits to return (default 10)"),
     }),
   },

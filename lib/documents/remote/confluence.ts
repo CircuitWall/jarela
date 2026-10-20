@@ -17,7 +17,7 @@ import {
 import { htmlToText } from "./flatten";
 import { upsertRemoteDocument, type UpsertResult } from "./upsert";
 
-interface AtlassianAuth { url: string; email: string; apiToken: string }
+interface AtlassianAuth { url: string; email: string; apiToken: string; cloudId?: string }
 const atlassianFetch = optionalFunction<(auth: AtlassianAuth, path: string, init?: RequestInit) => Promise<unknown>>(
   "@circuitwall/atlassian-langchain",
   "atlassianFetch",
@@ -35,9 +35,12 @@ interface ConfluencePage {
   body?: { storage?: { value?: string } };
   _links?: { webui?: string };
 }
+interface ConfluenceSearchResult {
+  content?: ConfluencePage;
+}
 interface ConfluenceSearchResp {
-  results?: ConfluencePage[];
-  start?: number;
+  results?: ConfluenceSearchResult[];
+  _links?: { next?: string };
   size?: number;
   limit?: number;
 }
@@ -98,19 +101,34 @@ export async function runConfluenceIndexer(source: DocumentSourceRow): Promise<C
   if ("error" in auth) throw new Error(auth.error);
 
   const cql = buildCql(source, source.last_cursor);
-  let start = 0;
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
   let highWater = source.last_cursor;
 
   while (stats.scanned < MAX_PAGES_PER_RUN) {
-    const url = `/wiki/rest/api/content/search?cql=${encodeURIComponent(cql)}` +
-      `&expand=body.storage,version,history.lastUpdated&limit=${PAGE_LIMIT}&start=${start}`;
+    if (cursor) {
+      if (seenCursors.has(cursor)) break;
+      seenCursors.add(cursor);
+    }
+    const params = new URLSearchParams({
+      cql,
+      expand: "content.body.storage,content.version,content.history.lastUpdated",
+      limit: String(PAGE_LIMIT),
+    });
+    if (cursor) params.set("cursor", cursor);
+    const url = `/wiki/rest/api/search?${params}`;
     const data = await atlassianFetch(auth, url) as ConfluenceSearchResp & { error?: string };
     if ((data as { error?: string }).error) throw new Error((data as { error?: string }).error);
     const results = data.results ?? [];
     if (results.length === 0) break;
 
-    for (const page of results) {
+    for (const result of results) {
       stats.scanned++;
+      const page = result.content;
+      if (!page?.id || !page.title) {
+        stats.errors++;
+        continue;
+      }
       try {
         const text = `${page.title}\n\n${htmlToText(page.body?.storage?.value ?? "")}`.trim();
         const updatedAt = pageUpdatedAt(page);
@@ -130,8 +148,16 @@ export async function runConfluenceIndexer(source: DocumentSourceRow): Promise<C
         stats.errors++;
       }
     }
-    start += results.length;
-    if (results.length < PAGE_LIMIT) break;
+    const next = data._links?.next;
+    if (!next) break;
+    let nextCursor: string | null = null;
+    try {
+      nextCursor = new URL(next, auth.url).searchParams.get("cursor");
+    } catch {
+      break;
+    }
+    if (!nextCursor || seenCursors.has(nextCursor)) break;
+    cursor = nextCursor;
   }
 
   if (highWater && highWater !== source.last_cursor) {

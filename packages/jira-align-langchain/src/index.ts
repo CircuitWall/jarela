@@ -106,7 +106,18 @@ async function jaFetch(
   path: string,
   init?: RequestInit,
 ): Promise<unknown> {
-  const url = path.startsWith("http") ? path : `${auth.url}${path}`;
+  let site: URL;
+  let target: URL;
+  try {
+    site = new URL(auth.url);
+    target = path.startsWith("http") ? new URL(path) : new URL(`${stripTrailingSlash(auth.url)}${path}`);
+  } catch {
+    return { error: "Jira Align request URL is invalid." };
+  }
+  if (target.origin !== site.origin || target.username || target.password) {
+    return { error: "Jira Align requests must target the configured instance; refusing to forward credentials." };
+  }
+  const url = target.toString();
   const res = await fetch(url, {
     ...init,
     headers: {

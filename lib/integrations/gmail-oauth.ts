@@ -286,9 +286,24 @@ export async function googleFetch(
   path: string,
   init?: RequestInit,
 ): Promise<Record<string, unknown>> {
+  let target: URL;
+  try {
+    target = path.startsWith("http") ? new URL(path) : new URL(`${baseUrl}${path}`);
+  } catch {
+    return { error: `${service} request URL is invalid.` };
+  }
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return { error: `${service} API base URL is invalid.` };
+  }
+  if (target.origin !== base.origin || target.username || target.password) {
+    return { error: `${service} requests must target ${base.hostname}; refusing to forward credentials.` };
+  }
+  const url = target.toString();
   const token = await getGoogleAccessToken(auth);
   if (typeof token !== "string") return token;
-  const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
   try {
     const res = await fetch(url, {
       ...init,
