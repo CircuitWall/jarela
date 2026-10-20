@@ -1041,6 +1041,11 @@ export const api = {
       const suffix = qs.toString() ? `?${qs}` : "";
       return request<{ entries: McpRegistryEntry[]; nextCursor?: string }>(`/mcp-servers/registry${suffix}`);
     },
+    importManifest: (manifest: string) =>
+      request<{ entry: McpRegistryEntry }>("/mcp-servers/registry", {
+        method: "POST",
+        body: JSON.stringify({ manifest }),
+      }),
   },
 
   integrations: {

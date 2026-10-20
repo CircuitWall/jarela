@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Edit3, RotateCcw, Save, ServerCog, Search, X } from "lucide-react";
 import { refreshRuntimeConfig } from "@/api/runtime-config";
+import { EnvValueInput, ENV_TYPE_LABEL } from "@/components/env/EnvValueInput";
+import { ENV_CATEGORIES, type EnvCategory } from "@/lib/env/schema";
 
 import { confirmAction } from "@/lib/ui/confirm";
 
@@ -13,7 +15,8 @@ interface EnvRow {
   current: string;
   overridden: boolean;
   description: string;
-  category: string;
+  category: EnvCategory;
+  phase: "preflight" | "postflight";
   tier: "A" | "B" | "C";
   requiresRestart: boolean;
   agentWritable: boolean;
@@ -22,27 +25,7 @@ interface EnvRow {
   max?: number;
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  agent: "Agent",
-  tools: "Tools",
-  lifecycle: "Lifecycle",
-  limits: "Limits",
-  logging: "Logging",
-  scheduler: "Scheduler",
-  documents: "Documents",
-  ui: "UI",
-};
-
-const CATEGORY_ORDER = [
-  "agent",
-  "tools",
-  "lifecycle",
-  "logging",
-  "limits",
-  "scheduler",
-  "documents",
-  "ui",
-];
+const CATEGORY_LABEL = new Map(ENV_CATEGORIES.map(({ id, label }) => [id, label]));
 
 /**
  * Edit-runtime-overrides panel. Lists every JARELA_* var the schema knows
@@ -100,8 +83,8 @@ export function EnvVarsPanel() {
   }, [rows, search, showAdvanced]);
 
   const grouped = useMemo(() => {
-    const m = new Map<string, EnvRow[]>();
-    for (const cat of CATEGORY_ORDER) m.set(cat, []);
+    const m = new Map<EnvCategory, EnvRow[]>();
+    for (const { id } of ENV_CATEGORIES) m.set(id, []);
     for (const row of filtered) {
       if (!m.has(row.category)) m.set(row.category, []);
       m.get(row.category)!.push(row);
@@ -182,8 +165,8 @@ export function EnvVarsPanel() {
   return (
     <div className="flex flex-col h-full min-h-0 p-4 gap-3">
       <div className="flex items-center gap-2 flex-wrap">
-        <h2 className="text-sm font-medium text-fg">Defaults</h2>
-        <span className="text-[10px] text-fg-faint">{rows.length} vars</span>
+        <h2 className="text-sm font-medium text-fg">Runtime settings</h2>
+        <span className="text-[10px] text-fg-faint">{rows.length} settings</span>
         <div className="flex-1" />
         <label className="inline-flex items-center gap-1 text-[11px] text-fg-faint cursor-pointer">
           <input
@@ -205,6 +188,10 @@ export function EnvVarsPanel() {
           />
         </div>
       </div>
+
+      <p className="text-[11px] text-fg-faint">
+        Supported JARELA settings only. Preflight values such as the data directory must be set before launch; build-time NEXT_PUBLIC branding is configured in the build environment. Postflight overrides can be changed here. Launch-time values take precedence; restart badges show when changes need a relaunch. Credentials, models, networking, and MCP variables have dedicated settings.
+      </p>
 
       {restartNeeded && (
         <div className="px-3 py-2 rounded border border-amber-700/50 bg-amber-900/20 text-amber-700 dark:text-amber-300 text-xs flex items-center gap-2">
@@ -239,7 +226,7 @@ export function EnvVarsPanel() {
           grouped.map(([category, list]) => (
             <div key={category} className="border-b border-border/40 last:border-b-0">
               <div className="sticky top-0 z-10 bg-surface-2/80 backdrop-blur px-3 py-1 text-[10px] uppercase tracking-wider text-fg-faint border-b border-border/40">
-                {CATEGORY_LABEL[category] ?? category}
+                {CATEGORY_LABEL.get(category) ?? category}
               </div>
               <ul className="divide-y divide-border/30">
                 {list.map((row) => (
@@ -248,6 +235,9 @@ export function EnvVarsPanel() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <code className="text-[12px] font-mono text-fg">{row.name}</code>
+                          <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-fg-faint/10 text-fg-faint" title={`Value type: ${ENV_TYPE_LABEL[row.type]}`}>
+                            {ENV_TYPE_LABEL[row.type]}
+                          </span>
                           {row.overridden && (
                             <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
                               overridden
@@ -256,6 +246,11 @@ export function EnvVarsPanel() {
                           {row.requiresRestart && (
                             <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300">
                               restart
+                            </span>
+                          )}
+                          {row.phase === "preflight" && (
+                            <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-sky-500/20 text-sky-700 dark:text-sky-300">
+                              preflight
                             </span>
                           )}
                           {row.agentWritable && (
@@ -270,40 +265,21 @@ export function EnvVarsPanel() {
                         <div className="mt-0.5 text-[11px] text-fg-muted">{row.description}</div>
                         {editing?.name === row.name ? (
                           <div className="mt-1.5 flex items-center gap-1.5">
-                            {row.type === "enum" && row.enumValues ? (
-                              <select
-                                ref={(el) => { editInputRef.current = el; }}
-                                value={editing.value}
-                                onChange={(e) => setEditing({ name: row.name, value: e.target.value })}
-                                className="px-2 py-1 rounded border border-border bg-surface text-fg text-[11px] font-mono"
-                              >
-                                {row.enumValues.map((v) => <option key={v} value={v}>{v}</option>)}
-                              </select>
-                            ) : row.type === "bool" ? (
-                              <select
-                                ref={(el) => { editInputRef.current = el; }}
-                                value={editing.value}
-                                onChange={(e) => setEditing({ name: row.name, value: e.target.value })}
-                                className="px-2 py-1 rounded border border-border bg-surface text-fg text-[11px] font-mono"
-                              >
-                                <option value="true">true</option>
-                                <option value="false">false</option>
-                              </select>
-                            ) : (
-                              <input
-                                ref={(el) => { editInputRef.current = el; }}
-                                type={row.type === "int" ? "number" : "text"}
-                                value={editing.value}
-                                onChange={(e) => setEditing({ name: row.name, value: e.target.value })}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") onSave();
-                                  if (e.key === "Escape") cancelEdit();
-                                }}
-                                min={row.min}
-                                max={row.max}
-                                className="px-2 py-1 rounded border border-border bg-surface text-fg text-[11px] font-mono w-48"
-                              />
-                            )}
+                            <EnvValueInput
+                              type={row.type}
+                              value={editing.value}
+                              onChange={(value) => setEditing({ name: row.name, value })}
+                              enumValues={row.enumValues}
+                              min={row.min}
+                              max={row.max}
+                              inputRef={(element) => { editInputRef.current = element; }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") onSave();
+                                if (event.key === "Escape") cancelEdit();
+                              }}
+                              ariaLabel={row.name}
+                              className="px-2 py-1 rounded border border-border bg-surface text-fg text-[11px] font-mono w-48"
+                            />
                             <button
                               type="button"
                               onClick={onSave}

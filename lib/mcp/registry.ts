@@ -22,6 +22,12 @@ export interface RegistryVariable {
   placeholder?: string;
   /** If true, hide the field as a password. */
   secret?: boolean;
+  /** Restrict the user to Registry-provided options. */
+  choices?: readonly string[];
+  /** Standard Registry input format used to select an appropriate control. */
+  format?: "string" | "number" | "boolean" | "filepath";
+  /** Whether saving requires a value. */
+  required?: boolean;
   /** Pre-filled default. User can edit. */
   default?: string;
 }

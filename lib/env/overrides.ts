@@ -11,6 +11,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { getDataDir } from "@/lib/db/data-dir";
 import { envSchemaByName, type EnvVarDef } from "./schema";
+import { envValueSchema } from "./value-schema";
 
 const FILE_NAME = "env-overrides.json";
 
@@ -105,28 +106,8 @@ export async function writeOverrides(next: OverridesFile): Promise<void> {
 }
 
 export function validateForSchema(def: EnvVarDef, value: string): string | null {
-  if (def.type === "int") {
-    const n = Number(value);
-    if (!Number.isFinite(n) || !Number.isInteger(n)) return "expected integer";
-    if (def.min !== undefined && n < def.min) return `minimum is ${def.min}`;
-    if (def.max !== undefined && n > def.max) return `maximum is ${def.max}`;
-    return null;
-  }
-  if (def.type === "bool") {
-    if (!/^(0|1|true|false)$/i.test(value.trim())) return "expected bool (0/1/true/false)";
-    return null;
-  }
-  if (def.type === "enum") {
-    if (!def.enumValues || !def.enumValues.includes(value)) {
-      return `expected one of: ${def.enumValues?.join(", ") ?? ""}`;
-    }
-    return null;
-  }
-  // string — accept anything non-empty by default
-  if (def.type === "string") {
-    return null;
-  }
-  return null;
+  const parsed = envValueSchema(def).safeParse(value);
+  return parsed.success ? null : parsed.error.issues[0]?.message ?? "invalid value";
 }
 
 /**

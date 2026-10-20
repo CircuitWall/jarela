@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { searchUpstream } from "./upstream-registry";
+import { importServerJson, searchUpstream } from "./upstream-registry";
 
 // Build a minimal upstream `/v0.1/servers` payload. Mirrors the shape
 // the registry actually returns (see ServerZ / EntryZ in upstream-registry.ts).
@@ -209,5 +209,100 @@ describe("searchUpstream — caching", () => {
     expect(fetchCalls).toHaveLength(1);
     await searchUpstream(cacheKey);
     expect(fetchCalls).toHaveLength(2);
+  });
+});
+
+describe("importServerJson", () => {
+  it("imports a standard npm manifest with required secret environment input", () => {
+    const entry = importServerJson({
+      name: "io.example/weather",
+      title: "Weather",
+      version: "1.0.0",
+      packages: [{
+        registryType: "npm",
+        identifier: "@example/weather",
+        version: "1.0.0",
+        transport: { type: "stdio" },
+        environmentVariables: [{ name: "API_TOKEN", isRequired: true, isSecret: true }],
+      }],
+    });
+
+    expect(entry.transport).toBe("stdio");
+    expect(entry.spec).toMatchObject({
+      command: "npx",
+      args: ["-y", "@example/weather@1.0.0"],
+      env: { API_TOKEN: "${API_TOKEN}" },
+    });
+    expect(entry.variables).toContainEqual(expect.objectContaining({
+      key: "API_TOKEN",
+      secret: true,
+      required: true,
+    }));
+  });
+
+  it("omits optional unset environment variables", () => {
+    const entry = importServerJson({
+      name: "io.example/optional-env",
+      packages: [{
+        registryType: "npm",
+        identifier: "@example/optional-env",
+        environmentVariables: [{ name: "OPTIONAL_VALUE", isRequired: false }],
+      }],
+    });
+
+    expect(entry.spec).not.toHaveProperty("env");
+    expect(entry.variables).toBeUndefined();
+  });
+
+  it("imports Streamable HTTP variables from a Registry server wrapper", () => {
+    const entry = importServerJson({
+      server: {
+        name: "io.example/remote",
+        version: "1.0.0",
+        remotes: [{
+          type: "streamable-http",
+          url: "https://{tenant}.example.com/mcp",
+          variables: { tenant: { description: "Tenant", isRequired: false } },
+        }],
+      },
+      _meta: {},
+    });
+
+    expect(entry.transport).toBe("http");
+    expect(entry.spec).toMatchObject({ url: "https://${TENANT}.example.com/mcp" });
+    expect(entry.variables).toContainEqual(expect.objectContaining({ key: "TENANT", required: true }));
+  });
+
+  it("skips unsupported package types when a supported remote is available", () => {
+    const entry = importServerJson({
+      name: "io.example/remote-fallback",
+      packages: [{ registryType: "nuget", identifier: "Example.Server" }],
+      remotes: [{ type: "streamable-http", url: "https://example.com/mcp" }],
+    });
+    expect(entry.transport).toBe("http");
+  });
+
+  it("skips package entries declaring a non-stdio transport", () => {
+    const entry = importServerJson({
+      name: "io.example/remote-fallback",
+      packages: [{ registryType: "npm", identifier: "@example/server", transport: { type: "custom" } }],
+      remotes: [{ type: "streamable-http", url: "https://example.com/mcp" }],
+    });
+
+    expect(entry.transport).toBe("http");
+  });
+
+  it("reports unsupported package-only manifests", () => {
+    expect(() => importServerJson({
+      name: "io.example/unsupported",
+      packages: [{ registryType: "cargo", identifier: "example-server" }],
+    })).toThrow(/no install method supported/i);
+  });
+
+  it("rejects legacy SSE-only remotes that the runtime cannot connect to", () => {
+    expect(() => importServerJson({
+      name: "io.example/sse-only",
+      remotes: [{ type: "sse", url: "https://example.com/events" }],
+    })).toThrow(/legacy SSE remotes are not supported/i);
   });
 });

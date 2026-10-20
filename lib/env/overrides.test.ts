@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { envSchemaByName, type EnvVarDef } from "./schema";
+import { ENV_CATEGORIES, envSchemaByName, envSchemaList, type EnvVarDef } from "./schema";
 import {
   validateForSchema,
   readOverrides,
@@ -64,6 +64,8 @@ describe("env-overrides validateForSchema", () => {
     if (!def) return;
     expect(validateForSchema(def, "true")).toBeNull();
     expect(validateForSchema(def, "0")).toBeNull();
+    expect(validateForSchema(def, " TRUE ")).toBeNull();
+    expect(validateForSchema(def, " false ")).toBeNull();
     expect(validateForSchema(def, "yes")).toMatch(/bool/);
   });
 
@@ -241,6 +243,21 @@ describe("patchOverride", () => {
 });
 
 describe("schema sanity", () => {
+  it("registers every schema category for the environment editor", () => {
+    const categories = new Set(ENV_CATEGORIES.map(({ id }) => id));
+    for (const def of envSchemaList()) expect(categories.has(def.category)).toBe(true);
+  });
+
+  it("marks process-start settings separately from postflight runtime controls", () => {
+    const schema = envSchemaByName();
+    expect(schema.get("JARELA_PORT")?.phase).toBe("preflight");
+    expect(schema.get("JARELA_HOSTNAME")?.phase).toBe("preflight");
+    expect(schema.get("JARELA_SKIP_INSTANCE_LOCK")?.phase).toBe("preflight");
+    expect(schema.get("JARELA_HTTP_REQUEST_TIMEOUT_MS")?.phase).toBeUndefined();
+    expect(schema.get("JARELA_PROVIDER_RATE_LIMITS")).toMatchObject({ requiresRestart: true });
+    expect(schema.get("JARELA_PROVIDER_RATE_LIMITS")?.phase).toBeUndefined();
+  });
+
   it("every entry has a unique JARELA_-prefixed name", () => {
     const names = new Set<string>();
     for (const def of envSchemaByName().values()) {

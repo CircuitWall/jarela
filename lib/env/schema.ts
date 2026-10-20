@@ -24,6 +24,19 @@ export type EnvCategory =
   | "providers"    // LLM provider selection / overrides
   | "ui";
 
+export const ENV_CATEGORIES: readonly { id: EnvCategory; label: string }[] = [
+  { id: "network", label: "Network" },
+  { id: "agent", label: "Agent" },
+  { id: "tools", label: "Tools" },
+  { id: "lifecycle", label: "Lifecycle" },
+  { id: "limits", label: "Limits" },
+  { id: "logging", label: "Logging" },
+  { id: "scheduler", label: "Scheduler" },
+  { id: "documents", label: "Documents" },
+  { id: "providers", label: "Providers" },
+  { id: "ui", label: "UI" },
+];
+
 export type EnvTier = "A" | "B" | "C";
 
 export interface EnvVarDef {
@@ -33,6 +46,12 @@ export interface EnvVarDef {
   readonly default: number | string | boolean;
   readonly description: string;
   readonly category: EnvCategory;
+  /**
+   * Preflight values are consumed while the server process is starting.
+   * They remain stageable from the UI when available, but only take effect
+   * on the next launch. Unmarked entries are postflight runtime settings.
+   */
+  readonly phase?: "preflight";
   /**
    * Tier A — sysadmin / proxy / common ops; B — advanced; C — internal /
    * rarely useful. The UI surfaces A by default and gates B/C behind a
@@ -152,6 +171,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     default: ENV_DEFAULTS.port,
     description: "TCP port the Next.js server binds to.",
     category: "network",
+    phase: "preflight",
     tier: "A",
     requiresRestart: true,
     agentWritable: false,
@@ -164,6 +184,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     default: ENV_DEFAULTS.hostname,
     description: "Bind address. 127.0.0.1 keeps the server loopback-only; 0.0.0.0 exposes it.",
     category: "network",
+    phase: "preflight",
     tier: "A",
     requiresRestart: true,
     agentWritable: false,
@@ -572,6 +593,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     description:
       "Bypass the single-instance PID-lock guard at boot. Reserved for dev-loop recovery; running two processes against the same SQLite DB corrupts state.",
     category: "lifecycle",
+    phase: "preflight",
     tier: "C",
     requiresRestart: true,
     agentWritable: false,

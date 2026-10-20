@@ -17,24 +17,42 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
-import { envSchemaByName } from "@/lib/env/schema";
+import { envSchemaByName, envSchemaList } from "@/lib/env/schema";
 import { patchOverride, validateForSchema } from "@/lib/env/overrides";
+import { envToolValueSchema } from "@/lib/env/value-schema";
 import { resetConfigCache } from "@/lib/env/config";
 import { randomUUID } from "node:crypto";
 import { recordThreadSignal } from "@/lib/lifecycle/system-signals";
 import { restartOperationIdForThread } from "@/lib/stores/system-signals";
 
+const writableEnvDefs = envSchemaList().filter((def) => def.agentWritable);
+const writableEnvNames = nonEmptyValues(writableEnvDefs.map((def) => def.name));
 const setEnvSchema = z.object({
-  name: z.string().describe("Env var name. Must be a JARELA_* knob the schema flags as agent-writable; otherwise the call returns code=forbidden."),
-  value: z
-    .string()
+  name: z.enum(writableEnvNames)
+    .describe("Choose a setting the schema allows agents to change."),
+  value: z.union(nonEmptySchemas(writableEnvDefs.map(envToolValueSchema)))
     .nullable()
-    .describe("New value as a string (numbers/bools come as their string form: '5000' / 'true'). Pass null to clear the override and revert to the default."),
-  reason: z
-    .string()
-    .optional()
-    .describe("Short note explaining the change — logged for postmortems."),
+    .describe(`Schema-derived value options: ${writableEnvDefs.map((def) => `${def.name}: ${def.description}`).join("; ")} Pass null to clear the override.`),
+  reason: z.string().optional().describe("Short note explaining the change — logged for postmortems."),
+}).superRefine(({ name, value }, context) => {
+  if (value === null) return;
+  const def = envSchemaByName().get(name);
+  if (!def) return;
+  const error = validateForSchema(def, String(value));
+  if (error) context.addIssue({ code: "custom", path: ["value"], message: `${name}: ${error}` });
 });
+
+function nonEmptySchemas<S extends z.ZodTypeAny>(schemas: S[]): [S, ...S[]] {
+  const [first, ...rest] = schemas;
+  if (!first) throw new Error("set_env_var requires at least one agent-writable environment setting");
+  return [first, ...rest];
+}
+
+function nonEmptyValues<T>(values: T[]): [T, ...T[]] {
+  const [first, ...rest] = values;
+  if (first === undefined) throw new Error("set_env_var requires at least one agent-writable environment setting");
+  return [first, ...rest];
+}
 
 const setEnvVar = tool(
   async ({ name, value, reason }, config) => {
@@ -55,8 +73,9 @@ const setEnvVar = tool(
         hint: "Agents cannot edit infra knobs (port, hostname, dataDir, …). Tell the user to change this from the Environment panel themselves.",
       });
     }
-    if (value !== null) {
-      const verr = validateForSchema(def, value);
+    const normalizedValue = value === null ? null : String(value);
+    if (normalizedValue !== null) {
+      const verr = validateForSchema(def, normalizedValue);
       if (verr) {
         return JSON.stringify({
           ok: false,
@@ -66,9 +85,9 @@ const setEnvVar = tool(
         });
       }
     }
-    await patchOverride(name, value);
-    if (value === null) delete process.env[name];
-    else process.env[name] = value;
+    await patchOverride(name, normalizedValue);
+    if (normalizedValue === null) delete process.env[name];
+    else process.env[name] = normalizedValue;
     resetConfigCache();
     try {
       recordThreadSignal(config?.configurable?.thread_id,
@@ -78,7 +97,7 @@ const setEnvVar = tool(
     return JSON.stringify({
       ok: true,
       name,
-      value,
+      value: normalizedValue,
       requiresRestart: def.requiresRestart,
       reason: reason ?? null,
       hint: def.requiresRestart

@@ -35,6 +35,7 @@ interface EnvRowDTO {
   overridden: boolean;
   description: string;
   category: string;
+  phase: "preflight" | "postflight";
   tier: "A" | "B" | "C";
   requiresRestart: boolean;
   agentWritable: boolean;
@@ -56,6 +57,7 @@ export async function GET(): Promise<Response> {
       overridden: Object.prototype.hasOwnProperty.call(overrides.entries, def.name),
       description: def.description,
       category: def.category,
+      phase: def.phase ?? "postflight",
       tier: def.tier,
       requiresRestart: def.requiresRestart,
       agentWritable: def.agentWritable,

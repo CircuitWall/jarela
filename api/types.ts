@@ -925,6 +925,9 @@ export interface McpRegistryVariable {
   label: string;
   placeholder?: string;
   secret?: boolean;
+  choices?: readonly string[];
+  format?: "string" | "number" | "boolean" | "filepath";
+  required?: boolean;
   default?: string;
 }
 
