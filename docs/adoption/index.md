@@ -11,6 +11,36 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 2.5.2
+
+From 2.5.1 · 2026-10-20
+
+### Adoption hints
+
+- Outlook users must reconnect to grant the newly requested `Files.Read.All` and `Sites.Read.All` scopes for OneDrive and SharePoint Search. Review the Microsoft consent screen before granting access.
+
+### Tools
+
+- `confluence_get_comments` — changed; params added: `footer_cursor`, `inline_cursor`, `limit`
+- `confluence_move_page` — changed; description changed
+- `confluence_search` — changed; params added: `cursor`
+- `github_create_pull` — changed; params added: `head_repo`
+- `jira_search` — changed; params added: `next_page_token`
+- `ms_search` — changed; description changed; params changed: `entity_types`
+- `outlook_calendar_create_event` — changed; description changed; params changed: `end_iso`, `start_iso`, `time_zone`
+- `outlook_calendar_update_event` — changed; params changed: `end_iso`, `start_iso`, `time_zone`
+
+### Prompts
+
+- `static.agent.retry-citation` — added (`lib/agents/retry-prompts.ts`)
+- `static.agent.retry-fabrication` — added (`lib/agents/retry-prompts.ts`)
+
+### Commits
+
+- fix(integrations): align api contracts and credential routing
+- fix(build): add bounded retries for standalone cleanup
+- fix(chat): add complete answer repair and focused runtime modules
+
 ## 2.5.1
 
 From 2.5.0 · 2026-10-19

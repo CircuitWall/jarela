@@ -3121,6 +3121,145 @@
       ],
       "prompts": [],
       "tools": []
+    },
+    {
+      "version": "2.5.2",
+      "previous_version": "2.5.1",
+      "date": "2026-10-20",
+      "hints": [
+        "Outlook users must reconnect to grant the newly requested `Files.Read.All` and `Sites.Read.All` scopes for OneDrive and SharePoint Search. Review the Microsoft consent screen before granting access."
+      ],
+      "commits": [
+        "fix(integrations): align api contracts and credential routing",
+        "fix(build): add bounded retries for standalone cleanup",
+        "fix(chat): add complete answer repair and focused runtime modules"
+      ],
+      "prompts": [
+        {
+          "id": "static.agent.retry-citation",
+          "source": "lib/agents/retry-prompts.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.agent.retry-fabrication",
+          "source": "lib/agents/retry-prompts.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "confluence_get_comments",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [
+            "footer_cursor",
+            "inline_cursor",
+            "limit"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_move_page",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Reorder/reparent a Confluence page. `position`: 'before' or 'after' to place as a sibling of `target_id`; 'append' to make it a child of `target_id`. Non-destructive.",
+          "previous_description": "Reorder/reparent a Confluence page (v2). `position`: 'before' or 'after' to place as a sibling of `target_id`; 'append' to make it a child of `target_id`. Non-destructive.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "confluence_search",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [
+            "cursor"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "github_create_pull",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [
+            "head_repo"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "jira_search",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [
+            "next_page_token"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "ms_search",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Search Microsoft 365 mail, calendar events, OneDrive/SharePoint files, lists, and sites in one call. Requires a work or school account; personal Microsoft accounts are not supported by Microsoft Search. Use ms_people_resolve for people lookup. Returns slimmed hits with {kind,id,title,summary,url,last_modified,rank}. Defaults to entity_types=['message','event','driveItem','listItem']. Override entity_types for narrower searches (e.g. ['site'] for SharePoint sites).",
+          "previous_description": "Search across Microsoft 365 workloads (mail, calendar events, OneDrive/SharePoint files, lists, people, Teams chats) in one call via Microsoft Search. Returns slimmed hits with {kind,id,title,summary,url,last_modified,rank}. Defaults to entity_types=['message','event','driveItem','listItem']. Override entity_types for narrower searches (e.g. ['chatMessage'] for Teams, ['person'] for people, ['site'] for SharePoint sites).",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "entity_types"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "outlook_calendar_create_event",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Create an Outlook calendar event. Datetimes are RFC3339 strings; pair with `time_zone` (IANA like 'America/Los_Angeles' or Windows ID like 'Pacific Standard Time') so Outlook interprets them correctly. Defaults to UTC if omitted. Attendees are automatically sent invites. Set `add_teams_link: true` to provision a Teams meeting URL (requires a work/school M365 account; personal Microsoft accounts cannot create Teams meetings via Graph).",
+          "previous_description": "Create an Outlook calendar event. Datetimes are RFC3339 strings; pair with `time_zone` (IANA like 'America/Los_Angeles' or Windows TZ like 'Pacific Standard Time') so Outlook interprets them correctly. Defaults to UTC if omitted. Attendees are automatically sent invites. Set `add_teams_link: true` to provision a Teams meeting URL (requires a work/school M365 account; personal Microsoft accounts cannot create Teams meetings via Graph).",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "end_iso",
+            "start_iso",
+            "time_zone"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "outlook_calendar_update_event",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "end_iso",
+            "start_iso",
+            "time_zone"
+          ],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
