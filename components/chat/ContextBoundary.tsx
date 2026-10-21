@@ -295,7 +295,7 @@ export function ContextBoundaryDivider({
           onPointerCancel={onPointerCancel}
           onClick={onClick}
         >
-          <span className={["absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed group-hover:border-accent/70", updating ? "border-accent/70 animate-pulse" : "border-accent/40"].join(" ")} aria-hidden />
+          <span className={["absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed group-hover:border-accent/70", updating ? "border-accent/70" : "border-accent/40"].join(" ")} aria-hidden />
           <span
             className={["absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 bg-gradient-to-r from-transparent via-accent/90 to-transparent shadow-[0_0_8px_rgba(59,130,246,0.55)] group-hover:opacity-100", updating ? "opacity-80 animate-pulse" : "opacity-95"].join(" ")}
             aria-hidden
@@ -325,7 +325,7 @@ export function ContextBoundaryDivider({
       )}
       <div className="absolute inset-0 flex items-center" aria-hidden>
         <div className="relative w-full">
-          <div className={["w-full border-t border-dashed", updating ? "border-accent/70 animate-pulse" : "border-accent/40"].join(" ")} />
+          <div className={["w-full border-t border-dashed", updating ? "border-accent/70" : "border-accent/40"].join(" ")} />
           <div className={["absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 bg-gradient-to-r from-transparent via-accent/85 to-transparent shadow-[0_0_8px_rgba(59,130,246,0.5)]", updating ? "opacity-80 animate-pulse" : "opacity-95"].join(" ")} />
         </div>
       </div>

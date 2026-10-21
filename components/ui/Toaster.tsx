@@ -162,7 +162,7 @@ function ToastCard({ toast }: { toast: Toast }) {
     <div
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className={`pointer-events-auto group relative rounded-xl border bg-surface-2/95 backdrop-blur shadow-2xl transition-all duration-200 ${
+      className={`pointer-events-auto group relative rounded-xl border bg-surface-2/95 backdrop-blur shadow-2xl transition-[opacity,transform] duration-200 ${
         exiting ? "opacity-0 translate-x-2" : "opacity-100 translate-x-0"
       } ${isError ? "border-rose-700/60" : "border-border hover:border-border"}`}
     >

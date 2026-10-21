@@ -330,6 +330,13 @@ describe("MessageList conversation focus", () => {
     expect(screen.queryByTestId("thinking-dots")).toBeNull();
   });
 
+  it("shows a loading status instead of the empty-chat prompt while history loads", () => {
+    render(<MessageList threadId="thread-1" messages={[]} loadingMessages />);
+
+    expect(screen.getByRole("status").textContent).toBe("Loading conversation…");
+    expect(screen.queryByText("Send a message to begin")).toBeNull();
+  });
+
   it("opens a confirmation dialog on drag release and only persists after confirm", async () => {
     const onSetContextPin = vi.fn();
     const messages = [

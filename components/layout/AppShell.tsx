@@ -415,7 +415,9 @@ export function AppShell() {
               role="menu"
               className="panel-scrollbar absolute top-full left-0 mt-2 w-[min(24rem,calc(100vw-2rem))] max-h-[55vh] overflow-y-auto rounded-xl border border-border bg-surface-2/95 backdrop-blur-md shadow-2xl p-1.5"
             >
-              {agents.length === 0 ? (
+              {agentsLoading ? (
+                <p role="status" className="text-xs text-fg-faint px-2 py-2">Loading agents…</p>
+              ) : agents.length === 0 ? (
                 <p className="text-xs text-fg-faint px-2 py-2">No agents available yet.</p>
               ) : (
                 agents.map((a) => {
@@ -584,6 +586,7 @@ export function AppShell() {
             activeTab={state.activeTab}
             agentId={state.activeAgentId}
             agents={agents}
+            agentsLoading={agentsLoading}
             onClose={() => setShowMenu(false)}
             onAgentChange={(agentId) => dispatch({ type: "SET_AGENT", agentId })}
             onSetTab={(tab) => {

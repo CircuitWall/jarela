@@ -32,7 +32,8 @@ export function useDeepLinkScroll(tab: Tab, idPrefix: string, containerRef: RefO
       const el = root.querySelector(`[data-deep-link-id="${safe}"]`) as HTMLElement | null;
       if (!el) return;
       lastSeenRef.current = item;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      el.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
       el.classList.add(HIGHLIGHT_CLASS);
       setTimeout(() => el.classList.remove(HIGHLIGHT_CLASS), HIGHLIGHT_MS);
     });

@@ -34,6 +34,7 @@ interface Props {
   toolEvents?: ToolEvent[];
   hasMore?: boolean;
   loadingMore?: boolean;
+  loadingMessages?: boolean;
   onLoadMore?: () => void;
   queuedMessages?: QueuedMessageView[];
   onRemoveQueued?: (id: string) => void;
@@ -79,7 +80,7 @@ const ALL_FILTERS_SHOWN: Record<MessageFilterKey, boolean> = Object.fromEntries(
 const NO_CHANNEL_SUMMARIES: WarmChannelSummary[] = [];
 const NOOP = () => {};
 
-export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries = NO_CHANNEL_SUMMARIES, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, hideInternalOperations = false, onToggleFilter: toggle = NOOP, onResetFilters: reset = NOOP }: Props) {
+export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, loadingMessages = false, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries = NO_CHANNEL_SUMMARIES, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, hideInternalOperations = false, onToggleFilter: toggle = NOOP, onResetFilters: reset = NOOP }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -675,10 +676,11 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   }, [hasScrollTarget]);
 
   const scrollTargetIntoView = useCallback((target: HTMLElement) => {
-    programmaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_LOCK_MS;
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    programmaticScrollUntilRef.current = Date.now() + (reducedMotion ? 0 : PROGRAMMATIC_SCROLL_LOCK_MS);
     atBottomRef.current = false;
     setShowScrollButton(hasScrollTarget);
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
     target.classList.add("jarela-deep-link-flash");
     window.setTimeout(() => target.classList.remove("jarela-deep-link-flash"), 1600);
   }, [hasScrollTarget]);
@@ -940,7 +942,12 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
             <span>Summarising earlier messages… this turn still sees the full history.</span>
           </div>
         )}
-        {visibleMessages.length === 0 && !streamingContent && !streaming && (
+        {loadingMessages && displayMessages.length === 0 && !streamingContent && !streaming && (
+          <div role="status" className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
+            Loading conversation…
+          </div>
+        )}
+        {!loadingMessages && visibleMessages.length === 0 && !streamingContent && !streaming && (
           <div className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
             {displayMessages.length === 0 ? (
               <span>Send a message to begin</span>
@@ -1048,7 +1055,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
         <button
           onClick={scrollToBottom}
           style={{ bottom: "calc(1rem + var(--app-safe-bottom))" }}
-          className="absolute right-4 p-2 rounded-full bg-accent/40 hover:bg-accent/80 text-white backdrop-blur-sm shadow-md transition-all animate-in fade-in slide-in-from-bottom-2 duration-200 z-20"
+          className="absolute right-4 p-2 rounded-full bg-accent/40 hover:bg-accent/80 text-white backdrop-blur-sm shadow-md transition-[opacity,transform,background-color] animate-in fade-in slide-in-from-bottom-2 duration-200 z-20"
           title="Auto-scroll paused — resume at latest message"
           aria-label="Resume auto-scroll to latest message"
         >

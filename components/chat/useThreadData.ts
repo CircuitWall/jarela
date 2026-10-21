@@ -11,6 +11,7 @@ interface Params {
 
 export interface ThreadDataApi {
   messages: Message[];
+  messagesThreadId: string | null;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   messagesRef: React.MutableRefObject<Message[]>;
   hasMore: boolean;
@@ -39,6 +40,7 @@ export interface ThreadDataApi {
 
 export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesThreadId, setMessagesThreadId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -71,6 +73,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
 
   useEffect(() => {
     if (!threadId) {
+      setMessagesThreadId(null);
       setMetadataThreadId(null);
       setMessages([]);
       setHasMore(false);
@@ -120,6 +123,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       .finally(() => {
         if (cancelled) return;
         setMessagesLoading(false);
+        setMessagesThreadId(threadId);
         // Attach to any in-flight run for THIS thread. attach() sets
         // streaming=true optimistically and signals completion via onDone
         // (which drains the queue), so we must NOT fire drainQueueRef here.
@@ -182,8 +186,9 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   }, [threadId, loadingMore, hasMore, messages.length]);
 
   return {
-    messages, setMessages, messagesRef,
-    hasMore, setHasMore, loadingMore, messagesLoading,
+    messages, messagesThreadId, setMessages, messagesRef,
+    hasMore, setHasMore, loadingMore,
+    messagesLoading: Boolean(threadId) && (messagesLoading || messagesThreadId !== threadId),
     hotSince: metadataMatchesThread ? hotSince : null,
     hotSinceSeq: metadataMatchesThread ? hotSinceSeq : null,
     hotSinceSeqForRun: metadataMatchesThread ? hotSinceSeq : undefined,

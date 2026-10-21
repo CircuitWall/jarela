@@ -35,6 +35,9 @@
  *   (no attribute)         dark (matches the historical look)
  * ---------------------------------------------------------------------- */
 @theme {
+  --default-transition-duration: 160ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+
   /* Dark palette (default + the values for explicit data-theme="dark").
    *
    * Contrast targets (WCAG AA = 4.5:1 normal text, 3:1 UI / large text):
@@ -812,6 +815,14 @@ body {
   to   { transform: rotate(360deg); }
 }
 @media (prefers-reduced-motion: reduce) {
+  :where(*, *::before, *::after) {
+    animation-delay: 0ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+  }
   .jarela-countdown-spinner { animation: none; }
   .jarela-stream-caret { animation: none; }
   .jarela-thinking-dot { animation: none; opacity: 0.45; }

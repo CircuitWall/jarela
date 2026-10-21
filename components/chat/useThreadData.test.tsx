@@ -10,9 +10,9 @@ vi.mock("@/api/client", () => ({
 
 const { useThreadData } = await import("./useThreadData");
 
-function threadDetail(hotSinceSeq: number | null) {
+function threadDetail(hotSinceSeq: number | null, messages: unknown[] = []) {
   return {
-    messages: [],
+    messages,
     has_more: false,
     hot_since: hotSinceSeq === null ? null : "2026-10-10T08:00:00.000Z",
     hot_since_seq: hotSinceSeq,
@@ -52,5 +52,32 @@ describe("useThreadData boundary ownership", () => {
 
     await act(async () => resolveSecond(threadDetail(7)));
     await waitFor(() => expect(result.current.hotSinceSeqForRun).toBe(7));
+  });
+
+  it("keeps history in a loading state until the selected thread has settled", async () => {
+    let resolveThread!: (value: ReturnType<typeof threadDetail>) => void;
+    mocks.getThread.mockReturnValue(new Promise((resolve) => { resolveThread = resolve; }));
+    const attach = vi.fn(async () => undefined);
+
+    const { result, rerender } = renderHook(
+      ({ threadId }: { threadId: string }) => useThreadData({ threadId, attach }),
+      { initialProps: { threadId: "thread-a" } },
+    );
+
+    expect(result.current.messagesLoading).toBe(true);
+    expect(result.current.messagesThreadId).toBeNull();
+
+    await act(async () => resolveThread(threadDetail(null)));
+    await waitFor(() => expect(result.current.messagesLoading).toBe(false));
+    expect(result.current.messagesThreadId).toBe("thread-a");
+
+    let resolveSecond!: (value: ReturnType<typeof threadDetail>) => void;
+    mocks.getThread.mockReturnValue(new Promise((resolve) => { resolveSecond = resolve; }));
+    rerender({ threadId: "thread-b" });
+
+    expect(result.current.messagesLoading).toBe(true);
+    expect(result.current.messagesThreadId).toBe("thread-a");
+    await act(async () => resolveSecond(threadDetail(null)));
+    await waitFor(() => expect(result.current.messagesThreadId).toBe("thread-b"));
   });
 });
