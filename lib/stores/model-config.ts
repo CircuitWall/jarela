@@ -136,6 +136,7 @@ export function upsertModelConfig(
   credential_id: string | null = null,
 ): ModelConfigRow {
   return withDbTransaction(() => {
+    const db = getDb();
     const t = now();
     const existing = getModelConfig(name);
     const created_at = existing?.created_at ?? t;
@@ -147,9 +148,11 @@ export function upsertModelConfig(
     // other field a custom provider relies on (e.g. custom-provider.js's
     // username/password auth) on every save.
     const mergedParams = { ...decodeInlineParams(existing), ...params };
-    const finalDefault = is_default ?? existing?.is_default === 1;
+    const hasOtherEnabledDefault = !!db.prepare(
+      "SELECT 1 FROM model_configs WHERE is_default=1 AND enabled=1 AND name<>? LIMIT 1",
+    ).get(name);
+    const finalDefault = (is_default ?? existing?.is_default === 1) || !hasOtherEnabledDefault;
     const finalEnabled = finalDefault || !existing || isModelConfigEnabled(existing);
-    const db = getDb();
     if (finalDefault) db.prepare("UPDATE model_configs SET is_default=0 WHERE name<>?").run(name);
     db.prepare(
       "INSERT OR REPLACE INTO model_configs (name,provider,model_id,params,is_default,enabled,credential_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)"
@@ -166,10 +169,12 @@ export function deleteModelConfig(name: string): boolean {
     if (!deleted) return false;
     // Automatically reset any agent pointing to this deleted model config to NULL (automatic / default model)
     db.prepare("UPDATE agent_configs SET model_config_name = NULL WHERE model_config_name = ?").run(name);
-    // Avoid the "no default" state: if the deleted row was the default and any
-    // other enabled rows remain, promote the alphabetically-first one so
-    // agents that fall back to the default keep working.
-    if (wasDefault) {
+    // Repair legacy no-default states as well as promoting after default deletion.
+    const hasEnabledDefault = db.prepare(
+      "SELECT 1 FROM model_configs WHERE is_default=1 AND enabled=1 LIMIT 1",
+    ).get();
+    if (wasDefault || !hasEnabledDefault) {
+      db.prepare("UPDATE model_configs SET is_default=0 WHERE is_default=1").run();
       const next = db.prepare("SELECT name FROM model_configs WHERE enabled=1 ORDER BY name ASC LIMIT 1").get() as { name?: string } | undefined;
       if (next?.name) db.prepare("UPDATE model_configs SET is_default=1 WHERE name=?").run(next.name);
     }
