@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Check, LoaderCircle, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentConfig, SSEEventType, VersionAdoptionAction, VersionAdoptionChecklistStatus, VersionAdoptionState } from "@/api/types";
 import { api, submitRun, subscribeRun } from "@/api/client";
@@ -70,7 +70,7 @@ interface Props {
 }
 
 // Three-phase first-screen experience:
-//   1. `loading` — agents haven't resolved yet. Logo + pulsing "loading agents".
+//   1. `loading` — agents haven't resolved yet. Logo + startup checklist.
 //   2. `pick`    — agents resolved, no active selection. Logo + default agent
 //                  big tile + up to 3 recent agents in a row.
 //   3. `opening` — user clicked an agent (or one was persisted). Logo + just
@@ -94,7 +94,16 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
   // mounts onto warm data instead of showing its own loading spinners.
   type StepStatus = "pending" | "active" | "done";
   type Step = { key: string; label: string; status: StepStatus };
-  const [steps, setSteps] = useState<Step[]>([]);
+  const [steps, setSteps] = useState<Step[]>(() => {
+    const opening = agentsLoaded && Boolean(activeAgentId);
+    return [
+      { key: "agents", label: "loading agents", status: agentsLoaded ? "done" : "active" },
+      { key: "profile", label: "loading your profile", status: opening ? "active" : "pending" },
+      { key: "agent", label: "loading agent config", status: opening ? "active" : "pending" },
+      { key: "thread", label: "preparing conversation", status: opening ? "active" : "pending" },
+      { key: "messages", label: "loading recent messages", status: "pending" },
+    ];
+  });
   const [adoption, setAdoption] = useState<VersionAdoptionState | null>(null);
   const [adoptionBusy, setAdoptionBusy] = useState<VersionAdoptionAction | null>(null);
   const [adoptionLiveLabel, setAdoptionLiveLabel] = useState<string | null>(null);
@@ -250,6 +259,7 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
     setDismissing(false);
 
     setSteps([
+      { key: "agents", label: "loading agents", status: "done" },
       { key: "profile", label: "loading your profile", status: "active" },
       { key: "agent", label: "loading agent config", status: "active" },
       { key: "thread", label: "preparing conversation", status: "active" },
@@ -328,15 +338,11 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
         ? "opening"
         : "pick";
 
-  // Show the in-flight step in the headline so the user always knows
-  // what we're waiting on. Falls back to "opening <name>" before the
-  // checklist initialises and after every step is done.
-  const activeStep = steps.find((s) => s.status === "active");
   const statusText =
     phase === "loading"
-      ? "loading agents"
+      ? "getting things ready"
       : phase === "opening"
-        ? activeStep?.label ?? `opening ${focusAgent?.name ?? "agent"}`
+        ? `opening ${focusAgent?.name ?? "agent"}`
         : "pick an agent to begin";
 
   async function handleAdoptionAction(action: VersionAdoptionAction) {
@@ -433,9 +439,8 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
       */}
       <div className="boot-screen-stack absolute inset-0 flex flex-col items-center justify-center gap-6 lg:gap-8">
         <Logo className="boot-screen-logo h-16 w-auto" />
-        <p
-          className="text-xs uppercase tracking-[0.2em] text-fg-faint animate-pulse min-h-[1.25rem] text-center px-6"
-        >
+        <p className="inline-flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-fg-faint min-h-[1.25rem] text-center px-6">
+          {phase !== "pick" && <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />}
           {statusText}
         </p>
 
@@ -516,6 +521,28 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
           layout shift.
         */}
         <div className="boot-screen-recent-slot w-48 min-h-[12rem] relative lg:w-72 lg:min-h-[13rem]">
+          {(phase === "loading" || phase === "opening") && (
+            <ol aria-label="Startup steps" className="absolute inset-x-0 top-0 flex flex-col gap-2 px-3 text-[11px]">
+              {steps.map((step) => (
+                <li key={step.key} className="flex items-center gap-2 text-fg-muted">
+                  <span
+                    role="img"
+                    aria-label={step.status === "done" ? "complete" : step.status === "active" ? "in progress" : "waiting"}
+                    className="flex h-4 w-4 shrink-0 items-center justify-center"
+                  >
+                    {step.status === "done" ? (
+                      <Check size={13} className="text-emerald-500" aria-hidden />
+                    ) : step.status === "active" ? (
+                      <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" aria-hidden />
+                    ) : (
+                      <span className="h-2.5 w-2.5 rounded-[3px] border border-border" aria-hidden />
+                    )}
+                  </span>
+                  <span>{step.label}</span>
+                </li>
+              ))}
+            </ol>
+          )}
           <div
             className={[
               "absolute inset-x-0 top-0 flex flex-col items-center gap-2",
