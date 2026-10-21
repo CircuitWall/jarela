@@ -23,7 +23,7 @@ RED  := \033[31m
 GRN  := \033[32m
 RST  := \033[0m
 
-.PHONY: help install dev build start lint test test-full icons clean \
+.PHONY: help install dev isolated-dev build start lint test test-full icons clean \
 	install-service uninstall-service start-service stop-service restart-service \
 	install-task uninstall-task start-task stop-task restart-task \
 	logs status push scan scan-staged install-hooks
@@ -33,6 +33,7 @@ help:
 	@printf "$(DGY)Usage: make <target>$(RST)\n\n"
 	@printf "  $(YEL)install$(RST)         npm install\n"
 	@printf "  $(YEL)dev$(RST)             Hot-reload dev server on http://localhost:$(PORT)\n"
+	@printf "  $(YEL)isolated-dev$(RST)     Dev server with fresh temp state and a random port\n"
 	@printf "  $(YEL)build$(RST)           Production build (standalone output)\n"
 	@printf "  $(YEL)start$(RST)           Serve the standalone build on http://localhost:$(PORT)\n"
 	@printf "  $(YEL)lint$(RST)            Run eslint\n"
@@ -61,6 +62,9 @@ install:
 
 dev:
 	@npm run dev
+
+isolated-dev:
+	@node scripts/isolated-dev.mjs
 
 build:
 	@npm run build

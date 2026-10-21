@@ -33,6 +33,7 @@ $Targets = [ordered]@{
     'help'           = 'Show this help.'
     'install'        = 'npm install.'
     'dev'            = 'Hot-reload dev server on http://localhost:4312.'
+    'isolated-dev'   = 'Dev server with fresh temporary state and a random free port.'
     'build'          = 'Production build (standalone output).'
     'start'          = 'Serve the standalone build on http://localhost:4312.'
     'lint'           = 'Run eslint.'
@@ -106,6 +107,8 @@ switch ($NormalizedTarget) {
     'install'        { Invoke-Npm -NpmArgs @('install') }
 
     'dev'            { Invoke-Npm -NpmArgs @('run', 'dev') }
+
+    'isolated-dev'   { Invoke-Node 'scripts\isolated-dev.mjs' }
 
     'build'          { Invoke-Npm -NpmArgs @('run', 'build') }
 
