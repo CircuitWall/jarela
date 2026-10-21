@@ -4,6 +4,7 @@ import type { DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
 import { withAlpha } from "@/lib/dashboard/color";
 import { arcPath } from "@/lib/dashboard/geometry";
 import { formatInt, formatMoney, formatMoneyCompact } from "@/lib/dashboard/format";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 export type DonutSlice = {
   id: string;
@@ -23,6 +24,7 @@ interface DonutProps {
 
 export function SharedDonutChart({ ariaLabel, size, centerAmount, slices, hovered, onHoverChange }: DonutProps) {
   const uid = useId().replace(/:/g, "");
+  const reducedMotion = useReducedMotion();
   const [animCycle, setAnimCycle] = useState(0);
   const stroke = size >= 170 ? 26 : 20;
   const padding = Math.ceil(stroke / 2) + 6;
@@ -83,13 +85,13 @@ export function SharedDonutChart({ ariaLabel, size, centerAmount, slices, hovere
                 strokeWidth={hovered === segment.idx ? stroke + 2 : stroke}
                 pathLength={100}
                 strokeDasharray={100}
-                strokeDashoffset={100}
+                strokeDashoffset={reducedMotion ? 0 : 100}
                 opacity={hovered == null || hovered === segment.idx ? 0.97 : 0.54}
                 style={{ transition: "opacity 180ms ease, stroke-width 180ms ease" }}
                 onMouseEnter={() => onHoverChange(segment.idx)}
                 onMouseLeave={() => onHoverChange(null)}
               >
-                <animate attributeName="stroke-dashoffset" from="100" to="0" dur="620ms" begin={`${segment.idx * 65}ms`} fill="freeze" />
+                {!reducedMotion && <animate attributeName="stroke-dashoffset" from="100" to="0" dur="620ms" begin={`${segment.idx * 65}ms`} fill="freeze" />}
               </path>
             </g>
           ))}

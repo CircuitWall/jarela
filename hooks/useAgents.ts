@@ -22,6 +22,7 @@ export function useAgents(): UnifiedHookResult<
   } = useListState<AgentConfig>({
     loader: () => api.agents.list(),
     eventName: "jarela:agents-changed",
+    initialLoading: true,
   });
 
   const create = useCallback(async (data: AgentConfigIn) => {

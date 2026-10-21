@@ -11,6 +11,7 @@ interface Props {
   activeTab: Tab;
   agentId: string | null;
   agents: AgentConfig[];
+  agentsLoading: boolean;
   onClose: () => void;
   onAgentChange: (agentId: string) => void;
   onSetTab: (tab: Tab) => void;
@@ -122,13 +123,23 @@ function avatarGradient(id: string): string {
 function AgentSessionList({
   activeAgentId,
   agents,
+  agentsLoading,
   onSelect,
 }: {
   activeAgentId: string | null;
   agents: AgentConfig[];
+  agentsLoading: boolean;
   onSelect: (id: string) => void;
 }) {
   const unread = useUnreadByAgent();
+
+  if (agentsLoading) {
+    return (
+      <p role="status" className="text-fg-faint text-xs text-center py-6 select-none px-3">
+        Loading agents…
+      </p>
+    );
+  }
 
   if (agents.length === 0) {
     return (
@@ -210,6 +221,7 @@ export function MenuPanel({
   activeTab,
   agentId,
   agents,
+  agentsLoading,
   onClose,
   onAgentChange,
   onSetTab,
@@ -262,7 +274,7 @@ export function MenuPanel({
         // for hover + the StatusDot below carries the visual cue.
         aria-label={TAB_TITLES[tab]}
         aria-current={activeTab === tab ? "page" : undefined}
-        className={`control-tap min-w-0 relative overflow-hidden flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-all duration-200 ${
+        className={`control-tap min-w-0 relative overflow-hidden flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-[color,background-color,transform,box-shadow] duration-200 ${
           activeTab === tab
             ? "bg-surface-3 text-fg ring-1 ring-border shadow-sm"
             : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50 hover:-translate-y-px"
@@ -324,6 +336,7 @@ export function MenuPanel({
         <AgentSessionList
           activeAgentId={agentId}
           agents={agents}
+          agentsLoading={agentsLoading}
           onSelect={(id) => { onAgentChange(id); onSetTab("chat"); onClose(); }}
         />
       </div>

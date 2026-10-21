@@ -54,6 +54,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     [],
   );
   const thread = useThreadData({ threadId, attach: stableAttach });
+  const currentThreadMessages = thread.messagesThreadId === threadId ? thread.messages : [];
 
   // When the next user turn came from a voice transcription, arm this flag
   // so handleDone can fire a `jarela:speak-message` event at the new
@@ -332,7 +333,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     threadId,
     sessionLoading: !!sessionLoading,
     messagesLoading: thread.messagesLoading,
-    messageCount: thread.messages.length,
+    messageCount: currentThreadMessages.length,
     submit: (message, options) => launchRun(message, [], options),
     onConsumed: () => {
       clearFirstRunChatKickoff();
@@ -349,7 +350,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
       <MessageList
         threadId={threadId}
-        messages={thread.messages}
+        messages={currentThreadMessages}
+        loadingMessages={!!sessionLoading || thread.messagesLoading}
         steeredSegments={sse.steeredSegments}
         agentConfig={agentConfig}
         userProfile={userProfile}

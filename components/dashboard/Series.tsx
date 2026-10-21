@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
 import { convertUsd, formatInt, formatMoney, formatMoneyCompact } from "@/lib/dashboard/format";
 import { TIER_COLORS } from "./dashboard-constants";
+import { useReducedMotion } from "@/hooks/useReducedMotion";
 
 interface TokenChartProps {
   series: DashboardMetrics["series"];
@@ -101,6 +102,7 @@ function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, showDate
     { color: TIER_COLORS.facts, height: factsPx, delay: 54 },
     { color: TIER_COLORS.overhead, height: overheadPx, delay: 66 },
   ];
+  const stagger = Math.min(idx * 8, 160);
 
   return (
     <div
@@ -132,7 +134,7 @@ function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, showDate
               className="w-full bg-gradient-to-t from-amber-500 to-amber-300"
               style={{
                 height: barsReady ? `${outputHeight}px` : "0px",
-                transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18}ms`,
+                transition: `height 360ms cubic-bezier(0.2, 0.8, 0.2, 1) ${stagger}ms`,
               }}
             />
             {tierTotal > 0 ? (
@@ -143,7 +145,7 @@ function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, showDate
                   style={{
                     background: seg.color,
                     height: barsReady ? `${seg.height}px` : "0px",
-                    transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + seg.delay}ms`,
+                    transition: `height 360ms cubic-bezier(0.2, 0.8, 0.2, 1) ${stagger + seg.delay}ms`,
                   }}
                 />
               ))
@@ -152,7 +154,7 @@ function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, showDate
                 className="w-full bg-gradient-to-t from-indigo-500 to-violet-400"
                 style={{
                   height: barsReady ? `${inputHeight}px` : "0px",
-                  transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 30}ms`,
+                  transition: `height 360ms cubic-bezier(0.2, 0.8, 0.2, 1) ${stagger + 30}ms`,
                 }}
               />
             )}
@@ -199,6 +201,7 @@ interface CostChartProps {
 }
 
 export function InteractiveCostChart({ series, currencyInfo, selectedDay, onSelectDay }: CostChartProps) {
+  const reducedMotion = useReducedMotion();
   const [hovered, setHovered] = useState<number | null>(null);
   const [lineAnimCycle, setLineAnimCycle] = useState(0);
   const width = 720;
@@ -257,9 +260,9 @@ export function InteractiveCostChart({ series, currencyInfo, selectedDay, onSele
             points={polyline}
             pathLength={100}
             strokeDasharray={100}
-            strokeDashoffset={100}
+            strokeDashoffset={reducedMotion ? 0 : 100}
           >
-            <animate attributeName="stroke-dashoffset" from="100" to="0" dur="700ms" fill="freeze" />
+            {!reducedMotion && <animate attributeName="stroke-dashoffset" from="100" to="0" dur="700ms" fill="freeze" />}
           </polyline>
           {points.map((pt) => (
             <CostPoint
@@ -270,6 +273,7 @@ export function InteractiveCostChart({ series, currencyInfo, selectedDay, onSele
               padY={padY}
               height={height}
               animCycle={lineAnimCycle}
+              reducedMotion={reducedMotion}
               onHover={setHovered}
               onSelectDay={onSelectDay}
             />
@@ -308,11 +312,12 @@ interface CostPointProps {
   padY: number;
   height: number;
   animCycle: number;
+  reducedMotion: boolean;
   onHover: (i: number | null) => void;
   onSelectDay?: (day: string) => void;
 }
 
-function CostPoint({ pt, isActive, isSelected, padY, height, animCycle, onHover, onSelectDay }: CostPointProps) {
+function CostPoint({ pt, isActive, isSelected, padY, height, animCycle, reducedMotion, onHover, onSelectDay }: CostPointProps) {
   return (
     <g>
       {(isActive || isSelected) && (
@@ -325,10 +330,10 @@ function CostPoint({ pt, isActive, isSelected, padY, height, animCycle, onHover,
           strokeWidth={isSelected ? 1.8 : 1.5}
         />
       )}
-      {isSelected && (
+      {isSelected && !reducedMotion && (
         <circle cx={pt.x} cy={pt.y} r={8} fill="none" stroke="rgba(34,197,94,0.85)" strokeWidth={1.5}>
-          <animate attributeName="r" from="3.8" to="9" dur="800ms" repeatCount="indefinite" />
-          <animate attributeName="opacity" from="0.9" to="0" dur="800ms" repeatCount="indefinite" />
+          <animate attributeName="r" from="3.8" to="9" dur="500ms" repeatCount="1" fill="freeze" />
+          <animate attributeName="opacity" from="0.9" to="0" dur="500ms" repeatCount="1" fill="freeze" />
         </circle>
       )}
       <circle
@@ -342,7 +347,7 @@ function CostPoint({ pt, isActive, isSelected, padY, height, animCycle, onHover,
         onMouseLeave={() => onHover(null)}
         onClick={() => onSelectDay?.(pt.p.day)}
       >
-        <animate attributeName="r" from="0" to={isSelected ? 5 : 3.8} dur="260ms" begin={`${pt.idx * 28}ms`} fill="freeze" />
+        {!reducedMotion && <animate attributeName="r" from="0" to={isSelected ? 5 : 3.8} dur="220ms" begin={`${Math.min(pt.idx * 8, 160)}ms`} fill="freeze" />}
       </circle>
     </g>
   );

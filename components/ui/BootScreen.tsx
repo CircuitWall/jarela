@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, LoaderCircle, Plus } from "lucide-react";
+import { Check, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentConfig, SSEEventType, VersionAdoptionAction, VersionAdoptionChecklistStatus, VersionAdoptionState } from "@/api/types";
 import { api, submitRun, subscribeRun } from "@/api/client";
@@ -97,11 +97,11 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
   const [steps, setSteps] = useState<Step[]>(() => {
     const opening = agentsLoaded && Boolean(activeAgentId);
     return [
-      { key: "agents", label: "loading agents", status: agentsLoaded ? "done" : "active" },
-      { key: "profile", label: "loading your profile", status: opening ? "active" : "pending" },
-      { key: "agent", label: "loading agent config", status: opening ? "active" : "pending" },
-      { key: "thread", label: "preparing conversation", status: opening ? "active" : "pending" },
-      { key: "messages", label: "loading recent messages", status: "pending" },
+      { key: "agents", label: "Loading your agents", status: agentsLoaded ? "done" : "active" },
+      { key: "profile", label: "Setting up your profile", status: opening ? "active" : "pending" },
+      { key: "agent", label: "Getting your agent ready", status: opening ? "active" : "pending" },
+      { key: "thread", label: "Preparing your conversation", status: opening ? "active" : "pending" },
+      { key: "messages", label: "Loading recent messages", status: "pending" },
     ];
   });
   const [adoption, setAdoption] = useState<VersionAdoptionState | null>(null);
@@ -259,11 +259,11 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
     setDismissing(false);
 
     setSteps([
-      { key: "agents", label: "loading agents", status: "done" },
-      { key: "profile", label: "loading your profile", status: "active" },
-      { key: "agent", label: "loading agent config", status: "active" },
-      { key: "thread", label: "preparing conversation", status: "active" },
-      { key: "messages", label: "loading recent messages", status: "pending" },
+      { key: "agents", label: "Loading your agents", status: "done" },
+      { key: "profile", label: "Setting up your profile", status: "active" },
+      { key: "agent", label: "Getting your agent ready", status: "active" },
+      { key: "thread", label: "Preparing your conversation", status: "active" },
+      { key: "messages", label: "Loading recent messages", status: "pending" },
     ]);
 
     let cancelled = false;
@@ -338,12 +338,15 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
         ? "opening"
         : "pick";
 
+  const activeStepKey = steps.find((step) => step.status === "active")?.key
+    ?? steps.find((step) => step.status === "pending")?.key;
+  const activeStepLabel = steps.find((step) => step.key === activeStepKey)?.label;
   const statusText =
     phase === "loading"
-      ? "getting things ready"
+      ? activeStepLabel ?? "Loading your agents"
       : phase === "opening"
-        ? `opening ${focusAgent?.name ?? "agent"}`
-        : "pick an agent to begin";
+        ? activeStepLabel ?? `Opening ${focusAgent?.name ?? "agent"}`
+        : "Choose an agent to begin";
 
   async function handleAdoptionAction(action: VersionAdoptionAction) {
     if (adoptionBusy) return;
@@ -418,10 +421,11 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
       className={[
         "fixed inset-0 z-[70]",
         "bg-surface text-fg",
-        "transition-opacity duration-500 ease-out",
+        "transition-opacity duration-500 ease-out motion-reduce:transition-none",
         dismissing ? "opacity-0 pointer-events-none" : "opacity-100",
       ].join(" ")}
       style={{
+        backgroundImage: "radial-gradient(ellipse at center, color-mix(in srgb, var(--color-accent) 5%, var(--color-surface)) 0%, var(--color-surface) 68%)",
         paddingTop: "env(safe-area-inset-top)",
         paddingBottom: "env(safe-area-inset-bottom)",
         paddingLeft: "env(safe-area-inset-left)",
@@ -439,8 +443,7 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
       */}
       <div className="boot-screen-stack absolute inset-0 flex flex-col items-center justify-center gap-6 lg:gap-8">
         <Logo className="boot-screen-logo h-16 w-auto" />
-        <p className="inline-flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-fg-faint min-h-[1.25rem] text-center px-6">
-          {phase !== "pick" && <LoaderCircle size={13} className="shrink-0 animate-spin" aria-hidden />}
+        <p className={`inline-flex items-center justify-center font-serif text-base tracking-normal text-fg-muted min-h-[1.5rem] text-center px-6 ${phase !== "pick" ? "animate-pulse motion-reduce:animate-none" : ""}`}>
           {statusText}
         </p>
 
@@ -460,10 +463,10 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
               }
               className={[
                 "absolute inset-0 rounded-3xl overflow-hidden",
-                "ring-2 ring-accent/40 ring-offset-4 ring-offset-surface",
-                "shadow-2xl shadow-accent/20",
+                "ring-1 ring-border/50 ring-offset-4 ring-offset-surface",
+                "shadow-xl shadow-black/10",
                 tileClickable
-                  ? "hover:ring-accent/70 hover:shadow-accent/30 transition-all cursor-pointer"
+                  ? "hover:ring-accent/50 hover:shadow-black/15 transition-colors transition-shadow duration-200 ease-out motion-reduce:transition-none cursor-pointer"
                   : "cursor-default",
               ].join(" ")}
             >
@@ -489,9 +492,9 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
               */}
               <span
                 className={[
-                  "absolute top-2 right-2 text-[9px] uppercase tracking-wider",
+                  "absolute top-2 right-2 text-[10px] font-medium",
                   "px-1.5 py-0.5 rounded-full text-white bg-accent/80",
-                  "backdrop-blur-sm shadow transition-opacity duration-300",
+                  "backdrop-blur-sm shadow transition-opacity duration-200 motion-reduce:transition-none",
                   phase === "pick" && tileAgent.is_default
                     ? "opacity-100"
                     : "opacity-0",
@@ -521,38 +524,16 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
           layout shift.
         */}
         <div className="boot-screen-recent-slot w-48 min-h-[12rem] relative lg:w-72 lg:min-h-[13rem]">
-          {(phase === "loading" || phase === "opening") && (
-            <ol aria-label="Startup steps" className="absolute inset-x-0 top-0 flex flex-col gap-2 px-3 text-[11px]">
-              {steps.map((step) => (
-                <li key={step.key} className="flex items-center gap-2 text-fg-muted">
-                  <span
-                    role="img"
-                    aria-label={step.status === "done" ? "complete" : step.status === "active" ? "in progress" : "waiting"}
-                    className="flex h-4 w-4 shrink-0 items-center justify-center"
-                  >
-                    {step.status === "done" ? (
-                      <Check size={13} className="text-emerald-500" aria-hidden />
-                    ) : step.status === "active" ? (
-                      <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" aria-hidden />
-                    ) : (
-                      <span className="h-2.5 w-2.5 rounded-[3px] border border-border" aria-hidden />
-                    )}
-                  </span>
-                  <span>{step.label}</span>
-                </li>
-              ))}
-            </ol>
-          )}
           <div
             className={[
               "absolute inset-x-0 top-0 flex flex-col items-center gap-2",
-              "transition-opacity duration-300",
+              "transition-opacity duration-200 motion-reduce:transition-none",
               phase === "pick" && recentAgents.length > 0 && !showAdoption
                 ? "opacity-100"
                 : "opacity-0 pointer-events-none",
             ].join(" ")}
           >
-            <p className="text-[11px] text-fg-faint uppercase tracking-wider">
+            <p className="text-xs text-fg-faint">
               Recent
             </p>
             <div className="flex flex-col gap-1.5 w-full">
