@@ -16,8 +16,8 @@ export type ProbeResult = { ok: boolean; error?: string } | null;
 
 export type ModelEditorForm = ReturnType<typeof useModelEditorForm>;
 
-export function useModelEditorForm(model: ModelConfig | undefined) {
-  const id = useIdentityState(model);
+export function useModelEditorForm(model: ModelConfig | undefined, initialProvider?: string) {
+  const id = useIdentityState(model, initialProvider);
   const cred = useCredentialState(model, id.provider, id.isEdit);
   const params = useParamsState(model);
   const status = useStatusState();

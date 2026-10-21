@@ -1,5 +1,6 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +14,7 @@ const { getDb } = await import("./index");
 const { encrypt } = await import("@/lib/crypto/envelope");
 const { upsertModelConfig, getModelConfig } = await import("@/lib/stores/model-config");
 const { listCredentials, getCredentialParams } = await import("@/lib/stores/credentials");
+const { runMigrations } = await import("./migrations");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -76,6 +78,37 @@ describe("responsive transcript indexes (ADR-0103)", () => {
       expect.objectContaining({ name: "idx_threads_agent_id", unique: 1 }),
     ]));
     expect(indexes.some((row) => row.name === "idx_threads_agent_updated")).toBe(false);
+  });
+});
+
+describe("first-run agent migration", () => {
+  it("leaves a fresh install without preset agents for the setup wizard", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      runMigrations(db);
+      expect(db.prepare("SELECT id FROM agent_configs").all()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("restores only a legacy agent required by a historical thread", () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      runMigrations(db);
+      db.prepare(
+        "INSERT INTO threads (thread_id, agent_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).run("legacy-research-thread", "researcher", "Old research", "2025-01-01", "2025-01-01");
+
+      runMigrations(db);
+
+      expect(db.prepare("SELECT id FROM agent_configs").all()).toEqual([{ id: "researcher" }]);
+      expect(db.prepare("SELECT thread_id FROM threads WHERE agent_id='researcher'").get()).toEqual({
+        thread_id: "legacy-research-thread",
+      });
+    } finally {
+      db.close();
+    }
   });
 });
 
@@ -384,6 +417,10 @@ describe("migrateIntegrationsToCredentials", () => {
 describe("backfillDeveloperInteractiveTerminalTools", () => {
   it("updates the developer seed to prefer interactive terminal tools", async () => {
     const db = getDb();
+    const timestamp = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO agent_configs (id, name, identity, instructions, tools, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run("developer", "Developer", "legacy developer", "", "[]", timestamp, timestamp);
 
     db.prepare(
       "UPDATE agent_configs SET instructions=?, tools=?, updated_at=? WHERE id='developer'",

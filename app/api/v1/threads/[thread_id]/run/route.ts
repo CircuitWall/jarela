@@ -94,6 +94,7 @@ const RunBody = z.object({
   message: z.string(),
   attachments: z.array(z.unknown()).optional(),
   stream_options: z.unknown().optional(),
+  message_metadata: z.strictObject({ hidden_from_chat: z.boolean() }).optional(),
   // ADR-0096 — exact first-hot message seq; null clears the pin.
   hot_since_seq: z.number().int().positive().nullable().optional(),
   // ADR-0044 — automation channels the chat panel's filter toolbar has
@@ -459,6 +460,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       thread_id,
       message,
       attachments,
+      message_metadata: parsed.message_metadata,
       context_profile: contextProfile,
       _onTranscriptUserPersisted: () => {
         assistantDraftState.current = createAssistantTranscriptDraft(thread_id);

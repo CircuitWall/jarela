@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentConfig, SSEEventType, VersionAdoptionAction, VersionAdoptionChecklistStatus, VersionAdoptionState } from "@/api/types";
 import { api, submitRun, subscribeRun } from "@/api/client";
@@ -63,6 +64,7 @@ interface Props {
   activeAgentId: string | null;
   preferredThreadId?: string | null;
   onPickAgent: (agentId: string) => void;
+  onCreateAgent: () => void;
   // Boot picker is a chat-tab gate; suppress on non-chat tabs so it doesn't overlay them.
   suppressed?: boolean;
 }
@@ -79,7 +81,7 @@ interface Props {
 // Replaces the previous splash + ChatView empty-state agent picker. The
 // header (z-40) is hidden while this is visible so the user lands on a
 // focused, one-purpose screen.
-export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThreadId, onPickAgent, suppressed }: Props) {
+export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThreadId, onPickAgent, onCreateAgent, suppressed }: Props) {
   // Capture which agent we transitioned through so the icon can keep
   // showing during the fade-out, even if a parent state shift would
   // otherwise clear it.
@@ -608,9 +610,18 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
           {phase === "pick" &&
             !defaultAgent &&
             recentAgents.length === 0 && (
-              <p className="absolute inset-x-0 top-0 text-xs text-fg-faint px-6 text-center">
-                No agents configured yet. Open the menu to create one.
-              </p>
+              <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-2 px-3 text-center">
+                <p className="text-xs text-fg-faint">
+                  Create an agent to start chatting.
+                </p>
+                <button
+                  type="button"
+                  onClick={onCreateAgent}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-fg transition-colors hover:bg-accent/20"
+                >
+                  <Plus size={14} /> Create an agent
+                </button>
+              </div>
             )}
         </div>
       </div>

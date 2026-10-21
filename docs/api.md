@@ -65,6 +65,12 @@ This response omits `messages` and `has_more`. The default `view=messages`
 preserves the full paged response. Unknown views return HTTP 400.
 Both views use `Cache-Control: no-store` so live state stays current.
 
+### `PATCH /api/v1/threads/[thread_id]/messages/[message_id]`
+
+Set whether a message appears in the chat window without removing it from
+model history. Body: `{ "hidden_from_chat": boolean }`. The message must
+belong to the specified thread.
+
 ### `PATCH /api/v1/threads/[thread_id]`
 
 Rename or rebind the thread to a different agent.

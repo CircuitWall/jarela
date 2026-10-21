@@ -4,7 +4,7 @@ import { api } from "@/api/client";
 import type { ContentPart } from "@/api/types";
 import { useSSE } from "@/hooks/useSSE";
 import { useMessageFilters } from "@/hooks/useMessageFilters";
-import { useAppContext } from "@/contexts/AppContext";
+import { clearFirstRunChatKickoff, useAppContext } from "@/contexts/AppContext";
 import { useTrackLoading, useActivityWhile } from "@/lib/ui/loading";
 import { pushToast } from "@/lib/ui/toasts";
 import { pushErrorToast } from "@/lib/ui/error-report";
@@ -22,6 +22,8 @@ import { useThreadActivity } from "./useThreadActivity";
 import { useUserProfileAndAgent } from "./useUserProfileAndAgent";
 import { composerPlaceholder, finalizeRunFromServer } from "./chat-run-utils";
 import { useChatSubmitHandlers } from "./useChatSubmitHandlers";
+import { useFirstRunChatKickoff } from "./useFirstRunChatKickoff";
+import { isMarkedFirstRunThread, useIsFirstRunThread } from "@/lib/ui/first-run-thread";
 
 interface Props {
   threadId: string | null;
@@ -32,7 +34,8 @@ interface Props {
 }
 
 export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMessageSent }: Props) {
-  const { state } = useAppContext();
+  const { state, dispatch } = useAppContext();
+  const hideInternalOperations = useIsFirstRunThread(threadId);
   const [attachments, setAttachments] = useState<ContentPart[]>([]);
   const [compacting, setCompacting] = useState(false);
   const { userProfile, profileLoading, agentConfig, agentConfigLoading } =
@@ -45,9 +48,9 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
 
   // attach() comes from useSSE which we call later. Bridge via a ref so
   // useThreadData's effect can call it after both hooks render.
-  const attachRef = useRef<((id: string) => Promise<unknown>) | null>(null);
+  const attachRef = useRef<((id: string, quietActivity?: boolean) => Promise<unknown>) | null>(null);
   const stableAttach = useCallback(
-    (id: string) => attachRef.current?.(id) ?? Promise.resolve(undefined),
+    (id: string) => attachRef.current?.(id, isMarkedFirstRunThread(id)) ?? Promise.resolve(undefined),
     [],
   );
   const thread = useThreadData({ threadId, attach: stableAttach });
@@ -141,7 +144,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
 
   // Actually fire a run for one message. Used by direct submit and by the
   // queue's drain after a previous run finishes.
-  const launchRun = useCallback(async (text: string, atts: ContentPart[]) => {
+  const launchRun = useCallback(async (
+    text: string,
+    atts: ContentPart[],
+    options?: { quiet?: boolean; messageMetadata?: Record<string, unknown> },
+  ) => {
     if (!threadId) return;
     const optId = `opt-${makeQueuedId("")}`;
     const optimisticContent = atts.length
@@ -149,20 +156,29 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       : text;
     thread.setMessages((p) => [
       ...p,
-      { id: optId, role: "user", content: optimisticContent, created_at: new Date().toISOString(), status: 'pending' },
+      { id: optId, role: "user", content: optimisticContent, created_at: new Date().toISOString(), status: 'pending', metadata: options?.messageMetadata ?? null },
     ]);
     // ADR-0044 — the toolbar's automation-channel chips double as this
     // turn's channel set: whichever of scheduled_task/watcher/bridge are
     // currently shown also get included in the model's context.
     const activeChannels = (["scheduled_task", "watcher", "bridge"] as const)
       .filter((key) => messageFilters.filters[key]);
+    const quietRun = !!options?.quiet || hideInternalOperations;
     const { accepted } = await sse.start(
       threadId,
       text,
-      { filters: { include_tools: true, include_thinking: true }, ui_experience_mode: state.experienceMode },
+      {
+        filters: {
+          include_tools: !quietRun,
+          include_thinking: !quietRun,
+        },
+        ui_experience_mode: state.experienceMode,
+      },
       atts.length ? atts : undefined,
       activeChannels,
       thread.hotSinceSeqForRun,
+      options?.messageMetadata,
+      quietRun,
     );
     if (!accepted) {
       // Server rejected because another run was in flight (second tab,
@@ -285,6 +301,49 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     pendingAutoSpeakRef,
     agentConfig,
   });
+  const setThreadMessages = thread.setMessages;
+
+  const retryWithHiddenPrevious = useCallback(async (
+    text: string,
+    atts: ContentPart[],
+    messageId?: string,
+  ) => {
+    if (messageId && threadId) {
+      setThreadMessages((current) => current.map((message) => message.id === messageId
+        ? { ...message, metadata: { ...message.metadata, hidden_from_chat: true } }
+        : message));
+      try {
+        await api.threads.setMessageHiddenFromChat(threadId, messageId, true);
+      } catch (error) {
+        pushErrorToast({
+          title: "Could not hide the previous attempt",
+          error,
+          context: { panel: "chat", action: "message.hide_for_retry", agent_id: agentId, thread_id: threadId },
+        });
+      }
+    }
+    handleRetryMessage(text, atts);
+  }, [agentId, handleRetryMessage, setThreadMessages, threadId]);
+
+  useFirstRunChatKickoff({
+    kickoff: state.firstRunChatKickoff,
+    activeTab: state.activeTab,
+    agentId,
+    threadId,
+    sessionLoading: !!sessionLoading,
+    messagesLoading: thread.messagesLoading,
+    messageCount: thread.messages.length,
+    submit: (message, options) => launchRun(message, [], options),
+    onConsumed: () => {
+      clearFirstRunChatKickoff();
+      dispatch({ type: "SET_FIRST_RUN_CHAT_KICKOFF", kickoff: null });
+    },
+    onError: (error) => pushErrorToast({
+      title: "Could not start the setup chat",
+      error,
+      context: { panel: "chat", action: "first_run_onboarding", agent_id: agentId, thread_id: threadId },
+    }),
+  });
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
@@ -324,8 +383,9 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         onSetContextPin={thread.setContextPin}
         streaming={sse.streaming}
         contextWindowTokens={thread.contextWindowTokens}
-        onRetryMessage={handleRetryMessage}
+        onRetryMessage={retryWithHiddenPrevious}
         filters={messageFilters.filters}
+        hideInternalOperations={hideInternalOperations}
         onToggleFilter={messageFilters.toggle}
         onResetFilters={messageFilters.reset}
       />

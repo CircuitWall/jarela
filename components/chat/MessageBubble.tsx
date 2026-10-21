@@ -456,7 +456,7 @@ type Props = {
   // hidden for category-tagged messages (bridge / scheduled_task / watcher)
   // since those originate from automation and re-sending the persisted
   // body would replay it as a regular user prompt.
-  onRetry?: (text: string, attachments: ContentPart[]) => void;
+  onRetry?: (text: string, attachments: ContentPart[], messageId?: string) => void;
 };
 
 const GRADIENTS = [
@@ -1086,11 +1086,12 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
   // / scheduled-task / watcher rows carry their own metadata header and
   // re-sending them as a vanilla user message would be wrong.
   const category = "category" in message ? message.category : null;
+  const retryMessageId = "id" in message ? message.id : undefined;
   const canRetry = isUser && !category && !!onRetry && !streaming;
   const handleRetry = useCallback(() => {
     if (!onRetry) return;
     if (typeof parsed === "string") {
-      onRetry(parsed, []);
+      onRetry(parsed, [], retryMessageId);
       return;
     }
     let text = "";
@@ -1099,8 +1100,8 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
       if (part.type === "text" && !text) text = part.text;
       else atts.push(part);
     }
-    onRetry(text, atts);
-  }, [onRetry, parsed]);
+    onRetry(text, atts, retryMessageId);
+  }, [onRetry, parsed, retryMessageId]);
 
   const [copiedMessage, setCopiedMessage] = useState(false);
   const copyMessage = useCallback(() => {

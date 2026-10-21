@@ -55,6 +55,25 @@ describe("submitRun", () => {
     expect(body).not.toHaveProperty("hot_since");
   });
 
+  it("persists hidden transcript metadata with the run request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(submitRun(
+      "thread-1",
+      "A natural setup kickoff.",
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { hidden_from_chat: true },
+    )).resolves.toEqual({ accepted: true });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { message_metadata?: Record<string, unknown> };
+    expect(body.message_metadata).toEqual({ hidden_from_chat: true });
+  });
+
   it("uploads inline images before submitting oversized run payloads", async () => {
     const refA: ContentPart = { type: "image_ref", media_type: "image/png", name: "a.png", sha256: "a" };
     const refB: ContentPart = { type: "image_ref", media_type: "image/jpeg", name: "b.jpg", sha256: "b" };

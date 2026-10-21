@@ -20,6 +20,7 @@ import { buildConversationSummaryMessages, type SummaryTopicSegment } from "@/li
 import { buildTopicGroupingMessages, buildTopicRecapMessages } from "@/lib/agents/compaction-pipeline";
 import type { ProviderMessage } from "@/lib/providers/types";
 import { buildFabricationNudge, buildCitationRetryNudge } from "./retry-prompts";
+import { buildFirstRunAgentInstructions, buildFirstRunKickoff } from "./first-run-onboarding";
 
 export interface StaticPrompt {
   id: string;
@@ -69,6 +70,25 @@ export function listStaticPrompts(): StaticPrompt[] {
       source: "lib/agents/retry-prompts.ts",
       purpose: "Repairs unsupported citations while retaining the complete substantive answer.",
       text: buildCitationRetryNudge([{ text: "Example claim", reason: "No verified source" }]),
+    },
+    {
+      id: "agent.first-run-onboarding",
+      source: "lib/agents/first-run-onboarding.ts",
+      purpose: "Guides a new user through a short, consent-based assistant-personalization conversation.",
+      text: buildFirstRunKickoff({
+        userName: "Alex Example",
+        about: "I coordinate a small research team.",
+        starterGoal: "Help me turn meeting notes into clear next steps.",
+        assistantName: "Nova",
+        modelProvider: "OpenAI",
+        modelName: "gpt-example",
+      }),
+    },
+    {
+      id: "agent.first-run-instructions",
+      source: "lib/agents/first-run-onboarding.ts",
+      purpose: "Privately guides the starter agent through user-approved personalization without exposing setup operations in chat.",
+      text: buildFirstRunAgentInstructions("Help me plan weekly check-ins."),
     },
     {
       id: "agent.system-signal-wakeup",

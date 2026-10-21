@@ -6,13 +6,14 @@ import type { Message } from "@/api/types";
 
 const renderCounts = vi.hoisted(() => new Map<string, number>());
 vi.mock("./MessageBubble", () => ({
-  MessageBubble: ({ message, attachedActivity, showAvatar }: {
+  MessageBubble: ({ message, attachedActivity, showAvatar, showToolEvents }: {
     message: Pick<Message, "id" | "content">;
     attachedActivity?: { source_kind: string };
     showAvatar?: boolean;
+    showToolEvents?: boolean;
   }) => {
     renderCounts.set(message.id, (renderCounts.get(message.id) ?? 0) + 1);
-    return <div data-activity-kind={attachedActivity?.source_kind} data-show-avatar={String(showAvatar)}>{message.content}</div>;
+    return <div data-activity-kind={attachedActivity?.source_kind} data-show-avatar={String(showAvatar)} data-show-tool-events={String(showToolEvents)}>{message.content}</div>;
   },
 }));
 
@@ -67,6 +68,49 @@ function installPointerCapture(button: HTMLButtonElement) {
 }
 
 describe("MessageList conversation focus", () => {
+  it("shows only the latest retry message and treats hidden-only history as empty", () => {
+    const previousAttempt = mkMessage("retry-old", "user", "Please draft a plan.", "2026-10-21T08:00:00.000Z");
+    previousAttempt.metadata = { hidden_from_chat: true };
+    const latestAttempt = mkMessage("retry-new", "user", "Please draft a plan.", "2026-10-21T08:01:00.000Z");
+    const { rerender } = render(<MessageList messages={[previousAttempt, latestAttempt]} />);
+
+    expect(screen.getAllByText("Please draft a plan.")).toHaveLength(1);
+
+    rerender(<MessageList messages={[previousAttempt]} />);
+    expect(screen.queryByText("Please draft a plan.")).toBeNull();
+    expect(screen.queryByText(/hidden by filters/)).toBeNull();
+    expect(screen.getByText("Send a message to begin")).toBeTruthy();
+  });
+
+  it("does not show the empty-chat prompt while a hidden kickoff is streaming", () => {
+    const hiddenKickoff = mkMessage("kickoff-hidden", "user", "private kickoff", "2026-10-21T08:00:00.000Z");
+    hiddenKickoff.metadata = { hidden_from_chat: true };
+    render(<MessageList messages={[hiddenKickoff]} streaming hideInternalOperations />);
+
+    expect(screen.queryByText("Send a message to begin")).toBeNull();
+  });
+
+  it("hides onboarding operation details only for the first-run thread", () => {
+    const assistantMessage = mkMessage("setup-result", "assistant", "Your assistant is ready. What does a typical day look like?", "2026-10-21T08:00:00.000Z");
+    assistantMessage.tool_events = [{ id: "setup-tool", phase: "call", payload: { name: "update_agent_instruction" } }];
+    const { container, rerender } = render(
+      <MessageList
+        threadId="setup-thread"
+        messages={[assistantMessage]}
+        hideInternalOperations
+        thinkingContent="internal reasoning"
+      />,
+    );
+
+    const setupRow = container.querySelector('[data-message-id="setup-result"] [data-show-tool-events]');
+    expect(setupRow?.getAttribute("data-show-tool-events")).toBe("false");
+    expect(screen.queryByTestId("thinking-dots")).toBeNull();
+
+    rerender(<MessageList threadId="regular-thread" messages={[assistantMessage]} />);
+    const regularRow = container.querySelector('[data-message-id="setup-result"] [data-show-tool-events]');
+    expect(regularRow?.getAttribute("data-show-tool-events")).toBe("true");
+  });
+
   it("does not re-render historical rows as streaming tokens or thinking arrive", () => {
     renderCounts.clear();
     const messages = [

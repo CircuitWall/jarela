@@ -29,9 +29,11 @@ type UseSSECommands = {
     attachments?: ContentPart[],
     channels?: string[],
     hotSinceSeq?: number | null,
+    messageMetadata?: Record<string, unknown>,
+    quietActivity?: boolean,
   ) => Promise<{ accepted: boolean }>;
   stop: () => void;
-  attach: (threadId: string) => Promise<void>;
+  attach: (threadId: string, quietActivity?: boolean) => Promise<void>;
   /** True from the moment start()/attach() opens a stream until it settles. */
   isLive: () => boolean;
   /** Epoch ms when the last stream settled (0 if none yet). */
@@ -245,6 +247,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
   const isLive = useCallback(() => liveRef.current.busy, []);
   const lastSettledAt = useCallback(() => liveRef.current.settledAt, []);
   const threadIdRef = useRef<string | null>(null);
+  const quietActivityRef = useRef(false);
   // ADR-0080 — id of the steering message currently armed for a possible
   // continuation break, or null. Set eagerly (before the steer PATCH
   // resolves) so a `done` that races in during that round trip still gets
@@ -257,6 +260,12 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     setStatus: setActivityStatus,
     reportToolActivity,
   } = useRunActivity();
+  const setVisibleActivityStatus = useCallback((label: string) => {
+    if (!quietActivityRef.current) setActivityStatus(label);
+  }, [setActivityStatus]);
+  const reportVisibleToolActivity = useCallback((events: ToolEvent[]) => {
+    if (!quietActivityRef.current) reportToolActivity(events);
+  }, [reportToolActivity]);
   const {
     streamingContent,
     thinkingContent,
@@ -295,31 +304,31 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       }
       if (event.type === "text_delta") {
         appendText(event.delta);
-        setActivityStatus("Responding…");
+        setVisibleActivityStatus("Responding…");
       } else if (event.type === "reset_text") {
         resetStreamingText();
       } else if (event.type === "status") {
         const label = typeof event.label === "string" && event.label.trim().length > 0
           ? event.label
           : "Thinking…";
-        setActivityStatus(label);
+        setVisibleActivityStatus(label);
       } else if (event.type === "thinking_delta") {
         appendThinking(event.delta);
-        if (activeToolNames(toolEventsRef.current).length === 0) setActivityStatus("Thinking…");
+        if (activeToolNames(toolEventsRef.current).length === 0) setVisibleActivityStatus("Thinking…");
       } else if (event.type === "tool_call") {
         // Flush any buffered text before the tool event so the order on
         // screen matches the order on the wire.
         flushPending();
         setToolEvents((prev) => {
           const next = [...prev, { id: event.id, phase: "call" as const, name: event.name, payload: event.arguments }];
-          reportToolActivity(next);
+          reportVisibleToolActivity(next);
           return next;
         });
       } else if (event.type === "tool_result") {
         flushPending();
         setToolEvents((prev) => {
           const next = [...prev, { id: event.id, phase: "result" as const, name: event.name, payload: event.result }];
-          reportToolActivity(next);
+          reportVisibleToolActivity(next);
           return next;
         });
       } else if (event.type === "tool_progress") {
@@ -382,7 +391,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       }
     }
     return false;
-  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, reportToolActivity, resetStreamingText, setActivityStatus, splitStreamingContent]);
+  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, reportVisibleToolActivity, resetStreamingText, setVisibleActivityStatus, splitStreamingContent]);
 
   const start = useCallback(async (
     threadId: string,
@@ -391,6 +400,8 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     attachments?: ContentPart[],
     channels?: string[],
     hotSinceSeq?: number | null,
+    messageMetadata?: Record<string, unknown>,
+    quietActivity = false,
   ): Promise<{ accepted: boolean }> => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -406,13 +417,15 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     // thread this hook instance was last attached to.
     steeredContinuationIdRef.current = null;
     setSteeredSegments([]);
-    openActivity("Sending…");
+    quietActivityRef.current = quietActivity;
+    if (quietActivity) closeActivity();
+    else openActivity("Sending…");
 
     try {
       // Command: register the run server-side. 202 = we own this turn; 409
       // = another tab/device owns it (caller re-queues, we still subscribe
       // so the user sees the in-flight turn's deltas render).
-      const submit = await submitRun(threadId, message, ctrl.signal, options, attachments, channels, hotSinceSeq);
+      const submit = await submitRun(threadId, message, ctrl.signal, options, attachments, channels, hotSinceSeq, messageMetadata);
 
       // Query: subscribe to the run's chunk stream. Always opens the GET,
       // regardless of whether we got 202 or 409 — if 409 a run is already
@@ -478,7 +491,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
   // gates / Stop button shows / queue drain blocks immediately on session
   // open — otherwise there's a race window where the UI thinks no run is
   // active, accepts a new POST, and the server rejects it with 409.
-  const attach = useCallback(async (threadId: string) => {
+  const attach = useCallback(async (threadId: string, quietActivity = false) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -491,7 +504,9 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     setAuthError(null);
     steeredContinuationIdRef.current = null;
     setSteeredSegments([]);
-    openActivity("Reconnecting…");
+    quietActivityRef.current = quietActivity;
+    if (quietActivity) closeActivity();
+    else openActivity("Reconnecting…");
 
     try {
       let continuation = false;
