@@ -210,8 +210,7 @@ test("Credentials list filter chip reflects the active preset", async ({ page, r
   await expect(page.getByText(/Filters the Credentials list/i)).toBeVisible();
 });
 
-test("memory panel renders structured values and masks secret-shaped keys", async ({ page, request }) => {
-  // Seed two memory entries: one plain note, one credential-shaped blob.
+test("memory previews show summaries, mask secrets, and open the full editor", async ({ page, request }) => {
   const seedNote = await request.put("/api/v1/memory/e2e-demo/note", {
     data: { value: "remember the milk" },
   });
@@ -220,6 +219,16 @@ test("memory panel renders structured values and masks secret-shaped keys", asyn
     data: { value: { url: "https://example.com", api_token: "ATATT-supersecret-xyz", email: "me@example.com" } },
   });
   expect(seedCred.ok()).toBeTruthy();
+  const structured = {
+    version: 2,
+    subject: "Favorite editor",
+    summary: "Prefers using VS Code",
+    content: "The user prefers editing code in VS Code.",
+  };
+  const seedSummary = await request.put("/api/v1/memory/e2e-demo/editor", {
+    data: { value: structured },
+  });
+  expect(seedSummary.ok()).toBeTruthy();
 
   await openMenu(page);
   await page.getByRole("button", { name: "Knowledge", exact: true }).click();
@@ -232,22 +241,35 @@ test("memory panel renders structured values and masks secret-shaped keys", asyn
   // Plain string renders without JSON quoting.
   await expect(page.getByText("remember the milk", { exact: true })).toBeVisible();
 
-  // Object renders as key chips with the secret masked, and the literal
-  // token must NEVER appear anywhere in the rendered DOM.
+  // Secret-shaped fields stay masked in the preview.
   await expect(page.getByText("url:")).toBeVisible();
   await expect(page.getByText("api_token:")).toBeVisible();
   await expect(page.getByText("********").first()).toBeVisible();
   await expect(page.getByText("ATATT-supersecret-xyz")).toHaveCount(0);
 
-  // Expand the connection row's chevron → pretty-printed JSON, still masked.
-  const expandBtn = page.locator('button[aria-expanded="false"]', { hasText: "api_token:" }).first();
-  await expandBtn.click();
-  const block = page.locator("pre").filter({ hasText: '"api_token"' }).first();
-  await expect(block).toBeVisible();
-  await expect(block).toContainText("********");
-  await expect(block).not.toContainText("supersecret");
+  const summary = page.getByText(structured.summary, { exact: true });
+  await expect(summary).toBeVisible();
+  await expect(page.getByText("version:", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("subject:", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(structured.content, { exact: true })).toHaveCount(0);
+
+  await summary.click();
+  const dialog = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: "Edit memory", exact: true }) });
+  await expect(dialog).toBeVisible();
+  const editor = dialog.getByRole("textbox", { name: "Value (JSON)" });
+  await expect(editor).toHaveValue(JSON.stringify(structured, null, 2));
+  const dialogBounds = await dialog.boundingBox();
+  const editorBounds = await editor.boundingBox();
+  expect(dialogBounds).not.toBeNull();
+  expect(editorBounds).not.toBeNull();
+  expect(dialogBounds!.width).toBeGreaterThanOrEqual(640);
+  expect(editorBounds!.height).toBeGreaterThanOrEqual(await page.evaluate(() => innerHeight * 0.5));
+  expect(await editor.evaluate((element) => getComputedStyle(element).resize)).toBe("vertical");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toBeHidden();
 
   // Cleanup so re-runs are deterministic.
   await request.delete("/api/v1/memory/e2e-demo/note");
   await request.delete("/api/v1/memory/e2e-demo/connection");
+  await request.delete("/api/v1/memory/e2e-demo/editor");
 });
