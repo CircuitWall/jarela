@@ -1,10 +1,10 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-  Redeploy the Jarela OAuth proxy function from ./proxy source.
+  Redeploy the Jarela OAuth proxy function from this directory's source.
 
 .DESCRIPTION
-  Use this after editing proxy/index.js or proxy/package.json. Re-zips source,
+  Use this after editing index.js, router.js, handlers, or package.json. Re-zips source,
   uploads, buildpack builds a new container, and shifts traffic to the new
   revision. Idempotent.
 
