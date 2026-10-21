@@ -12,25 +12,25 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("shows launch progress until the server responds", async () => {
+it("does not block startup while the health check is pending", async () => {
   let respond!: (response: Response) => void;
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { respond = resolve; })));
   const { container } = render(<ServerStatus />);
-  expect(screen.getByRole("status").textContent).toContain("Launching Jarela");
+  expect(container.innerHTML).toBe("");
   expect(screen.queryByRole("button", { name: "Reload now" })).toBeNull();
   await act(async () => { respond(new Response(null, { status: 200 })); });
   expect(container.innerHTML).toBe("");
 });
 
-it("keeps launch progress during retries, then reports a persistent failure", async () => {
+it("waits through transient failures, then reports a persistent outage", async () => {
   vi.useFakeTimers();
   const fetch = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
   vi.stubGlobal("fetch", fetch);
   render(<ServerStatus />);
   await act(async () => {});
-  expect(screen.getByRole("status").textContent).toContain("Launching Jarela");
+  expect(screen.queryByRole("status")).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
-  expect(screen.getByRole("status").textContent).toContain("Launching Jarela");
+  expect(screen.queryByRole("status")).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
   expect(fetch).toHaveBeenCalledTimes(3);
   expect(screen.getByRole("status").textContent).toContain("Server unavailable");

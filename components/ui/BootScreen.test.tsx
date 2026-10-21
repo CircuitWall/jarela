@@ -39,6 +39,19 @@ it("offers a direct path to create an agent when none are configured", () => {
   expect(onCreateAgent).toHaveBeenCalledOnce();
 });
 
+it("shows all startup steps with a single spinner while agents load", () => {
+  const { container } = render(
+    <BootScreen agents={[]} agentsLoaded={false} activeAgentId={null} onPickAgent={vi.fn()} onCreateAgent={vi.fn()} />,
+  );
+
+  expect(screen.getByRole("list", { name: "Startup steps" }).textContent).toContain("loading agents");
+  expect(screen.getByText("loading your profile")).toBeTruthy();
+  expect(screen.getByText("loading agent config")).toBeTruthy();
+  expect(screen.getByText("preparing conversation")).toBeTruthy();
+  expect(screen.getByText("loading recent messages")).toBeTruthy();
+  expect(container.querySelectorAll(".animate-spin")).toHaveLength(1);
+});
+
 it("does not restart boot prefetch after dismissal when the agent changes", async () => {
   vi.useFakeTimers();
   reads.profile.mockResolvedValue({});
