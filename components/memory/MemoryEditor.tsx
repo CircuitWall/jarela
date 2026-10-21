@@ -39,7 +39,7 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
       open
       onClose={requestClose}
       title={isEdit ? "Edit memory" : "New memory"}
-      size="sm"
+      size="xl"
       align="center"
       footer={<DialogFooter onCancel={requestClose} onDiscard={onClose} dirty={dirty} canSave={!isEdit || dirty} onSave={handleSave} saving={saving} />}
     >
@@ -57,7 +57,7 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
       <label className="block">
         <span className="text-xs text-fg-subtle mb-1 block">Value (JSON)</span>
         <TextArea
-          className="font-mono h-28 resize-none"
+          className="font-mono h-[50vh] min-h-64 resize-y"
           value={valueStr}
           onChange={(e) => setValueStr(e.target.value)}
           placeholder='{"key": "value"}'
