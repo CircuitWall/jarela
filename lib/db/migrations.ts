@@ -1198,6 +1198,16 @@ function seedAgentConfigs(db: DatabaseSync): void {
     return;
   }
 
+  const historicalAgentIds = new Set(
+    (db.prepare("SELECT DISTINCT agent_id FROM threads").all() as Array<{ agent_id: string }>)
+      .map((row) => row.agent_id),
+  );
+  const profilesToRestore = LEGACY_AGENT_PROFILES.filter((profile) => historicalAgentIds.has(profile.id));
+  if (profilesToRestore.length === 0) {
+    reanchorOrphanThreads(db);
+    return;
+  }
+
   const t = now();
   const insert = db.prepare(
     `INSERT OR IGNORE INTO agent_configs (
@@ -1209,7 +1219,7 @@ function seedAgentConfigs(db: DatabaseSync): void {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  for (const p of BASE_AGENT_PROFILES) {
+  for (const p of profilesToRestore) {
     const preset = MBTI_PRESETS[p.mbti];
     insert.run(
       p.id,
@@ -1369,15 +1379,8 @@ interface BaseAgentProfile {
   never_reply?: boolean;
 }
 
-// Starter profiles shipped on first run. The user can edit, disable, or
-// delete any of them Ã¢â‚¬â€ once they have any agents we stop re-seeding (see
-// the guard at the top of seedAgentConfigs), so user choices are sticky.
-//
-// Each profile pre-binds a small, focused tool set so the agent is useful
-// out of the box without exposing every capability by default. Tools that
-// require integrations (gmail/outlook/calendar) are wired up but will
-// surface a setup hint at call time if the integration is not configured.
-const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
+// Retained only to resolve historical threads when their agent row is missing.
+const LEGACY_AGENT_PROFILES: BaseAgentProfile[] = [
   {
     id: "assistant",
     name: "Assistant",

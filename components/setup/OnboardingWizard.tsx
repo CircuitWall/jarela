@@ -11,8 +11,12 @@ import type {
   ModelConfig,
   UserProfile,
 } from "@/api/types";
-import { useAppContext } from "@/contexts/AppContext";
+import { persistFirstRunChatKickoff, useAppContext } from "@/contexts/AppContext";
 import { getAppName } from "@/lib/env/app-config";
+import { isBasicToolCategory } from "@/lib/tools/runtime/categories";
+import { PROVIDER_TO_INTEGRATION } from "@/lib/providers/provider-integration-map";
+import { buildFirstRunAgentInstructions, buildFirstRunKickoff } from "@/lib/agents/first-run-onboarding";
+import { rememberFirstRunThread } from "@/lib/ui/first-run-thread";
 import { Logo } from "@/components/ui/Logo";
 import { StepAgent } from "./wizard/StepAgent";
 import { StepCredentials } from "./wizard/StepCredentials";
@@ -24,17 +28,18 @@ import { errorMessage } from "@/lib/utils/error";
 
 interface Props {
   context: "setup" | "profile";
+  onReady?: () => void;
 }
 
 const STEPS: StepInfo[] = [
-  { id: "profile", title: "About you", short: "Profile" },
-  { id: "credentials", title: "Credentials", short: "Credentials" },
-  { id: "model", title: "Model", short: "Model" },
-  { id: "agent", title: "Agent", short: "Agent" },
-  { id: "review", title: "Review", short: "Review" },
+  { id: "profile", title: "Tell me who you are", short: "You" },
+  { id: "credentials", title: "Let's connect a provider", short: "Provider" },
+  { id: "model", title: "Let's choose a model", short: "Model" },
+  { id: "agent", title: "Give me an identity", short: "Identity" },
+  { id: "review", title: "Here's what we're starting with", short: "Review" },
 ];
 
-export function OnboardingWizard({ context }: Props) {
+export function OnboardingWizard({ context, onReady }: Props) {
   const { state, dispatch } = useAppContext();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -42,36 +47,64 @@ export function OnboardingWizard({ context }: Props) {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
   const [integrationDefs, setIntegrationDefs] = useState<IntegrationDefinition[]>([]);
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
+  const [assistantName, setAssistantName] = useState("");
+  const [assistantIcon, setAssistantIcon] = useState<string | null>(null);
+  const [starterGoal, setStarterGoal] = useState("");
+  const [createdAgent, setCreatedAgent] = useState<AgentConfig | null>(null);
   const [preset, setPreset] =
     useState<NonNullable<UserProfile["preset"]>>("home");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const refreshModels = useCallback(async () => {
-    const rows = await api.models.list({ force: true }).catch(() => [] as ModelConfig[]);
-    setModels(rows);
+    try {
+      setModels(await api.models.list({ force: true }));
+    } catch {
+      setLoadError(true);
+    }
   }, []);
   const refreshAgents = useCallback(async () => {
-    const rows = await api.agents.list({ force: true }).catch(() => [] as AgentConfig[]);
-    setAgents(rows);
+    try {
+      setAgents(await api.agents.list({ force: true }));
+    } catch {
+      setLoadError(true);
+    }
   }, []);
   const refreshIntegrations = useCallback(async () => {
-    const res = await api.integrations.list().catch(() => ({
-      definitions: [] as IntegrationDefinition[],
-      statuses: [] as IntegrationStatus[],
-    }));
-    setIntegrationDefs(res.definitions);
-    setIntegrations(res.statuses);
+    try {
+      const res = await api.integrations.list();
+      setIntegrationDefs(res.definitions);
+      setIntegrations(res.statuses);
+    } catch {
+      setLoadError(true);
+    }
   }, []);
 
   const handleModelsChanged = useCallback(() => {
     void refreshModels();
     void refreshIntegrations();
   }, [refreshIntegrations, refreshModels]);
+  const handleProviderConfigured = useCallback((integrationName: string) => {
+    setIntegrations((current) => {
+      const existing = current.find((status) => status.name === integrationName);
+      const configured = {
+        name: integrationName,
+        configured: true,
+        values: existing?.values ?? {},
+        updated_at: existing?.updated_at ?? null,
+        source: existing?.source,
+        rc_synced_at: existing?.rc_synced_at ?? null,
+      };
+      return [...current.filter((status) => status.name !== integrationName), configured];
+    });
+    void refreshIntegrations();
+  }, [refreshIntegrations]);
   const handleAgentsChanged = useCallback(() => {
     void refreshAgents();
   }, [refreshAgents]);
@@ -81,26 +114,29 @@ export function OnboardingWizard({ context }: Props) {
     async function load() {
       setLoading(true);
       try {
-        const [profileData, modelRows, agentRows, integrationRows] =
-          await Promise.all([
-            api.profile.get().catch(() => null),
-            api.models.list().catch(() => []),
-            api.agents.list().catch(() => []),
-            api.integrations
-              .list()
-              .catch(() => ({ definitions: [] as IntegrationDefinition[], statuses: [] as IntegrationStatus[] })),
-          ]);
+        const results = await Promise.allSettled([
+          api.profile.get(),
+          api.models.list(),
+          api.agents.list(),
+          api.integrations.list(),
+        ]);
         if (cancelled) return;
-        setModels(modelRows);
-        setAgents(agentRows);
-        setIntegrationDefs(integrationRows.definitions);
-        setIntegrations(integrationRows.statuses);
-        setName(profileData?.name ?? "");
-        setAbout(profileData?.about ?? "");
-        setPreset(
-          (profileData?.preset as NonNullable<UserProfile["preset"]> | null) ??
-            "home",
-        );
+        const [profileResult, modelResult, agentResult, integrationResult] = results;
+        if (profileResult.status === "fulfilled") {
+          setName(profileResult.value?.name ?? "");
+          setAbout(profileResult.value?.about ?? "");
+          setPreset(
+            (profileResult.value?.preset as NonNullable<UserProfile["preset"]> | null) ??
+              "home",
+          );
+        }
+        if (modelResult.status === "fulfilled") setModels(modelResult.value);
+        if (agentResult.status === "fulfilled") setAgents(agentResult.value);
+        if (integrationResult.status === "fulfilled") {
+          setIntegrationDefs(integrationResult.value.definitions);
+          setIntegrations(integrationResult.value.statuses);
+        }
+        setLoadError(results.some((result) => result.status === "rejected"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -109,25 +145,77 @@ export function OnboardingWizard({ context }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
+
+  useEffect(() => {
+    if (!loading) onReady?.();
+  }, [loading, onReady]);
 
   const hasName = name.trim().length > 0;
-  const hasModel = models.length > 0;
-  const hasAgent = agents.length > 0;
-  const canSave = hasName && hasModel && hasAgent;
+  const hasModel = models.some((model) => model.enabled !== false);
+  const hasAgent = agents.length > 0 || createdAgent !== null;
+  const canSave = hasName && hasModel && (hasAgent || (context === "setup" && assistantName.trim().length > 0));
+  const configuredModelProviders = [...new Set(
+    Object.entries(PROVIDER_TO_INTEGRATION)
+      .filter(([, integration]) => integrations.some((status) => status.name === integration && status.configured))
+      .map(([provider]) => provider),
+  )];
+  const defaultModelProvider = configuredModelProviders.length === 1 ? configuredModelProviders[0] : undefined;
 
   async function handleSave() {
     if (!canSave) return;
     setSaving(true);
     setSaveError(null);
     try {
+      let targetAgent = createdAgent ?? agents.find((a) => a.is_default) ?? agents[0] ?? null;
+      if (context === "setup") {
+        if (!targetAgent) {
+          const model = models.find((row) => row.is_default) ?? models[0];
+          if (!model) throw new Error("Add a model before finishing setup.");
+          const availableTools = await api.tools.list({ includeDisabled: true }).catch(() => []);
+          const created = await api.agents.create({
+            name: assistantName.trim(),
+            icon: assistantIcon,
+            identity: "A friendly, adaptable personal assistant.",
+            instructions: buildFirstRunAgentInstructions(starterGoal.trim()),
+            tools: availableTools
+              .filter((tool) => tool.status !== "disabled" && tool.status !== "unavailable" && isBasicToolCategory(tool.category))
+              .map((tool) => tool.name),
+            model_config_name: model.name,
+            is_default: true,
+          });
+          targetAgent = created;
+          setCreatedAgent(created);
+          setAgents((current) => current.some((row) => row.id === created.id) ? current : [...current, created]);
+        }
+      }
       await api.profile.update({
         name: name.trim(),
         about: about.trim(),
         preset,
       });
-      const targetAgent = agents.find((a) => a.is_default) ?? agents[0] ?? null;
       if (context === "setup") {
+        if (!targetAgent) throw new Error("Create your assistant before finishing setup.");
+        const firstRunThread = await api.threads.create(targetAgent.id, "Getting to know you");
+        rememberFirstRunThread(firstRunThread.thread_id);
+        const selectedModel = models.find((model) => model.name === targetAgent.model_config_name)
+          ?? models.find((model) => model.is_default)
+          ?? models[0];
+        dispatch({ type: "SELECT_THREAD", threadId: firstRunThread.thread_id, agentId: targetAgent.id });
+        const kickoff = {
+          id: `${targetAgent.id}:${Date.now()}`,
+          agentId: targetAgent.id,
+          message: buildFirstRunKickoff({
+            userName: name.trim(),
+            about: about.trim(),
+            starterGoal: starterGoal.trim(),
+            assistantName: targetAgent.name,
+            modelProvider: selectedModel?.provider ?? "your chosen provider",
+            modelName: selectedModel?.model_id ?? "your selected model",
+          }),
+        };
+        persistFirstRunChatKickoff(kickoff);
+        dispatch({ type: "SET_FIRST_RUN_CHAT_KICKOFF", kickoff });
         router.push("/");
         return;
       }
@@ -146,7 +234,7 @@ export function OnboardingWizard({ context }: Props) {
     if (step === 0) return hasName;
     if (step === 1) return true;
     if (step === 2) return hasModel;
-    if (step === 3) return hasAgent;
+    if (step === 3) return context === "setup" ? assistantName.trim().length > 0 : hasAgent;
     return canSave;
   })();
   const isLast = step === STEPS.length - 1;
@@ -157,7 +245,7 @@ export function OnboardingWizard({ context }: Props) {
         className={`flex items-center justify-center ${fullScreen ? "min-h-screen" : "h-full"} bg-surface text-fg`}
       >
         <div className="inline-flex items-center gap-2 text-sm text-fg-faint">
-          <Loader2 size={16} className="animate-spin" /> Loading setup
+          <Loader2 size={16} className="animate-spin" /> Getting your setup ready
         </div>
       </div>
     );
@@ -174,13 +262,13 @@ export function OnboardingWizard({ context }: Props) {
             <div className="min-w-0 flex-1">
               <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-fg-faint">
                 {fullScreen
-                  ? "First launch setup"
+                  ? "Let's get started"
                   : state.experienceMode === "essential"
-                    ? "Guided setup"
+                    ? "Let's make this yours"
                     : "Profile"}
               </div>
               <div className="truncate text-sm font-medium">
-                {fullScreen ? `Set up ${getAppName()}` : "Set up your assistant"}
+                {fullScreen ? `Let's set up ${getAppName()}` : "Let's make your assistant yours"}
               </div>
             </div>
             <div className="text-[11px] text-fg-faint">
@@ -196,6 +284,20 @@ export function OnboardingWizard({ context }: Props) {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-8 sm:px-6 sm:py-10">
+        {loadError && (
+          <div className="mx-auto mb-6 flex w-full max-w-2xl items-center justify-between gap-3 rounded-xl border border-rose-500/30 bg-rose-500/5 px-3 py-2.5 text-xs">
+            <p role="alert" className="text-rose-700 dark:text-rose-300">
+              I couldn&apos;t load a few setup details. Check your connection and try again.
+            </p>
+            <button
+              type="button"
+              onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+              className="shrink-0 rounded-lg border border-border px-3 py-1.5 font-medium text-fg hover:bg-surface-3"
+            >
+              Try again
+            </button>
+          </div>
+        )}
         {step === 0 && (
           <StepProfile
             name={name}
@@ -211,16 +313,33 @@ export function OnboardingWizard({ context }: Props) {
             definitions={integrationDefs}
             integrations={integrations}
             onChanged={handleModelsChanged}
+            onConfigured={handleProviderConfigured}
+            readOnly={context === "profile"}
+            firstRun={context === "setup"}
           />
         )}
         {step === 2 && (
-          <StepModel models={models} onChanged={handleModelsChanged} />
+          <StepModel
+            models={models}
+            onChanged={handleModelsChanged}
+            readOnly={context === "profile"}
+            defaultProvider={context === "setup" ? defaultModelProvider : undefined}
+          />
         )}
         {step === 3 && (
           <StepAgent
             agents={agents}
             models={models}
             onChanged={handleAgentsChanged}
+            readOnly={context === "profile"}
+            starter={context === "setup" ? {
+              name: assistantName,
+              onNameChange: setAssistantName,
+              icon: assistantIcon,
+              onIconChange: setAssistantIcon,
+              goal: starterGoal,
+              onGoalChange: setStarterGoal,
+            } : undefined}
           />
         )}
         {step === 4 && (
@@ -231,6 +350,11 @@ export function OnboardingWizard({ context }: Props) {
             models={models}
             agents={agents}
             integrations={integrations}
+            readOnlySettings={context === "profile"}
+            starterAgent={context === "setup" && !createdAgent && agents.length === 0 ? {
+              name: assistantName.trim(),
+              modelConfigName: models.find((model) => model.is_default)?.name ?? models[0]?.name ?? "",
+            } : undefined}
           />
         )}
       </div>
@@ -266,7 +390,7 @@ export function OnboardingWizard({ context }: Props) {
               ) : (
                 <CheckCircle2 size={14} />
               )}
-              {context === "setup" ? "Finish setup" : "Save and open chat"}
+              {context === "setup" ? "Start our first chat" : "Save and open chat"}
             </button>
           ) : (
             <button
@@ -275,7 +399,7 @@ export function OnboardingWizard({ context }: Props) {
               disabled={!canAdvance}
               className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Next <ArrowRight size={14} />
+              Continue <ArrowRight size={14} />
             </button>
           )}
         </div>

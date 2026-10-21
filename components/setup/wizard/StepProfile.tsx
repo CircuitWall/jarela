@@ -18,12 +18,12 @@ export function StepProfile({ name, onNameChange, about, onAboutChange, preset, 
   return (
     <StepShell
       icon={<UserRound size={18} />}
-      eyebrow="Step 1 · About you"
-      title="Tell us who the assistant is helping"
-      description="This shapes the tone, the panels you see, and how the assistant introduces itself."
+      eyebrow="Step 1 · You"
+      title="Tell me who you are"
+      description="A little about you helps me show up in ways that work for you. Share as much or as little as you like."
     >
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-fg-subtle">Your name</span>
+        <span className="mb-1 block text-xs font-medium text-fg-subtle">What should I call you?</span>
         <input
           className="w-full rounded-xl border border-border bg-surface-3 px-3 py-2.5 text-sm focus:border-accent focus:outline-none"
           value={name}
@@ -34,18 +34,18 @@ export function StepProfile({ name, onNameChange, about, onAboutChange, preset, 
       </label>
 
       <label className="block">
-        <span className="mb-1 block text-xs font-medium text-fg-subtle">About you (optional)</span>
+        <span className="mb-1 block text-xs font-medium text-fg-subtle">A little about you <span className="font-normal text-fg-faint">Optional</span></span>
         <MarkdownTextarea
           className="min-h-[7rem] w-full resize-y rounded-xl border border-border bg-surface-3 px-3 py-2.5 text-sm"
           value={about}
           onChange={onAboutChange}
           rows={5}
-          placeholder="What should your assistant know about how you work and what you care about?"
+          placeholder="How do you like to work? What matters to you, or what should I keep in mind?"
         />
       </label>
 
       <div>
-        <span className="mb-2 block text-xs font-medium text-fg-subtle">What kind of setup do you want?</span>
+        <span className="mb-2 block text-xs font-medium text-fg-subtle">What would you like us to focus on?</span>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {PROFILE_PRESETS.map((option) => (
             <button

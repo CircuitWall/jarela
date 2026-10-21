@@ -138,6 +138,7 @@ describe("prompt registry coverage", () => {
       "lib/agents/harness/presets.ts",
       "lib/lifecycle/system-signals.ts",
       "lib/agents/retry-prompts.ts",
+      "lib/agents/first-run-onboarding.ts",
     ];
     for (const source of declaring) {
       expect(registered, `${source} declares a prompt but is not in prompt-registry.ts`).toContain(source);
@@ -168,6 +169,20 @@ describe("prompt registry coverage", () => {
       expect(prompt).toContain("Do not return only a correction or a tool confirmation");
       expect(prompt).not.toContain("Do NOT restate");
     }
+  });
+
+  it("keeps first-run onboarding sequenced and consent-based", () => {
+    const kickoff = staticPrompts.find((entry) => entry.id === "agent.first-run-onboarding")?.text ?? "";
+    const instructions = staticPrompts.find((entry) => entry.id === "agent.first-run-instructions")?.text ?? "";
+    expect(kickoff).toContain("I named you Nova.");
+    expect(kickoff).toContain("brief, natural summary of what is ready for us");
+    expect(kickoff).toContain("ask me one thoughtful question");
+    expect(kickoff).toContain("My first goal is: Help me turn meeting notes into clear next steps.");
+    expect(kickoff).not.toContain("update_agent_instruction");
+    expect(kickoff).not.toContain("tool");
+    expect(instructions).toContain("Never change saved instructions without my explicit approval.");
+    expect(instructions).toContain("use update_agent_instruction to save the agreed draft");
+    expect(instructions).toContain("Keep internal setup actions and tool details out of your replies.");
   });
 
   it("keeps prompt ids unique", () => {

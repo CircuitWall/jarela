@@ -310,6 +310,7 @@ export function AppShell() {
           dispatch({ type: "SET_AGENT", agentId: id });
           dispatch({ type: "SET_TAB", tab: "chat" });
         }}
+        onCreateAgent={() => dispatch({ type: "SET_TAB", tab: "agents" })}
         suppressed={state.activeTab !== "chat"}
       />
       {screenLocked && !masterKeyLocked && (

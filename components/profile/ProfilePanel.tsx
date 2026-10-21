@@ -22,7 +22,7 @@ export function ProfilePanel() {
             <div className="flex items-center gap-2 text-xs text-fg-muted">
               <Sparkles size={14} className="text-accent" />
               <span>
-                Setup wizard is open. You can return to profile anytime.
+                Credentials, models, and agents stay unchanged. Profile edits apply only when you finish.
               </span>
             </div>
             <button
@@ -32,7 +32,7 @@ export function ProfilePanel() {
               }}
               className="text-xs px-2.5 py-1.5 rounded-lg border border-border bg-surface-3 hover:bg-surface-2 text-fg"
             >
-              Back to profile
+              Exit wizard
             </button>
           </div>
         </div>

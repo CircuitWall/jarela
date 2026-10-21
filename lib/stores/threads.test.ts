@@ -12,6 +12,7 @@ const { runMigrations } = await import("@/lib/db/migrations");
 
 const {
   addMessage,
+  setMessageHiddenFromChat,
   appendMessageDraft,
   appendMessageDraftToolEvent,
   recoverAbandonedMessageDrafts,
@@ -723,5 +724,23 @@ describe("getRecentlyUsedToolNames", () => {
     getDb().prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events) VALUES (?,?,?,?,?,?)")
       .run("bad-1", t.thread_id, "assistant", "x", new Date().toISOString(), "not json");
     expect(getRecentlyUsedToolNames(t.thread_id)).toEqual([]);
+  });
+});
+
+describe("message chat visibility", () => {
+  it("hides a message from chat without removing metadata or model history", () => {
+    const thread = createThread("hidden-from-chat-agent");
+    const message = addMessage(thread.thread_id, "user", "private kickoff", undefined, null, {
+      citations: { checker_model: "checker", claims: [], unverified_links: [] },
+    });
+
+    expect(setMessageHiddenFromChat("other-thread", message.msg_id, true)).toBe(false);
+    expect(setMessageHiddenFromChat(thread.thread_id, message.msg_id, true)).toBe(true);
+    const stored = getMessages(thread.thread_id)[0];
+    expect(JSON.parse(stored.metadata ?? "{}")).toMatchObject({
+      hidden_from_chat: true,
+      citations: { checker_model: "checker" },
+    });
+    expect(getRecentMessagesWindow(thread.thread_id, 0).map((row) => row.content)).toEqual(["private kickoff"]);
   });
 });

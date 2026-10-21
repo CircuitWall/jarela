@@ -12,44 +12,50 @@ interface StepReviewProps {
   models: ModelConfig[];
   agents: AgentConfig[];
   integrations: IntegrationStatus[];
+  starterAgent?: { name: string; modelConfigName: string };
+  readOnlySettings?: boolean;
 }
 
-export function StepReview({ name, about, preset, models, agents, integrations }: StepReviewProps) {
+export function StepReview({ name, about, preset, models, agents, integrations, starterAgent, readOnlySettings = false }: StepReviewProps) {
   const presetInfo = PROFILE_PRESETS.find((p) => p.value === preset);
-  const defaultModel = models.find((m) => m.is_default) ?? models[0] ?? null;
+  const enabledModels = models.filter((model) => model.enabled !== false);
+  const defaultModel = enabledModels.find((model) => model.is_default) ?? enabledModels[0] ?? null;
   const defaultAgent = agents.find((a) => a.is_default) ?? agents[0] ?? null;
+  const agentCount = agents.length + (starterAgent && !defaultAgent ? 1 : 0);
 
   return (
     <StepShell
       icon={<Sparkles size={18} />}
       eyebrow="Step 5 · Review"
-      title="You're all set"
-      description="Quick recap of what we'll save. You can revisit any of this later from Profile, Models, and Agents."
+      title="Here's what we're starting with"
+      description={readOnlySettings
+        ? "Your profile changes will be saved. Your provider, model, and assistant will stay just as they are."
+        : "Take a look at your starting setup. We can adjust things together as we go."}
     >
       <ReviewSection
         icon={<User size={14} />}
         label="Profile"
         primary={name || "(no name)"}
         secondary={presetInfo ? `${presetInfo.label} setup` : undefined}
-        tertiary={about ? `About: ${truncate(about, 140)}` : "No about text"}
+        tertiary={about ? `A little about you: ${truncate(about, 140)}` : "Nothing else shared yet"}
       />
 
       <ReviewSection
         icon={<Cpu size={14} />}
-        label={`Models · ${models.length}`}
-        primary={defaultModel ? defaultModel.name : "No models configured"}
+        label={`Models · ${enabledModels.length}`}
+        primary={defaultModel ? defaultModel.name : "No enabled model yet"}
         secondary={defaultModel ? `${defaultModel.provider} · ${defaultModel.model_id}` : undefined}
         tertiary={
-          models.length > 1
-            ? `+${models.length - 1} more model${models.length - 1 === 1 ? "" : "s"}`
+          enabledModels.length > 1
+            ? `+${enabledModels.length - 1} more model${enabledModels.length - 1 === 1 ? "" : "s"}`
             : undefined
         }
       />
 
       <ReviewSection
         icon={<Bot size={14} />}
-        label={`Agents · ${agents.length}`}
-        primary={defaultAgent ? defaultAgent.name : "No agents configured"}
+        label={`Agents · ${agentCount}`}
+        primary={defaultAgent?.name ?? starterAgent?.name ?? "No assistant yet"}
         secondary={
           defaultAgent
             ? [
@@ -58,7 +64,9 @@ export function StepReview({ name, about, preset, models, agents, integrations }
               ]
                 .filter(Boolean)
                 .join(" · ")
-            : undefined
+            : starterAgent
+              ? `${starterAgent.modelConfigName} · ready when you finish`
+              : undefined
         }
         tertiary={
           agents.length > 1
@@ -69,7 +77,7 @@ export function StepReview({ name, about, preset, models, agents, integrations }
 
       {defaultModel && (
         <details className="rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs text-fg-subtle">
-          <summary className="cursor-pointer font-medium text-fg">Feature signals for the default model</summary>
+          <summary className="cursor-pointer font-medium text-fg">What this model can do</summary>
           <div className="mt-3">
             <ModelFeatureGuide
               provider={defaultModel.provider}

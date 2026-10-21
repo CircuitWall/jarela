@@ -149,6 +149,7 @@ describe("prepareThreadRun auto context boundary", () => {
     const persisted = await persistThreadRunUserMessage({
       thread_id: thread.thread_id,
       message: "Persist this before the assistant draft.",
+      message_metadata: { hidden_from_chat: true },
       context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
       _onTranscriptUserPersisted: () => {
         const rows = getMessages(thread.thread_id);
@@ -159,6 +160,8 @@ describe("prepareThreadRun auto context boundary", () => {
 
     expect(getMessages(thread.thread_id).find((row) => row.msg_id === persisted.userMessageId)?.transcript_status)
       .toBe("in_progress");
+    expect(JSON.parse(getMessages(thread.thread_id).find((row) => row.msg_id === persisted.userMessageId)?.metadata ?? "{}"))
+      .toMatchObject({ hidden_from_chat: true });
     updateMessageContent(persisted.userMessageId, persisted.storedContent, { transcriptStatus: "completed" });
 
     await prepareThreadRun({

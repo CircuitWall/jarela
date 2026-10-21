@@ -756,6 +756,11 @@ export const api = {
     },
     metadata: (thread_id: string, signal?: AbortSignal) =>
       request<ThreadMetadata>(`/threads/${thread_id}?view=metadata`, { signal }),
+    setMessageHiddenFromChat: (thread_id: string, message_id: string, hidden_from_chat: boolean) =>
+      request<{ updated: boolean }>(
+        `/threads/${encodeURIComponent(thread_id)}/messages/${encodeURIComponent(message_id)}`,
+        { method: "PATCH", body: JSON.stringify({ hidden_from_chat }) },
+      ),
     delete: (thread_id: string) =>
       request<{ deleted: boolean }>(`/threads/${thread_id}`, { method: "DELETE" }),
     // What the thread is doing now (run phase, queued turns, compaction).
@@ -1442,6 +1447,7 @@ export async function submitRun(
   attachments?: ContentPart[],
   channels?: string[],
   hot_since_seq?: number | null,
+  message_metadata?: Record<string, unknown>,
 ): Promise<SubmitResult> {
   startupReads.clear();
   const payload: {
@@ -1450,9 +1456,11 @@ export async function submitRun(
     attachments?: ContentPart[];
     hot_since_seq?: number | null;
     channels?: string[];
+    message_metadata?: Record<string, unknown>;
   } = { message, stream_options, attachments };
   if (channels !== undefined) payload.channels = channels;
   if (hot_since_seq !== undefined) payload.hot_since_seq = hot_since_seq;
+  if (message_metadata !== undefined) payload.message_metadata = message_metadata;
   const runPayload = await externalizeRunAttachmentsIfNeeded(payload, signal);
 
   const res = await fetch(`${BASE}/threads/${thread_id}/run`, {

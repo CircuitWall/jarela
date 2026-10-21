@@ -1,7 +1,8 @@
-import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { UnlockScreen } from "@/components/setup/UnlockScreen";
-import { listModelConfigs } from "@/lib/stores/model-config";
+import { FirstKeySetup } from "@/components/setup/FirstKeySetup";
+import { listEnabledModelConfigs } from "@/lib/stores/model-config";
+import { listAgentConfigs } from "@/lib/stores/agent-configs";
 import { getDb } from "@/lib/db";
 import { isMasterKeyLocked } from "@/lib/crypto/master-key";
 
@@ -19,9 +20,10 @@ export default function Home() {
   if (isMasterKeyLocked()) {
     return <UnlockScreen />;
   }
-  // ADR-0010: the only mandatory pre-agent screen. If no LLM provider is
-  // configured, we have no agent to onboard with — punt to /setup. Once a
-  // model exists, the agent can drive every other integration.
-  if (listModelConfigs().length === 0) redirect("/setup");
+  // Keep fresh and incomplete installations in the guided setup until both
+  // a usable model and an assistant exist.
+  if (listEnabledModelConfigs().length === 0 || listAgentConfigs().length === 0) {
+    return <FirstKeySetup />;
+  }
   return <AppShell />;
 }

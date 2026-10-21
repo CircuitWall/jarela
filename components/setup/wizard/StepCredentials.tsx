@@ -15,6 +15,9 @@ interface StepCredentialsProps {
   definitions: IntegrationDefinition[];
   integrations: IntegrationStatus[];
   onChanged: () => void;
+  onConfigured?: (integrationName: string) => void;
+  readOnly?: boolean;
+  firstRun?: boolean;
 }
 
 const PROVIDER_ORDER = [
@@ -137,7 +140,7 @@ function SearchEngineSetup() {
   );
 }
 
-export function StepCredentials({ definitions, integrations, onChanged }: StepCredentialsProps) {
+export function StepCredentials({ definitions, integrations, onChanged, onConfigured, readOnly = false, firstRun = false }: StepCredentialsProps) {
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -162,6 +165,30 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
     () => Object.fromEntries(integrations.map((row) => [row.name, row])),
     [integrations],
   );
+
+  if (readOnly) {
+    return (
+      <StepShell
+        icon={<KeyRound size={18} />}
+        eyebrow="Step 2 · Credentials"
+        title="Here's what's connected"
+        description="This is just a review. Your provider connections and search settings will stay as they are."
+      >
+        <div className="divide-y divide-border rounded-xl border border-border bg-surface-3 px-3">
+          {llmDefs.map((definition) => {
+            const configured = statusByName[definition.name]?.configured === true;
+            return (
+              <div key={definition.name} className="flex items-center gap-3 py-3">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
+                <span className="min-w-0 flex-1 truncate text-sm text-fg">{definition.label}</span>
+                <span className="text-xs text-fg-faint">{configured ? "Connected" : "Not connected"}</span>
+              </div>
+            );
+          })}
+        </div>
+      </StepShell>
+    );
+  }
 
   async function handleSyncFromEnv() {
     setSyncing(true);
@@ -199,17 +226,19 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
     <StepShell
       icon={<KeyRound size={18} />}
       eyebrow="Step 2 · Credentials"
-      title="Connect provider credentials in the UI first"
-      description="Use the built-in credential forms as the main setup path for Claude, GPT, Gemini, and other providers. GitHub Copilot uses device-flow sign-in in the Models panel."
+      title={firstRun ? "Let's connect a model provider" : "Let's connect your providers"}
+      description={firstRun
+        ? "Choose one provider and add its key. That's enough to get started; you can connect others later."
+        : "Add or update provider connections here. GitHub Copilot signs in from the Models panel."}
     >
-      <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 text-xs text-fg">
-        <p className="font-medium">Recommended path</p>
+      {!firstRun && <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 text-xs text-fg">
+          <p className="font-medium">A simple place to start</p>
         <p className="mt-1 leading-relaxed text-fg-subtle">
-          Add or edit provider credentials here, then pick them from the model editor in the next step. If you already exported tokens in your shell, you can import them as a shortcut, but the UI remains the primary source you manage.
+          Add a provider here, then we&apos;ll use it to find a model in the next step. If you already have credentials in your environment, you can bring them in too.
         </p>
-      </div>
+      </div>}
 
-      {claudeDef && (
+      {!firstRun && claudeDef && (
         <div className="space-y-2">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Agent runtime</div>
           <button
@@ -233,15 +262,15 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
         </div>
       )}
 
-      <div className="space-y-2">
+      {!firstRun && <div className="space-y-2">
         <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">
           <Globe2 size={12} /> Search
         </div>
         <SearchEngineSetup />
-      </div>
+      </div>}
 
       <div className="space-y-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Model providers</div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">{firstRun ? "Choose one to get started" : "Model providers"}</div>
         <div className="grid gap-2">
           {llmDefs.map((def) => {
             const status = statusByName[def.name];
@@ -257,7 +286,7 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
                   <span className="flex items-center gap-2 text-sm font-medium text-fg">
                     <span className="truncate">{def.label}</span>
                     <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${status?.configured ? "border-emerald-600/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-border bg-surface text-fg-subtle"}`}>
-                      {status?.configured ? "configured" : "not connected"}
+                      {status?.configured ? "ready" : "not connected yet"}
                     </span>
                   </span>
                   <span className="mt-1 block text-[11px] leading-relaxed text-fg-faint">{def.description}</span>
@@ -268,12 +297,12 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
         </div>
       </div>
 
-      <div className="rounded-xl border border-dashed border-border bg-surface-2/40 px-3 py-3 text-xs text-fg-subtle">
+      {!firstRun && <div className="rounded-xl border border-dashed border-border bg-surface-2/40 px-3 py-3 text-xs text-fg-subtle">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-medium text-fg">Already keep tokens in your shell?</p>
+            <p className="font-medium text-fg">Already have a key in your environment?</p>
             <p className="mt-1 leading-relaxed">
-              Import them once here instead of relying on a subprocess to discover them later.
+              Bring it in now so you don&apos;t have to enter it again.
             </p>
           </div>
           <button
@@ -283,11 +312,11 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
             className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[11px] text-fg-muted transition-colors hover:bg-surface-3 disabled:opacity-50"
           >
             {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-            Import existing env
+            Bring in my key
           </button>
         </div>
         {syncMsg && <p className="mt-2 leading-relaxed text-fg-faint">{syncMsg}</p>}
-      </div>
+      </div>}
 
       {activeProvider && (
         <AddCredentialDialog
@@ -295,7 +324,9 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
           lockCategory
           onClose={() => setActiveProvider(null)}
           onSaved={() => {
+            const savedProvider = activeProvider;
             setActiveProvider(null);
+            if (savedProvider) onConfigured?.(savedProvider);
             onChanged();
           }}
         />

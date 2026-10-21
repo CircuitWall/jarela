@@ -1,9 +1,9 @@
-// First-key setup screen (ADR-0010). The single static wall before the agent
-// can take over onboarding. If a model_config already exists, redirect to the
-// app — there's nothing to set up.
+// Guided setup entry. A workspace is considered ready only after it has an
+// enabled model and at least one agent; otherwise the wizard can complete it.
 
 import { redirect } from "next/navigation";
-import { listModelConfigs } from "@/lib/stores/model-config";
+import { listEnabledModelConfigs } from "@/lib/stores/model-config";
+import { listAgentConfigs } from "@/lib/stores/agent-configs";
 import { FirstKeySetup } from "@/components/setup/FirstKeySetup";
 import { UnlockScreen } from "@/components/setup/UnlockScreen";
 import { getDb } from "@/lib/db";
@@ -18,7 +18,7 @@ export default function SetupPage() {
   if (isMasterKeyLocked()) {
     return <UnlockScreen />;
   }
-  const configs = listModelConfigs();
-  if (configs.length > 0) redirect("/");
+  const hasUsableWorkspace = listEnabledModelConfigs().length > 0 && listAgentConfigs().length > 0;
+  if (hasUsableWorkspace) redirect("/");
   return <FirstKeySetup />;
 }

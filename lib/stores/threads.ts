@@ -564,6 +564,26 @@ export function mergeMessageMetadata(
   getDb().prepare("UPDATE messages SET metadata=? WHERE msg_id=?").run(json, msg_id);
 }
 
+export function setMessageHiddenFromChat(thread_id: string, msg_id: string, hidden: boolean): boolean {
+  const db = getDb();
+  return withDbTransaction(() => {
+    const row = db.prepare("SELECT metadata FROM messages WHERE thread_id=? AND msg_id=?")
+      .get(thread_id, msg_id) as { metadata?: string | null } | undefined;
+    if (!row) return false;
+    let metadata: Record<string, unknown> = {};
+    if (row.metadata) {
+      try {
+        const parsed = JSON.parse(row.metadata);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) metadata = parsed as Record<string, unknown>;
+      } catch { /* replace malformed metadata with the visibility flag */ }
+    }
+    metadata.hidden_from_chat = hidden;
+    db.prepare("UPDATE messages SET metadata=? WHERE thread_id=? AND msg_id=?")
+      .run(JSON.stringify(metadata), thread_id, msg_id);
+    return true;
+  });
+}
+
 export function getOrCreateAgentThread(agentId: string): ThreadRow {
   return createThread(agentId);
 }

@@ -6,11 +6,11 @@ import type { ProbeResult, ShrinkPending } from "./useModelEditorForm";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
-export function useIdentityState(model: ModelConfig | undefined) {
+export function useIdentityState(model: ModelConfig | undefined, initialProvider?: string) {
   const isEdit = !!model;
   const [name, setName] = useState(model?.name ?? "");
   const [nameTouched, setNameTouched] = useState(isEdit);
-  const [provider, setProvider] = useState(model?.provider ?? "anthropic");
+  const [provider, setProvider] = useState(model?.provider ?? initialProvider ?? "anthropic");
   const [providers, setProviders] = useState<string[]>(FALLBACK_PROVIDERS);
   const [modelId, setModelId] = useState(model?.model_id ?? "");
   useProviderList(setProviders);

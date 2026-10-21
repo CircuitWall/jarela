@@ -61,13 +61,14 @@ interface Props {
   contextWindowTokens?: number | null;
   // Resend a previously-sent user prompt as a new turn. Forwarded to each
   // user-role MessageBubble; absent => retry button is hidden.
-  onRetryMessage?: (text: string, attachments: ContentPart[]) => void;
+  onRetryMessage?: (text: string, attachments: ContentPart[], messageId?: string) => void;
   // Lifted to ChatView (see ADR-0044) so the toolbar's toggle state and the
   // channel set the next run submits with share one source of truth.
   // Optional (defaulting to all-shown, no-op toggle) so callers that don't
   // care about filter behavior — most existing tests — don't need to wire
   // a hook instance just to render the list.
   filters?: Record<MessageFilterKey, boolean>;
+  hideInternalOperations?: boolean;
   onToggleFilter?: (key: MessageFilterKey) => void;
   onResetFilters?: () => void;
 }
@@ -78,7 +79,7 @@ const ALL_FILTERS_SHOWN: Record<MessageFilterKey, boolean> = Object.fromEntries(
 const NO_CHANNEL_SUMMARIES: WarmChannelSummary[] = [];
 const NOOP = () => {};
 
-export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries = NO_CHANNEL_SUMMARIES, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = NOOP, onResetFilters: reset = NOOP }: Props) {
+export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries = NO_CHANNEL_SUMMARIES, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, hideInternalOperations = false, onToggleFilter: toggle = NOOP, onResetFilters: reset = NOOP }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -107,6 +108,10 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   const hasThinkingContent = !!thinkingContent;
   const hasLiveToolEvents = !!toolEvents?.length;
   const hidePersistedDraft = !!streaming || hasStreamingContent;
+  const displayMessages = useMemo(
+    () => messages.filter((message) => message.metadata?.hidden_from_chat !== true),
+    [messages],
+  );
 
   const retryWorkflowStep = useMemo(
     () => onRetryMessage
@@ -120,7 +125,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   // The `tool_use` and `thinking` filters do NOT remove whole messages —
   // they're handled below by gating the inline ToolList / ThinkingLine.
   const visibleMessages = useMemo(() => {
-    return messages.filter((m) => {
+    return displayMessages.filter((m) => {
       if (m.role === "assistant" && m.transcript_status === "in_progress" && hidePersistedDraft) return false;
       const cat = m.category;
       if (!cat) return true;
@@ -134,7 +139,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
       // never silently drop content the server thinks should be visible.
       return true;
     });
-  }, [messages, hidePersistedDraft, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
+  }, [displayMessages, hidePersistedDraft, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
 
   const historyRows = useMemo(() => {
     const attachedActivities = new Map<string, AutomationActivityMetadata>();
@@ -173,16 +178,16 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
           threadId={threadId ?? null}
           agentConfig={agentConfig}
           userProfile={userProfile}
-          showToolEvents={filters.tool_use}
+          showToolEvents={filters.tool_use && !hideInternalOperations}
           contextWindowTokens={contextWindowTokens ?? null}
           isLatest={i === visibleMessages.length - 1 && !hasStreamingContent}
           onRetry={onRetryMessage}
         />
       );
     });
-  }, [visibleMessages, steeredSegments, threadId, agentConfig, userProfile, filters.tool_use, contextWindowTokens, hasStreamingContent, onRetryMessage]);
+  }, [visibleMessages, steeredSegments, threadId, agentConfig, userProfile, filters.tool_use, hideInternalOperations, contextWindowTokens, hasStreamingContent, onRetryMessage]);
 
-  const hiddenCount = messages.length - visibleMessages.length;
+  const hiddenCount = displayMessages.length - visibleMessages.length;
   const effectiveHotSinceSeq = hotSinceSeq ?? null;
   // The boundary divider only ever renders when a pin is set (see the
   // `hasBoundary` computation below, which is gated on `effectiveHotSinceSeq`).
@@ -587,15 +592,15 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   // perceive this as "chat is empty". Auto-reset once per thread snapshot so
   // content remains visible without requiring manual recovery.
   useEffect(() => {
-    if (messages.length === 0 || hasStreamingContent) return;
+    if (displayMessages.length === 0 || hasStreamingContent) return;
     if (visibleMessages.length > 0) return;
-    if (hiddenCount !== messages.length) return;
-    const lastId = messages[messages.length - 1]?.id ?? "none";
-    const key = `${threadId ?? "no-thread"}:${messages.length}:${lastId}`;
+    if (hiddenCount !== displayMessages.length) return;
+    const lastId = displayMessages[displayMessages.length - 1]?.id ?? "none";
+    const key = `${threadId ?? "no-thread"}:${displayMessages.length}:${lastId}`;
     if (autoRecoveredRef.current === key) return;
     autoRecoveredRef.current = key;
     reset();
-  }, [threadId, messages, visibleMessages.length, hiddenCount, hasStreamingContent, reset]);
+  }, [threadId, displayMessages, visibleMessages.length, hiddenCount, hasStreamingContent, reset]);
 
   // Surface a category chip in the toolbar only if it can actually do
   // something useful right now: scheduled_task/bridge/synthetic chips
@@ -605,7 +610,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   // only place it currently surfaces).
   const availableChips = useMemo(() => {
     const set = new Set<MessageFilterKey>();
-    for (const m of messages) {
+    for (const m of displayMessages) {
       if (m.category === "scheduled_task") set.add("scheduled_task");
       else if (m.category === "watcher") set.add("watcher");
       else if (m.category === "bridge") set.add("bridge");
@@ -616,8 +621,10 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
     }
     if (hasThinkingContent) set.add("thinking");
     if (hasLiveToolEvents) set.add("tool_use");
-    return MESSAGE_FILTER_KEYS.filter((k) => set.has(k));
-  }, [messages, hasThinkingContent, hasLiveToolEvents]);
+    return MESSAGE_FILTER_KEYS.filter((key) =>
+      set.has(key) && !(hideInternalOperations && (key === "tool_use" || key === "thinking")),
+    );
+  }, [displayMessages, hasThinkingContent, hasLiveToolEvents, hideInternalOperations]);
 
   // Tracks whether the user was at the bottom on the most recent scroll event.
   // After every render, if true, we snap to bottom — which means: while the
@@ -629,7 +636,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   // keeps visible content stable).
   const atBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const hasScrollTarget = messages.length > 0 || !!streamingContent;
+  const hasScrollTarget = displayMessages.length > 0 || !!streamingContent;
 
   // Anchor for the warm/hot boundary line relocating. When `hotSince`
   // moves (manual drag, /compact, or an automatic re-anchor), the inline
@@ -701,7 +708,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
     const el = scrollRef.current;
     if (!el || atBottomRef.current || prependAnchorRef.current) return;
     syncScrollButton(el);
-  }, [messages.length, streamingContent, syncScrollButton]);
+  }, [displayMessages.length, streamingContent, syncScrollButton]);
 
   // Keep the bottom pinned when the scroll container *itself* resizes —
   // not just when messages change. When the on-screen keyboard opens,
@@ -803,7 +810,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
     scrollToHashTarget();
     window.addEventListener("hashchange", scrollToHashTarget);
     return () => window.removeEventListener("hashchange", scrollToHashTarget);
-  }, [messages.length, scrollTargetIntoView]);
+  }, [displayMessages.length, scrollTargetIntoView]);
 
   // Handle orientation changes and resizes to maintain scroll position
   useEffect(() => {
@@ -933,9 +940,9 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
             <span>Summarising earlier messages… this turn still sees the full history.</span>
           </div>
         )}
-        {visibleMessages.length === 0 && !streamingContent && (
+        {visibleMessages.length === 0 && !streamingContent && !streaming && (
           <div className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
-            {messages.length === 0 ? (
+            {displayMessages.length === 0 ? (
               <span>Send a message to begin</span>
             ) : (
               <div className="flex flex-col items-center gap-2 text-center px-4">
@@ -1007,10 +1014,10 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
         thinkingContent={thinkingContent}
         streamingContent={streamingContent}
         toolEvents={toolEvents}
-        filters={filters}
+        filters={hideInternalOperations ? { ...filters, tool_use: false, thinking: false } : filters}
         threadId={threadId ?? null}
         agentConfig={agentConfig ?? null}
-        showStreamingAvatar={messages.length === 0 || messages[messages.length - 1].role !== "assistant"}
+        showStreamingAvatar={visibleMessages.length === 0 || visibleMessages[visibleMessages.length - 1].role !== "assistant"}
         streaming={streaming}
       />
       {queuedMessages && queuedMessages.length > 0 && (
