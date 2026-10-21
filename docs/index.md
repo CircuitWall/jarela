@@ -8,9 +8,9 @@ Jarela is a local-first desktop chat UI for LangGraph agents. It runs as a singl
 
 ### Using Jarela
 
-Start with installation, then learn the runtime model and the main extension points.
+Start with installation and the [first-run setup](FIRST_RUN.md), then learn the runtime model and main extension points.
 
-[Install Jarela](INSTALL.md) · [Operate Jarela](OPERATIONS.md) · [Understand the architecture](ARCHITECTURE.md)
+[Install Jarela](INSTALL.md) · [Set up your first assistant](FIRST_RUN.md) · [Operate Jarela](OPERATIONS.md) · [Understand the architecture](ARCHITECTURE.md)
 
 ### Developing Jarela
 
@@ -36,6 +36,7 @@ The built-in documentation skill makes local documentation the first source of t
 | Area | Purpose |
 | --- | --- |
 | [INSTALL.md](INSTALL.md) | install channels, service setup, first-run guidance |
+| [FIRST_RUN.md](FIRST_RUN.md) | first-run wizard, provider/model setup, assistant identity, and first chat |
 | [OPERATIONS.md](OPERATIONS.md) | agents, profile, settings, dashboard, tools, tasks, and chat workflows |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | local dev workflow, repo conventions, build/test commands |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | container, component, and runtime architecture |

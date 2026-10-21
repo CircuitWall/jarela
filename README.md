@@ -13,6 +13,7 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 - Durable, agent-targeted lifecycle signals for restarts, approvals, configuration changes, and background work
 - PWA / desktop-friendly workflow with browser extension support
 - MCP, integration manifests, and built-in tool extension points
+- Guided first-run setup that helps you create a default assistant and personalize it in chat
 
 ## Jarela in action
 
@@ -20,6 +21,19 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 	<img src="docs/assets/operations-dashboard.png" alt="Usage dashboard showing Jarela token and cost summaries" width="49%">
 	<img src="docs/assets/operations-tools.png" alt="Tools view showing installed packages and runtime controls" width="49%">
 </p>
+
+## First launch
+
+<p align="center">
+	<img src="docs/assets/first-run-splash.png" alt="Jarela splash transitioning into first-run setup" width="49%">
+	<img src="docs/assets/first-run-profile.png" alt="First-run profile step" width="49%">
+</p>
+<p align="center">
+	<img src="docs/assets/first-run-provider.png" alt="Choose a model provider during first-run setup" width="49%">
+	<img src="docs/assets/first-run-assistant.png" alt="Choose a name and starting goal for the default assistant" width="49%">
+</p>
+
+Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what to expect in your first chat.
 
 ## Quick start
 
@@ -37,6 +51,7 @@ Full docs are organized under the docs site and source docs folder:
 - [Live documentation site](https://circuitwall.github.io/jarela/)
 - [Docs home](docs/index.md)
 - [Install guide](docs/INSTALL.md)
+- [First-run guide](docs/FIRST_RUN.md)
 - [Development guide](docs/DEVELOPMENT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Operations guide](docs/OPERATIONS.md)

@@ -60,6 +60,7 @@ nav:
   - Home: index.md
   - Getting started:
       - Install: INSTALL.md
+      - First run: FIRST_RUN.md
       - Development: DEVELOPMENT.md
   - Architecture:
       - Overview: ARCHITECTURE.md

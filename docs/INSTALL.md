@@ -11,6 +11,10 @@ Four ways to install:
 
 All four end at the same place: a Next.js process on `http://127.0.0.1:4312`, with state persisted under the platform default host data dir (`~/.jarela` on macOS/Linux, `%LOCALAPPDATA%\Jarela` on Windows) or in the `jarela-data` volume mounted at `/data`.
 
+On first launch, Jarela opens a guided setup for your profile, one model
+provider, a model, and your default assistant. See the [first-run guide](FIRST_RUN.md)
+for screenshots and the first-chat personalization flow.
+
 ---
 
 ## Path 1 — Native package
