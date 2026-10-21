@@ -18,7 +18,8 @@ test("Profile panel mounts the Name + About me form fields", async ({ page }) =>
   await expect(page.getByRole("textbox", { name: "Name" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "About me" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save profile" })).toBeHidden();
-  await page.getByRole("textbox", { name: "Name" }).fill("E2E User");
+  const name = page.getByRole("textbox", { name: "Name", exact: true });
+  await name.fill((await name.inputValue()) === "E2E User" ? "E2E Updated User" : "E2E User");
   await expect(page.getByRole("button", { name: "Save profile" })).toBeVisible();
 });
 
@@ -45,10 +46,10 @@ test("Normal mode keeps Profile editor and opens wizard only on demand", async (
   await expect(rerunBtn).toBeVisible();
 
   await rerunBtn.click();
-  const backBtn = page.getByRole("button", { name: "Back to profile" });
-  await expect(backBtn).toBeVisible();
+  const exitBtn = page.getByRole("button", { name: "Exit wizard", exact: true });
+  await expect(exitBtn).toBeVisible();
 
-  await backBtn.dispatchEvent("click");
-  await expect(backBtn).toBeHidden();
+  await exitBtn.click();
+  await expect(exitBtn).toBeHidden();
   await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible({ timeout: 15_000 });
 });

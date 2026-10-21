@@ -10,6 +10,7 @@
 // Exits 0 on all pass, 1 on any fail. Prints a summary table.
 
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
+import { pathToFileURL } from "node:url";
 if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY) {
   setGlobalDispatcher(new EnvHttpProxyAgent());
 }
@@ -744,19 +745,23 @@ async function seedFromProd() {
   }
 }
 
-async function seed() {
+export async function seed() {
+  async function request(path, opts) {
+    const response = await api(path, opts);
+    assert(response.ok, `seed: ${opts?.method ?? "GET"} ${path} returned HTTP ${response.status}`);
+    return response.body;
+  }
+
   // 1. Try to pull real provider credentials from the user's prod DB.
   await seedFromProd();
 
-  // 2. Ensure a default model exists so agents can bind to it. If the prod
-  //    seed already populated something, the upsert below picks an existing
-  //    model as default instead of clobbering.
-  const list = await api("/api/v1/models");
-  if (list.ok && list.body.length > 0) {
-    // Prefer a real prod model; mark the first one default if none is.
-    if (!list.body.some((m) => m.is_default)) {
-      const first = list.body[0];
-      await api(`/api/v1/models/${encodeURIComponent(first.name)}`, {
+  // 2. Reuse configured models; create a stub only for a fresh database.
+  const list = await request("/api/v1/models");
+  assert(Array.isArray(list), "seed: expected a model list");
+  if (!list.some((m) => m.is_default)) {
+    const first = list[0];
+    if (first) {
+      await request(`/api/v1/models/${encodeURIComponent(first.name)}`, {
         method: "PUT",
         body: JSON.stringify({
           provider: first.provider,
@@ -765,32 +770,53 @@ async function seed() {
           is_default: true,
         }),
       });
+    } else {
+      await request("/api/v1/models", {
+        method: "POST",
+        body: JSON.stringify({
+          name: TEST_MODEL,
+          provider: "openai",
+          model_id: "gpt-4o-mini",
+          params: {},
+          is_default: true,
+        }),
+      });
     }
+  }
+
+  const models = await request("/api/v1/models");
+  assert(Array.isArray(models), "seed: expected a model list");
+  const defaultModel = models.find((m) => m.is_default);
+  assert(defaultModel?.name, "seed: default model did not persist");
+
+  // 3. Fresh installs intentionally have no agents. Create the test fixture
+  //    here rather than relying on application migrations to supply one.
+  const agents = await request("/api/v1/agents");
+  assert(Array.isArray(agents), "seed: expected an agent list");
+  const def = agents.find((a) => a.is_default) ?? agents[0];
+  if (def) {
+    await request(`/api/v1/agents/${encodeURIComponent(def.id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ is_default: true, model_config_name: defaultModel.name }),
+    });
   } else {
-    // No models at all — create a stub so the rest of the infra tests pass.
-    await api("/api/v1/models", {
+    await request("/api/v1/agents", {
       method: "POST",
       body: JSON.stringify({
-        name: TEST_MODEL,
-        provider: "openai",
-        model_id: "gpt-4o-mini",
-        params: {},
+        name: "Live test",
+        tools: [],
+        model_config_name: defaultModel.name,
         is_default: true,
       }),
     });
   }
 
-  // 3. Bind the default agent to the chosen default model.
-  const { body: models } = await api("/api/v1/models");
-  const defaultModel = models.find((m) => m.is_default) ?? models[0];
-  const { body: agents } = await api("/api/v1/agents");
-  const def = agents.find((a) => a.is_default);
-  if (def && defaultModel) {
-    await api(`/api/v1/agents/${def.id}`, {
-      method: "PUT",
-      body: JSON.stringify({ model_config_name: defaultModel.name }),
-    });
-  }
+  const persisted = await request("/api/v1/agents");
+  assert(Array.isArray(persisted), "seed: expected an agent list");
+  assert(
+    persisted.some((a) => a.is_default && a.model_config_name === defaultModel.name),
+    "seed: default agent binding did not persist",
+  );
 }
 
 // ── LLM-DRIVEN TESTS (gated by --llm) ───────────────────────────────────────
@@ -984,12 +1010,8 @@ async function run() {
 
   // Seed the DB so model/agent-dependent tests have something to work with.
   // Safe to run repeatedly: upsert semantics.
-  try {
-    process.stdout.write(`${C.dim}…${C.reset} seed: populating model + default agent binding\n`);
-    await seed();
-  } catch (err) {
-    console.log(`  ${C.yellow}seed failed (continuing): ${err.message}${C.reset}`);
-  }
+  process.stdout.write(`${C.dim}…${C.reset} seed: populating model + default agent binding\n`);
+  await seed();
 
   const eligible = tests
     .filter((t) => RUN_LLM || !t.llm)
@@ -1029,7 +1051,9 @@ async function run() {
   process.exit(fail === 0 ? 0 : 1);
 }
 
-run().catch((err) => {
-  console.error(`${C.red}runner crashed:${C.reset}`, err);
-  process.exit(2);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  run().catch((err) => {
+    console.error(`${C.red}runner crashed:${C.reset}`, err);
+    process.exit(2);
+  });
+}

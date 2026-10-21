@@ -9,23 +9,22 @@ test.beforeEach(async ({ request }) => {
   await seedMockAgent(request);
 });
 
-test("configuration rails fit within a mobile viewport", async ({ page }) => {
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem("jarela.experience.mode", "full");
-    } catch {
-      /* sandboxed origin */
-    }
-  });
-
-  for (const viewportWidth of [320, 390]) {
-    await page.setViewportSize({ width: viewportWidth, height: 844 });
-    for (const route of [
-      "/?tab=settings",
-      "/?tab=profile",
-      "/?tab=models",
-      "/?tab=credentials&item=network",
-    ]) {
+for (const viewportWidth of [320, 390]) {
+  for (const route of [
+    "/?tab=settings",
+    "/?tab=profile",
+    "/?tab=models",
+    "/?tab=credentials&item=network",
+  ]) {
+    test(`configuration rail fits at ${viewportWidth}px: ${route}`, async ({ page }) => {
+      await page.addInitScript(() => {
+        try {
+          localStorage.setItem("jarela.experience.mode", "full");
+        } catch {
+          /* sandboxed origin */
+        }
+      });
+      await page.setViewportSize({ width: viewportWidth, height: 844 });
       await page.goto(route);
       await waitForAppReady(page);
 
@@ -36,9 +35,9 @@ test("configuration rails fit within a mobile viewport", async ({ page }) => {
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewportWidth + 1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewportWidth);
-    }
+    });
   }
-});
+}
 
 test("menu tray uses position:fixed when open", async ({ page }) => {
   await page.goto("/");

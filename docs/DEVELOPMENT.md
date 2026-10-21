@@ -11,6 +11,19 @@ This guide focuses on developer experience for UI/state work.
 - Test hooks only: `npm run test:hooks`
 - Watch hook tests: `npm run test:hooks:watch`
 
+## Live-test setup
+
+`npm run test:live` targets the server at `JARELA_URL` (default
+`http://localhost:4312`). Use an isolated server and `JARELA_DB_DIR` for test
+runs: the suite writes fixtures through the public API.
+
+Before running checks, the suite ensures a default model and agent exist and
+verifies that their binding persisted. It reuses configured records and creates
+fixtures only when the corresponding list is empty; fresh installs intentionally
+have no application-seeded agents. Setup errors stop the run before dependent
+checks execute. CI runs this live-test prerequisite before the Playwright suite.
+Production credential import remains opt-in via `JARELA_SEED_FROM_PROD=1`.
+
 ## Git and PR conventions
 
 [CONTRIBUTING.md](../CONTRIBUTING.md) is the source of truth. Do not drift
