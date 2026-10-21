@@ -85,11 +85,14 @@ describe("upsertModelConfig params merge", () => {
 });
 
 describe("deleteModelConfig auto-promotes default", () => {
-  it("falls back to first available row when no row has is_default=1", () => {
+  it("makes the first created model the explicit default", () => {
     upsertModelConfig("no-default-1", "anthropic", "claude-x", {}, false);
     upsertModelConfig("no-default-2", "anthropic", "claude-y", {}, false);
-    expect(getDefaultModelConfig()).not.toBeNull();
+    expect(getModelConfig("no-default-1")?.is_default).toBe(1);
+    expect(getModelConfig("no-default-2")?.is_default).toBe(0);
+    expect(getDefaultModelConfig()?.name).toBe("no-default-1");
     deleteModelConfig("no-default-1");
+    expect(getModelConfig("no-default-2")?.is_default).toBe(1);
     deleteModelConfig("no-default-2");
   });
 
@@ -100,10 +103,9 @@ describe("deleteModelConfig auto-promotes default", () => {
 
     expect(getDefaultModelConfig()?.name).toBe("zzz-beta");
     expect(deleteModelConfig("zzz-beta")).toBe(true);
-    // The promoted row is the alphabetically-first remaining row in the
-    // DB — could be a seeded "claude-sonnet" if seeds exist, otherwise
-    // "zzz-alpha". Either way there MUST be a default now.
-    expect(getDefaultModelConfig()).not.toBeNull();
+    expect(getModelConfig("zzz-alpha")?.is_default).toBe(1);
+    expect(getModelConfig("zzz-gamma")?.is_default).toBe(0);
+    expect(getDefaultModelConfig()?.name).toBe("zzz-alpha");
 
     deleteModelConfig("zzz-alpha");
     deleteModelConfig("zzz-gamma");
