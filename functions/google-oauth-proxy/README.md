@@ -7,7 +7,7 @@ client ship without the secret in its source tarball.
 ## Architecture
 
 ```
-Jarela client ──POST /oauth2/token (no client_secret)──▶ This proxy ──POST /token (+ secret from Secret Manager)──▶ accounts.google.com
+Jarela client ──POST / or /oauth2/token (no client_secret)──▶ This proxy ──POST /token (+ secret from Secret Manager)──▶ accounts.google.com
 ```
 
 The browser consent step and authenticated Gmail API calls go direct to
@@ -29,7 +29,13 @@ Google. The proxy is only on the path for:
 | Endpoint | `https://jarela-oauth-proxy-134669812881.europe-west1.run.app` |
 
 The Jarela app reads the endpoint from `JARELA_GOOGLE_TOKEN_PROXY` (with a
-hard-coded fallback in `lib/integrations/gmail-oauth.ts`).
+hard-coded root-URL fallback in `lib/integrations/gmail-oauth.ts`).
+
+The source lives in `functions/google-oauth-proxy/`, separate from Next.js's
+root `proxy.ts` request gate. The deployed `tokenProxy` entrypoint dispatches
+by request path: the current app uses `/`, which remains supported for
+backward compatibility, and `/oauth2/token` is the explicit namespaced route. Add future
+operations as separate handlers and register their method/path in `router.js`.
 
 ## Day-2 ops (Windows PowerShell)
 
@@ -62,7 +68,8 @@ If smoke test fails, the script prints the rollback command.
 
 ### Update the proxy code
 
-After editing [`index.js`](./index.js) or [`package.json`](./package.json):
+After editing [`index.js`](./index.js), [`router.js`](./router.js), a handler,
+or [`package.json`](./package.json):
 
 ```powershell
 .\scripts\deploy.ps1
@@ -70,7 +77,7 @@ After editing [`index.js`](./index.js) or [`package.json`](./package.json):
 
 The script:
 
-1. Re-zips source from `./proxy`
+1. Re-zips source from `functions/google-oauth-proxy/`
 2. Triggers buildpack rebuild
 3. Re-asserts public-invoker IAM (Gen 2 quirk: `--allow-unauthenticated`
    doesn't always propagate to the underlying Cloud Run service)

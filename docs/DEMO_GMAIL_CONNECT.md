@@ -6,7 +6,7 @@ action. The headline: a user installs Jarela from npm, clicks
 client_secret to paste**. The secret lives in Secret Manager and the
 proxy injects it server-side.
 
-Reference architecture: [proxy/README.md](../proxy/README.md).
+Reference architecture: [Google OAuth proxy](../functions/google-oauth-proxy/README.md).
 
 ---
 
@@ -29,7 +29,7 @@ if (Test-Path $dataDir) {
 }
 
 # 3. Confirm proxy is healthy
-./proxy/scripts/smoke-test.ps1
+./functions/google-oauth-proxy/scripts/smoke-test.ps1
 # Expected: HTTP 400, error=invalid_grant
 ```
 
@@ -110,7 +110,7 @@ over the connected card).
 - "Region: europe-west1 · Runtime: Node 22"
 
 **Optional B-roll**: a Cloud Console tab showing the secret entry,
-the function logs, or `proxy/README.md` open in an editor.
+the function logs, or `functions/google-oauth-proxy/README.md` open in an editor.
 
 ### Scene 6 — Use it (~20s)
 
@@ -171,7 +171,7 @@ hop must be hand-recorded. All scenes are best captured manually. Tools:
 | Symptom | Cause | Fix before recording |
 |---|---|---|
 | Card shows "Configure" instead of "Connect" | A `GMAIL_CLIENT_ID` env var is set, overriding the bundled client | `Remove-Item Env:GMAIL_CLIENT_ID` before launch |
-| Connect returns `invalid_client` | Proxy secret is wrong or missing | Run `proxy/scripts/rotate-secret.ps1 -JsonFile <fresh JSON>` |
+| Connect returns `invalid_client` | Proxy secret is wrong or missing | Run `functions/google-oauth-proxy/scripts/rotate-secret.ps1 -JsonFile <fresh JSON>` |
 | Connect returns 401 / 403 | Public invoker missing on Cloud Run service | `gcloud run services add-iam-policy-binding jarela-oauth-proxy --member=allUsers --role=roles/run.invoker --region=europe-west1` |
 | Google consent rejects with `redirect_uri_mismatch` | OAuth client config drift | Reset Authorized redirect URIs in GCP console to `http://localhost:4312/api/v1/integrations/gmail/oauth/callback` (plus any other ports you use) |
 

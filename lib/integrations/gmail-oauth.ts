@@ -48,8 +48,8 @@ export const GMAIL_SCOPES = [
 // RFC spec, not the production endpoint's actual behaviour.) Shipping the
 // secret in this repo would attract CVSS-7.5 reports the moment the source
 // hits GitHub, so we keep it server-side: requests for the bundled client_id
-// are routed through a Cloud Run Function (see `/proxy/`) that injects the
-// secret from Secret Manager before forwarding to Google.
+// are routed through `functions/google-oauth-proxy/`, which injects the secret
+// from Secret Manager before forwarding to Google.
 //
 // Forks/self-hosters override the bundled client_id via JARELA_GMAIL_CLIENT_ID
 // and the proxy URL via JARELA_GOOGLE_TOKEN_PROXY. The legacy BYO Advanced

@@ -1,8 +1,6 @@
-const functions = require('@google-cloud/functions-framework');
-
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
-functions.http('tokenProxy', async (req, res) => {
+async function handleOAuthToken(req, res) {
   res.set('Access-Control-Allow-Origin', '*');
 
   if (req.method === 'OPTIONS') {
@@ -22,14 +20,12 @@ functions.http('tokenProxy', async (req, res) => {
     return res.status(500).json({ error: 'proxy_misconfigured' });
   }
 
-  // Inbound body is parsed by functions-framework when Content-Type is
-  // application/x-www-form-urlencoded. Strip any inbound credentials --
-  // they MUST come from the proxy's env, never trusted from the client.
+  // Credentials always come from the service environment, never request data.
   const params = new URLSearchParams();
   const body = req.body ?? {};
-  for (const [k, v] of Object.entries(body)) {
-    if (k === 'client_id' || k === 'client_secret') continue;
-    if (typeof v === 'string') params.set(k, v);
+  for (const [key, value] of Object.entries(body)) {
+    if (key === 'client_id' || key === 'client_secret') continue;
+    if (typeof value === 'string') params.set(key, value);
   }
   params.set('client_id', clientId);
   params.set('client_secret', clientSecret);
@@ -45,8 +41,10 @@ functions.http('tokenProxy', async (req, res) => {
       .status(upstream.status)
       .type(upstream.headers.get('content-type') ?? 'application/json')
       .send(text);
-  } catch (err) {
-    console.error('upstream failure', err?.message ?? err);
+  } catch (error) {
+    console.error('upstream failure', error?.message ?? error);
     return res.status(502).json({ error: 'upstream_failure' });
   }
-});
+}
+
+module.exports = { handleOAuthToken };
