@@ -33,21 +33,34 @@ export function InteractiveTokenChart({ series, selectedDay, onSelectDay }: Toke
     <div>
       <div className="relative h-48 rounded-xl bg-[var(--bg-primary)]/35 p-2">
         <div className="h-full overflow-x-auto overscroll-x-contain">
-          <div className="h-full flex items-end gap-1 pt-5" style={{ minWidth: `${series.length * 18}px` }}>
-            {series.map((point, idx) => (
-              <TokenBar
-                key={point.day}
-                point={point}
-                idx={idx}
-                maxTotal={maxTotal}
-                barsReady={barsReady}
-                hovered={hovered === idx}
-                selected={selectedDay === point.day}
-                showDateLabel={idx % labelInterval === 0 || idx === series.length - 1}
-                onHover={setHovered}
-                onSelectDay={onSelectDay}
-              />
-            ))}
+          <div className="flex h-full min-w-full flex-col pt-5" style={{ minWidth: `${series.length * 18}px` }}>
+            <div role="group" aria-label="Token chart plot" className="flex min-h-0 flex-1 items-end gap-1">
+              {series.map((point, idx) => (
+                <TokenBar
+                  key={point.day}
+                  point={point}
+                  idx={idx}
+                  maxTotal={maxTotal}
+                  barsReady={barsReady}
+                  hovered={hovered === idx}
+                  selected={selectedDay === point.day}
+                  onHover={setHovered}
+                  onSelectDay={onSelectDay}
+                />
+              ))}
+            </div>
+            <div role="group" aria-label="Token chart date axis" className="flex h-4 shrink-0 gap-1">
+              {series.map((point, idx) => (
+                <span key={point.day} className="flex-1 min-w-0 truncate text-center text-[10px] leading-4 text-[var(--text-secondary)]">
+                  {idx % labelInterval === 0 || idx === series.length - 1 ? (
+                    <>
+                      <span className="hidden sm:inline">{point.day.slice(5)}</span>
+                      <span className="sm:hidden">{point.day.slice(8)}</span>
+                    </>
+                  ) : null}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
         <div
@@ -75,15 +88,14 @@ interface TokenBarProps {
   barsReady: boolean;
   hovered: boolean;
   selected: boolean;
-  showDateLabel: boolean;
   onHover: (i: number | null) => void;
   onSelectDay?: (day: string) => void;
 }
 
-function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, showDateLabel, onHover, onSelectDay }: TokenBarProps) {
+function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, onHover, onSelectDay }: TokenBarProps) {
   const total = point.input_tokens_est + point.output_tokens_est;
   const hasData = total > 0;
-  const totalHeight = hasData && maxTotal > 0 ? Math.max(4, Math.round((total / maxTotal) * 150)) : 0;
+  const totalHeight = hasData && maxTotal > 0 ? Math.max(4, Math.round((total / maxTotal) * 132)) : 0;
   const inputHeight = hasData ? Math.round((point.input_tokens_est / total) * totalHeight) : 0;
   const outputHeight = hasData ? Math.max(0, totalHeight - inputHeight) : 0;
   // Subdivide the input portion by measured tier breakdown when the day
@@ -161,14 +173,6 @@ function TokenBar({ point, idx, maxTotal, barsReady, hovered, selected, showDate
           </>
         ) : null}
       </div>
-      <span className={`mt-1 text-[10px] truncate w-full text-center ${hasData ? "text-[var(--text-secondary)]" : "text-[var(--text-secondary)]/50"}`}>
-        {showDateLabel && (
-          <>
-            <span className="hidden sm:inline">{point.day.slice(5)}</span>
-            <span className="sm:hidden">{point.day.slice(8)}</span>
-          </>
-        )}
-      </span>
     </div>
   );
 }
