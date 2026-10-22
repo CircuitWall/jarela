@@ -300,7 +300,7 @@ jobs:
 
   e2e:
     name: Playwright E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build, changes]
     # Skip the expensive browser suite when the change footprint can't affect
     # runtime behaviour, and on post-merge main where PR CI already ran it.
