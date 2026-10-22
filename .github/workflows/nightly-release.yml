@@ -1,0 +1,343 @@
+name: Nightly release
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only classify changes; do not open, merge, or publish a release
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  actions: write
+  checks: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Prepare and publish nightly release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
+
+      - name: Fetch main and release tags
+        run: git fetch --force origin main --tags
+
+      - name: Classify unreleased main commits
+        id: plan
+        run: node scripts/nightly-release.mjs plan
+
+      - name: Hold breaking changes for a human release
+        if: steps.plan.outputs.action == 'manual'
+        env:
+          REASON: ${{ steps.plan.outputs.reason }}
+        run: |
+          echo "::error::Nightly release held for human review: $REASON"
+          {
+            echo "### Human release required"
+            echo
+            echo "The nightly flow will not publish major or breaking changes. Review the breaking commits in this run summary and prepare a human-owned release PR."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Describe dry-run plan
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: echo "Dry run only; no release PR, merge, tag, or publish was attempted." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Recover a failed release for the latest tag
+        if: steps.plan.outputs.action == 'none' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.latest_tag }}
+        run: |
+          set -euo pipefail
+          tag_sha="$(git rev-parse "${TAG}^{commit}")"
+          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs" -F per_page=100)"
+          run_json="$(jq -c --arg sha "$tag_sha" '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.created_at) | last // empty' <<<"$runs")"
+          if [ -z "$run_json" ]; then
+            gh workflow run release.yml --ref "$TAG"
+            echo "Dispatched the release workflow for $TAG (no prior run found)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          run_id="$(jq -r '.id' <<<"$run_json")"
+          status="$(jq -r '.status' <<<"$run_json")"
+          conclusion="$(jq -r '.conclusion // ""' <<<"$run_json")"
+          if [[ "$status" == "queued" || "$status" == "in_progress" ]]; then
+            echo "Release workflow for $TAG is already $status ($run_id)." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$conclusion" == "success" ]]; then
+            echo "Release workflow for $TAG already succeeded ($run_id)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh run rerun "$run_id" --failed
+            echo "Re-ran failed release jobs for $TAG ($run_id)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check for an existing nightly release PR
+        id: release-pr
+        if: steps.plan.outputs.action == 'release' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          MAIN_SHA: ${{ steps.plan.outputs.main_sha }}
+        run: |
+          set -euo pipefail
+          branch="chore/release-$VERSION"
+          prs="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REPOSITORY_OWNER:$branch" --state open --json number,body,author,baseRefName)"
+          pr="$(jq -r '.[0].number // empty' <<<"$prs")"
+
+          if [ -n "$pr" ]; then
+            body="$(jq -r '.[0].body // ""' <<<"$prs")"
+            author="$(jq -r '.[0].author.login // ""' <<<"$prs")"
+            base_ref="$(jq -r '.[0].baseRefName // ""' <<<"$prs")"
+            if [[ "$author" != "github-actions[bot]" || "$base_ref" != "main" ]]; then
+              echo "::error::Existing release PR $pr was not created by the release bot against main."
+              exit 1
+            fi
+            if [[ "$body" != *"<!-- jarela-nightly-release -->"* ]]; then
+              echo "::error::An unrelated PR already uses $branch; refusing to change it."
+              exit 1
+            fi
+            git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
+            base_sha="$(git merge-base "$MAIN_SHA" "origin/$branch")"
+            if [ "$base_sha" != "$MAIN_SHA" ]; then
+              gh pr close "$pr" --delete-branch --comment "Main advanced before the nightly release was merged; the next nightly run will regenerate this release PR."
+              pr=""
+            else
+              head_sha="$(git rev-parse "origin/$branch")"
+              parent_sha="$(git rev-parse "$head_sha^")"
+              commit_count="$(git rev-list --count "$MAIN_SHA..$head_sha")"
+              subject="$(git log -1 --format=%s "$head_sha")"
+              commit_body="$(git log -1 --format=%b "$head_sha")"
+              if [[ "$parent_sha" != "$MAIN_SHA" || "$commit_count" != "1" || "$subject" != "chore(release): bump to $VERSION" || "$commit_body" != *"Release base: $MAIN_SHA"* ]]; then
+                echo "::error::Existing release PR $pr does not match the generated release commit shape."
+                exit 1
+              fi
+              while IFS= read -r file; do
+                case "$file" in
+                  CHANGELOG.md|package.json|package-lock.json|docs/adoption/changesets.json|docs/adoption/index.md|docs/adoption/surface-snapshot.json) ;;
+                  *) echo "::error::Unexpected file in release PR: $file"; exit 1 ;;
+                esac
+              done < <(git diff --name-only "$MAIN_SHA..$head_sha")
+              package_version="$(git show "$head_sha:package.json" | node -e 'let s=""; process.stdin.on("data", c => s += c).on("end", () => console.log(JSON.parse(s).version))')"
+              lock_version="$(git show "$head_sha:package-lock.json" | node -e 'let s=""; process.stdin.on("data", c => s += c).on("end", () => console.log(JSON.parse(s).version))')"
+              if [[ "$package_version" != "$VERSION" || "$lock_version" != "$VERSION" ]]; then
+                echo "::error::Existing release PR package versions do not match $VERSION."
+                exit 1
+              fi
+            fi
+          fi
+
+          if [ -z "$pr" ] && git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "::error::The release branch exists without an open nightly PR; refusing to overwrite it."
+            exit 1
+          fi
+
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "pr_number=$pr" >> "$GITHUB_OUTPUT"
+          echo "create=$([[ -z "$pr" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare release metadata
+        if: steps.release-pr.outputs.create == 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          MAIN_SHA: ${{ steps.plan.outputs.main_sha }}
+        run: |
+          set -euo pipefail
+          git switch --detach "$MAIN_SHA"
+          git switch -c "${{ steps.release-pr.outputs.branch }}"
+          node scripts/nightly-release.mjs prepare "$VERSION" "$(date -u +%F)"
+          npm run release:changeset
+          npm run release:changeset -- --check
+          git diff --check
+
+      - name: Create or reuse release PR
+        id: pr
+        if: steps.release-pr.outputs.create == 'true' || steps.release-pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          MAIN_SHA: ${{ steps.plan.outputs.main_sha }}
+          BUMP: ${{ steps.plan.outputs.bump }}
+          LATEST_TAG: ${{ steps.plan.outputs.latest_tag }}
+          FEATURE_COUNT: ${{ steps.plan.outputs.feature_count }}
+          BRANCH: ${{ steps.release-pr.outputs.branch }}
+          EXISTING_PR: ${{ steps.release-pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          if [ -n "$EXISTING_PR" ]; then
+            pr="$EXISTING_PR"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add CHANGELOG.md package.json package-lock.json docs/adoption/changesets.json docs/adoption/index.md docs/adoption/surface-snapshot.json
+            git commit -m "chore(release): bump to $VERSION" -m "Release base: $MAIN_SHA"
+            gh auth setup-git
+            git push -u origin "$BRANCH"
+            body="$(cat <<EOF
+          Automated $BUMP release from $LATEST_TAG ($FEATURE_COUNT feat commits since the previous release).
+
+          This PR follows the release process and is merged only after the required CI check succeeds.
+
+          <!-- jarela-nightly-release -->
+          EOF
+          )"
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$BRANCH" \
+              --title "chore(release): bump to $VERSION" \
+              --body "$body"
+            pr="$(gh pr view "$BRANCH" --repo "$GITHUB_REPOSITORY" --json number --jq .number)"
+          fi
+
+          head_sha="$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)"
+          echo "pr_number=$pr" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch required CI check on the release PR
+        if: steps.pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.release-pr.outputs.branch }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH" -f release_validation=true
+
+      - name: Verify changeset for a resumed release
+        if: steps.plan.outputs.action == 'resume' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
+        run: npm run release:changeset -- --check
+
+      - name: Wait for required CI check
+        id: ci
+        if: steps.pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.release-pr.outputs.branch }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          for attempt in $(seq 1 90); do
+            runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" -f "branch=$BRANCH" -f event=workflow_dispatch -F per_page=50)"
+            run_id="$(jq -r --arg sha "$HEAD_SHA" '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.created_at) | last | .id // empty' <<<"$runs")"
+            [ -n "$run_id" ] && break
+            sleep 10
+          done
+          if [ -z "$run_id" ]; then
+            echo "::error::The dispatched CI run did not appear for $HEAD_SHA."
+            exit 1
+          fi
+
+          for attempt in $(seq 1 180); do
+            run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$run_id")"
+            status="$(jq -r '.status' <<<"$run")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$run")"
+            if [[ "$status" == "completed" ]]; then
+              if [[ "$conclusion" != "success" ]]; then
+                echo "::error::Release PR CI concluded $conclusion."
+                exit 1
+              fi
+              break
+            fi
+            sleep 10
+          done
+
+          check_runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/$HEAD_SHA/check-runs?per_page=100")"
+          required_check="$(jq -r '[.check_runs[] | select(.name == "Lint, typecheck, build" and .conclusion == "success")] | length' <<<"$check_runs")"
+          if [ "$required_check" -lt 1 ]; then
+            echo "::error::The required Lint, typecheck, build check is not green on $HEAD_SHA."
+            exit 1
+          fi
+
+      - name: Merge release PR and create release tag
+        id: merge
+        if: steps.pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          PLANNED_MAIN_SHA: ${{ steps.plan.outputs.main_sha }}
+        run: |
+          set -euo pipefail
+          gh pr checks "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --watch --interval 10 --fail-fast
+          git fetch origin main --tags
+          current_main="$(git rev-parse origin/main)"
+          if [ "$current_main" != "$PLANNED_MAIN_SHA" ]; then
+            gh pr close "$PR_NUMBER" --delete-branch --comment "Main advanced while this release was validating; the next nightly run will regenerate it."
+            echo "Main advanced during validation; release deferred to the next nightly run." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --rebase --delete-branch
+          merge_sha="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json mergeCommit --jq .mergeCommit.oid)"
+          git fetch origin main --tags
+          git merge-base --is-ancestor "$merge_sha" origin/main
+          merge_parent="$(git show -s --format=%P "$merge_sha")"
+          if [ "$merge_parent" != "$PLANNED_MAIN_SHA" ]; then
+            echo "::error::Main advanced during release merge; the generated changelog does not cover the new base."
+            exit 1
+          fi
+          package_version="$(git show "$merge_sha:package.json" | node -e 'let s=""; process.stdin.on("data", c => s += c).on("end", () => console.log(JSON.parse(s).version))')"
+          if [ "$package_version" != "$VERSION" ]; then
+            echo "::error::Merged package version $package_version does not match planned $VERSION."
+            exit 1
+          fi
+          echo "target_sha=$merge_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and dispatch the release workflow
+        if: (steps.plan.outputs.action == 'resume' || steps.merge.outputs.target_sha != '') && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTION: ${{ steps.plan.outputs.action }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          RESUME_SHA: ${{ steps.plan.outputs.target_sha }}
+          MERGE_SHA: ${{ steps.merge.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          target_sha="$MERGE_SHA"
+          if [ "$ACTION" = "resume" ]; then target_sha="$RESUME_SHA"; fi
+          git fetch origin main --tags
+          git merge-base --is-ancestor "$target_sha" origin/main
+          package_version="$(git show "$target_sha:package.json" | node -e 'let s=""; process.stdin.on("data", c => s += c).on("end", () => console.log(JSON.parse(s).version))')"
+          if [ "$package_version" != "$VERSION" ]; then
+            echo "::error::Tag $tag would not match package version $package_version at $target_sha."
+            exit 1
+          fi
+
+          remote_tag="$(git ls-remote origin "refs/tags/$tag" | cut -f1)"
+          if [ -n "$remote_tag" ]; then
+            echo "::error::Tag $tag already exists; refusing to move or reuse it."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" "$target_sha" -m "$tag"
+          gh auth setup-git
+          git push origin "$tag"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
+          echo "Tagged $target_sha as $tag and dispatched the existing release workflow." >> "$GITHUB_STEP_SUMMARY"
