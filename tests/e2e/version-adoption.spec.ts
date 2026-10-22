@@ -46,7 +46,8 @@ test("boot screen shows version adoption checklist without moving the brand chro
   await expect(boot).toBeVisible({ timeout: 15_000 });
 
   await expect(boot.locator('img[src="/logo-mark-transparent.png"], img[src="/logo-mark-transparent-dark.png"]').first()).toBeAttached();
-  await expect(boot.locator(".animate-pulse")).toContainText("pick an agent to begin");
+  await expect(boot.getByText("Choose an agent to begin", { exact: true })).toBeVisible();
+  await expect(boot.locator(".animate-pulse")).toHaveCount(0);
   await expect(boot.getByRole("button", { name: "Open E2E Mock" }).first()).toBeVisible();
 
   await expect(boot.getByText("Version check")).toBeVisible({ timeout: 10_000 });
@@ -69,7 +70,7 @@ test("opening after automatic adoption uses the default agent without duplicate 
   await expect(openDefaultAgent).toBeEnabled({ timeout: 20_000 });
   await openDefaultAgent.click();
 
-  await expect(boot.locator(".animate-pulse")).toContainText(/loading your profile|loading agent config|preparing conversation|loading recent messages|opening E2E Mock/);
+  await expect(boot.locator(".animate-pulse")).toContainText(/Setting up your profile|Getting your agent ready|Preparing your conversation|Loading recent messages|Opening E2E Mock/);
   await boot.waitFor({ state: "detached", timeout: 30_000 });
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
 });
