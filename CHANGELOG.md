@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.3] - 2026-10-22
+
+### Fixed
+
+- Keep startup and agent-selection feedback accurate while agents and chat history load, with one current-action status on the boot screen.
+- Standardize interface transition timing, respect reduced-motion preferences, and keep dashboard chart animations restrained.
+- Keep token date labels below the plot so they do not overlap chart data.
+
 ## [2.5.2] - 2026-10-20
 
 ### Fixed

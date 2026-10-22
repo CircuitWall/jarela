@@ -3260,6 +3260,59 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "2.5.3",
+      "previous_version": "2.5.2",
+      "date": "2026-10-22",
+      "hints": [],
+      "commits": [
+        "fix(dashboard): move token dates below plot",
+        "test(e2e): align startup assertions and hook git context",
+        "fix(ui): align startup and motion feedback",
+        "fix(ui): render startup progress on the splash screen",
+        "test(ci): fix fresh-database browser job setup",
+        "fix(memory): render saved fact summaries",
+        "fix(proxy): move oauth proxy source into function namespace",
+        "docs(onboarding): add first-run guide and screenshots",
+        "feat(onboarding): add first-run assistant guidance",
+        "build(dev): add random-port isolated preview",
+        "fix(models): keep one enabled default model",
+        "feat(settings): add runtime guidance and mcp setup controls"
+      ],
+      "prompts": [
+        {
+          "id": "static.agent.first-run-instructions",
+          "source": "lib/agents/first-run-onboarding.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.agent.first-run-onboarding",
+          "source": "lib/agents/first-run-onboarding.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "set_env_var",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "name",
+            "value"
+          ],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
