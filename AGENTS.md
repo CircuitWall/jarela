@@ -73,8 +73,8 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full rules. Summary:
 
 - Trunk-based: never push to `main`; use a topic branch (`feat/…`, `fix/…`, `chore/…`, `docs/…`, or `refactor/…`) and open a PR.
 - Rebase merge only. Every commit that lands on `main` must have a Conventional Commit subject; the PR title is used in release notes.
-- `package.json` is the semver source of truth. Breaking changes require a major bump; new user-facing capabilities use a minor bump; fixes and improvements to existing features use a patch bump.
-- Releases are deliberate and tag-driven. Bump `package.json`, update `CHANGELOG.md` (with an optional `### Adoption` section for user-setup steps), and run `npm run release:changeset` to record prompt and tool description/schema changes in `docs/adoption/` in a release PR, merge it, then tag `main`. GitHub Actions handles bundles and npm publishing through OIDC Trusted Publishing; never publish from a developer machine.
+- `package.json` is the semver source of truth. Nightly Jarela app releases use a minor bump for 3+ `feat` commits since the previous tag and a patch bump otherwise; breaking changes are held for a human to prepare a major release. Workspace packages use standard semver.
+- `.github/workflows/nightly-release.yml` prepares the version/changelog/adoption PR, dispatches CI, auto-merges only after required checks pass, and tags the merged commit. `.github/workflows/release.yml` then builds and publishes through GitHub Actions/OIDC; never publish from a developer machine.
 
 ## Repository Conventions
 

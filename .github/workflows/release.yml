@@ -2,7 +2,9 @@ name: Release
 
 # ADR-0011 + ADR-0076: per-OS archives, native packages, npm, Docker.
 # CI (.github/workflows/ci.yml) still gates merges on lint/typecheck/build.
-# This workflow only runs on tags so a normal push never publishes.
+# This workflow runs on tags or an explicit dispatch against a verified tag,
+# so a normal push never publishes. The nightly release workflow uses dispatch
+# because tags pushed with GITHUB_TOKEN do not trigger push workflows.
 
 on:
   push:
@@ -15,6 +17,7 @@ on:
       - "github-langchain-v*"
       - "ms-todo-langchain-v*"
       - "icloud-langchain-v*"
+  workflow_dispatch:
 permissions:
   contents: write   # softprops/action-gh-release attaches archives to the Release
   packages: write   # ghcr.io publication for GitHub Packages card
