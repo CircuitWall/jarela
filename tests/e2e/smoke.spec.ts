@@ -34,7 +34,7 @@ test("health endpoint responds", async ({ request }) => {
   expect(r.ok()).toBeTruthy();
 });
 
-test("app readiness distinguishes the boot picker from launch progress", async ({ page }) => {
+test("a pending health check does not block the boot picker", async ({ page }) => {
   let releaseHealth!: () => void;
   const healthReady = new Promise<void>((resolve) => { releaseHealth = resolve; });
   await page.route("**/api/v1/health", async (route) => {
@@ -44,13 +44,14 @@ test("app readiness distinguishes the boot picker from launch progress", async (
 
   try {
     await page.goto("/");
-    await expect(page.getByText("Launching Jarela", { exact: true })).toBeVisible();
-    await expect(page.getByTestId("boot-screen")).toBeVisible();
-    await expect(page.locator('[role="status"][aria-live="polite"].fixed.inset-0')).toHaveCount(2);
+    const boot = page.getByTestId("boot-screen");
+    await expect(boot).toBeVisible();
+    await expect(boot.getByRole("button", { name: "Open E2E Mock" })).toBeVisible();
+    await expect(page.getByText("Launching Jarela", { exact: true })).toHaveCount(0);
+    await expect(page.locator('[role="status"][aria-live="polite"].fixed.inset-0')).toHaveCount(1);
     const ready = waitForAppReady(page);
     releaseHealth();
     await ready;
-    await expect(page.getByText("Launching Jarela", { exact: true })).toHaveCount(0);
     await expect(page.getByPlaceholder("Message…")).toBeEnabled();
   } finally {
     releaseHealth();

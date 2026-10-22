@@ -5,7 +5,11 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
+# Clear additional Git environment variables for unit tests
+unset GIT_COMMON_DIR GIT_OBJECT_DIRECTORY
+unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_CEILING_DIRECTORIES GIT_QUARANTINE_PATH
 # Nothing staged → nothing to check. Lets `git commit --allow-empty` etc.
 # pass without paying the lint+typecheck+test tax.
 if git diff --cached --quiet; then
@@ -22,4 +26,5 @@ echo "[pre-commit] typecheck"
 npx -y tsc --noEmit
 
 echo "[pre-commit] unit tests"
-npm test --silent
+env -u GIT_CONFIG_COUNT -u GIT_CONFIG_KEY_0 -u GIT_CONFIG_VALUE_0 -u GIT_CONFIG_PARAMETERS \
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 npm test --silent
