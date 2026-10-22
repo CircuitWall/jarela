@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Upgrade Next.js and its ESLint config to 16.4.2 and enable security-upgrade reminders.
+
 ## [2.5.3] - 2026-10-22
 
 ### Fixed
