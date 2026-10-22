@@ -11,6 +11,34 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 2.5.3
+
+From 2.5.2 · 2026-10-22
+
+### Tools
+
+- `set_env_var` — changed; params changed: `name`, `value`
+
+### Prompts
+
+- `static.agent.first-run-instructions` — added (`lib/agents/first-run-onboarding.ts`)
+- `static.agent.first-run-onboarding` — added (`lib/agents/first-run-onboarding.ts`)
+
+### Commits
+
+- fix(dashboard): move token dates below plot
+- test(e2e): align startup assertions and hook git context
+- fix(ui): align startup and motion feedback
+- fix(ui): render startup progress on the splash screen
+- test(ci): fix fresh-database browser job setup
+- fix(memory): render saved fact summaries
+- fix(proxy): move oauth proxy source into function namespace
+- docs(onboarding): add first-run guide and screenshots
+- feat(onboarding): add first-run assistant guidance
+- build(dev): add random-port isolated preview
+- fix(models): keep one enabled default model
+- feat(settings): add runtime guidance and mcp setup controls
+
 ## 2.5.2
 
 From 2.5.1 · 2026-10-20
