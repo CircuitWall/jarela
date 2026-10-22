@@ -108,6 +108,7 @@ const nextConfig: NextConfig = {
     return config;
   },
   experimental: {
+    agentUpgrade: "security",
     // Backstop for stale clients, service-worker-cached bundles, and direct
     // API callers that still submit inline image blobs to /threads/:id/run.
     // The current browser client preflights oversized images into image_ref
