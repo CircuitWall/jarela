@@ -157,6 +157,11 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
     return () => { cancelled = true; };
   }, [agentsLoaded, defaultAgent]);
 
+  useEffect(() => {
+    if (!agentsLoaded || suppressed) return;
+    void api.agents.recentReplies().catch(() => {});
+  }, [agentsLoaded, suppressed]);
+
   useEffect(() => () => {
     adoptionAbortRef.current?.abort();
   }, []);

@@ -149,6 +149,30 @@ export function listThreadsByAgent(agent_id: string, limit = 50): ThreadRow[] {
     .all(agent_id, limit) as unknown as ThreadRow[];
 }
 
+export function listLatestAssistantRepliesByAgent(): Array<{ agent_id: string; content: string }> {
+  const previewChars = 240;
+  return getDb()
+    .prepare(`
+      SELECT t.agent_id, substr(trim(m.content), 1, ${previewChars}) AS content
+      FROM threads t
+      JOIN messages m ON m.thread_id=t.thread_id
+      WHERE m.role='assistant'
+        AND m.transcript_status='completed'
+        AND trim(m.content) <> ''
+        AND NOT EXISTS (
+          SELECT 1
+          FROM threads newer_t
+          JOIN messages newer_m ON newer_m.thread_id=newer_t.thread_id
+          WHERE newer_t.agent_id=t.agent_id
+            AND newer_m.role='assistant'
+            AND newer_m.transcript_status='completed'
+            AND trim(newer_m.content) <> ''
+            AND newer_m.rowid > m.rowid
+        )
+    `)
+    .all() as Array<{ agent_id: string; content: string }>;
+}
+
 export function getThread(thread_id: string): ThreadRow | null {
   return (getDb().prepare("SELECT * FROM threads WHERE thread_id=?").get(thread_id) as unknown as ThreadRow) ?? null;
 }

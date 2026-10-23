@@ -36,10 +36,34 @@ const {
   getMessagesByAutomationCategory,
   getThreadChannelSummary,
   commitThreadChannelSummary,
+  listLatestAssistantRepliesByAgent,
 } = await import("./threads");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+});
+
+describe("latest assistant replies by agent", () => {
+  it("returns the latest completed non-empty reply even when a user message is newer", () => {
+    const thread = createThread("agent-menu-reply-preview");
+    addMessage(thread.thread_id, "assistant", "Earlier reply");
+    const newestReply = "latest reply ".repeat(40);
+    addMessage(thread.thread_id, "assistant", newestReply);
+    addMessage(thread.thread_id, "user", "Newer user message");
+    addMessage(thread.thread_id, "assistant", "Interrupted reply", undefined, null, undefined, "interrupted");
+    addMessage(thread.thread_id, "assistant", "   ");
+
+    const failedThread = createThread("agent-menu-reply-failed");
+    addMessage(failedThread.thread_id, "assistant", "Failed reply", undefined, null, undefined, "failed");
+
+    expect(listLatestAssistantRepliesByAgent()).toContainEqual({
+      agent_id: "agent-menu-reply-preview",
+      content: newestReply.slice(0, 240).trim(),
+    });
+    expect(listLatestAssistantRepliesByAgent()).not.toContainEqual(expect.objectContaining({
+      agent_id: "agent-menu-reply-failed",
+    }));
+  });
 });
 
 describe("thread context pin (ADR-0042)", () => {

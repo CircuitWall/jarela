@@ -8,11 +8,12 @@ const reads = vi.hoisted(() => ({
   agent: vi.fn(),
   thread: vi.fn(),
   messages: vi.fn(),
+  recentReplies: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("@/api/client", () => ({
   api: {
     profile: { get: reads.profile },
-    agents: { get: reads.agent, getThread: reads.thread },
+    agents: { get: reads.agent, getThread: reads.thread, recentReplies: reads.recentReplies },
     threads: { get: reads.messages },
   },
 }));
@@ -36,6 +37,7 @@ it("offers a direct path to create an agent when none are configured", () => {
     />,
   );
 
+  expect(reads.recentReplies).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByRole("button", { name: "Create an agent" }));
   expect(onCreateAgent).toHaveBeenCalledOnce();
 });

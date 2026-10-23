@@ -115,6 +115,11 @@ Abort the in-flight run. This is the only interrupt; typing mid-run steers.
 
 List configured agents.
 
+### `GET /api/v1/agents/recent-replies`
+
+Return each agent's latest non-empty, completed assistant reply as
+`{ agent_id, content }` entries. Agents without a completed reply are omitted.
+
 ### `POST /api/v1/agents`
 
 Upsert an agent config. The full schema (identity, instructions, tools,
