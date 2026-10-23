@@ -26,6 +26,7 @@ import {
   graphFetch,
   resolveMicrosoftAuth,
 } from "@/lib/integrations/microsoft-oauth";
+import { eventWindowError } from "./event-window";
 
 // ── Graph type shapes (minimal subset) ──────────────────────────────────────
 
@@ -267,6 +268,8 @@ export const outlookCalendarCreateEventTool = tool(
     if (!eventSubject) {
       return JSON.stringify({ error: "subject (or summary) is required" });
     }
+    const windowError = eventWindowError(start_iso, end_iso);
+    if (windowError) return JSON.stringify({ error: windowError });
 
     interface EventBody {
       subject: string;
@@ -346,6 +349,8 @@ export const outlookCalendarUpdateEventTool = tool(
     if ("error" in auth) return JSON.stringify({ error: auth.error });
 
     const tz = time_zone ?? "UTC";
+    const windowError = eventWindowError(start_iso, end_iso);
+    if (windowError) return JSON.stringify({ error: windowError });
     const patch: Record<string, unknown> = {};
     const eventSubject = subject ?? summary;
     if (eventSubject !== undefined) patch.subject = eventSubject;
