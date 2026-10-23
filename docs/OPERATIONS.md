@@ -47,6 +47,10 @@ The Tasks view separates scheduled tasks from event-driven tasks so each kind of
 
 Chat is the per-agent workspace for conversations and their results. Keep related follow-up work in the same thread so its existing context remains available.
 
+An asynchronous tool handoff means work is still running, not that its effect
+has been verified. The runtime keeps these calls out of successful-tool
+evidence while retaining them in duplicate-effect protection.
+
 At agent startup, the picker and chat share in-flight profile, agent config,
 thread resolution, and recent-message reads. Successful startup responses are
 reused for up to five seconds, with at most 16 entries retained in browser
