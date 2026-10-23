@@ -411,7 +411,24 @@ function buildUserContext(): string {
 }
 
 function buildTimeContext(): string {
-  return `Current time: ${new Date().toISOString()} (UTC). Use this when computing scheduled task timestamps.`;
+  const now = new Date();
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const localDateTime = new Intl.DateTimeFormat("sv-SE", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "longOffset",
+  }).format(now);
+  return [
+    `Current time: ${now.toISOString()} (UTC). Use this when computing scheduled task timestamps.`,
+    `Current local date and time: ${localDateTime} (${timeZone}). Use this for local calendar-date interpretation.`,
+    "For elapsed-time rules, compare modification timestamps with current UTC time; do not infer a 24-hour interval from calendar dates.",
+  ].join("\n");
 }
 
 /**
