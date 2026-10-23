@@ -1,0 +1,42 @@
+{
+  "name": "calendar item plus disclosed mail outage",
+  "tool": "validate_personal_briefing",
+  "input": {
+    "sources": [
+      {
+        "id": "calendar:standup-0900",
+        "available": true
+      },
+      {
+        "id": "calendar:dentist-1500",
+        "available": true
+      },
+      {
+        "id": "mail",
+        "available": false
+      }
+    ],
+    "briefing": {
+      "items": [
+        {
+          "text": "Team standup at 09:00.",
+          "source_ids": [
+            "calendar:standup-0900"
+          ]
+        },
+        {
+          "text": "Dentist appointment at 15:00; leave by 14:30.",
+          "source_ids": [
+            "calendar:dentist-1500"
+          ]
+        }
+      ],
+      "unavailable_source_ids": [
+        "mail"
+      ]
+    }
+  },
+  "expect": {
+    "ok": true
+  }
+}
