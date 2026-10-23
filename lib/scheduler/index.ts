@@ -176,6 +176,8 @@ async function tick(): Promise<void> {
         console.error("[scheduler] spill file GC failed:", errorMessage(err));
       });
     }
+  } catch (err) {
+    console.error("[scheduler] tick failed:", errorMessage(err));
   } finally {
     state.running = false;
   }

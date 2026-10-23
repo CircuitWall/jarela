@@ -41,6 +41,11 @@ The Tools view groups the catalog, installed packages, and internal runtime cont
 
 The Tasks view separates scheduled tasks from event-driven tasks so each kind of background work can be reviewed in its own section.
 
+If a scheduler tick fails before or during trigger dispatch, the server logs
+`[scheduler] tick failed` and releases the in-flight guard so the next tick can
+run. This does not mean an interrupted external action is safe to repeat;
+inspect its outcome before manually retrying.
+
 ![Jarela Tasks view showing scheduled and event-driven tasks](assets/operations-tasks.png)
 
 ## Work in chat
