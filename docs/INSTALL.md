@@ -137,6 +137,7 @@ To upgrade:
 
 ```sh
 npm update -g @circuitwall/jarela        # or: jarela update
+jarela --version                          # confirm the installed version
 jarela                                    # uses the prebuilt bundle
 ```
 
