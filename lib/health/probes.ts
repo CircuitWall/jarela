@@ -37,6 +37,7 @@ import {
   type IntegrationCategory,
 } from "@/lib/stores/integrations";
 import { getStoredOAuthToken as getStoredCopilotOAuthToken } from "@/lib/providers/github-copilot-auth";
+import { refreshExternalProviderIntegrations } from "@/lib/providers/provider-integrations";
 import { getClaudeCodeConfig } from "@/lib/tools/delegation/claude-code-config";
 import { getCodexConfig, resolveCodexLaunch } from "@/lib/tools/delegation/codex-delegate";
 import { readJsonResponse } from "@/lib/utils/http-json";
@@ -403,9 +404,23 @@ type ProbeIntegrationDefinition = {
   probe?: HttpCredentialProbeDefinition;
 };
 
+const PROBE_MISS_TTL_MS = 30_000;
+const probeMisses = new Map<string, number>();
+
 function probeDefinition(name: string): ProbeIntegrationDefinition | undefined {
   if (isKnownIntegration(name)) return INTEGRATIONS[name] as ProbeIntegrationDefinition;
-  return getDynamicIntegration(name);
+  const dynamic = getDynamicIntegration(name);
+  if (dynamic) return dynamic;
+  // External provider probes live in a registry that is otherwise only
+  // populated by the integrations API, so rescan on a miss. Confirmed misses
+  // are cached briefly because tool catalogs query readiness per tool.
+  const missedAt = probeMisses.get(name);
+  if (missedAt !== undefined && Date.now() - missedAt < PROBE_MISS_TTL_MS) return undefined;
+  refreshExternalProviderIntegrations();
+  const refreshed = getDynamicIntegration(name);
+  if (refreshed) probeMisses.delete(name);
+  else probeMisses.set(name, Date.now());
+  return refreshed;
 }
 
 const SPECIAL_PROBES: Partial<Record<ProbeName, () => Promise<HealthResult>>> = {
@@ -421,6 +436,8 @@ const SPECIAL_PROBES: Partial<Record<ProbeName, () => Promise<HealthResult>>> = 
 
 export function listProbes(): string[] {
   const builtIn = Object.keys(INTEGRATIONS).filter(isIntegrationProbe);
+  refreshExternalProviderIntegrations();
+  probeMisses.clear();
   const dynamic = DYNAMIC_INTEGRATIONS_SNAPSHOT()
     .filter(([, definition]) => Boolean(definition.probe))
     .map(([name]) => name);

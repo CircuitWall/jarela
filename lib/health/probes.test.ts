@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -781,6 +781,34 @@ describe("health probes", () => {
     it("runProbe dispatches by name", async () => {
       const r = await runProbe("github");
       expect(r.status).toBe("unconfigured");
+    });
+    it("discovers external provider probes without a prior integrations API refresh", async () => {
+      const providersDir = join(tmpRoot, "providers");
+      mkdirSync(providersDir, { recursive: true });
+      const file = join(providersDir, "cold-llm.cjs");
+      writeFileSync(file, `
+        module.exports = {
+          name: "cold-llm",
+          credentials: [{ key: "api_key", label: "API key", secret: true, required: true }],
+          credentialProbe: {
+            endpoint: "https://api.example.com/v1/models",
+            credentialField: "api_key",
+            auth: { type: "bearer" },
+          },
+          async chat() { return { stream: (async function*(){})() }; },
+        };
+      `);
+      try {
+        clearDynamicIntegrations();
+        expect(isIntegrationProbe("cold-llm")).toBe(true);
+        clearDynamicIntegrations();
+        expect(listProbes()).toContain("cold-llm");
+        clearDynamicIntegrations();
+        expect((await runProbe("cold-llm")).status).toBe("unconfigured");
+      } finally {
+        unlinkSync(file);
+        clearDynamicIntegrations();
+      }
     });
   });
 });
