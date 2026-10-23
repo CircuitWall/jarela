@@ -41,9 +41,12 @@ export interface ScheduledTaskRow {
 
 const now = () => new Date().toISOString();
 
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
+
 export function computeNextRun(kind: ScheduleKind, schedule: string, after: Date = new Date()): Date {
   if (kind === "once") {
-    const ts = new Date(schedule);
+    // Date() also accepts loose strings such as cron expressions, so require ISO 8601 date + time.
+    const ts = ISO_DATE_TIME.test(schedule.trim()) ? new Date(schedule) : new Date(Number.NaN);
     if (Number.isNaN(ts.getTime())) throw new Error(`Invalid ISO timestamp: ${schedule}`);
     return ts;
   }
@@ -80,7 +83,7 @@ export function createScheduledTask(input: CreateScheduledTaskInput): ScheduledT
     reaction_script: input.reaction_script,
     reaction_script_args: input.reaction_script_args,
   });
-  if (reaction.kind === "agent_prompt" && !input.prompt) {
+  if (reaction.kind === "agent_prompt" && !input.prompt?.trim()) {
     throw new Error("prompt is required when reaction_kind='agent_prompt'");
   }
   // For kind='script' we still need a non-NULL value in the prompt column
@@ -211,6 +214,9 @@ export function updateScheduledTask(id: string, patch: UpdateScheduledTaskInput)
     : (reaction.kind === "agent_prompt" && existing.reaction_kind === "script"
         ? (existing.prompt || "")
         : existing.prompt);
+  if (reaction.kind === "agent_prompt" && !nextPrompt.trim()) {
+    throw new Error("prompt is required when reaction_kind='agent_prompt'");
+  }
 
   getDb()
     .prepare(
