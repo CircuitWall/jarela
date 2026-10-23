@@ -141,6 +141,15 @@ Read, update, or delete one agent config.
 
 - **Source:** [`app/api/v1/agents/[id]/route.ts`](../app/api/v1/agents/[id]/route.ts)
 
+### `POST /api/v1/agents/[id]/duplicate`
+
+Copy every setting of an agent into a new, non-default agent so a tuned setup
+can be reused as a personal template. Optional body `{ "name": "…" }`; the
+default name is `"<name> (copy)"`. Conversations are not copied. Returns
+`201` with the new agent, `404` for an unknown agent, `400` for a blank name.
+
+- **Source:** [`app/api/v1/agents/[id]/duplicate/route.ts`](../app/api/v1/agents/[id]/duplicate/route.ts)
+
 ---
 
 ## Tools

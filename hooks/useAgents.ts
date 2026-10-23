@@ -11,6 +11,7 @@ export function useAgents(): UnifiedHookResult<
     create: (data: AgentConfigIn) => Promise<AgentConfig>;
     update: (id: string, data: AgentConfigIn) => Promise<AgentConfig>;
     remove: (id: string) => Promise<void>;
+    duplicate: (id: string) => Promise<AgentConfig>;
   }
 > {
   const {
@@ -42,8 +43,14 @@ export function useAgents(): UnifiedHookResult<
     setAgents((p) => p.filter((x) => x.id !== id));
   }, [setAgents]);
 
-  const state = { agents, loading, error };
-  const commands = { refresh, create, update, remove };
+  const duplicate = useCallback(async (id: string) => {
+    const a = await api.agents.duplicate(id);
+    setAgents((p) => [...p, a]);
+    return a;
+  }, [setAgents]);
 
-  return { state, commands, agents, loading, error, refresh, create, update, remove };
+  const state = { agents, loading, error };
+  const commands = { refresh, create, update, remove, duplicate };
+
+  return { state, commands, agents, loading, error, refresh, create, update, remove, duplicate };
 }
