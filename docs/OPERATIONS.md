@@ -79,6 +79,14 @@ filters, context boundaries, and load-older navigation still update normally.
 
 ![Jarela chat showing an agent conversation](assets/operations-chat.png)
 
+## Document source controls
+
+Disabling a local document source prevents newly starting single-file reindex
+jobs from changing its index, including filesystem events queued before the
+source was disabled. Disabling does not delete previously indexed contents.
+Re-enable the source to resume indexing; delete the source to remove its
+documents and chunks.
+
 ## Database performance
 
 SQLite uses WAL mode. On upgrade, Jarela automatically creates indexes matching

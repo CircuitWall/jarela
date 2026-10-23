@@ -35,7 +35,7 @@ vi.mock("@/lib/embeddings", () => ({
 const { reindexLocalFile } = await import("./reindex-local-file");
 const { upsertLocalDocument, hashContent } = await import("./indexer");
 const { getDb } = await import("@/lib/db");
-const { createDocumentSource } = await import("@/lib/stores/document-sources");
+const { createDocumentSource, updateDocumentSource } = await import("@/lib/stores/document-sources");
 
 let sourceId: string;
 
@@ -54,6 +54,31 @@ afterAll(() => {
 });
 
 describe("reindexLocalFile (ADR-0028)", () => {
+  it("does not index queued events after the owner disables a source", async () => {
+    const abs = join(sourceRoot, "disabled-new.md");
+    writeFileSync(abs, "Do not index while disabled.");
+    updateDocumentSource(sourceId, { enabled: false });
+    expect((await reindexLocalFile({ source_id: sourceId, abs })).preview).toMatch(/^skipped: source .* disabled/);
+    expect(getDb().prepare("SELECT 1 FROM documents WHERE source_id=?").get(sourceId)).toBeUndefined();
+
+    updateDocumentSource(sourceId, { enabled: true });
+    expect((await reindexLocalFile({ source_id: sourceId, abs })).preview).toMatch(/^added /);
+  });
+
+  it("leaves indexed contents unchanged for queued edits or deletions while disabled", async () => {
+    const abs = join(sourceRoot, "disabled-existing.md");
+    writeFileSync(abs, "Original indexed contents.");
+    await reindexLocalFile({ source_id: sourceId, abs });
+    const before = getDb().prepare("SELECT content_hash FROM documents WHERE source_id=? AND path=?").get(sourceId, abs);
+    updateDocumentSource(sourceId, { enabled: false });
+    writeFileSync(abs, "Changed while disabled.");
+    await reindexLocalFile({ source_id: sourceId, abs });
+    expect(getDb().prepare("SELECT content_hash FROM documents WHERE source_id=? AND path=?").get(sourceId, abs)).toEqual(before);
+    unlinkSync(abs);
+    await reindexLocalFile({ source_id: sourceId, abs });
+    expect(getDb().prepare("SELECT content_hash FROM documents WHERE source_id=? AND path=?").get(sourceId, abs)).toEqual(before);
+  });
+
   it("indexes a new file (added)", async () => {
     const abs = join(sourceRoot, "hello.md");
     writeFileSync(abs, "# Hello\n\nThis is a fresh document.");
