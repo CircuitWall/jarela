@@ -65,6 +65,18 @@ describe("runUpdate (stable channel)", () => {
     expect(commands()).toEqual(["npm i -g @circuitwall/jarela@latest"]);
   });
 
+  it("compares hyphenated prerelease identifiers in full", async () => {
+    registryReturns("2.1.0-beta-2");
+    expect(await runUpdate({ root: makeRoot("2.1.0-beta-1") })).toBe(0);
+    expect(commands()).toEqual(["npm i -g @circuitwall/jarela@latest"]);
+  });
+
+  it("ignores build metadata when comparing versions", async () => {
+    registryReturns("2.0.5+build.9");
+    expect(await runUpdate({ root: makeRoot("2.0.5+build.1") })).toBe(0);
+    expect(spawnSync).not.toHaveBeenCalled();
+  });
+
   it("still attempts the install when the registry is unreachable", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("offline"); }));
     expect(await runUpdate({ root: makeRoot("2.0.5") })).toBe(0);
