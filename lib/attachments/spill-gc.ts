@@ -1,6 +1,7 @@
 import { promises as fsp, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { getDb } from "@/lib/db";
+import { decryptIfNeeded } from "@/lib/crypto/envelope";
 import { FILES_DIR, isSafeFileName } from "@/lib/files";
 
 const DEFAULT_RETENTION_DAYS = 30;
@@ -129,25 +130,43 @@ export function collectThreadFileRefNames(threadId: string): Set<string> {
   return out;
 }
 
-function stillReferenced(name: string): boolean {
+function stillReferenced(name: string, encryptedMemory: () => string[] | null): boolean {
   const pattern = `%${name.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const db = getDb();
   const inMessages = db.prepare(
     "SELECT 1 FROM messages WHERE content LIKE ? ESCAPE '\\' OR tool_events LIKE ? ESCAPE '\\' OR metadata LIKE ? ESCAPE '\\' LIMIT 1",
   ).get(pattern, pattern, pattern);
   if (inMessages) return true;
-  return Boolean(db.prepare("SELECT 1 FROM memory_store WHERE value LIKE ? ESCAPE '\\' LIMIT 1").get(pattern));
+  if (db.prepare("SELECT 1 FROM memory_store WHERE value LIKE ? ESCAPE '\\' LIMIT 1").get(pattern)) return true;
+  const decrypted = encryptedMemory();
+  // Encrypted values we cannot read (e.g. PIN-locked key) might reference the file: keep it.
+  if (decrypted === null) return true;
+  return decrypted.some((value) => value.includes(name));
+}
+
+function loadEncryptedMemoryValues(): string[] | null {
+  const rows = getDb()
+    .prepare("SELECT value FROM memory_store WHERE value LIKE 'enc:v1:%'")
+    .all() as Array<{ value: string }>;
+  try {
+    return rows.map((row) => decryptIfNeeded(row.value));
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Remove spill files right after their last referencing conversation is deleted,
  * instead of leaving private attachments on disk until the retention GC runs.
- * Files still mentioned by any other message or memory entry are kept.
+ * Files still mentioned by any other message or memory entry (including
+ * encrypted memory) are kept.
  */
 export function removeFilesNoLongerReferenced(names: Iterable<string>): number {
   let removed = 0;
+  let cached: string[] | null | undefined;
+  const encryptedMemory = () => (cached === undefined ? (cached = loadEncryptedMemoryValues()) : cached);
   for (const name of names) {
-    if (!isSafeFileName(name) || stillReferenced(name)) continue;
+    if (!isSafeFileName(name) || stillReferenced(name, encryptedMemory)) continue;
     try {
       unlinkSync(join(FILES_DIR, name));
       removed++;
