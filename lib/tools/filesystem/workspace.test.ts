@@ -71,6 +71,28 @@ describe("workspace_init", () => {
     expect(currentWorkspace()?.root).toBe(projectRoot);
   });
 
+  it("reuses a recent persisted tree scan and allows an explicit refresh", async () => {
+    writeFileSync(join(projectRoot, "initial.ts"), "export {};");
+    const options = { path: projectRoot, include_git: false, include_scripts: false, include_readme: false };
+    const first = parse(await workspaceInitTool.invoke(options));
+    const firstScan = first.scan as { tree_scanned_at: string; tree_cache_hit: boolean };
+    expect(firstScan.tree_cache_hit).toBe(false);
+    expect(firstScan.tree_scanned_at).toBeTruthy();
+
+    writeFileSync(join(projectRoot, "added-after-scan.ts"), "export {};");
+    const cached = parse(await workspaceInitTool.invoke(options));
+    const cachedScan = cached.scan as { tree_scanned_at: string; tree_cache_hit: boolean };
+    const cachedEntries = (cached.tree as { entries: Array<{ path: string }> }).entries;
+    expect(cachedScan).toEqual({ ...firstScan, tree_cache_hit: true });
+    expect(cachedEntries.some((entry) => entry.path === "added-after-scan.ts")).toBe(false);
+
+    const refreshed = parse(await workspaceInitTool.invoke({ ...options, refresh_scan: true }));
+    const refreshedScan = refreshed.scan as { tree_scanned_at: string; tree_cache_hit: boolean };
+    const refreshedEntries = (refreshed.tree as { entries: Array<{ path: string }> }).entries;
+    expect(refreshedScan.tree_cache_hit).toBe(false);
+    expect(refreshedEntries.some((entry) => entry.path === "added-after-scan.ts")).toBe(true);
+  });
+
   it("refuses sensitive roots without override", async () => {
     const ssh = join(tmpRoot, ".ssh");
     mkdirSync(ssh, { recursive: true });
