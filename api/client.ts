@@ -494,6 +494,15 @@ export const api = {
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
       return updated;
     },
+    duplicate: async (id: string, name?: string) => {
+      const created = await request<AgentConfig>(`/agents/${encodeURIComponent(id)}/duplicate`, {
+        method: "POST",
+        body: JSON.stringify(name ? { name } : {}),
+      });
+      if (agentListCache.data) setAgentListCache([...agentListCache.data, created]);
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
+      return created;
+    },
     delete: async (id: string) => {
       const res = await request<{ deleted: boolean }>(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (res.deleted) {

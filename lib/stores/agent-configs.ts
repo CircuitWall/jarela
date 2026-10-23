@@ -442,6 +442,37 @@ export function generateAgentId(name: string): string {
   return slug ? `${slug}-${suffix}` : `agent-${suffix}`;
 }
 
+const DUPLICATE_RESET_COLUMNS = new Set(["id", "name", "is_default", "created_at", "updated_at"]);
+
+/**
+ * Copy an agent's full configuration into a new, non-default agent so the
+ * user can reuse a tuned setup as a starting point. Columns are discovered
+ * from the table so settings added later are copied too. Conversation state
+ * (threads, messages) is never copied. Returns null if the source is missing.
+ */
+export function duplicateAgentConfig(sourceId: string, name?: string): AgentConfigRow | null {
+  return withDbTransaction(() => {
+    const source = getAgentConfig(sourceId);
+    if (!source) return null;
+    const db = getDb();
+    const newName = name?.trim() || `${source.name} (copy)`;
+    let id = generateAgentId(newName);
+    // INSERT would fail on a collision, but never silently replace (unlike upsert).
+    while (getAgentConfig(id)) id = generateAgentId(newName);
+    const columns = (db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>)
+      .map((c) => c.name)
+      .filter((c) => !DUPLICATE_RESET_COLUMNS.has(c))
+      .map((c) => `"${c.replace(/"/g, '""')}"`)
+      .join(", ");
+    const t = now();
+    db.prepare(
+      `INSERT INTO agent_configs (id, name, is_default, created_at, updated_at, ${columns})
+       SELECT ?, ?, 0, ?, ?, ${columns} FROM agent_configs WHERE id = ?`,
+    ).run(id, newName, t, t, sourceId);
+    return getAgentConfig(id);
+  });
+}
+
 // ── ADR-0022: per-agent message-channel display filters ─────────────────
 // Canonical channel keys mirrored in `hooks/useMessageFilters.ts`. Kept
 // in sync there by importing this constant — single source of truth.

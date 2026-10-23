@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Bot, Plus, Trash2 } from "lucide-react";
+import { Bot, Copy, Plus, Trash2 } from "lucide-react";
 import type { AgentConfig, AgentConfigIn } from "@/api/types";
 import { api } from "@/api/client";
 import { useAgents } from "@/hooks/useAgents";
@@ -48,11 +48,12 @@ function AgentAvatar({ icon, name, id }: { icon: string | null; name: string; id
 }
 
 export function AgentsPanel() {
-  const { agents, loading, create, update, remove } = useAgents();
+  const { agents, loading, create, update, remove, duplicate } = useAgents();
   const { models } = useModels();
   const { state } = useAppContext();
   const [editing, setEditing] = useState<AgentConfig | null | "new">(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastDeepLinkedAgent = useRef<string | null>(null);
   useDeepLinkScroll("agents", "agent", containerRef);
@@ -84,6 +85,15 @@ export function AgentsPanel() {
       await create(data);
     } else if (editing) {
       await update(editing.id, data);
+    }
+  }
+
+  async function handleDuplicate(agent: AgentConfig) {
+    setDuplicating(agent.id);
+    try {
+      setEditing(await duplicate(agent.id));
+    } finally {
+      setDuplicating(null);
     }
   }
 
@@ -129,6 +139,15 @@ export function AgentsPanel() {
               )}
             </div>
             <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); void handleDuplicate(a); }}
+                disabled={duplicating === a.id}
+                className="p-1 text-fg-muted hover:text-fg transition-colors disabled:opacity-50"
+                title="Duplicate"
+                aria-label={`Duplicate ${a.name}`}
+              >
+                <Copy size={12} />
+              </button>
               <button
                 onClick={(e) => { e.stopPropagation(); void handleDelete(a); }}
                 disabled={deleting === a.id}
