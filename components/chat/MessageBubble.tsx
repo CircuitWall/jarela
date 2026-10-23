@@ -1469,7 +1469,7 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
         {((!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0)
           || routingDecision
           || memoryRecall) && (
-          <div className="mt-1 flex flex-col items-start gap-1">
+          <div className="mt-1 flex w-full min-w-0 flex-col items-start gap-1">
             {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
               <ToolList events={message.tool_events} />
             )}
