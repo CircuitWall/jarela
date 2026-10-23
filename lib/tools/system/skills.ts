@@ -45,8 +45,8 @@ export const writeSkillTool = tool(
         .describe("Skill ID used as the directory name (e.g. 'code-review')"),
       content: z
         .string({ error: CONTENT_REQUIRED_MESSAGE })
-        .min(1, CONTENT_REQUIRED_MESSAGE)
-        .describe("Full markdown content of the skill, starting with a # Heading."),
+        .refine((value) => value.trim().length > 0, CONTENT_REQUIRED_MESSAGE)
+        .describe("Full markdown content of the skill: optional name/description YAML frontmatter, then a # Heading."),
     }),
   },
 );
