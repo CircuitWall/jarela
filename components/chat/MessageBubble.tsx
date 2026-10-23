@@ -912,7 +912,7 @@ function RoutingDecisionSummary({ decision }: { decision: RouteDecisionMetadata 
   const [open, setOpen] = useState(false);
   const summary = formatRoutingDecisionSummary(decision);
   return (
-    <div className="mt-1 flex flex-col items-start gap-0.5">
+    <div className="flex flex-col items-start gap-0.5">
       <MetaRow accent="sky" onClick={() => setOpen((v) => !v)} expanded={open} title={decision.reason}>
         <CollapseChevron open={open} size={9} />
         <Zap size={10} />
@@ -1465,14 +1465,19 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
             {message.status === 'steering' ? <CornerDownRight size={10} /> : <Clock size={10} />}
             {message.status === 'steering' ? "Steering…" : "Sending…"}
           </span>
-        )}        {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
-          <ToolList events={message.tool_events} />
         )}
-        {routingDecision && (
-          <RoutingDecisionSummary decision={routingDecision} />
-        )}
-        {memoryRecall && (
-          <MemoryRecallBadge memoryHits={memoryRecall.memory_hits} messageHits={memoryRecall.message_hits} />
+        {((!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0)
+          || routingDecision
+          || memoryRecall) && (
+          <div className="mt-1 flex flex-col items-start gap-1">
+            {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
+              <ToolList events={message.tool_events} />
+            )}
+            {routingDecision && <RoutingDecisionSummary decision={routingDecision} />}
+            {memoryRecall && (
+              <MemoryRecallBadge memoryHits={memoryRecall.memory_hits} messageHits={memoryRecall.message_hits} />
+            )}
+          </div>
         )}
         {citations && Array.isArray(citations.sources) && citations.sources.length > 0 && (
           <ReferencesPanel sources={citations.sources} />
