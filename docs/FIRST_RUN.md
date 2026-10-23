@@ -16,6 +16,10 @@ Add your name so the assistant knows what to call you. You can also share a litt
 
 Choose one provider and add its key. That is enough to get started; other providers, search services, and integrations can be connected later.
 
+If the credential dialog cannot load its provider catalog, use **Try again**
+inside the dialog. A catalog error does not mean the selected provider lacks
+a credential form; the dialog keeps that distinction visible.
+
 ![Choose a model provider](assets/first-run-provider.png)
 
 ### 3. Choose a model
