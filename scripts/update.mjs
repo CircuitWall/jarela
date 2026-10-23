@@ -33,12 +33,18 @@ function readCurrentVersion(root) {
 }
 
 function compareSemver(a, b) {
-  const pa = String(a).split("-")[0].split(".").map((n) => Number(n) || 0);
-  const pb = String(b).split("-")[0].split(".").map((n) => Number(n) || 0);
+  const [coreA, preA] = String(a).split("-", 2);
+  const [coreB, preB] = String(b).split("-", 2);
+  const pa = coreA.split(".").map((n) => Number(n) || 0);
+  const pb = coreB.split(".").map((n) => Number(n) || 0);
   for (let i = 0; i < 3; i++) {
     const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
     if (diff !== 0) return diff;
   }
+  // A prerelease sorts before its release (2.1.0-beta.2 < 2.1.0).
+  if (preA && !preB) return -1;
+  if (!preA && preB) return 1;
+  if (preA && preB) return preA.localeCompare(preB, undefined, { numeric: true });
   return 0;
 }
 
@@ -142,18 +148,33 @@ function spawnInherit(cmd, args) {
   });
 }
 
+// spawnSync reports launch failures (e.g. ENOENT) via `error` with a null status.
+function reportLaunchFailure(cmd, r) {
+  if (!r.error) return false;
+  console.error(`[jarela] could not run ${cmd}: ${r.error.message}. Check that ${cmd} is installed and on PATH.`);
+  return true;
+}
+
 async function runUpdateMain({ root, current }) {
   if (isFromSource(root)) {
     console.log(`[jarela] channel=main (experimental); pulling latest from origin/main`);
     let r = spawnInherit("git", ["pull", "--ff-only", "origin", "main"]);
     if (r.status !== 0) {
-      console.error(`[jarela] git pull failed (status ${r.status}). Resolve manually then re-run.`);
+      if (!reportLaunchFailure("git", r)) {
+        console.error(`[jarela] git pull failed (status ${r.status}). Resolve manually then re-run.`);
+      }
       return r.status ?? 1;
     }
-    r = spawnInherit("npm", ["install"]);
-    if (r.status !== 0) return r.status ?? 1;
-    r = spawnInherit("npm", ["run", "build"]);
-    if (r.status !== 0) return r.status ?? 1;
+    for (const step of [["install"], ["run", "build"]]) {
+      r = spawnInherit("npm", step);
+      if (r.status !== 0) {
+        if (!reportLaunchFailure("npm", r)) {
+          console.error(`[jarela] npm ${step.join(" ")} failed (status ${r.status}).`);
+        }
+        console.error(`[jarela] the source tree is already pulled but not rebuilt; fix the error, then run: npm i && npm run build`);
+        return r.status ?? 1;
+      }
+    }
     console.log(`[jarela] update complete. Restart the server to pick up the new build.`);
     return 0;
   }
@@ -162,6 +183,7 @@ async function runUpdateMain({ root, current }) {
   console.log(`[jarela] current=${current}`);
   const r = spawnInherit("npm", ["i", "-g", `github:${REPO}#main`]);
   if (r.status !== 0) {
+    if (reportLaunchFailure("npm", r)) return 1;
     console.error(`[jarela] npm exited ${r.status}. If you see EACCES, retry elevated:`);
     if (process.platform === "win32") {
       console.error(`[jarela]   (admin PowerShell)  npm i -g github:${REPO}#main`);
@@ -201,6 +223,7 @@ export async function runUpdate({ root }) {
 
   const r = spawnInherit("npm", ["i", "-g", `${PACKAGE_NAME}@latest`]);
   if (r.status !== 0) {
+    if (reportLaunchFailure("npm", r)) return 1;
     console.error(`[jarela] npm exited ${r.status}. If you see EACCES, retry with elevated permissions:`);
     if (process.platform === "win32") {
       console.error(`[jarela]   (run an admin PowerShell)  npm i -g ${PACKAGE_NAME}@latest`);
