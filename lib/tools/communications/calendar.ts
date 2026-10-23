@@ -31,6 +31,7 @@ import {
   resolveGoogleAuth,
   type GoogleAuth,
 } from "@/lib/integrations/gmail-oauth";
+import { eventWindowError } from "./event-window";
 
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const calendarFetch = (auth: GoogleAuth, path: string, init?: RequestInit) =>
@@ -213,6 +214,8 @@ export const calendarCreateEventTool = tool(
     if (!eventSummary) {
       return JSON.stringify({ error: "summary (or subject) is required" });
     }
+    const windowError = eventWindowError(start_iso, end_iso);
+    if (windowError) return JSON.stringify({ error: windowError });
 
     interface EventBody {
       summary: string;
@@ -289,6 +292,8 @@ export const calendarUpdateEventTool = tool(
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const cal = encodeURIComponent(calendar_id ?? "primary");
     const eid = encodeURIComponent(event_id);
+    const windowError = eventWindowError(start_iso, end_iso);
+    if (windowError) return JSON.stringify({ error: windowError });
 
     const patch: Record<string, unknown> = {};
     const eventSummary = summary ?? subject;
