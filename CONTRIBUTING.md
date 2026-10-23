@@ -92,6 +92,13 @@ These rules are executable, not advisory: `.githooks/pre-commit` checks the
 topic branch, `.githooks/commit-msg` checks the commit message, and CI checks
 pull request titles plus post-merge commit subjects on `main`.
 
+The pre-commit hook also runs lint, typecheck, and the unit tests related to
+the staged files (`vitest related`, selected by
+`scripts/select-precommit-tests.mjs`). Docs-only commits skip tests; changes
+to test config, setup files, dependencies, hooks, non-code files, or deleted
+modules run the full suite. Set `JARELA_PRECOMMIT_FULL_TESTS=1` to force the
+full suite locally. CI always runs the full suite.
+
 When a local commit accidentally lands on `main`, move it to a topic branch
 before pushing:
 

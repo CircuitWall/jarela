@@ -5,16 +5,24 @@
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
+
+# Capture the staged change while GIT_INDEX_FILE still points at the index
+# being committed (it is a temporary index for `git commit -a`/`<paths>`).
+staged="$(mktemp)"
+trap 'rm -f "$staged"' EXIT
+git diff --cached --name-status -z > "$staged"
+
+# Nothing staged → nothing to check. Lets `git commit --allow-empty` etc.
+# pass without paying the lint+typecheck+test tax.
+if [ ! -s "$staged" ]; then
+  exit 0
+fi
+
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 
 # Clear additional Git environment variables for unit tests
 unset GIT_COMMON_DIR GIT_OBJECT_DIRECTORY
 unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_CEILING_DIRECTORIES GIT_QUARANTINE_PATH
-# Nothing staged → nothing to check. Lets `git commit --allow-empty` etc.
-# pass without paying the lint+typecheck+test tax.
-if git diff --cached --quiet; then
-  exit 0
-fi
 
 echo "[pre-commit] git conventions"
 node scripts/check-git-conventions.mjs --branch
@@ -25,6 +33,32 @@ npm run -s lint
 echo "[pre-commit] typecheck"
 npx -y tsc --noEmit
 
-echo "[pre-commit] unit tests"
-env -u GIT_CONFIG_COUNT -u GIT_CONFIG_KEY_0 -u GIT_CONFIG_VALUE_0 -u GIT_CONFIG_PARAMETERS \
-  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 npm test --silent
+# Only tests related to the staged files run locally; CI runs the full
+# suite. Set JARELA_PRECOMMIT_FULL_TESTS=1 to force the full suite.
+# A read loop rather than `mapfile -d` keeps this working on macOS Bash 3.2.
+mode=""
+related=()
+while IFS= read -r -d '' token; do
+  if [ -z "$mode" ]; then mode="$token"; else related+=("./$token"); fi
+done < <(node scripts/select-precommit-tests.mjs < "$staged")
+
+run_tests() {
+  env -u GIT_CONFIG_COUNT -u GIT_CONFIG_KEY_0 -u GIT_CONFIG_VALUE_0 -u GIT_CONFIG_PARAMETERS \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 "$@"
+}
+
+case "${mode:-full}" in
+  none)
+    echo "[pre-commit] unit tests: skipped (no test-relevant files staged)"
+    ;;
+  related)
+    echo "[pre-commit] unit tests related to ${#related[@]} staged file(s)"
+    # No `--` separator: vitest treats everything after it as non-filters and
+    # would silently find zero tests. The ./ prefix guards against leading dashes.
+    run_tests npx vitest related --run --passWithNoTests "${related[@]}"
+    ;;
+  *)
+    echo "[pre-commit] unit tests (full suite)"
+    run_tests npm test --silent
+    ;;
+esac
