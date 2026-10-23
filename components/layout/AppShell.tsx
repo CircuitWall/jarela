@@ -341,7 +341,7 @@ export function AppShell() {
       <CryptoFallbackBanner />
       <UpdateAvailableBanner />
       <header
-        className="glass fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60"
+        className="glass app-header fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60"
         style={{
           // Top safe-area is mobile-scoped via --app-safe-top so desktop
           // windows stay flush to the edge.

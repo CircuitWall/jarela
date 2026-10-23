@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ContentPart } from "@/api/types";
 import { useSSE } from "@/hooks/useSSE";
@@ -37,6 +37,18 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   const { state, dispatch } = useAppContext();
   const hideInternalOperations = useIsFirstRunThread(threadId);
   const [attachments, setAttachments] = useState<ContentPart[]>([]);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const [controlsHeight, setControlsHeight] = useState(0);
+  useLayoutEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    const measure = () => setControlsHeight(controls.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, []);
   const [compacting, setCompacting] = useState(false);
   const { userProfile, profileLoading, agentConfig, agentConfigLoading } =
     useUserProfileAndAgent(agentId);
@@ -347,8 +359,9 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   });
 
   return (
-    <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
+    <div className="relative flex h-full min-h-0 w-full min-w-0 flex-col">
       <MessageList
+        bottomOverlayHeight={controlsHeight}
         threadId={threadId}
         messages={currentThreadMessages}
         loadingMessages={!!sessionLoading || thread.messagesLoading}
@@ -392,26 +405,28 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         onResetFilters={messageFilters.reset}
       />
 
-      <ApprovalsBanner agentId={agentId} />
-      <AuthErrorBanner authError={sse.authError} onDismiss={sse.dismissAuthError} />
+      <div ref={controlsRef} className="chat-controls-overlay absolute inset-x-0 bottom-0 z-30">
+        <ApprovalsBanner agentId={agentId} />
+        <AuthErrorBanner authError={sse.authError} onDismiss={sse.dismissAuthError} />
 
-      <InputBar
-        attachments={attachments}
-        onAttachmentsChange={setAttachments}
-        onSubmit={handleSubmit}
-        onQueue={handleQueue}
-        onStop={sse.stop}
-        streaming={sse.streaming}
-        voiceEnabled={!!agentConfig?.voice_enabled}
-        agentId={agentId}
-        onVoiceTranscript={handleVoiceTranscript}
-        disabled={!agentId}
-        placeholder={composerPlaceholder({
-          compacting: sessionCompacting,
-          sessionLoading: !!sessionLoading,
-          streaming: sse.streaming,
-        })}
-      />
+        <InputBar
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
+          onSubmit={handleSubmit}
+          onQueue={handleQueue}
+          onStop={sse.stop}
+          streaming={sse.streaming}
+          voiceEnabled={!!agentConfig?.voice_enabled}
+          agentId={agentId}
+          onVoiceTranscript={handleVoiceTranscript}
+          disabled={!agentId}
+          placeholder={composerPlaceholder({
+            compacting: sessionCompacting,
+            sessionLoading: !!sessionLoading,
+            streaming: sse.streaming,
+          })}
+        />
+      </div>
     </div>
   );
 }

@@ -11,6 +11,45 @@ This guide focuses on developer experience for UI/state work.
 - Test hooks only: `npm run test:hooks`
 - Watch hook tests: `npm run test:hooks:watch`
 
+## Mobile PWA chrome
+
+Touch devices, viewports below 768 CSS pixels, and standalone/fullscreen PWAs use
+an opaque, theme-aware header so scrolling content and the ambient background
+do not haze navigation or the status-bar safe area. The rule does not depend
+solely on pointer capabilities. Wide desktop browser tabs retain the selected
+glass treatment; the filter banner and composer retain their frost separately.
+
+Filters & focus uses a flat, full-width frosted-glass banner below the header,
+rather than a floating pill. Its 60%-opaque surface and moderate backdrop blur
+keep the controls readable without an elevated card treatment. Below 640 CSS
+pixels its expanded controls form a two-column grid with 44-pixel minimum
+targets. The expanded area scrolls within 35% of the
+viewport height so it does not displace the conversation on short screens.
+
+The chat composer shares the banner's 60%-opaque surface and moderate blur.
+Both panels overlay the message scroll viewport, so older turns scroll behind
+their frost. Resize observers measure the filter banner and the complete bottom
+controls stack (including approval/error banners). The measured bottom height is
+exposed as `--chat-controls-height` on the message-list container; content padding,
+scroll padding, and the resume-scroll button all use that variable plus `1rem`.
+Matching content and scroll padding keeps the first turn below the filter
+banner and new/streaming turns above the composer when following the latest
+message. Measurements update when
+filters expand, attachments appear, the textarea grows, or the viewport changes.
+Focus-boundary dragging and the resume-scroll button use the unobscured area.
+
+The chat composer trades 16 CSS pixels of the bottom safe-area inset for
+horizontal corner clearance (12-24 CSS pixels per side, in addition to the
+shell's landscape cutout insets). It retains at least 8 CSS pixels below the
+44-pixel controls; a 34-pixel home-indicator inset therefore leaves 18 pixels,
+not a full 34-pixel chin. Do not just remove bottom padding or move the send
+button against the screen edge.
+
+The mobile chrome cases in `tests/e2e/layout.spec.ts` check compact spacing,
+rounded-corner clearance, theme/surface variants, and a keyboard-sized viewport.
+Browser emulation supplies synthetic safe-area values; also check an installed
+iOS PWA on hardware for OS-specific compositing and keyboard behavior.
+
 ## Live-test setup
 
 `npm run test:live` targets the server at `JARELA_URL` (default

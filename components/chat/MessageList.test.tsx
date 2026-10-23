@@ -69,6 +69,18 @@ function installPointerCapture(button: HTMLButtonElement) {
 }
 
 describe("MessageList conversation focus", () => {
+  it("reserves measured bottom overlay space for the latest turns and scroll targets", () => {
+    const { container, rerender } = render(<MessageList messages={[]} bottomOverlayHeight={76} />);
+    const scroller = container.querySelector<HTMLElement>(".chat-message-scroll")!;
+    expect(scroller.parentElement!.parentElement!.style.getPropertyValue("--chat-controls-height")).toBe("76px");
+    expect(scroller.style.paddingBottom).toBe("calc(var(--chat-controls-height) + 1rem)");
+    expect(scroller.style.scrollPaddingBottom).toBe("calc(var(--chat-controls-height) + 1rem)");
+    rerender(<MessageList messages={[]} bottomOverlayHeight={132} />);
+    expect(scroller.parentElement!.parentElement!.style.getPropertyValue("--chat-controls-height")).toBe("132px");
+    expect(scroller.style.paddingBottom).toBe("calc(var(--chat-controls-height) + 1rem)");
+    expect(scroller.style.scrollPaddingBottom).toBe("calc(var(--chat-controls-height) + 1rem)");
+  });
+
   it.each(["home", "work"] as const)("keeps %s chat-first with revealable live and persisted diagnostics", (usage_profile) => {
     const messages = [mkMessage("profile-message", "assistant", "Short answer", "2026-10-23T12:00:00.000Z")];
     const agentConfig = { id: `profile-${usage_profile}`, usage_profile } as AgentConfig;
@@ -86,6 +98,9 @@ describe("MessageList conversation focus", () => {
     const controls = screen.getByRole("button", { name: /Filters & focus/ });
     expect(controls.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(controls);
+    const filtersRegion = screen.getByRole("region", { name: "Message filters and focus" });
+    expect(controls.getAttribute("aria-expanded")).toBe("true");
+    expect(controls.getAttribute("aria-controls")).toBe(filtersRegion.id);
     fireEvent.click(screen.getByRole("button", { name: "Show technical details" }));
     expect(container.querySelector('[data-show-diagnostics="true"]')).toBeTruthy();
     expect(screen.getByTestId("tool-list")).toBeTruthy();
@@ -95,6 +110,8 @@ describe("MessageList conversation focus", () => {
     expect(screen.queryByTestId("tool-list")).toBeNull();
     fireEvent.click(controls);
     expect(screen.queryByRole("button", { name: "Show technical details" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Message filters and focus" })).toBeNull();
+    expect(controls.getAttribute("aria-expanded")).toBe("false");
     expect(controls.textContent).toContain("Chat only");
   });
 

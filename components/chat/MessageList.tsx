@@ -1,5 +1,5 @@
 "use client";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Brain, ChevronRight, Hourglass, X, ArrowDown, Eye, EyeOff } from "lucide-react";
 import type { AgentConfig, AutomationActivityMetadata, ContentPart, Message, SummaryTopicSegment, UserProfile, WarmChannelSummary } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
@@ -25,6 +25,7 @@ interface SteeredSegment {
 }
 
 interface Props {
+  bottomOverlayHeight?: number;
   threadId?: string | null;
   messages: Message[];
   steeredSegments?: SteeredSegment[];
@@ -81,8 +82,10 @@ const ALL_FILTERS_SHOWN: Record<MessageFilterKey, boolean> = Object.fromEntries(
 const NO_CHANNEL_SUMMARIES: WarmChannelSummary[] = [];
 const NOOP = () => {};
 
-export function MessageList({ threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, loadingMessages = false, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries = NO_CHANNEL_SUMMARIES, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, hideInternalOperations = false, onToggleFilter: toggle = NOOP, onResetFilters: reset = NOOP }: Props) {
+export function MessageList({ bottomOverlayHeight = 0, threadId, messages, steeredSegments, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, loadingMessages = false, onLoadMore, queuedMessages, onRemoveQueued, hotSinceSeq, warmSummary, warmSummaryBeforeSeq, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmChannelSummaries = NO_CHANNEL_SUMMARIES, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, hideInternalOperations = false, onToggleFilter: toggle = NOOP, onResetFilters: reset = NOOP }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const topControlsRef = useRef<HTMLDivElement>(null);
+  const [topControlsHeight, setTopControlsHeight] = useState(0);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragPointerIdRef = useRef<number | null>(null);
@@ -105,6 +108,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingHotSinceSeq, setPendingHotSinceSeq] = useState<number | null>(null);
   const [topControlsOpen, setTopControlsOpen] = useState(false);
+  const topControlsId = useId();
   const [revealedForAgent, setRevealedForAgent] = useState<string | null>(null);
   const compactChat = USAGE_PROFILES[agentConfig?.usage_profile ?? "custom"].compactChat;
   const showDiagnostics = !compactChat || (!!agentConfig && revealedForAgent === agentConfig.id);
@@ -194,6 +198,17 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   }, [visibleMessages, steeredSegments, threadId, agentConfig, userProfile, filters.tool_use, hideInternalOperations, showDiagnostics, contextWindowTokens, hasStreamingContent, onRetryMessage]);
 
   const hiddenCount = displayMessages.length - visibleMessages.length;
+  const hasTopControls = visibleMessages.length > 0 || compactChat;
+  useLayoutEffect(() => {
+    const controls = topControlsRef.current;
+    if (!controls) return;
+    const measure = () => setTopControlsHeight(controls.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, [hasTopControls]);
   const effectiveHotSinceSeq = hotSinceSeq ?? null;
   // The boundary divider only ever renders when a pin is set (see the
   // `hasBoundary` computation below, which is gated on `effectiveHotSinceSeq`).
@@ -394,6 +409,13 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
     requestAnimationFrame(() => updateBoundaryMask());
   }
 
+  function unobscuredScrollBounds(scroller: HTMLDivElement) {
+    const rect = scroller.getBoundingClientRect();
+    const top = Math.max(rect.top, topControlsRef.current?.getBoundingClientRect().bottom ?? rect.top);
+    const bottom = Math.max(top + 1, rect.bottom - bottomOverlayHeight);
+    return { top, bottom, height: bottom - top };
+  }
+
   function stepAutoScroll() {
     const scroller = scrollRef.current;
     if (!scroller) {
@@ -413,7 +435,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
 
     const pointerY = autoScrollPointerYRef.current;
     if (pointerY !== null) {
-      const rect = scroller.getBoundingClientRect();
+      const rect = unobscuredScrollBounds(scroller);
       const clampedY = Math.max(rect.top + 1, Math.min(rect.bottom - 1, pointerY));
       scheduleDragFromPointer(clampedY);
     }
@@ -429,7 +451,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
     autoScrollPointerYRef.current = clientY;
     const scroller = scrollRef.current;
     if (!scroller) return;
-    const rect = scroller.getBoundingClientRect();
+    const rect = unobscuredScrollBounds(scroller);
     const edge = Math.min(180, Math.max(72, rect.height * 0.24));
     const release = edge + 18;
     let lock = autoScrollLockRef.current;
@@ -464,7 +486,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   function updateDragFromPointer(clientY: number) {
     const scroller = scrollRef.current;
     if (!scroller) return;
-    const rect = scroller.getBoundingClientRect();
+    const rect = unobscuredScrollBounds(scroller);
     const clampedY = Math.max(rect.top + 1, Math.min(rect.bottom - 1, clientY));
 
     const hostTop = hostRef.current?.getBoundingClientRect().top;
@@ -855,34 +877,44 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
     scrollTargetIntoView(boundary);
   }
 
+  const overlayStyle: CSSProperties & { "--chat-controls-height": string } = {
+    "--chat-controls-height": `${bottomOverlayHeight}px`,
+  };
+
   return (
     <WorkflowStepRetryContext.Provider value={retryWorkflowStep}>
-    <div ref={hostRef} className="flex-1 flex flex-col min-h-0 relative">
-      {(visibleMessages.length > 0 || compactChat) && (
-        <div className="shrink-0 px-4 pt-[calc(var(--app-safe-top)+3rem)] pb-1">
-          <div className="w-full rounded-lg border border-border/45 bg-surface/30 px-2 py-1 backdrop-blur-sm">
+    <div ref={hostRef} className="flex-1 flex flex-col min-h-0 relative" style={overlayStyle}>
+      {hasTopControls && (
+        <div ref={topControlsRef} className="absolute inset-x-0 top-[calc(var(--app-safe-top)+3rem)] z-30">
+          <div className="chat-filter-banner w-full border-b border-border/30 bg-surface/60 backdrop-blur-md">
             <button
               type="button"
               onClick={() => setTopControlsOpen((v) => !v)}
               aria-expanded={topControlsOpen}
-              className="control-tap w-full flex items-center gap-1.5 rounded-md py-0.5 text-[11px] text-fg-muted hover:text-fg transition-colors"
+              aria-controls={topControlsOpen ? topControlsId : undefined}
+              className="min-h-11 sm:min-h-8 w-full flex flex-wrap items-center gap-x-2 gap-y-1 px-3 sm:px-4 py-1.5 text-left text-xs text-fg-subtle hover:text-fg transition-colors"
             >
               <CollapseChevron open={topControlsOpen} size={10} />
               <span className="font-medium">Filters & focus</span>
-              {compactChat && <span className="text-[10px] text-fg-faint">· {showDiagnostics ? "Details on" : "Chat only"}</span>}
+              {compactChat && <span className="text-[11px] text-fg-faint">{showDiagnostics ? "Details on" : "Chat only"}</span>}
               {hiddenCount > 0 && (
-                <span className="ml-auto text-[10px] text-fg-faint" aria-live="polite">
+                <span className="ml-auto text-[11px] text-fg-faint" aria-live="polite">
                   {hiddenCount} hidden
                 </span>
               )}
             </button>
 
             {topControlsOpen && (
-              <div className="mt-1 flex items-center gap-1.5 flex-wrap py-1">
+              <div
+                id={topControlsId}
+                role="region"
+                aria-label="Message filters and focus"
+                className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 max-h-[35dvh] overflow-y-auto overscroll-contain px-3 sm:px-4 pt-1 pb-2"
+              >
                 {compactChat && (
                   <button
                     type="button"
-                    className={`control-tap inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] leading-4 transition-colors ${
+                    className={`min-h-11 sm:min-h-8 min-w-0 inline-flex items-center justify-center gap-1 rounded-md border px-2 py-1 text-xs leading-4 transition-colors ${
                       showDiagnostics
                         ? "border-accent/40 bg-accent/10 text-fg"
                         : "border-border/60 bg-surface-2/70 text-fg-muted hover:text-fg hover:border-accent/40"
@@ -904,7 +936,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
                       type="button"
                       onClick={() => toggle(key)}
                       className={[
-                        "control-tap inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] leading-4 transition-colors",
+                        "min-h-11 sm:min-h-8 min-w-0 inline-flex items-center justify-center gap-1 rounded-md border px-2 py-1 text-xs leading-4 transition-colors",
                         on
                           ? "border-border/70 bg-surface-2/70 text-fg-muted hover:text-fg"
                           : "border-border/35 bg-transparent text-fg-faint line-through decoration-fg-faint/60 hover:text-fg-muted",
@@ -931,7 +963,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
                     type="button"
                     onClick={scrollToBoundaryLine}
                     disabled={!hasContextPin}
-                    className="control-tap ml-auto rounded-md border border-border/60 bg-surface-2/70 px-2 py-0.5 text-[10px] leading-4 text-fg-muted transition-colors hover:border-accent/40 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border/60 disabled:hover:text-fg-muted"
+                    className="min-h-11 sm:min-h-8 min-w-0 col-span-2 sm:ml-auto rounded-md border border-border/60 bg-surface-2/70 px-2 py-1 text-xs leading-4 text-fg-muted transition-colors hover:border-accent/40 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border/60 disabled:hover:text-fg-muted"
                     title={hasContextPin ? "Locate the focus boundary in the message list" : "Set a focus boundary first (drag the divider or pin a message) to enable this"}
                   >
                     Locate boundary line
@@ -942,15 +974,18 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
           </div>
         </div>
       )}
-      <div ref={maskRegionRef} className="relative flex-1 min-h-0 overflow-hidden">
+      <div ref={maskRegionRef} className="relative isolate flex-1 min-h-0 overflow-hidden">
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="flex-1 h-full overflow-y-auto overflow-x-hidden px-4 py-4 panel-scrollbar"
+          className="chat-message-scroll flex-1 h-full overflow-y-auto overflow-x-hidden px-4 panel-scrollbar"
           style={{
-            // Scroll-anchor jumps (deep-link to a message) land below the
-            // floating header, not under it.
-            scrollPaddingTop: "calc(3rem + var(--app-safe-top))",
+            // Edge padding travels with the turns; the viewport itself extends
+            // behind both overlays so history remains visible through the frost.
+            paddingTop: `calc(3rem + var(--app-safe-top) + ${hasTopControls ? topControlsHeight : 0}px + 1rem)`,
+            paddingBottom: "calc(var(--chat-controls-height) + 1rem)",
+            scrollPaddingTop: `calc(3rem + var(--app-safe-top) + ${hasTopControls ? topControlsHeight : 0}px + 1rem)`,
+            scrollPaddingBottom: "calc(var(--chat-controls-height) + 1rem)",
           }}
         >
         {hasMore && (
@@ -1076,7 +1111,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
       {showScrollButton && (
         <button
           onClick={scrollToBottom}
-          style={{ bottom: "calc(1rem + var(--app-safe-bottom))" }}
+          style={{ bottom: "calc(var(--chat-controls-height) + 1rem)" }}
           className="absolute right-4 p-2 rounded-full bg-accent/40 hover:bg-accent/80 text-white backdrop-blur-sm shadow-md transition-[opacity,transform,background-color] animate-in fade-in slide-in-from-bottom-2 duration-200 z-20"
           title="Auto-scroll paused — resume at latest message"
           aria-label="Resume auto-scroll to latest message"
