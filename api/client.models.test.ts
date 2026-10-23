@@ -49,6 +49,28 @@ describe("api.models list cache", () => {
   });
 });
 
+describe("api.agents recent reply cache", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reuses the preload and refreshes after a thread update event", async () => {
+    const replies = [{ agent_id: "agent-a", content: "Last reply" }];
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse(replies)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.agents.recentReplies()).resolves.toEqual(replies);
+    await expect(api.agents.recentReplies()).resolves.toEqual(replies);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
+      detail: { thread_id: "thread-a", agent_id: "agent-a" },
+    }));
+    await expect(api.agents.recentReplies()).resolves.toEqual(replies);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("api request HTTP cache mode", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

@@ -3,6 +3,7 @@ import { BarChart3, Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, M
 import { useEffect, useState } from "react";
 import { useAppContext, type Tab } from "@/contexts/AppContext";
 import type { AgentConfig } from "@/api/types";
+import { api } from "@/api/client";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
 import { useSettingsAttention } from "@/hooks/useSettingsAttention";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -125,11 +126,13 @@ function AgentSessionList({
   agents,
   agentsLoading,
   onSelect,
+  replyPreviews,
 }: {
   activeAgentId: string | null;
   agents: AgentConfig[];
   agentsLoading: boolean;
   onSelect: (id: string) => void;
+  replyPreviews: Record<string, string>;
 }) {
   const unread = useUnreadByAgent();
 
@@ -199,8 +202,10 @@ function AgentSessionList({
                   </span>
                 )}
               </div>
-              {a.identity ? (
-                <p className="text-[11px] text-fg-faint truncate leading-tight mt-0.5">{a.identity}</p>
+              {replyPreviews[a.id] || a.identity ? (
+                <p className="text-[11px] text-fg-faint truncate leading-tight mt-0.5">
+                  {(replyPreviews[a.id] || a.identity).replace(/\s+/g, " ").trim()}
+                </p>
               ) : (
                 <p className="text-[11px] text-fg-faint italic leading-tight mt-0.5">No persona</p>
               )}
@@ -229,6 +234,15 @@ export function MenuPanel({
   const { state } = useAppContext();
   const isFullMode = state.experienceMode === "full";
   const attention = useSettingsAttention();
+  const [replyPreviews, setReplyPreviews] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    api.agents.recentReplies().then((replies) => {
+      if (cancelled) return;
+      setReplyPreviews(Object.fromEntries(replies.map(({ agent_id, content }) => [agent_id, content])));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   // Advanced section starts collapsed once the user has dismissed it
   // once (persisted to localStorage). Defaults to *expanded* on first
   // boot so the engine room is visible to power users out of the box.
@@ -337,6 +351,7 @@ export function MenuPanel({
           activeAgentId={agentId}
           agents={agents}
           agentsLoading={agentsLoading}
+          replyPreviews={replyPreviews}
           onSelect={(id) => { onAgentChange(id); onSetTab("chat"); onClose(); }}
         />
       </div>

@@ -238,6 +238,23 @@ const toolListWithDisabledCache: ListCache<ToolInfo> = emptyCache();
 const integrationCredentialCache: ListCache<Credential> = emptyCache();
 const integrationListCache: ValueCache<IntegrationsListResponse> = emptyValueCache();
 const harnessListCache: ValueCache<HarnessListResponse> = emptyValueCache();
+const recentAssistantRepliesCache: ValueCache<Array<{ agent_id: string; content: string }>> = emptyValueCache();
+let recentAssistantRepliesListenerInstalled = false;
+
+function loadRecentAssistantReplies() {
+  return cachedValue(recentAssistantRepliesCache, () =>
+    request<Array<{ agent_id: string; content: string }>>("/agents/recent-replies", { cache: "no-store" }),
+  );
+}
+
+function watchRecentAssistantReplies() {
+  if (typeof window === "undefined" || recentAssistantRepliesListenerInstalled) return;
+  recentAssistantRepliesListenerInstalled = true;
+  window.addEventListener("jarela:thread-updated", () => {
+    invalidateValueCache(recentAssistantRepliesCache);
+    void loadRecentAssistantReplies().catch(() => {});
+  });
+}
 
 function setAgentListCache(rows: AgentConfig[], notify = true): AgentConfig[] {
   const snap = writeListCache(agentListCache, rows);
@@ -478,6 +495,10 @@ export const api = {
   agents: {
     list: (opts?: { force?: boolean }) =>
       cachedList(agentListCache, () => request<AgentConfig[]>("/agents"), setAgentListCache, opts?.force === true),
+    recentReplies: () => {
+      watchRecentAssistantReplies();
+      return loadRecentAssistantReplies();
+    },
     get: (id: string, opts?: { startup?: boolean }) => {
       const path = `/agents/${encodeURIComponent(id)}`;
       return opts?.startup ? startupRead<AgentConfig>(path) : request<AgentConfig>(path);
