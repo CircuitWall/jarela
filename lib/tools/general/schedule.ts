@@ -6,6 +6,7 @@ import {
   createScheduledTask,
   listScheduledTasks,
   deleteScheduledTask,
+  getScheduledTask,
   updateScheduledTask,
   computeNextRun,
 } from "@/lib/stores/scheduled-tasks";
@@ -178,6 +179,12 @@ export const cancelScheduledTaskTool = tool(
 export const updateScheduledTaskTool = tool(
   async ({ id, prompt, description, kind, schedule, enabled, silent, reaction_kind, reaction_script, reaction_script_args }) => {
     try {
+      if (schedule !== undefined) {
+        const existing = getScheduledTask(id);
+        if ((kind ?? existing?.kind) === "once" && computeNextRun("once", schedule).getTime() < Date.now() - 60_000) {
+          return JSON.stringify({ error: `schedule "${schedule}" is in the past` });
+        }
+      }
       const row = updateScheduledTask(id, {
         prompt,
         description,
