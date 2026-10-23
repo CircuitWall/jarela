@@ -1,4 +1,4 @@
-import { promises as fsp } from "node:fs";
+import { promises as fsp, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { getDb } from "@/lib/db";
 import { FILES_DIR, isSafeFileName } from "@/lib/files";
@@ -113,6 +113,49 @@ function collectReferencedFileNamesFromMessages(): Set<string> {
     collectFileRefNames(row.metadata, out);
   }
   return out;
+}
+
+/** Spill file names referenced by one thread's messages. Call before deleting the thread. */
+export function collectThreadFileRefNames(threadId: string): Set<string> {
+  const out = new Set<string>();
+  const rows = getDb()
+    .prepare("SELECT content, tool_events, metadata FROM messages WHERE thread_id=?")
+    .all(threadId) as Array<{ content?: string | null; tool_events?: string | null; metadata?: string | null }>;
+  for (const row of rows) {
+    collectFileRefNames(row.content, out);
+    collectFileRefNames(row.tool_events, out);
+    collectFileRefNames(row.metadata, out);
+  }
+  return out;
+}
+
+function stillReferenced(name: string): boolean {
+  const pattern = `%${name.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const db = getDb();
+  const inMessages = db.prepare(
+    "SELECT 1 FROM messages WHERE content LIKE ? ESCAPE '\\' OR tool_events LIKE ? ESCAPE '\\' OR metadata LIKE ? ESCAPE '\\' LIMIT 1",
+  ).get(pattern, pattern, pattern);
+  if (inMessages) return true;
+  return Boolean(db.prepare("SELECT 1 FROM memory_store WHERE value LIKE ? ESCAPE '\\' LIMIT 1").get(pattern));
+}
+
+/**
+ * Remove spill files right after their last referencing conversation is deleted,
+ * instead of leaving private attachments on disk until the retention GC runs.
+ * Files still mentioned by any other message or memory entry are kept.
+ */
+export function removeFilesNoLongerReferenced(names: Iterable<string>): number {
+  let removed = 0;
+  for (const name of names) {
+    if (!isSafeFileName(name) || stillReferenced(name)) continue;
+    try {
+      unlinkSync(join(FILES_DIR, name));
+      removed++;
+    } catch {
+      // Already gone or locked; the retention GC will retry.
+    }
+  }
+  return removed;
 }
 
 function getRetentionMs(): number {

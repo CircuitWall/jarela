@@ -16,6 +16,7 @@ import {
   type MessageRow,
 } from "@/lib/stores/threads";
 import { getMessageUsageByIds } from "@/lib/stores/message-usage";
+import { collectThreadFileRefNames, removeFilesNoLongerReferenced } from "@/lib/attachments/spill-gc";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { messageToResponse, resolveContextWindowTokens } from "@/lib/api/serializers";
@@ -105,8 +106,10 @@ export async function GET(req: NextRequest, { params }: Params) {
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
+  const fileRefs = collectThreadFileRefNames(thread_id);
   const deleted = deleteThread(thread_id);
   if (!deleted) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  removeFilesNoLongerReferenced(fileRefs);
 
   // Drop the thread's LangGraph checkpoint rows too. Without this the
   // checkpoints.db file grows forever as users delete threads — the rows

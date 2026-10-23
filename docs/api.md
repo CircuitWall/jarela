@@ -77,7 +77,9 @@ Rename or rebind the thread to a different agent.
 
 ### `DELETE /api/v1/threads/[thread_id]`
 
-Drop the thread, its messages, and its checkpoint state.
+Drop the thread, its messages, and its checkpoint state. Attachment and
+generated files under `<dataDir>/files/` that no other message or memory entry
+references are deleted immediately rather than waiting for the retention GC.
 
 - **Source:** [`app/api/v1/threads/[thread_id]/route.ts`](../app/api/v1/threads/[thread_id]/route.ts)
 
