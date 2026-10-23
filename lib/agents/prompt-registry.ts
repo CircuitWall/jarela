@@ -21,6 +21,8 @@ import { buildTopicGroupingMessages, buildTopicRecapMessages } from "@/lib/agent
 import type { ProviderMessage } from "@/lib/providers/types";
 import { buildFabricationNudge, buildCitationRetryNudge } from "./retry-prompts";
 import { buildFirstRunAgentInstructions, buildFirstRunKickoff } from "./first-run-onboarding";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export interface StaticPrompt {
   id: string;
@@ -59,6 +61,12 @@ export function listStaticPrompts(): StaticPrompt[] {
   const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
   const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
   const prompts: StaticPrompt[] = [
+    {
+      id: "skill.personal-briefing",
+      source: "lib/skills/builtins/personal-briefing/SKILL.md",
+      purpose: "Pairs read-only personal briefing retrieval and drafting with executable structural checks and explicit validation limits.",
+      text: readFileSync(join(process.cwd(), "lib", "skills", "builtins", "personal-briefing", "SKILL.md"), "utf8"),
+    },
     {
       id: "agent.retry-fabrication",
       source: "lib/agents/retry-prompts.ts",

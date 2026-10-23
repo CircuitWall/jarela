@@ -50,6 +50,17 @@ inspect its outcome before manually retrying.
 
 ## Work in chat
 
+### Personal briefing pilot
+
+The built-in `personal-briefing` skill combines read-only source retrieval and
+model drafting with `validate_personal_briefing`, a local read-only validator.
+The validator checks draft structure, references against the supplied source
+IDs, and disclosure of unavailable sources. It does not prove that the
+sources were retrieved or that the summary is factually correct. Review the
+original tool results and keep external actions separate.
+
+### Conversations
+
 Chat is the per-agent workspace for conversations and their results. Keep related follow-up work in the same thread so its existing context remains available.
 
 An asynchronous tool handoff means work is still running, not that its effect
