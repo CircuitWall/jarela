@@ -51,6 +51,15 @@ describe("downscaleImageFile", () => {
     expect(decode).not.toHaveBeenCalled();
   });
 
+  it("keeps GIFs, SVGs and icons untouched when the browser reports no MIME type", async () => {
+    const { decode } = fakeDecoder(2000, 2000, 1);
+    for (const name of ["party.GIF", "logo.svg", "favicon.ico"]) {
+      const file = photo(name, "", 3_000_000);
+      expect(await downscaleImageFile(file, decode)).toBe(file);
+    }
+    expect(decode).not.toHaveBeenCalled();
+  });
+
   it("keeps the original when re-encoding would not make it smaller", async () => {
     const { decode } = fakeDecoder(1200, 900, 700_000);
     const original = photo("scan.jpg", "image/jpeg", 600_000);

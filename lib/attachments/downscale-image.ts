@@ -19,13 +19,14 @@ export type DecodeImage = (file: Blob) => Promise<DecodedImage>;
 const HEIF_RE = /\.(heic|heif)$/i;
 // Animation (GIF), vector (SVG) and icons lose meaning when flattened to JPEG.
 const KEEP_AS_IS_RE = /^image\/(gif|svg\+xml|x-icon|vnd\.microsoft\.icon)$/i;
+const KEEP_AS_IS_EXT_RE = /\.(gif|svg|ico)$/i;
 
 function isHeif(file: File): boolean {
   return /heic|heif/i.test(file.type) || HEIF_RE.test(file.name);
 }
 
 export function shouldDownscale(file: File): boolean {
-  if (KEEP_AS_IS_RE.test(file.type)) return false;
+  if (KEEP_AS_IS_RE.test(file.type) || KEEP_AS_IS_EXT_RE.test(file.name)) return false;
   return isHeif(file) || file.size > IMAGE_PASSTHROUGH_BYTES;
 }
 
