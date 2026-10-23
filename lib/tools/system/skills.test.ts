@@ -56,6 +56,22 @@ describe("skill tools on the agent path", () => {
     expect(read.content).toBe(content);
   });
 
+  it("reads folded and literal block-scalar descriptions instead of the block marker", async () => {
+    const folded = ["---", "name: trip-planner", "description: >-", "  Use when: planning a trip", "  from saved bookings.", "---", "", "# Trip"].join("\n");
+    const literal = ["---", "description: |", "  Use when: tidying", "  the inbox.", "name: inbox", "---", "", "# Inbox"].join("\n");
+    await writeSkillTool.invoke({ id: "trip-planner", content: folded });
+    await writeSkillTool.invoke({ id: "inbox-tidy", content: literal });
+    const listed = parse(await listSkillsTool.invoke({})) as Array<Record<string, string>>;
+    expect(listed.find((s) => s.id === "trip-planner")).toMatchObject({
+      name: "trip-planner",
+      description: "Use when: planning a trip from saved bookings.",
+    });
+    expect(listed.find((s) => s.id === "inbox-tidy")).toMatchObject({
+      name: "inbox",
+      description: "Use when: tidying the inbox.",
+    });
+  });
+
   it("still describes heading-only skills from the first paragraph", async () => {
     await writeSkillTool.invoke({ id: "plain-skill", content: "# Plain Skill\n\nDoes plain things.\n\n## Steps\n" });
     const listed = (parse(await listSkillsTool.invoke({})) as Array<Record<string, string>>)
