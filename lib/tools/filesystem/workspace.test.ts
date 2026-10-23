@@ -71,6 +71,34 @@ describe("workspace_init", () => {
     expect(currentWorkspace()?.root).toBe(projectRoot);
   });
 
+  it("keys cached scans by the on-disk root so case-distinct directories never share a tree", async () => {
+    const parent = join(projectRoot, "cs");
+    mkdirSync(parent);
+    if (process.platform === "win32") {
+      try { execFileSync("fsutil.exe", ["file", "setCaseSensitiveInfo", parent, "enable"], { stdio: "ignore" }); } catch { /* falls back to the case-insensitive branch */ }
+    }
+    const lower = join(parent, "casecheck");
+    mkdirSync(lower);
+    writeFileSync(join(lower, "lower-only.ts"), "export {};");
+    const upper = join(parent, "CASECHECK");
+    const caseSensitive = !existsSync(upper);
+    const options = { include_git: false, include_scripts: false, include_readme: false };
+    await workspaceInitTool.invoke({ ...options, path: lower });
+
+    if (caseSensitive) {
+      mkdirSync(upper);
+      writeFileSync(join(upper, "upper-only.ts"), "export {};");
+      const other = parse(await workspaceInitTool.invoke({ ...options, path: upper }));
+      const paths = (other.tree as { entries: Array<{ path: string }> }).entries.map((entry) => entry.path);
+      expect((other.scan as { tree_cache_hit: boolean }).tree_cache_hit).toBe(false);
+      expect(paths).toContain("upper-only.ts");
+      expect(paths).not.toContain("lower-only.ts");
+    } else {
+      const same = parse(await workspaceInitTool.invoke({ ...options, path: upper }));
+      expect((same.scan as { tree_cache_hit: boolean }).tree_cache_hit).toBe(true);
+    }
+  });
+
   it("reuses a recent persisted tree scan and allows an explicit refresh", async () => {
     writeFileSync(join(projectRoot, "initial.ts"), "export {};");
     const options = { path: projectRoot, include_git: false, include_scripts: false, include_readme: false };
