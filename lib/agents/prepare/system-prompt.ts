@@ -410,10 +410,8 @@ function buildUserContext(): string {
   return parts.length > 0 ? `--- User context ---\n${parts.join("\n")}` : "";
 }
 
-function buildTimeContext(): string {
-  const now = new Date();
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  const localDateTime = new Intl.DateTimeFormat("sv-SE", {
+export function formatLocalDateTime(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("sv-SE", {
     timeZone,
     year: "numeric",
     month: "2-digit",
@@ -423,7 +421,17 @@ function buildTimeContext(): string {
     second: "2-digit",
     hourCycle: "h23",
     timeZoneName: "longOffset",
-  }).format(now);
+  })
+    .format(now)
+    // ICU writes negative offsets with U+2212; keep the prompt ASCII.
+    .replace(/\u2212/g, "-")
+    .replace(/\u00a0/g, " ");
+}
+
+function buildTimeContext(): string {
+  const now = new Date();
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const localDateTime = formatLocalDateTime(now, timeZone);
   return [
     `Current time: ${now.toISOString()} (UTC). Use this when computing scheduled task timestamps.`,
     `Current local date and time: ${localDateTime} (${timeZone}). Use this for local calendar-date interpretation.`,
