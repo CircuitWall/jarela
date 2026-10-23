@@ -89,6 +89,8 @@ jobs:
               - 'playwright.config.ts'
               - 'package.json'
               - 'package-lock.json'
+              # CI changes must prove themselves on the jobs they modify.
+              - '.github/workflows/ci.yml'
             deps:
               - 'package.json'
               - 'package-lock.json'
@@ -322,6 +324,9 @@ jobs:
       # The mock provider replaces real LLM calls so we don't need keys in CI.
       JARELA_ENABLE_MOCK_PROVIDER: "1"
       JARELA_DISABLE_UPDATE_CHECK: "1"
+      # Docker presets HOSTNAME to the container ID, and Next's standalone
+      # server binds to it, so pin loopback for the health check and tests.
+      JARELA_HOSTNAME: 127.0.0.1
     steps:
       - uses: actions/checkout@v6
 
