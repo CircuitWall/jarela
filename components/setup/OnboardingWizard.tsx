@@ -152,7 +152,9 @@ export function OnboardingWizard({ context, onReady }: Props) {
   }, [loading, onReady]);
 
   const hasName = name.trim().length > 0;
-  const hasModel = models.some((model) => model.enabled !== false);
+  const enabledModels = models.filter((model) => model.enabled !== false);
+  const starterModel = enabledModels.find((model) => model.is_default) ?? enabledModels[0];
+  const hasModel = starterModel !== undefined;
   const hasAgent = agents.length > 0 || createdAgent !== null;
   const canSave = hasName && hasModel && (hasAgent || (context === "setup" && assistantName.trim().length > 0));
   const configuredModelProviders = [...new Set(
@@ -170,9 +172,9 @@ export function OnboardingWizard({ context, onReady }: Props) {
       let targetAgent = createdAgent ?? agents.find((a) => a.is_default) ?? agents[0] ?? null;
       if (context === "setup") {
         if (!targetAgent) {
-          const model = models.find((row) => row.is_default) ?? models[0];
+          const model = starterModel;
           if (!model) throw new Error("Add a model before finishing setup.");
-          const availableTools = await api.tools.list({ includeDisabled: true }).catch(() => []);
+          const availableTools = await api.tools.list({ includeDisabled: true });
           const created = await api.agents.create({
             name: assistantName.trim(),
             icon: assistantIcon,
@@ -198,9 +200,8 @@ export function OnboardingWizard({ context, onReady }: Props) {
         if (!targetAgent) throw new Error("Create your assistant before finishing setup.");
         const firstRunThread = await api.threads.create(targetAgent.id, "Getting to know you");
         rememberFirstRunThread(firstRunThread.thread_id);
-        const selectedModel = models.find((model) => model.name === targetAgent.model_config_name)
-          ?? models.find((model) => model.is_default)
-          ?? models[0];
+        const selectedModel = enabledModels.find((model) => model.name === targetAgent.model_config_name)
+          ?? starterModel;
         dispatch({ type: "SELECT_THREAD", threadId: firstRunThread.thread_id, agentId: targetAgent.id });
         const kickoff = {
           id: `${targetAgent.id}:${Date.now()}`,
@@ -353,9 +354,14 @@ export function OnboardingWizard({ context, onReady }: Props) {
             readOnlySettings={context === "profile"}
             starterAgent={context === "setup" && !createdAgent && agents.length === 0 ? {
               name: assistantName.trim(),
-              modelConfigName: models.find((model) => model.is_default)?.name ?? models[0]?.name ?? "",
+              modelConfigName: starterModel?.name ?? "",
             } : undefined}
           />
+        )}
+        {saveError && isLast && (
+          <p role="alert" className="mx-auto mt-4 w-full max-w-2xl text-sm text-rose-600 dark:text-rose-300">
+            {saveError}
+          </p>
         )}
       </div>
 
@@ -371,12 +377,6 @@ export function OnboardingWizard({ context, onReady }: Props) {
           </button>
 
           <div className="flex-1" />
-
-          {saveError && isLast && (
-            <span className="hidden text-xs text-rose-600 dark:text-rose-300 sm:inline">
-              {saveError}
-            </span>
-          )}
 
           {isLast ? (
             <button

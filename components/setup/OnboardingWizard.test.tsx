@@ -174,3 +174,87 @@ it("does not let disabled-only models satisfy setup readiness", async () => {
 
   expect(screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled")).toBe(true);
 });
+
+async function advanceToFirstChat() {
+  await screen.findByRole("button", { name: "Continue" });
+  for (let index = 0; index < 3; index++) {
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  }
+  fireEvent.change(screen.getByRole("textbox", { name: "Assistant name" }), {
+    target: { value: "Personal assistant" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+}
+
+it.each([true, false])("uses an enabled starter model when the first model is disabled (default=%s)", async (isDefault) => {
+  apiMocks.profileGet.mockResolvedValue({ name: "Robin" });
+  apiMocks.modelsList.mockResolvedValue([
+    { name: "disabled", provider: "openai", model_id: "disabled-test", enabled: false, is_default: isDefault },
+    { name: "enabled", provider: "anthropic", model_id: "enabled-test", enabled: true, is_default: false },
+  ]);
+  apiMocks.agentsCreate.mockResolvedValue({
+    id: "starter-agent", name: "Personal assistant", model_config_name: "enabled", is_default: true,
+  });
+  render(<OnboardingWizard context="setup" />);
+  await advanceToFirstChat();
+  fireEvent.click(screen.getByRole("button", { name: "Start our first chat" }));
+
+  await waitFor(() => expect(apiMocks.routerPush).toHaveBeenCalledWith("/"));
+  expect(apiMocks.agentsCreate).toHaveBeenCalledWith(expect.objectContaining({
+    model_config_name: "enabled",
+  }));
+  expect(apiMocks.persistKickoff).toHaveBeenCalledWith(expect.objectContaining({
+    message: expect.stringContaining("anthropic enabled-test"),
+  }));
+});
+
+it("reports tool-catalog failure accessibly and retries without creating an incomplete assistant", async () => {
+  apiMocks.profileGet.mockResolvedValue({ name: "Robin" });
+  apiMocks.modelsList.mockResolvedValue([
+    { name: "model", provider: "openai", model_id: "gpt-test", enabled: true, is_default: true },
+  ]);
+  apiMocks.toolsList.mockRejectedValueOnce(new Error("Tool catalog unavailable. Try again."));
+  render(<OnboardingWizard context="setup" />);
+  await advanceToFirstChat();
+  fireEvent.click(screen.getByRole("button", { name: "Start our first chat" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Tool catalog unavailable. Try again.");
+  expect(alert.className.split(/\s+/)).not.toContain("hidden");
+  expect(apiMocks.agentsCreate).not.toHaveBeenCalled();
+  expect(apiMocks.profileUpdate).not.toHaveBeenCalled();
+  expect(apiMocks.threadCreate).not.toHaveBeenCalled();
+  expect(apiMocks.routerPush).not.toHaveBeenCalled();
+
+  apiMocks.toolsList.mockResolvedValue([
+    { name: "update_agent_instruction", category: "Config", status: "enabled" },
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Start our first chat" }));
+  await waitFor(() => expect(apiMocks.routerPush).toHaveBeenCalledWith("/"));
+  expect(apiMocks.agentsCreate).toHaveBeenCalledOnce();
+  expect(apiMocks.agentsCreate).toHaveBeenCalledWith(expect.objectContaining({
+    tools: ["update_agent_instruction"],
+  }));
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("reuses a created assistant when retrying a failed profile save", async () => {
+  apiMocks.profileGet.mockResolvedValue({ name: "Robin" });
+  apiMocks.modelsList.mockResolvedValue([
+    { name: "model", provider: "openai", model_id: "gpt-test", enabled: true, is_default: true },
+  ]);
+  apiMocks.profileUpdate.mockRejectedValueOnce(new Error("Profile save failed. Try again."));
+  render(<OnboardingWizard context="setup" />);
+  await advanceToFirstChat();
+  fireEvent.click(screen.getByRole("button", { name: "Start our first chat" }));
+
+  expect((await screen.findByRole("alert")).textContent).toContain("Profile save failed.");
+  expect(apiMocks.threadCreate).not.toHaveBeenCalled();
+  expect(apiMocks.routerPush).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start our first chat" }));
+  await waitFor(() => expect(apiMocks.routerPush).toHaveBeenCalledWith("/"));
+  expect(apiMocks.agentsCreate).toHaveBeenCalledOnce();
+  expect(apiMocks.profileUpdate).toHaveBeenCalledTimes(2);
+  expect(apiMocks.threadCreate).toHaveBeenCalledOnce();
+});
