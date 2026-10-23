@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -100,6 +100,17 @@ describe("runBackup", () => {
     seedDataDir().close();
     expect(runBackup({ dataDir, dest: join(dataDir, "files", "bk"), log })).toBe(1);
     expect(existsSync(join(dataDir, "files", "bk"))).toBe(false);
+    expect(logs.join("\n")).toMatch(/inside the data directory/i);
+  });
+
+  it("refuses a destination that reaches the data directory through a link", () => {
+    seedDataDir().close();
+    mkdirSync(join(dataDir, "empty"), { recursive: true });
+    const link = join(root, "linked");
+    symlinkSync(join(dataDir, "empty"), link, "junction");
+    expect(runBackup({ dataDir, dest: link, log })).toBe(1);
+    expect(runBackup({ dataDir, dest: join(link, "new", "bk"), log })).toBe(1);
+    expect(readdirSync(join(dataDir, "empty"))).toEqual([]);
     expect(logs.join("\n")).toMatch(/inside the data directory/i);
   });
 

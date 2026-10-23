@@ -6,10 +6,10 @@
 // the database stay encrypted and can only be read with the original master
 // key (OS keychain, `.secret-key`, or PIN-wrapped `.secret-key.enc`).
 
-import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 const DATABASES = ["jarela.db", "checkpoints.db"];
 const DIRECTORIES = ["files", "providers", "tools", "packages"];
@@ -24,8 +24,27 @@ export function resolveDataDir(env = process.env, platform = process.platform, h
   return join(home, ".jarela");
 }
 
+// Resolve links so a symlink or junction cannot smuggle the target into the data dir.
+// For paths that don't exist yet, realpath the nearest existing ancestor.
+function realTarget(path) {
+  let current = resolve(path);
+  const rest = [];
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    rest.unshift(basename(current));
+    current = parent;
+  }
+  try {
+    current = realpathSync.native(current);
+  } catch {
+    /* keep the lexical path */
+  }
+  return join(current, ...rest);
+}
+
 function isInside(parent, child) {
-  const rel = relative(resolve(parent), resolve(child));
+  const rel = relative(realTarget(parent), realTarget(child));
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
