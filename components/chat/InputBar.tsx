@@ -3,6 +3,7 @@ import { Mic, Paperclip, Send, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { uploadBinaryFile, uploadImageFile } from "@/api/client";
 import type { ContentPart } from "@/api/types";
+import { downscaleImageFile } from "@/lib/attachments/downscale-image";
 import { errorMessage } from "@/lib/utils/error";
 
 interface Props {
@@ -57,7 +58,7 @@ function fileToContentPart(file: File): Promise<ContentPart> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     if (file.type.startsWith("image/") || IMAGE_EXT_RE.test(file.name)) {
-      uploadImageFile(file).then(resolve, reject);
+      downscaleImageFile(file).then((image) => uploadImageFile(image)).then(resolve, reject);
     } else if (file.type === "application/pdf") {
       uploadBinaryFile(file).then(resolve, reject);
     } else {

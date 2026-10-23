@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Upgrade Next.js and its ESLint config to 16.4.2 and enable security-upgrade reminders.
 
+### Fixed
+
+- Large phone photos and HEIC images are downscaled to a 1568px JPEG before upload so they stay under provider image limits.
+
 ## [2.5.3] - 2026-10-22
 
 ### Fixed
