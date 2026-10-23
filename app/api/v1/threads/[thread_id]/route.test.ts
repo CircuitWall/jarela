@@ -11,6 +11,8 @@ process.env.JARELA_DB_DIR = TMP_ROOT;
 const { getDb } = await import("@/lib/db");
 const { FILES_DIR } = await import("@/lib/files");
 const { getThread } = await import("@/lib/stores/threads");
+const { putMemory } = await import("@/lib/stores/memory");
+const { SENSITIVE_MEMORY_NAMESPACES } = await import("@/lib/crypto/sensitive");
 const { DELETE } = await import("./route");
 
 afterAll(() => {
@@ -73,5 +75,17 @@ describe("DELETE /api/v1/threads/[thread_id] privacy cleanup", () => {
     const threadId = seedThread([{ type: "image_ref", name: `${randomUUID()}.png` }]);
     expect((await del(threadId)).status).toBe(200);
     expect(getThread(threadId)).toBeNull();
+  });
+
+  it("keeps files that an encrypted memory entry still references", async () => {
+    const kept = spill(`${randomUUID()}.pdf`);
+    const threadId = seedThread([{ type: "image_ref", name: kept }]);
+    const namespace = [...SENSITIVE_MEMORY_NAMESPACES][0];
+    putMemory(namespace, `k-${randomUUID()}`, { note: `/api/v1/files/${kept}` });
+    const raw = getDb().prepare("SELECT value FROM memory_store WHERE namespace=? AND value LIKE ?").get(namespace, `%${kept}%`);
+    expect(raw).toBeUndefined();
+
+    expect((await del(threadId)).status).toBe(200);
+    expect(existsSync(join(FILES_DIR, kept))).toBe(true);
   });
 });
