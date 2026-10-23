@@ -13,6 +13,7 @@
 // still read e.g. ~/Downloads to copy a file into the project).
 
 import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { tool } from "@langchain/core/tools";
@@ -25,6 +26,7 @@ import {
   type ToolConfig,
 } from "./workspace-context";
 import { probeGit, type GitProbe } from "../support/git-probe";
+import { getWorkspaceTreeScan, setWorkspaceTreeScan, type WorkspaceTreeScan } from "@/lib/stores/workspace-scan-cache";
 
 // Probe budget. Keep generous enough for slow filesystems but short
 // enough that the agent isn't blocked for tens of seconds on a stalled
@@ -472,6 +474,7 @@ const initSchema = z.object({
   scoped: z.boolean().optional().describe("When true, later file_*/local_exec calls refuse absolute paths outside the root. Default false."),
   include_tree: z.boolean().optional().describe("Include a bounded directory tree in the response. Default true."),
   max_tree_entries: z.number().int().min(0).max(MAX_TREE_HARD_CAP).optional().describe(`Cap on tree rows. Default ${MAX_TREE_DEFAULT}, max ${MAX_TREE_HARD_CAP}.`),
+  refresh_scan: z.boolean().optional().describe("Force a fresh directory-tree scan instead of reusing a scan made within the last 15 minutes."),
   include_git: z.boolean().optional().describe("Probe git state. Default true."),
   include_scripts: z.boolean().optional().describe("Parse package.json scripts and Makefile targets. Default true."),
   include_readme: z.boolean().optional().describe("Return the head of the project README. Default true."),
@@ -492,6 +495,12 @@ type WorkspaceProbe = {
   hasDockerfile: boolean;
   hasDevcontainer: boolean;
 };
+
+function workspaceTreeCacheKey(root: string, maxEntries: number): string {
+  const normalizedRoot = path.resolve(root);
+  const cacheRoot = process.platform === "win32" ? normalizedRoot.toLowerCase() : normalizedRoot;
+  return createHash("sha256").update(JSON.stringify({ root: cacheRoot, maxEntries })).digest("hex");
+}
 
 // Validates the user-supplied path: must resolve cleanly, exist, be a
 // directory, and (unless explicitly allowed) not be inside a sensitive root.
@@ -543,6 +552,7 @@ async function probeWorkspace(
     include_scripts: boolean;
     include_readme: boolean;
     max_tree_entries: number | undefined;
+    cached_tree?: WorkspaceTreeScan;
   },
 ): Promise<WorkspaceProbe & { pkg: Awaited<ReturnType<typeof readJsonIfExists>> }> {
   const pkg = opts.include_scripts ? await readJsonIfExists(path.join(abs, "package.json")) : null;
@@ -552,9 +562,11 @@ async function probeWorkspace(
     detectLanguages(abs),
     opts.include_scripts ? detectPackageManager(abs, pkg) : Promise.resolve("none" as const),
     opts.include_scripts ? parseMakefileTargets(abs) : Promise.resolve([] as string[]),
-    opts.include_tree
-      ? buildTree(abs, Math.min(opts.max_tree_entries ?? MAX_TREE_DEFAULT, MAX_TREE_HARD_CAP))
-      : Promise.resolve({ entries: [] as TreeEntry[], truncated: false }),
+    opts.cached_tree
+      ? Promise.resolve(opts.cached_tree)
+      : opts.include_tree
+        ? buildTree(abs, Math.min(opts.max_tree_entries ?? MAX_TREE_DEFAULT, MAX_TREE_HARD_CAP))
+        : Promise.resolve({ entries: [] as TreeEntry[], truncated: false }),
     opts.include_readme ? readReadme(abs) : Promise.resolve(null),
     detectConventionFiles(abs),
     fileExists(path.join(abs, "Dockerfile")),
@@ -571,6 +583,7 @@ export const workspaceInitTool = tool(
       scoped = false,
       include_tree = true,
       max_tree_entries,
+      refresh_scan = false,
       include_git = true,
       include_scripts = true,
       include_readme = true,
@@ -585,9 +598,26 @@ export const workspaceInitTool = tool(
     // leave the agent without an active workspace.
     setWorkspace({ root: abs, scoped, opened_at: Date.now() }, config);
 
+    const treeMaxEntries = Math.min(max_tree_entries ?? MAX_TREE_DEFAULT, MAX_TREE_HARD_CAP);
+    const cacheKey = include_tree ? workspaceTreeCacheKey(abs, treeMaxEntries) : null;
+    let cachedTree: ReturnType<typeof getWorkspaceTreeScan> = null;
+    if (cacheKey && !refresh_scan) {
+      try { cachedTree = getWorkspaceTreeScan(cacheKey); } catch { /* cache failures must not block workspace entry */ }
+    }
+
     const probe = await probeWorkspace(abs, {
-      include_git, include_tree, include_scripts, include_readme, max_tree_entries,
+      include_git,
+      include_tree,
+      include_scripts,
+      include_readme,
+      max_tree_entries: treeMaxEntries,
+      ...(cachedTree ? { cached_tree: { entries: cachedTree.entries, truncated: cachedTree.truncated } } : {}),
     });
+    let treeScannedAt = cachedTree?.scanned_at ?? null;
+    if (cacheKey && !cachedTree) {
+      treeScannedAt = new Date().toISOString();
+      try { setWorkspaceTreeScan(cacheKey, probe.tree, treeScannedAt); } catch { /* cache failures must not block workspace entry */ }
+    }
 
     const requiredReading = await buildRequiredReading(abs, probe.conventions, probe.readme, extra_required_reading);
     const scripts = probe.pkg?.scripts ?? {};
@@ -596,6 +626,7 @@ export const workspaceInitTool = tool(
       ok: true,
       root: abs,
       scoped,
+      scan: include_tree ? { tree_scanned_at: treeScannedAt, tree_cache_hit: !!cachedTree } : null,
       git: probe.git,
       project: {
         languages: probe.languages,
@@ -625,7 +656,7 @@ export const workspaceInitTool = tool(
   {
     name: "workspace_init",
     description:
-      "Register a project directory as the active workspace for this thread and return its context bundle (git state, languages, scripts, tree, README head, convention files, required_reading, recommended_next_steps). After this call, file_*/local_exec calls with relative paths resolve against the workspace root instead of $HOME. Call this once at the start of any coding task. CRITICAL: the response includes a `required_reading` array of workspace-relative instruction files (CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, .github/instructions/*.instructions.md, CONTRIBUTING.md, README, ADR index, plus caller-supplied extras). You MUST `file_read` every entry in `required_reading` before taking any other action (no edits, no shell commands, no further tool calls beyond file_read for those paths). Use `recommended_next_steps` to choose relevant repo skills and efficient file/search/shell tools instead of extra exploratory shell commands.",
+      "Register a project directory as the active workspace for this thread and return its context bundle (git state, languages, scripts, tree, README head, convention files, required_reading, recommended_next_steps). Recent tree scans for the same directory and entry cap are reused for 15 minutes; the response includes the original `scan.tree_scanned_at` and `scan.tree_cache_hit`. Pass `refresh_scan: true` to force a fresh tree scan. Git status, README, scripts, and conventions are still checked on every call. After this call, file_*/local_exec calls with relative paths resolve against the workspace root instead of $HOME. Call this once at the start of any coding task. CRITICAL: the response includes a `required_reading` array of workspace-relative instruction files (CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, .github/instructions/*.instructions.md, CONTRIBUTING.md, README, ADR index, plus caller-supplied extras). You MUST `file_read` every entry in `required_reading` before taking any other action (no edits, no shell commands, no further tool calls beyond file_read for those paths). Use `recommended_next_steps` to choose relevant repo skills and efficient file/search/shell tools instead of extra exploratory shell commands.",
     schema: initSchema,
   },
 );

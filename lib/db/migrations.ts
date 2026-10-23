@@ -165,6 +165,13 @@ export function runMigrations(db: DatabaseSync): void {
       updated_at           TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due ON scheduled_tasks(enabled, next_run_at);
+    -- Bounded workspace_init tree scans reused for 15 minutes (ADR-0104).
+    CREATE TABLE IF NOT EXISTS workspace_scan_cache (
+      cache_key TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      scanned_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_workspace_scan_cache_scanned_at ON workspace_scan_cache(scanned_at);
     -- Event-driven "watchers" (ADR-0027). A watcher polls one built-in
     -- tool with fixed args on an interval; when the tool's output changes
     -- (content hash != last_fingerprint) the agent is fired with
