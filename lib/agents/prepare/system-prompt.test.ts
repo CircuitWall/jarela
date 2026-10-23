@@ -376,6 +376,26 @@ describe("buildToolPermissionContext", () => {
     expect(prompt.indexOf("dynamic recall")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
   });
 
+  it("provides the UTC clock and runtime-local date in the dynamic prompt", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(),
+      trimmedMessage: "hi",
+      budget,
+      recallCtx: "",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+    });
+    const dynamic = prompt.slice(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+    expect(dynamic).toMatch(/Current time: .* \(UTC\)\. Use this when computing scheduled task timestamps\./);
+    expect(dynamic).toMatch(/Current local date and time: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} GMT(?:[+-]\d{2}:\d{2})? \([^\)]+\)\. Use this for local calendar-date interpretation\./);
+    expect(dynamic).toContain(`(${timeZone})`);
+    expect(dynamic).toContain("For elapsed-time rules, compare modification timestamps with current UTC time; do not infer a 24-hour interval from calendar dates.");
+  });
+
   it("places usage-strategy instructions in the dynamic prompt suffix", () => {
     const instruction = getUsageStrategyProfile("cost_saving").promptInstruction;
     const prompt = buildSystemPrompt({
