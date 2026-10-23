@@ -62,6 +62,8 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const initialProviderName = directProviderName ?? credential?.provider ?? null;
   const [step, setStep] = useState<"pick" | "form">(initialProviderName ? "form" : "pick");
   const [category] = useState<Category | null>(initialCategory ?? null);
@@ -72,13 +74,17 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
       const res = await api.integrations.list();
       setDefs(res.definitions);
       setStatuses(Object.fromEntries(res.statuses.map((s) => [s.name, s])));
+      setLoadError(false);
     } catch (e) {
+      setLoadError(true);
       pushErrorToast({ title: "Couldn't load credentials catalog", error: e, context: { panel: "credentials", action: "catalog.load" } });
     }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setLoadError(false);
     (async () => {
       try {
         const res = await api.integrations.list();
@@ -87,13 +93,14 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
         setStatuses(Object.fromEntries(res.statuses.map((s) => [s.name, s])));
       } catch (e) {
         if (cancelled) return;
+        setLoadError(true);
         pushErrorToast({ title: "Couldn't load credentials catalog", error: e, context: { panel: "credentials", action: "catalog.load" } });
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [loadAttempt]);
 
   const grouped = useMemo(() => {
     const out = new Map<Category, IntegrationDefinition[]>();
@@ -165,10 +172,24 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
         ) : undefined
       }
     >
+      {loadError && (
+        <div className="p-4 space-y-3">
+          <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">
+            Couldn&apos;t load credential providers. Check that Jarela is running and try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm text-fg hover:bg-surface-3"
+          >
+            Try again
+          </button>
+        </div>
+      )}
       {step === "pick" && (
         <div className="p-4 space-y-4">
           {loading && <p className="text-fg-faint text-sm text-center py-6">Loading…</p>}
-          {!loading && defs.length === 0 && (
+          {!loading && !loadError && defs.length === 0 && (
             <p className="text-fg-faint text-sm text-center py-6">No credential providers available.</p>
           )}
           {!loading && displayGroups.map((group) => {
@@ -228,7 +249,7 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
           />
         </div>
       )}
-      {step === "form" && !activeDef && (
+      {step === "form" && !activeDef && !loadError && (
         loading
           ? <p className="text-fg-faint text-sm text-center py-8">Loading…</p>
           : (
