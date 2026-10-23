@@ -28,6 +28,7 @@ describe("built-in skills", () => {
       "jarela-integrations",
       "jarela-operations",
       "memory-organization",
+      "personal-briefing",
     ]));
     expect(skills.find((s) => s.id === "jarela-integrations")?.source).toBe("builtin");
     expect(getSkill("jarela-documentation")?.content).toContain("describe_extension_surfaces");
@@ -39,6 +40,15 @@ describe("built-in skills", () => {
     expect(skill?.source).toBe("builtin");
     expect(skill?.content).toContain("# Jarela Integrations");
     expect(skill?.content).toContain("describe_extension_surfaces");
+  });
+
+  it("pairs the personal briefing skill with bounded validation and explicit limits", () => {
+    const skill = getSkill("personal-briefing");
+    expect(skill?.source).toBe("builtin");
+    expect(skill?.content).toContain("validate_personal_briefing");
+    expect(skill?.content).toContain("retry at most twice");
+    expect(skill?.content).toContain("do not prove provenance or factual accuracy");
+    expect(skill?.content).toContain("separate action requiring existing permissions");
   });
 
   it("documents agent-callable env overrides in the configuration skill", () => {

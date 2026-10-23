@@ -123,6 +123,18 @@ describe("runtime ownership", () => {
 });
 
 describe("prompt registry coverage", () => {
+  it("registers the personal briefing skill with a usable example and honest validation limits", async () => {
+    const prompt = staticPrompts.find((entry) => entry.id === "skill.personal-briefing");
+    expect(prompt?.source).toBe("lib/skills/builtins/personal-briefing/SKILL.md");
+    const example = prompt?.text.match(/```json\s+([\s\S]*?)```/)?.[1];
+    expect(example).toBeTruthy();
+    const { validatePersonalBriefing } = await import("@/lib/tools/general/validate-personal-briefing");
+    expect(validatePersonalBriefing(JSON.parse(example!)).ok).toBe(true);
+    expect(prompt?.text).toContain("do not prove provenance or factual accuracy");
+    const catalog = await getAllToolCatalogAsync();
+    expect(catalog.some((entry) => entry.name === "validate_personal_briefing")).toBe(true);
+  });
+
   it("registers every static system prompt in the codebase", () => {
     const registered = new Set(staticPrompts.map((p) => p.source));
     // Any module declaring a prompt constant must appear in the registry, or

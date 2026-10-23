@@ -45,6 +45,17 @@ The Tasks view separates scheduled tasks from event-driven tasks so each kind of
 
 ## Work in chat
 
+### Personal briefing pilot
+
+The built-in `personal-briefing` skill combines read-only source retrieval and
+model drafting with `validate_personal_briefing`, a local read-only validator.
+The validator checks draft structure, references against the supplied source
+IDs, and disclosure of unavailable sources. It does not prove that the
+sources were retrieved or that the summary is factually correct. Review the
+original tool results and keep external actions separate.
+
+### Conversations
+
 Chat is the per-agent workspace for conversations and their results. Keep related follow-up work in the same thread so its existing context remains available.
 
 At agent startup, the picker and chat share in-flight profile, agent config,
