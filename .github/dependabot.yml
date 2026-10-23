@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Keep workflow actions current in one grouped weekly PR. Titles come out
+  # as "ci(deps): bump the actions group with N updates", which passes
+  # scripts/check-git-conventions.mjs. The Playwright container image is
+  # pinned to package-lock.json by scripts/check-ci-workflows.mjs instead.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
+      include: scope
