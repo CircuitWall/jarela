@@ -7,7 +7,7 @@ import { getUsageStrategyProfile } from "@/lib/agents/usage-strategy";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-system-prompt-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL, buildSystemPrompt, buildToolPermissionContext, buildSharedToolCatalogContext, buildToolReliabilityContext } = await import("./system-prompt");
+const { CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL, buildSystemPrompt, buildToolPermissionContext, buildSharedToolCatalogContext, buildToolReliabilityContext, formatLocalDateTime } = await import("./system-prompt");
 const { recordToolUsage } = await import("@/lib/stores/tool-stats");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ContextBudget } from "@/lib/agents/context-budget";
@@ -394,6 +394,12 @@ describe("buildToolPermissionContext", () => {
     expect(dynamic).toMatch(/Current local date and time: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} GMT(?:[+-]\d{2}:\d{2})? \([^\)]+\)\. Use this for local calendar-date interpretation\./);
     expect(dynamic).toContain(`(${timeZone})`);
     expect(dynamic).toContain("For elapsed-time rules, compare modification timestamps with current UTC time; do not infer a 24-hour interval from calendar dates.");
+  });
+
+  it("formats local offsets with an ASCII sign on both sides of UTC", () => {
+    const now = new Date("2026-01-15T03:04:05.000Z");
+    expect(formatLocalDateTime(now, "America/New_York")).toBe("2026-01-14 22:04:05 GMT-05:00");
+    expect(formatLocalDateTime(now, "Asia/Kolkata")).toBe("2026-01-15 08:34:05 GMT+05:30");
   });
 
   it("places usage-strategy instructions in the dynamic prompt suffix", () => {
