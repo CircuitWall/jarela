@@ -496,10 +496,12 @@ type WorkspaceProbe = {
   hasDevcontainer: boolean;
 };
 
-function workspaceTreeCacheKey(root: string, maxEntries: number): string {
-  const normalizedRoot = path.resolve(root);
-  const cacheRoot = process.platform === "win32" ? normalizedRoot.toLowerCase() : normalizedRoot;
-  return createHash("sha256").update(JSON.stringify({ root: cacheRoot, maxEntries })).digest("hex");
+// realpath yields the on-disk casing, so one directory opened with different
+// casing shares a key while case-distinct directories never do.
+async function workspaceTreeCacheKey(root: string, maxEntries: number): Promise<string> {
+  let canonicalRoot = path.resolve(root);
+  try { canonicalRoot = await fs.realpath(canonicalRoot); } catch { /* keep the resolved path */ }
+  return createHash("sha256").update(JSON.stringify({ root: canonicalRoot, maxEntries })).digest("hex");
 }
 
 // Validates the user-supplied path: must resolve cleanly, exist, be a
@@ -599,7 +601,7 @@ export const workspaceInitTool = tool(
     setWorkspace({ root: abs, scoped, opened_at: Date.now() }, config);
 
     const treeMaxEntries = Math.min(max_tree_entries ?? MAX_TREE_DEFAULT, MAX_TREE_HARD_CAP);
-    const cacheKey = include_tree ? workspaceTreeCacheKey(abs, treeMaxEntries) : null;
+    const cacheKey = include_tree ? await workspaceTreeCacheKey(abs, treeMaxEntries) : null;
     let cachedTree: ReturnType<typeof getWorkspaceTreeScan> = null;
     if (cacheKey && !refresh_scan) {
       try { cachedTree = getWorkspaceTreeScan(cacheKey); } catch { /* cache failures must not block workspace entry */ }
