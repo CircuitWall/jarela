@@ -32,12 +32,25 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
+
+      - name: Require accepted app documentation before publishing
+        if: startsWith(github.ref_name, 'v')
+        run: |
+          set -euo pipefail
+          version="$(node -p 'require("./package.json").version')"
+          if [ "$GITHUB_REF" != "refs/tags/v$version" ]; then
+            echo "::error::App publication requires a version-matching tag, not a branch."
+            exit 1
+          fi
+          node scripts/release-docs.mjs check "$version"
 
       - name: Pin npm for workspace lockfile compatibility
         # npm 11.14.x re-resolves newer workspace patch versions during npm ci

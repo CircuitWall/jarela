@@ -1,0 +1,193 @@
+name: Release documentation
+
+# Paid AI usage is explicitly on demand, never scheduled or called by CI.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Intended stable app release version, for example 2.5.4
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-documentation
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    name: Propose documentation with Copilot
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      create: ${{ steps.plan.outputs.create }}
+      source: ${{ steps.plan.outputs.source }}
+      branch: ${{ steps.plan.outputs.branch }}
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Resolve release and reuse existing review
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          context="$(node scripts/release-docs.mjs context "$VERSION")"
+          source="$(jq -r .reviewedSha <<<"$context")"
+          branch="docs/release-$VERSION-${source:0:12}"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          if node scripts/release-docs.mjs check "$VERSION"; then
+            echo "An accepted documentation review already covers $VERSION. No AI run needed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          pr="$(gh pr list --head "$branch" --base main --state open --json url --jq '.[0].url // empty')"
+          if [ -n "$pr" ]; then
+            echo "Review the existing documentation PR: $pr. No additional AI run was started." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          remote_branch="$(git ls-remote --heads origin "$branch")"
+          if [ -n "$remote_branch" ]; then
+            echo "::error::Documentation branch $branch already exists without an open PR; inspect it before retrying."
+            exit 1
+          fi
+          node scripts/release-docs.mjs prompt "$VERSION" > "$RUNNER_TEMP/release-docs-prompt.txt"
+          cp scripts/release-docs.mjs "$RUNNER_TEMP/release-docs-validator.mjs"
+          echo "create=true" >> "$GITHUB_OUTPUT"
+
+      - name: Draft documentation with Copilot
+        if: steps.plan.outputs.create == 'true'
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_DOCS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$COPILOT_GITHUB_TOKEN" ]; then
+            echo "::error::Set COPILOT_DOCS_TOKEN to a Copilot-enabled fine-grained PAT with Copilot Requests permission. GITHUB_TOKEN cannot authenticate Copilot."
+            exit 1
+          fi
+          npm exec --yes --package=@github/copilot@1.0.103 -- copilot \
+            --no-auto-update --no-custom-instructions --disable-builtin-mcps \
+            --no-ask-user --no-color --no-bash-env --sync-session=off --disallow-temp-dir \
+            --max-ai-credits 50 --secret-env-vars=COPILOT_GITHUB_TOKEN \
+            --allow-tool=write \
+            --allow-tool='shell(git diff:*)' \
+            --allow-tool='shell(git log:*)' \
+            --allow-tool='shell(git show:*)' \
+            -p "$(cat "$RUNNER_TEMP/release-docs-prompt.txt")"
+
+      - name: Validate and package only documentation changes
+        if: steps.plan.outputs.create == 'true'
+        env:
+          SOURCE: ${{ steps.plan.outputs.source }}
+        run: |
+          set -euo pipefail
+          node "$RUNNER_TEMP/release-docs-validator.mjs" proposal "$VERSION" "$SOURCE"
+          git add -- README.md CONTRIBUTING.md docs packages
+          git diff --cached --check
+          git diff --cached --binary > "$RUNNER_TEMP/release-docs.patch"
+          test -s "$RUNNER_TEMP/release-docs.patch"
+
+      - uses: actions/upload-artifact@v7
+        if: steps.plan.outputs.create == 'true'
+        with:
+          name: release-documentation-patch
+          path: ${{ runner.temp }}/release-docs.patch
+          retention-days: 1
+
+  pull-request:
+    name: Open documentation review PR
+    needs: propose
+    if: needs.propose.outputs.create == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ inputs.version }}
+      SOURCE: ${{ needs.propose.outputs.source }}
+      BRANCH: ${{ needs.propose.outputs.branch }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.propose.outputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-documentation-patch
+          path: ${{ runner.temp }}/release-documentation
+
+      - name: Apply and independently validate the proposal
+        run: |
+          set -euo pipefail
+          cp scripts/release-docs.mjs "$RUNNER_TEMP/release-docs-validator.mjs"
+          git switch -c "$BRANCH"
+          git apply --index "$RUNNER_TEMP/release-documentation/release-docs.patch"
+          node "$RUNNER_TEMP/release-docs-validator.mjs" proposal "$VERSION" "$SOURCE"
+          git diff --cached --check
+          node scripts/scan-secrets.mjs --all
+          node scripts/scan-sensitive-terms.mjs --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs(release): update documentation for $VERSION" \
+            -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+          node scripts/release-docs.mjs check "$VERSION"
+
+      - name: Open a human-reviewed PR and dispatch its CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if [ "$(git rev-parse origin/main)" != "$SOURCE" ]; then
+            echo "::error::Main advanced during documentation generation. Dispatch a fresh review; no branch was pushed."
+            exit 1
+          fi
+          gh auth setup-git
+          git push origin "$BRANCH"
+          cat > "$RUNNER_TEMP/release-docs-pr.md" <<EOF
+          <!-- jarela-release-documentation -->
+          Copilot documentation review for **$VERSION**, covering source **$SOURCE**
+          since the previous stable tag recorded in \`docs/releases/$VERSION.json\`.
+
+          A maintainer must review the documentation and the explicit updated/unnecessary
+          decision, then merge this PR. This workflow does not approve or merge it.
+          After merging, retry the nightly release (or continue the human-owned release).
+          Source changes after the reviewed commit invalidate this review.
+
+          Validation: documentation-only scope, version/source binding, git diff check,
+          secret scan, and sensitive-term scan. CI is dispatched explicitly because
+          GITHUB_TOKEN-created PRs do not trigger pull_request workflows.
+          EOF
+          if ! url="$(gh pr create --base main --head "$BRANCH" \
+            --title "docs(release): update documentation for $VERSION" \
+            --body-file "$RUNNER_TEMP/release-docs-pr.md")"; then
+            git push origin --delete "$BRANCH"
+            echo "::error::PR creation failed. Enable Actions PR creation in repository settings, then retry."
+            exit 1
+          fi
+          echo "Review and merge $url before releasing $VERSION." >> "$GITHUB_STEP_SUMMARY"
+          gh workflow run ci.yml --ref "$BRANCH"
