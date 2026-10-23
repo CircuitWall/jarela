@@ -171,6 +171,7 @@ jobs:
           cp LICENSE             "$dest/LICENSE"
           cp README.md           "$dest/README.md"
           for script in \
+            backup.mjs \
             first-run-prompt.mjs \
             install-to-system.sh \
             jarela-bin.mjs \
@@ -200,6 +201,7 @@ jobs:
           Copy-Item              -Force README.md    "$dest/README.md"
           Copy-Item -Force docs/INSTALL.md           "$dest/INSTALL.md"
           $winScripts = @(
+            'backup.mjs',
             'first-run-prompt.mjs',
             'install-to-system.ps1',
             'installed-launcher.ps1',

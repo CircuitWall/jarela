@@ -267,6 +267,26 @@ Override with `JARELA_DB_DIR=/path/to/dir`. Uninstalling does **not** delete thi
 
 The on-device embedding model (about 136 MB) is not part of the installers. The first time you select **Jarela Local** under Settings → Models → Embeddings, Jarela downloads it from Hugging Face. The download is pinned to a fixed revision, every file is hash-checked, and the model is stored in `models/local-embedding/` under the data directory above. For offline or air-gapped machines, build with `JARELA_BUNDLE_LOCAL_EMBEDDING=1` to include the model in the bundle. Set `JARELA_LOCAL_EMBEDDING_DOWNLOAD=0` to stop Jarela from ever downloading it.
 
+### Back up and restore
+
+```bash
+jarela backup ~/jarela-backup-2025-01-01   # folder must be new or empty
+```
+
+`jarela backup` reads `JARELA_DB_DIR` (or the default location above) and writes a consistent snapshot that is safe to take while Jarela is running:
+- `jarela.db` and `checkpoints.db` (captured with SQLite `VACUUM INTO`);
+- the `files/`, `providers/`, `tools/`, and `packages/` folders;
+- a `jarela-backup.json` manifest.
+
+It never copies the master key (`.secret-key` / `.secret-key.enc` / OS keychain entry), messaging-bridge sessions (`baileys/`), the re-downloadable embedding model, or logs. Saved credentials stay encrypted in the snapshot.
+
+To restore:
+1. Stop Jarela.
+2. Copy the backup's contents into an empty data directory, without the manifest.
+3. Start Jarela again.
+
+On the same machine (same keychain or keyfile), credentials keep working. On a machine without the original master key, the encrypted credentials cannot be decrypted, so re-enter them in Settings. In every case, re-pair any messaging bridges.
+
 ## Uninstall
 
 - **macOS**: `launchctl unload ~/Library/LaunchAgents/com.jarela.app.plist && rm -rf ~/Library/Application\ Support/Jarela ~/Library/LaunchAgents/com.jarela.app.plist`
