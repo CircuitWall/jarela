@@ -32,9 +32,15 @@ function readCurrentVersion(root) {
   } catch { return "0.0.0"; }
 }
 
+function splitVersion(v) {
+  const s = String(v).split("+")[0];
+  const i = s.indexOf("-");
+  return i === -1 ? [s, ""] : [s.slice(0, i), s.slice(i + 1)];
+}
+
 function compareSemver(a, b) {
-  const [coreA, preA] = String(a).split("-", 2);
-  const [coreB, preB] = String(b).split("-", 2);
+  const [coreA, preA] = splitVersion(a);
+  const [coreB, preB] = splitVersion(b);
   const pa = coreA.split(".").map((n) => Number(n) || 0);
   const pb = coreB.split(".").map((n) => Number(n) || 0);
   for (let i = 0; i < 3; i++) {
