@@ -63,9 +63,24 @@ function parseFrontmatter(lines: string[]): { fields: Record<string, string>; bo
   const end = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
   if (end < 0) return { fields: {}, bodyStart: 0 };
   const fields: Record<string, string> = {};
-  for (const line of lines.slice(1, end)) {
-    const match = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-    if (match) fields[match[1].toLowerCase()] = unquoteYaml(match[2]);
+  const body = lines.slice(1, end);
+  for (let i = 0; i < body.length; i++) {
+    const match = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(body[i]);
+    if (!match) continue;
+    const key = match[1].toLowerCase();
+    const value = match[2].trim();
+    const block = /^([|>])[+-]?\d?$/.exec(value);
+    if (!block) {
+      fields[key] = unquoteYaml(value);
+      continue;
+    }
+    // Block scalar: collect the following indented (or blank) lines.
+    const parts: string[] = [];
+    while (i + 1 < body.length && (body[i + 1].trim() === "" || /^\s/.test(body[i + 1]))) {
+      parts.push(body[++i].trim());
+    }
+    // Agents see descriptions as one line, so both folded and literal styles are joined.
+    fields[key] = parts.filter(Boolean).join(" ");
   }
   return { fields, bodyStart: end + 1 };
 }
