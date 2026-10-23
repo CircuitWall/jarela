@@ -34,6 +34,15 @@ Choose what to call your assistant. An icon and a starting goal are optional; yo
 
 Review your profile, model, and assistant, then select **Start our first chat**. The assistant introduces what is ready and asks one question to learn more about your role or day-to-day. After you answer, it summarizes what it learned and offers a draft of its standing instructions for you to approve or revise. It only saves changes after you approve them, then suggests a few useful first tasks.
 
+The starter assistant uses the enabled default model, or the first enabled
+model if the default is disabled. Disabled models are never selected for a new
+starter assistant.
+
+If setup cannot load the tool catalog, it shows an error instead of creating an
+assistant with an incomplete tool configuration. Resolve the reported issue
+and select **Start our first chat** again to retry. Setup errors are shown on
+both narrow and wide screens.
+
 ![Review the starting setup](assets/first-run-review.png)
 
 ## Return to setup
