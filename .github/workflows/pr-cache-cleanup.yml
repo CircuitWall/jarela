@@ -1,0 +1,35 @@
+name: Clean up PR caches
+
+# Caches saved by pull_request runs are scoped to refs/pull/<n>/merge and can
+# never be restored by another PR, so they only crowd main's caches out of
+# the repository quota. Drop them as soon as the PR closes.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    name: Delete caches for the closed PR
+    runs-on: ubuntu-latest
+    # Fork PRs get a read-only token that cannot delete caches.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 5
+    steps:
+      - name: Delete caches scoped to this PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          set -euo pipefail
+          ids="$(gh cache list --repo "$GITHUB_REPOSITORY" --ref "$REF" --limit 100 --json id --jq '.[].id')"
+          if [ -z "$ids" ]; then
+            echo "No caches for $REF"
+            exit 0
+          fi
+          for id in $ids; do
+            gh cache delete "$id" --repo "$GITHUB_REPOSITORY"
+          done
+          echo "Deleted $(echo "$ids" | wc -l) cache(s) for $REF"

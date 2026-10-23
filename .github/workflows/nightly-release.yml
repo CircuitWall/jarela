@@ -206,12 +206,18 @@ jobs:
           <!-- jarela-nightly-release -->
           EOF
           )"
-            gh pr create \
+            if ! gh pr create \
               --repo "$GITHUB_REPOSITORY" \
               --base main \
               --head "$BRANCH" \
               --title "chore(release): bump to $VERSION" \
-              --body "$body"
+              --body "$body"; then
+              # A pushed branch without a PR blocks every later run (see the
+              # "refusing to overwrite" guard above), so roll the push back.
+              git push origin --delete "$BRANCH" || echo "::warning::Could not delete $BRANCH; delete it manually before the next run."
+              echo "::error::Could not open the release PR. If GitHub reports that Actions may not create pull requests, enable Settings > Actions > General > Allow GitHub Actions to create and approve pull requests."
+              exit 1
+            fi
             pr="$(gh pr view "$BRANCH" --repo "$GITHUB_REPOSITORY" --json number --jq .number)"
           fi
 
