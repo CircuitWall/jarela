@@ -163,13 +163,13 @@ export function ToolList({ events }: { events: ToolEvent[] }) {
   const showCards = expanded || groups.length <= COLLAPSE_THRESHOLD;
   if (!showCards) {
     return (
-      <div className="my-1.5 w-full min-w-0 max-w-full">
+      <div className="w-full min-w-0 max-w-full">
         <CollapsedSummary groups={groups} onExpand={() => setExpanded(true)} />
       </div>
     );
   }
   return (
-    <div className="my-1.5 w-full min-w-0 max-w-full flex flex-col gap-1">
+    <div className="w-full min-w-0 max-w-full flex flex-col gap-1">
       {groups.length > COLLAPSE_THRESHOLD && (
         <button
           onClick={() => setExpanded(false)}
