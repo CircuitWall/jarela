@@ -49,13 +49,35 @@ export function getBuiltinSkillsDir(): string {
   return path.join(process.cwd(), "lib", "skills", "builtins");
 }
 
+function unquoteYaml(value: string): string {
+  const v = value.trim();
+  if (v.length >= 2 && ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))) {
+    return v.slice(1, -1).trim();
+  }
+  return v;
+}
+
+// SKILL.md files in the VS Code/Claude format carry name/description in YAML frontmatter.
+function parseFrontmatter(lines: string[]): { fields: Record<string, string>; bodyStart: number } {
+  if (lines[0]?.trim() !== "---") return { fields: {}, bodyStart: 0 };
+  const end = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
+  if (end < 0) return { fields: {}, bodyStart: 0 };
+  const fields: Record<string, string> = {};
+  for (const line of lines.slice(1, end)) {
+    const match = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
+    if (match) fields[match[1].toLowerCase()] = unquoteYaml(match[2]);
+  }
+  return { fields, bodyStart: end + 1 };
+}
+
 function parseSkill(id: string, content: string, source: Skill["source"]): Skill {
-  const lines = content.split("\n");
+  const lines = content.split(/\r?\n/);
+  const { fields, bodyStart } = parseFrontmatter(lines);
   let name = id;
   const descParts: string[] = [];
   let headingFound = false;
 
-  for (const line of lines) {
+  for (const line of lines.slice(bodyStart)) {
     if (!headingFound && line.startsWith("# ")) {
       name = line.slice(2).trim();
       headingFound = true;
@@ -68,7 +90,12 @@ function parseSkill(id: string, content: string, source: Skill["source"]): Skill
     }
   }
 
-  return { id, name, description: descParts.join(" ").slice(0, 200), source };
+  return {
+    id,
+    name: fields.name || name,
+    description: (fields.description || descParts.join(" ")).slice(0, 200),
+    source,
+  };
 }
 
 // listSkills() readdirs every skill repo and reads each SKILL.md, and the
