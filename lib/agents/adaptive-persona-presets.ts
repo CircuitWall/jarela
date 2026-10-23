@@ -12,8 +12,8 @@ export interface MbtiPreset {
   verbosity: number;
 }
 
-// Presets are intentionally conservative: they shape tone while leaving
-// truthfulness and execution behavior to core agent policies.
+// Legacy values retained for historical migrations and API compatibility.
+// Runtime persona and new editor defaults use direct style controls instead.
 export const MBTI_PRESETS: Record<MbtiType, MbtiPreset> = {
   INTJ: { label: "Architect", strength: 55, empathy: 35, expressiveness: 30, verbosity: 45 },
   INTP: { label: "Logician", strength: 50, empathy: 35, expressiveness: 30, verbosity: 55 },

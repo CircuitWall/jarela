@@ -3,8 +3,10 @@ import type { AgentConfigRow, UpsertAgentInput } from "@/lib/stores/agent-config
 import type { AgentConfigIn } from "@/api/types";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { z } from "zod";
+import { USAGE_PROFILE_VALUES } from "@/lib/agents/usage-profile";
 
 export const WarmSummaryLimitSchema = z.number().int().nonnegative().optional();
+export const UsageProfileSchema = z.enum(USAGE_PROFILE_VALUES).optional();
 
 export type AgentCreateBody = AgentConfigIn;
 export type AgentUpdateBody = Partial<AgentConfigIn>;
@@ -12,6 +14,7 @@ export type AgentUpdateBody = Partial<AgentConfigIn>;
 export function toCreateAgentInput(id: string, body: AgentCreateBody): UpsertAgentInput {
   return {
     id,
+    usage_profile: body.usage_profile,
     name: body.name.trim(),
     icon: body.icon ?? null,
     identity: body.identity ?? "",
@@ -55,6 +58,7 @@ export function toUpdateAgentInput(
 ): UpsertAgentInput {
   return {
     id,
+    usage_profile: body.usage_profile,
     name: body.name?.trim() ?? existing.name,
     icon: "icon" in body ? (body.icon ?? null) : existing.icon,
     identity: body.identity ?? existing.identity,

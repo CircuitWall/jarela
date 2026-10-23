@@ -46,6 +46,12 @@ describe("agent instruction tools", () => {
       history_limit: 12,
       history_window_hours: 2,
       warm_summary_limit: 77,
+      usage_profile: "work",
+      adaptive_persona_enabled: true,
+      adaptive_empathy: 67,
+      adaptive_expressiveness: 31,
+      adaptive_verbosity: 46,
+      adaptive_persona_strength: 0,
       harness_id: "builtin:default",
       delegate_targets: ["delegate-a"],
       tool_credentials: { github_search: "cred-1" },
@@ -61,6 +67,11 @@ describe("agent instruction tools", () => {
     expect(out.model_config_name).toBe("workhorse");
     expect(out.history_limit).toBe(12);
     expect(out.warm_summary_limit).toBe(77);
+    expect(out.usage_profile).toBe("work");
+    expect(out.persona_style).toEqual({
+      enabled: true, warmth: 67, expressiveness: 31, detail: 46, cue_adaptation: 0,
+    });
+    expect(out.adaptive_mbti).toBeUndefined();
     expect(out.harness_id).toBe("builtin:default");
     expect(out.delegate_targets).toEqual(["delegate-a"]);
     expect(out.tool_credential_overrides).toEqual(["github_search"]);

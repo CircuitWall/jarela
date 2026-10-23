@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getUsageStrategyProfile } from "@/lib/agents/usage-strategy";
+import { USAGE_PROFILE_VALUES } from "@/lib/agents/usage-profile";
+import { USAGE_STRATEGIES } from "@/lib/agents/usage-strategy";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-system-prompt-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -59,6 +61,109 @@ const budget: ContextBudget = {
 };
 
 describe("buildSystemPrompt delivery channel", () => {
+  it.each(USAGE_PROFILE_VALUES.flatMap((usage_profile) =>
+    (["essential", "full"] as const).flatMap((experienceMode) =>
+      USAGE_STRATEGIES.map((strategy) => ({ usage_profile, experienceMode, strategy })),
+    ),
+  ))("keeps chapter responsibilities across $usage_profile / $experienceMode / $strategy combinations", ({ usage_profile, experienceMode, strategy }) => {
+    for (const customization of [false, true]) {
+      for (const verbosity of [0, 50, 100]) {
+        for (const citation_strictness of ["off", "informational", "standard", "strict"] as const) {
+          const prompt = buildSystemPrompt({
+            agentCfg: agentCfg({
+              usage_profile, citation_strictness, adaptive_persona_enabled: customization ? 1 : 0,
+              adaptive_verbosity: verbosity,
+            }),
+            trimmedMessage: "urgent: explain the tradeoffs in detail", budget,
+            recallCtx: "", warmSummaryCtx: "", factsCtx: "", experienceMode, delegateRosterLines: [],
+            usageStrategyInstruction: getUsageStrategyProfile(strategy).promptInstruction,
+          });
+          const [shared, rest] = prompt.split(CACHE_SHARED_SPLIT_SENTINEL);
+          const [stable, dynamic] = rest.split(CACHE_SPLIT_SENTINEL);
+          expect(shared).toContain("--- Instruction composition ---");
+          expect(shared).toContain("not by whichever appears last");
+          expect(shared).toContain("Assumptions and inferences are not verified facts");
+          expect(shared).toContain("not required retrieval, validation, citations, or requested depth");
+          expect(stable).toContain("--- Agent identity ---");
+          expect(stable).toContain("--- Agent instructions ---");
+          expect(stable).toContain("--- Navigation and diagnostic visibility ---");
+          expect(stable).not.toContain("--- Persona ---");
+          expect(stable).not.toContain("--- Grounding and citations ---");
+          expect(dynamic).toContain(`Citation setting: ${citation_strictness}.`);
+          expect(dynamic.match(/^--- Persona ---$/gm)).toHaveLength(1);
+          expect(dynamic).not.toContain("--- Usage profile ---");
+          expect(dynamic).not.toContain("--- Adaptive persona ---");
+          expect(dynamic).not.toContain("MBTI");
+          if (customization) {
+            expect(dynamic).toContain("Verbosity targets are preferences, not minimum lengths");
+            expect(dynamic).toContain("Style never lowers grounding or citation requirements");
+          }
+          expect(dynamic.includes("Cite EVERY factual claim")).toBe(citation_strictness === "strict");
+          expect(dynamic.includes("Cite KEY load-bearing claims")).toBe(citation_strictness === "standard");
+          if (citation_strictness === "standard") {
+            expect(dynamic).toContain("including those in summaries");
+            expect(dynamic).not.toContain("Don't mark incidentals, summaries");
+          }
+          expect(dynamic).not.toContain("before conclusions");
+          const headings = [...prompt.matchAll(/^--- (.+) ---$/gm)].map((match) => match[1]);
+          expect(new Set(headings).size).toBe(headings.length);
+          expect(prompt).not.toMatch(/\{\{|\bundefined\b|\bNaN\b|\[object Object\]/);
+        }
+      }
+    }
+  });
+
+  it.each(["whatsapp", "sms"])("keeps strict citations compatible with the %s transport", (kind) => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg({ usage_profile: "dev", citation_strictness: "strict" }),
+      trimmedMessage: "status", budget, recallCtx: "", warmSummaryCtx: "", factsCtx: "",
+      experienceMode: "essential", delegateRosterLines: [], deliveryChannel: { kind },
+    });
+    const grounding = prompt.split("--- Grounding and citations ---")[1].split("Current time:")[0];
+    expect(grounding).toContain("Cite EVERY factual claim");
+    expect(grounding).toContain("exact bare source URL");
+    expect(grounding).toContain("use its exact destination URL without the Markdown wrapper");
+    expect(grounding).not.toContain("--- Citation format ---");
+    expect(grounding).not.toContain("```jarela-references");
+    expect(grounding).not.toContain("standard markdown link inline");
+  });
+
+  it.each(["home", "work", "dev"] as const)("assembles one resolved %s persona in the dynamic block without weakening verification", (usage_profile) => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg({ usage_profile }),
+      trimmedMessage: "hi", budget, recallCtx: "", warmSummaryCtx: "", factsCtx: "",
+      experienceMode: "essential", delegateRosterLines: [],
+    });
+    const sharedEnd = prompt.indexOf(CACHE_SHARED_SPLIT_SENTINEL);
+    const dynamicStart = prompt.indexOf(CACHE_SPLIT_SENTINEL);
+    const profileStart = prompt.indexOf("--- Persona ---");
+    expect(profileStart).toBeGreaterThan(sharedEnd);
+    expect(profileStart).toBeGreaterThan(dynamicStart);
+    expect(prompt.match(/--- Persona ---/g)).toHaveLength(1);
+    expect(prompt).toContain("Never hide failures, uncertainty, material risks, or approval requests");
+    expect(prompt).toContain("Explicit user requests for detail take precedence");
+    if (usage_profile === "dev") {
+      expect(prompt).toContain("Ground every factual claim");
+      expect(prompt).toContain("User interface mode: essential");
+      expect(prompt).toContain("app navigation mode only");
+    } else if (usage_profile === "home") {
+      expect(prompt).toContain("Lead with a short useful summary");
+    } else {
+      expect(prompt).toContain("action items, owners and deadlines only when known");
+    }
+  });
+
+  it("adds no preset organization for Custom / Everything or legacy configs", () => {
+    for (const usage_profile of ["custom", undefined] as const) {
+      const prompt = buildSystemPrompt({
+        agentCfg: agentCfg({ usage_profile }),
+        trimmedMessage: "hi", budget, recallCtx: "", warmSummaryCtx: "", factsCtx: "",
+        experienceMode: "full", delegateRosterLines: [],
+      });
+      expect(prompt).toContain("No preset response organization");
+      expect(prompt.match(/--- Persona ---/g)).toHaveLength(1);
+    }
+  });
   it("includes a Delivery channel block when delivered through a bridge", () => {
     const prompt = buildSystemPrompt({
       agentCfg: agentCfg(),
@@ -112,7 +217,7 @@ describe("buildSystemPrompt delivery channel", () => {
       delegateRosterLines: [],
     });
 
-    expect(prompt).not.toContain("Delivery channel");
+    expect(prompt).not.toContain("--- Delivery channel ---");
   });
 
   it("omits the block when the kind is empty", () => {
@@ -128,7 +233,7 @@ describe("buildSystemPrompt delivery channel", () => {
       deliveryChannel: { kind: "" },
     });
 
-    expect(prompt).not.toContain("Delivery channel");
+    expect(prompt).not.toContain("--- Delivery channel ---");
   });
 });
 

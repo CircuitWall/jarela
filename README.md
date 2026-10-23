@@ -9,6 +9,7 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 - Local-first, single-process Next.js app
 - Multi-provider LLM support: Anthropic, OpenAI, Google GenAI, Cohere, DeepSeek, GitHub Copilot
 - Per-agent tool policy, identity, memory, and harness configuration
+- Per-agent Home, Work, Developer, and Everything usage profiles for response style, chat diagnostics, and credential discovery
 - SQLite-backed checkpoints, memory, schedules, proposals, and local integrations
 - Durable, agent-targeted lifecycle signals for restarts, approvals, configuration changes, and background work
 - PWA / desktop-friendly workflow with browser extension support
@@ -34,6 +35,48 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 </p>
 
 Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what to expect in your first chat.
+
+## Agent usage profiles
+
+Choose a **Persona** under an agent's **Identity** settings:
+
+| Profile | Replies | Chat | Suggested defaults |
+| --- | --- | --- | --- |
+| Home | Friendly, plain-language summaries; expand when needed | Technical details hidden until revealed | Warmth 80, expressiveness 65, detail 25, cue adaptation 40; standard citations |
+| Work | Professional results, decisions, and next steps | Technical details hidden until revealed | Warmth 55, expressiveness 35, detail 45, cue adaptation 30; standard citations |
+| Developer | Evidence-backed claims, explicit assumptions and validation limits | Full diagnostics | Warmth 30, expressiveness 20, detail 60, cue adaptation 20; strict citations |
+| Custom / Everything | No preset response organization | Full diagnostics | Keeps current settings |
+
+Selecting a persona applies editable style and citation defaults. Tune warmth,
+expressiveness, response detail, and conversational-cue adaptation in the same
+Persona section; citation coverage stays independent in **Advanced settings**.
+Zero cue adaptation keeps style steady. Disabling style customization retains
+saved sliders and the profile's organization. MBTI has been removed from the editor
+and prompt behavior; existing tuned slider values are preserved, with no automatic
+reset on upgrade or save. Home and Work keep **Technical details** inside chat's
+single expandable **Filters & focus** control, alongside channel and focus controls.
+Failures, approval requests, source links, and factual-accuracy requirements remain
+visible or applicable in every profile. Diagnostics are still collected locally;
+the profile changes presentation, not tool permissions or model-context filters.
+Actual model adherence to style and grounding instructions depends on the provider.
+
+System prompts separate instruction composition, agent identity/instructions,
+navigation, a single resolved Persona, and grounding/citations into named chapters.
+The Persona combines the selected profile's organization and direct style targets;
+explicit task depth takes priority. Conversational cues are tentative heuristics,
+not emotion or personality diagnoses. Citation coverage follows the independently
+editable citation setting. Assumptions never count as verified evidence, and
+resource-saving modes cannot skip required validation. Plain-text delivery channels
+use source URLs instead of Markdown citation wrappers.
+
+The Credentials catalog follows the active agent's profile. Configured integrations
+and saved credentials stay accessible; **Show all integrations** bypasses discovery
+filtering. With no active agent, the catalog shows everything. Global Essential/Full
+mode still controls app configuration panels independently.
+
+On upgrade, the old user-profile Persona preset is copied once to existing agents,
+without rewriting their tuned personality or citation settings. New agents default
+to Everything. See [ADR-0105](docs/adr/0105-per-agent-usage-profiles.md).
 
 ## Quick start
 

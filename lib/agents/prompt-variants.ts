@@ -5,10 +5,11 @@
  * JARELA_DB_DIR to a scratch directory before importing this module.
  */
 import { buildSystemPrompt } from "./prepare/system-prompt";
-import { getUsageStrategyProfile } from "./usage-strategy";
+import { getUsageStrategyProfile, type UsageStrategy } from "./usage-strategy";
 import { getAllToolCatalogAsync, applyAgentPermissionsToCatalog, markProxyOnlyTools } from "@/lib/tools";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ContextBudget } from "@/lib/agents/context-budget";
+import { DEFAULT_PERSONA_STYLE, USAGE_PROFILES, USAGE_PROFILE_VALUES } from "./usage-profile";
 export const budget: ContextBudget = {
   contextWindowTokens: 200000,
   outputReserveTokens: 8000,
@@ -54,6 +55,7 @@ export function agentCfg(overrides: Partial<AgentConfigRow> = {}): AgentConfigRo
 export interface Variant {
   id: string;
   prompt: string;
+  usageStrategy?: UsageStrategy;
   /** Counts derived from the permission map, to check the prompt's own arithmetic. */
   expected?: { bound: number; proxy: number; denied: number; unavailable: number };
 }
@@ -104,6 +106,59 @@ export async function buildVariants(): Promise<Variant[]> {
   };
 
   return [
+    ...USAGE_PROFILE_VALUES.flatMap((usage_profile) => {
+      const profile = USAGE_PROFILES[usage_profile];
+      const preset = profile.style ?? DEFAULT_PERSONA_STYLE;
+      return (["essential", "full"] as const).map((experienceMode) => ({
+        id: `usage-profile-${usage_profile}${experienceMode === "full" ? "-full" : ""}`,
+        prompt: buildSystemPrompt({
+          ...base,
+          agentCfg: agentCfg({
+            usage_profile,
+            instructions: "",
+            citation_strictness: profile.citationStrictness,
+            adaptive_persona_enabled: profile.style ? 1 : 0,
+            adaptive_persona_strength: preset.strength,
+            adaptive_empathy: preset.empathy,
+            adaptive_expressiveness: preset.expressiveness,
+            adaptive_verbosity: preset.verbosity,
+          }),
+          experienceMode,
+        }),
+      }));
+    }),
+    {
+      id: "home-detailed-strict-plain-text",
+      usageStrategy: "high_reasoning",
+      prompt: buildSystemPrompt({
+        ...base,
+        agentCfg: agentCfg({
+          usage_profile: "home", instructions: "Explain the tradeoffs in detail.",
+          adaptive_persona_enabled: 1,
+          adaptive_verbosity: 100, citation_strictness: "strict",
+        }),
+        experienceMode: "full",
+        usageStrategyInstruction: getUsageStrategyProfile("high_reasoning").promptInstruction,
+        autoRecallEnabled: true,
+        autoFactsEnabled: true,
+        deliveryChannel: { kind: "whatsapp" },
+      }),
+    },
+    {
+      id: "dev-friendly-concise",
+      usageStrategy: "fast",
+      prompt: buildSystemPrompt({
+        ...base,
+        agentCfg: agentCfg({
+          usage_profile: "dev", instructions: "Give a concise status summary.",
+          adaptive_persona_enabled: 1,
+          adaptive_empathy: 90, adaptive_expressiveness: 90,
+          adaptive_verbosity: 0, citation_strictness: "standard",
+        }),
+        experienceMode: "essential",
+        usageStrategyInstruction: getUsageStrategyProfile("fast").promptInstruction,
+      }),
+    },
     {
       id: "minimal-agent",
       prompt: buildSystemPrompt({ ...base, agentCfg: agentCfg(), experienceMode: "essential" }),

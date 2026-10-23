@@ -1,113 +1,87 @@
 import { describe, it, expect } from "vitest";
-import { buildAdaptivePersonaContext } from "./adaptive-persona";
+import { buildPersonaContext } from "./adaptive-persona";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
+import { MBTI_TYPES } from "./adaptive-persona-presets";
+import { USAGE_PROFILE_VALUES } from "./usage-profile";
 
-const baseAgent = (over: Partial<AgentConfigRow> = {}): AgentConfigRow => ({
-  id: "a", name: "A", icon: "", identity: "", instructions: "", tools: "[]",
-  model_config_name: "claude", is_default: 0, history_limit: 50, history_window_hours: 24,
-  never_reply: 0,
-  adaptive_persona_enabled: 1,
-  adaptive_persona_strength: 100,
-  adaptive_empathy: 50,
-  adaptive_expressiveness: 50,
-  adaptive_verbosity: 50,
-  adaptive_mbti: "INTJ",
-  voice_enabled: 0, voice_model: null, voice_name: null, voice_stt_model: null, voice_auto_speak: 0,
-  created_at: "", updated_at: "",
-  ...over,
-} as unknown as AgentConfigRow);
+function agentCfg(overrides: Partial<AgentConfigRow> = {}) {
+  return {
+    usage_profile: "custom" as const,
+    adaptive_persona_enabled: 0, adaptive_persona_strength: 0,
+    adaptive_empathy: 50, adaptive_expressiveness: 50, adaptive_verbosity: 50,
+    adaptive_mbti: "INTJ",
+    ...overrides,
+  };
+}
 
-describe("buildAdaptivePersonaContext", () => {
-  it("returns empty string when adaptive persona is disabled", () => {
-    const out = buildAdaptivePersonaContext(
-      baseAgent({ adaptive_persona_enabled: 0 } as unknown as Partial<AgentConfigRow>),
-      "anything",
-    );
-    expect(out).toBe("");
+describe("buildPersonaContext", () => {
+  it.each(USAGE_PROFILE_VALUES)("keeps %s organization when direct customization is disabled", (usage_profile) => {
+    const out = buildPersonaContext(agentCfg({ usage_profile, adaptive_persona_enabled: 0 }), "urgent");
+    expect(out.match(/^--- Persona ---$/gm)).toHaveLength(1);
+    expect(out).toContain("Style customization: off");
+    expect(out).not.toContain("Target warmth:");
+    if (usage_profile === "home") expect(out).toContain("Lead with a short useful summary");
+    if (usage_profile === "dev") expect(out).toContain("Ground every factual claim");
+    if (usage_profile === "custom") expect(out).toContain("No preset response organization");
   });
 
-  it("emits a header and the configured MBTI label", () => {
-    const out = buildAdaptivePersonaContext(baseAgent({ adaptive_mbti: "ENFP" }), "hi");
-    expect(out).toContain("--- Adaptive persona ---");
-    expect(out).toContain("Preset: ENFP (Campaigner)");
-    expect(out).toContain("Behavior profile: exploratory, collaborative, flexible, evidence=balanced");
-    expect(out).toContain("Operating contract:");
+  it("ignores every legacy MBTI value without losing direct style controls", () => {
+    const settings = { usage_profile: "home", adaptive_persona_enabled: 1, adaptive_empathy: 80, adaptive_verbosity: 100 } as const;
+    const expected = buildPersonaContext(agentCfg(settings), "hi");
+    for (const adaptive_mbti of [...MBTI_TYPES, "ZZZZ", ""]) {
+      expect(buildPersonaContext(agentCfg({ ...settings, adaptive_mbti }), "hi")).toBe(expected);
+    }
+    expect(expected).toContain("Target warmth: 80/100 (high)");
+    expect(expected).toContain("Target verbosity: 100/100 (detailed)");
+    expect(expected).toContain("Lead with a short useful summary");
+    expect(expected).not.toMatch(/MBTI|Preset:|Behavior profile:|Operating contract:/);
   });
 
-  it("makes INTJ-style adaptation operational, not just tonal", () => {
-    const out = buildAdaptivePersonaContext(baseAgent({ adaptive_mbti: "INTJ" }), "debug this failure");
-    expect(out).toContain("Behavior profile: directive, independent, linear, evidence=high");
-    expect(out).toContain("Give a clear recommendation early");
-    expect(out).toContain("Stay self-directed");
-    expect(out).toContain("Use ordered, stepwise structure");
-    expect(out).toContain("Prefer concrete evidence");
+  it.each([
+    ["this is broken and doesn't work, frustrating", "frustrated", "offer a clear recovery path"],
+    ["ASAP urgent please right now", "rushed", "front-load the answer"],
+    ["thanks awesome perfect, love it", "positive", "keep behavior stable and task-focused"],
+    ["What is the capital of France?", "neutral", "keep behavior stable and task-focused"],
+  ])("treats cues in %s as tentative rather than a personality diagnosis", (message, cue, directive) => {
+    const out = buildPersonaContext(agentCfg({ adaptive_persona_enabled: 1, adaptive_persona_strength: 100 }), message);
+    expect(out).toContain(`Possible conversational cue: ${cue}`);
+    expect(out).toContain(directive);
+    expect(out).toContain("keyword heuristics, not verified emotions");
   });
 
-  it("falls back to INTJ when adaptive_mbti is unknown or missing", () => {
-    const unknown = buildAdaptivePersonaContext(baseAgent({ adaptive_mbti: "ZZZZ" }), "hi");
-    expect(unknown).toContain("Preset: INTJ");
-
-    const missing = buildAdaptivePersonaContext(
-      baseAgent({ adaptive_mbti: null } as unknown as Partial<AgentConfigRow>),
-      "hi",
-    );
-    expect(missing).toContain("Preset: INTJ");
+  it("clamps out-of-range and non-finite targets", () => {
+    const out = buildPersonaContext(agentCfg({
+      adaptive_persona_enabled: 1, adaptive_empathy: 9999,
+      adaptive_verbosity: -50, adaptive_expressiveness: NaN,
+    }), "neutral");
+    expect(out).toContain("Target warmth: 100/100");
+    expect(out).toContain("Target expressiveness: 50/100");
+    expect(out).toContain("Target verbosity: 0/100");
+    expect(out).not.toContain("NaN");
   });
 
-  it("detects 'frustrated' mood and surfaces frustration directive", () => {
-    const out = buildAdaptivePersonaContext(baseAgent(), "this is broken and doesn't work, frustrating");
-    expect(out).toContain("Detected user signal: frustrated");
-    expect(out).toContain("validate briefly and offer a clear recovery path");
-    expect(out).toContain("Do not over-explain the mistake");
+  it("at strength zero keeps a steady style even with strong conversational cues", () => {
+    const out = buildPersonaContext(agentCfg({
+      adaptive_persona_enabled: 1, adaptive_persona_strength: 0,
+      adaptive_empathy: 80, adaptive_expressiveness: 20, adaptive_verbosity: 50,
+    }), "this is broken doesn't work asap urgent");
+    expect(out).toContain("Target warmth: 80/100 (high)");
+    expect(out).toContain("Target expressiveness: 20/100 (reserved)");
+    expect(out).toContain("Target verbosity: 50/100 (balanced)");
+    expect(out).toContain("Possible conversational cue: neutral");
+    expect(out).not.toContain("Possible urgency cue");
+    expect(out).not.toContain("Possible friction cue");
   });
 
-  it("detects 'rushed' mood from urgency words", () => {
-    const out = buildAdaptivePersonaContext(baseAgent(), "ASAP urgent please right now");
-    expect(out).toContain("Detected user signal: rushed");
-    expect(out).toContain("front-load the answer");
-  });
-
-  it("detects 'positive' mood from gratitude words", () => {
-    const out = buildAdaptivePersonaContext(baseAgent(), "thanks awesome — perfect, love it");
-    expect(out).toContain("Detected user signal: positive");
-  });
-
-  it("falls back to 'neutral' for plain text", () => {
-    const out = buildAdaptivePersonaContext(baseAgent(), "What is the capital of France?");
-    expect(out).toContain("Detected user signal: neutral");
-    expect(out).toContain("keep behavior stable and task-focused");
-  });
-
-  it("clamps out-of-range percent inputs into [0,100]", () => {
-    const out = buildAdaptivePersonaContext(
-      baseAgent({ adaptive_empathy: 9999, adaptive_verbosity: -50, adaptive_expressiveness: NaN }),
-      "neutral",
-    );
-    expect(out).toMatch(/Target empathy: 100\/100/);
-    expect(out).toMatch(/Target verbosity: \d+\/100/);
-    // NaN expressiveness should fall back to 50 before signal adjustment.
-    expect(out).toMatch(/Target expressiveness: 50\/100/);
-  });
-
-  it("at strength=0 the output bands match the raw configured values", () => {
-    const out = buildAdaptivePersonaContext(
-      baseAgent({
-        adaptive_persona_strength: 0,
-        adaptive_empathy: 80,
-        adaptive_expressiveness: 20,
-        adaptive_verbosity: 50,
-      }),
-      "this is broken doesn't work asap urgent",
-    );
-    // No adjustment despite strong signal: 80/20/50 → high/reserved/balanced.
-    expect(out).toMatch(/Target empathy: 80\/100 \(high\)/);
-    expect(out).toMatch(/Target expressiveness: 20\/100 \(reserved\)/);
-    expect(out).toMatch(/Target verbosity: 50\/100 \(balanced\)/);
-    expect(out).not.toContain("noticeably shape organization");
-  });
-
-  it("high strength explicitly tells the model to let the profile shape the response", () => {
-    const out = buildAdaptivePersonaContext(baseAgent({ adaptive_persona_strength: 95 }), "walk me through this");
-    expect(out).toContain("Let this adaptive profile noticeably shape organization and phrasing");
+  it("retains requested depth and evidence at every verbosity level", () => {
+    for (const adaptive_verbosity of [0, 50, 100]) {
+      const out = buildPersonaContext(agentCfg({
+        usage_profile: "dev", adaptive_persona_enabled: 1, adaptive_verbosity,
+      }), "status");
+      expect(out).toContain("Explicit user requests for detail take precedence");
+      expect(out).toContain("Verbosity targets are preferences, not minimum lengths");
+      expect(out).toContain("Style never lowers grounding or citation requirements");
+      expect(out).toContain("Ground every factual claim");
+    }
   });
 });

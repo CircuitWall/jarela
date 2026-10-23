@@ -132,6 +132,18 @@ model_config_name, harness_id, delegation, etc.) lives in
 cap.
 `usage_strategy` may be `cost_saving`, `balanced`, or `high_reasoning`; pass
 `null` to inherit the global `JARELA_USAGE_STRATEGY` setting.
+`usage_profile` accepts `home`, `work`, `dev`, or `custom` (Everything; the
+default). Omission on update preserves the saved profile. This controls prompt
+style, chat diagnostic presentation, and credential discovery, not permissions.
+API updates only persist the profile: the agent editor separately submits its
+style/citation defaults, which callers may also set explicitly.
+Direct style fields are `adaptive_empathy` (warmth), `adaptive_expressiveness`,
+`adaptive_verbosity` (response detail), and `adaptive_persona_strength`
+(conversational-cue adaptation), each 0-100. `adaptive_persona_enabled` enables
+these style targets; disabling it preserves their values and still applies the
+profile's organization. Strength 0 disables cue-based adjustments.
+`adaptive_mbti` is deprecated compatibility data: it is retained on existing
+records but does not influence prompts or reset style sliders.
 
 - **Source:** [`app/api/v1/agents/route.ts`](../app/api/v1/agents/route.ts)
 

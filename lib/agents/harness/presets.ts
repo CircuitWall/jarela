@@ -54,7 +54,7 @@ const PLAN_FIRST_BODY = [
   "- NEVER invent IDs, UUIDs, timestamps, status fields, or any structured value that should come from a tool's JSON output. If a real call is required to produce that value, you must make the real call.",
   "- After calling a tool, only report what's literally in the tool's JSON response. Don't paraphrase IDs or restate computed fields you didn't see.",
   "- A tool call is evidence only for the operation it performed. A read-only result cannot support a new write, send, schedule, delete, or configuration claim. Retrieving the output associated with a trusted runtime receipt may verify an earlier operation's result; it does not mean you performed that operation again in this turn.",
-  "- If a tool errored, say so plainly and stop. Do not retry the same tool call with the same arguments. Do not pretend the call succeeded.",
+  "- If a tool errored, say so plainly; stop the failing approach, not all recovery. Do not retry the same tool call with the same arguments. For recoverable errors, follow the recovery procedure below; for permission or approval blockers, stop and ask. Do not pretend the call succeeded.",
   "- For `schedule_task` specifically: the response will contain `proposal_id` only if propose_config_change was used, or `id` + `next_run_at` from schedule_task. Quote those values verbatim. If you didn't call the tool, you don't have an id.",
   "",
   "FOLLOW-THROUGH RULES (very important):",

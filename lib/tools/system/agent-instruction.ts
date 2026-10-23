@@ -81,6 +81,14 @@ export const readAgentConfigTool = tool(
       history_window_hours: cfg.history_window_hours,
       hot_turn_limit: cfg.hot_turn_limit,
       warm_summary_limit: cfg.warm_summary_limit,
+      usage_profile: cfg.usage_profile ?? "custom",
+      persona_style: {
+        enabled: cfg.adaptive_persona_enabled === 1,
+        cue_adaptation: cfg.adaptive_persona_strength,
+        warmth: cfg.adaptive_empathy,
+        expressiveness: cfg.adaptive_expressiveness,
+        detail: cfg.adaptive_verbosity,
+      },
       never_reply: cfg.never_reply === 1,
       harness_id: cfg.harness_id,
       delegate_targets: parseDelegateTargets(cfg.delegate_targets),
@@ -101,7 +109,7 @@ export const readAgentConfigTool = tool(
   {
     name: "read_agent_config",
     description:
-      "Read this agent's non-secret functional runtime configuration: tools, model override, history window and hot-turn limit, harness, delegates, citation/router/voice settings, and instruction counts. Presentation-only fields such as icon/avatar are omitted. This tool can only read the current agent.",
+      "Read this agent's non-secret functional runtime configuration: tools, model override, history window and hot-turn limit, persona profile and direct style controls, harness, delegates, citation/router/voice settings, and instruction counts. Presentation-only fields such as icon/avatar are omitted. This tool can only read the current agent.",
     schema: z.object({
       agent_id: z.string().optional().describe("Optional. Must match the current agent id when provided."),
     }),

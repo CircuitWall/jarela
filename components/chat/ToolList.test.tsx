@@ -13,6 +13,20 @@ vi.mock("@/api/client", () => ({
 }));
 
 describe("ToolList — live progress (ADR-0073)", () => {
+  it("keeps failures visible when routine diagnostics are hidden", () => {
+    const events: ToolEvent[] = [
+      { id: "ok", phase: "result", name: "success_tool", payload: { ok: true } },
+      { id: "running", phase: "call", name: "running_tool", payload: {} },
+      { id: "bad", phase: "result", name: "failed_tool", payload: { ok: false, error: "Cannot complete" } },
+    ];
+    const { rerender } = render(<ToolList events={events} errorsOnly />);
+    expect(screen.getByText("failed_tool")).toBeTruthy();
+    expect(screen.queryByText("success_tool")).toBeNull();
+    expect(screen.queryByText("running_tool")).toBeNull();
+    rerender(<ToolList events={events} />);
+    expect(screen.getByText("success_tool")).toBeTruthy();
+    expect(screen.getByText("running_tool")).toBeTruthy();
+  });
   it("shows oversized tool results as a preview with a file reference", () => {
     const events: ToolEvent[] = [
       { id: "c1", phase: "call", name: "web_fetch", payload: { url: "https://example.test" } },

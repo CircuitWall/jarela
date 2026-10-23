@@ -4,12 +4,14 @@ import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { EnvSyncButton, EnvSyncNotice, useEnvSync } from "@/components/integrations/EnvSync";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { Credential, CredentialType, IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
+import type { Credential, CredentialType, IntegrationDefinition, IntegrationStatus } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { useCredentialProbes, type CredentialProbeResult } from "@/hooks/useCredentialProbes";
 import { NetworkPanel } from "@/components/integrations/NetworkPanel";
-import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
+import { filterIntegrationsForProfile } from "@/lib/integrations/categories";
+import { USAGE_PROFILES, type UsageProfile } from "@/lib/agents/usage-profile";
+import { pushErrorToast } from "@/lib/ui/error-report";
 import { AddCredentialDialog } from "./AddCredentialDialog";
 import { IntegrationCard } from "./IntegrationCard";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
@@ -57,13 +59,6 @@ function credentialSection(type: CredentialType, category?: IntegrationDefinitio
   return "tools";
 }
 
-const PRESET_LABELS: Record<NonNullable<UserProfile["preset"]>, string> = {
-  home: "Home",
-  work: "Work",
-  dev: "Developer",
-  custom: "Everything",
-};
-
 function describeCredential(c: Credential): string {
   const keys = Object.keys(c.params).filter((k) => k !== "base_url" && k !== "extra_headers");
   if (keys.length === 0) return "Not configured";
@@ -106,11 +101,13 @@ export function CredentialsPanel() {
 }
 
 export function CredentialsListPanel() {
-  const { dispatch } = useAppContext();
+  const { state, dispatch } = useAppContext();
+  const agentId = state.activeAgentId;
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
-  const [preset, setPreset] = useState<UserProfile["preset"]>(null);
+  const [agentProfile, setAgentProfile] = useState<{ id: string; preset: UsageProfile } | null>(null);
+  const preset = agentProfile?.id === agentId ? agentProfile.preset : "custom";
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [addAnotherProvider, setAddAnotherProvider] = useState<string | null>(null);
@@ -132,19 +129,28 @@ export function CredentialsListPanel() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [rows, ints, profile] = await Promise.all([
+      const [rows, ints] = await Promise.all([
         api.credentials.list(),
         api.integrations.list().catch(() => ({ definitions: [] as IntegrationDefinition[], statuses: [] as IntegrationStatus[] })),
-        api.profile.get().catch(() => null),
       ]);
       setCredentials(rows);
       setDefs(ints.definitions);
       setStatuses(Object.fromEntries(ints.statuses.map((s) => [s.name, s])));
-      setPreset(profile?.preset ?? null);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!agentId) return;
+    let cancelled = false;
+    api.agents.get(agentId).then((agent) => {
+      if (!cancelled) setAgentProfile({ id: agentId, preset: agent.usage_profile ?? "custom" });
+    }).catch((error) => {
+      if (!cancelled) pushErrorToast({ title: "Couldn't load agent usage profile", error, context: { panel: "credentials" } });
+    });
+    return () => { cancelled = true; };
+  }, [agentId]);
 
   useEffect(() => {
     refresh();
@@ -171,19 +177,8 @@ export function CredentialsListPanel() {
     }
   }
 
-  // Persona filter: hide unconfigured definitions outside the chosen
-  // bucket. Used only to count how many integrations the picker hides
-  // — the list itself only renders providers with saved credentials.
-  const visibleDefs = useMemo(() => {
-    if (!preset) return defs;
-    const allowed = PRESET_CATEGORIES[preset];
-    if (allowed === null) return defs;
-    return defs.filter((def) => {
-      if (!def.category) return true;
-      if (allowed.has(def.category)) return true;
-      return statuses[def.name]?.configured === true;
-    });
-  }, [defs, preset, statuses]);
+  // Discovery filtering never removes saved credentials from the list.
+  const visibleDefs = useMemo(() => filterIntegrationsForProfile(defs, statuses, preset), [defs, preset, statuses]);
 
   const hiddenCount = defs.length - visibleDefs.length;
 
@@ -243,12 +238,15 @@ export function CredentialsListPanel() {
         {preset && preset !== "custom" && (
           <button
             type="button"
-            onClick={() => dispatch({ type: "SET_TAB", tab: "profile" })}
-            title={`Filtered to "${PRESET_LABELS[preset]}" preset. Click to change in Profile.`}
+            onClick={() => {
+              if (agentId) dispatch({ type: "SET_SELECTION", tab: "agents", itemId: agentId });
+              dispatch({ type: "SET_TAB", tab: "agents" });
+            }}
+            title={`Credential discovery follows this agent's ${USAGE_PROFILES[preset].label} profile. Click to change in agent settings.`}
             className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-full border border-border bg-surface-2 text-fg-muted hover:bg-surface-3"
           >
             <Filter size={11} />
-            <span>{PRESET_LABELS[preset]}</span>
+            <span>{USAGE_PROFILES[preset].label}</span>
             {hiddenCount > 0 && (
               <span className="text-fg-faint">· {hiddenCount} hidden</span>
             )}
@@ -326,6 +324,7 @@ export function CredentialsListPanel() {
 
       {addOpen && (
         <AddCredentialDialog
+          usageProfile={preset}
           onClose={() => { setAddOpen(false); refresh(); }}
           onSaved={() => refresh()}
         />

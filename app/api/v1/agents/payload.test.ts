@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toCreateAgentInput, toUpdateAgentInput, WarmSummaryLimitSchema } from "./payload";
+import { toCreateAgentInput, toUpdateAgentInput, WarmSummaryLimitSchema, UsageProfileSchema } from "./payload";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 
 const baseRow: AgentConfigRow = {
@@ -42,6 +42,17 @@ const baseRow: AgentConfigRow = {
 };
 
 describe("agent payload mapping", () => {
+  it("validates usage profiles and preserves omission on partial updates", () => {
+    for (const profile of ["home", "work", "dev", "custom"]) {
+      expect(UsageProfileSchema.safeParse(profile).success).toBe(true);
+    }
+    for (const profile of ["developer", "", null, 1, {}]) {
+      expect(UsageProfileSchema.safeParse(profile).success).toBe(false);
+    }
+    expect(toCreateAgentInput("agent-1", { name: "Home", usage_profile: "home" }).usage_profile).toBe("home");
+    expect(toUpdateAgentInput("agent-1", { usage_profile: "dev" }, baseRow).usage_profile).toBe("dev");
+    expect(toUpdateAgentInput("agent-1", {}, baseRow).usage_profile).toBeUndefined();
+  });
   it("accepts only nonnegative integer warm summary limits", () => {
     expect(WarmSummaryLimitSchema.safeParse(0).success).toBe(true);
     expect(WarmSummaryLimitSchema.safeParse(128).success).toBe(true);
