@@ -1,0 +1,33 @@
+{
+  "name": "unavailable mail is not disclosed",
+  "tool": "validate_personal_briefing",
+  "input": {
+    "sources": [
+      {
+        "id": "calendar:standup-0900",
+        "available": true
+      },
+      {
+        "id": "mail",
+        "available": false
+      }
+    ],
+    "briefing": {
+      "items": [
+        {
+          "text": "Team standup at 09:00.",
+          "source_ids": [
+            "calendar:standup-0900"
+          ]
+        }
+      ],
+      "unavailable_source_ids": []
+    }
+  },
+  "expect": {
+    "ok": false,
+    "issue_paths": [
+      "briefing.unavailable_source_ids"
+    ]
+  }
+}

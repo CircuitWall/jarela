@@ -59,6 +59,16 @@ IDs, and disclosure of unavailable sources. It does not prove that the
 sources were retrieved or that the summary is factually correct. Review the
 original tool results and keep external actions separate.
 
+Workflow checks are tested with representative synthetic inputs. A built-in
+skill folder may include `tests/*.json` fixtures, each naming a checking tool,
+an input, and the expected verdict (`ok`, plus optional `issue_paths` that must
+be reported). `lib/skills/fixtures.test.ts` runs every fixture through the
+real registered tool. A fixture that targets a tool without the `read`
+capability fails without being invoked, so these tests cannot send, write, or
+execute anything. The personal briefing ships happy-path, all-sources-down,
+invented-source, hidden-outage, and misreported-gap cases. Fixtures prove the
+checking code's verdicts, not live model behaviour.
+
 ### Conversations
 
 Chat is the per-agent workspace for conversations and their results. Keep related follow-up work in the same thread so its existing context remains available.

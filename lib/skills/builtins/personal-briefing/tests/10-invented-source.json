@@ -1,0 +1,29 @@
+{
+  "name": "item cites a source that was never retrieved",
+  "tool": "validate_personal_briefing",
+  "input": {
+    "sources": [
+      {
+        "id": "calendar:standup-0900",
+        "available": true
+      }
+    ],
+    "briefing": {
+      "items": [
+        {
+          "text": "Lunch with a colleague at 12:00.",
+          "source_ids": [
+            "calendar:lunch-1200"
+          ]
+        }
+      ],
+      "unavailable_source_ids": []
+    }
+  },
+  "expect": {
+    "ok": false,
+    "issue_paths": [
+      "briefing.items.0.source_ids"
+    ]
+  }
+}

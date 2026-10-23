@@ -1,0 +1,24 @@
+{
+  "name": "available calendar wrongly reported as a gap",
+  "tool": "validate_personal_briefing",
+  "input": {
+    "sources": [
+      {
+        "id": "calendar",
+        "available": true
+      }
+    ],
+    "briefing": {
+      "items": [],
+      "unavailable_source_ids": [
+        "calendar"
+      ]
+    }
+  },
+  "expect": {
+    "ok": false,
+    "issue_paths": [
+      "briefing.unavailable_source_ids.0"
+    ]
+  }
+}

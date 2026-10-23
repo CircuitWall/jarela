@@ -1,0 +1,31 @@
+{
+  "name": "item claims content from a source that failed",
+  "tool": "validate_personal_briefing",
+  "input": {
+    "sources": [
+      {
+        "id": "mail",
+        "available": false
+      }
+    ],
+    "briefing": {
+      "items": [
+        {
+          "text": "Reply to the landlord today.",
+          "source_ids": [
+            "mail"
+          ]
+        }
+      ],
+      "unavailable_source_ids": [
+        "mail"
+      ]
+    }
+  },
+  "expect": {
+    "ok": false,
+    "issue_paths": [
+      "briefing.items.0.source_ids"
+    ]
+  }
+}

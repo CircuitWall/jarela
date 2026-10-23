@@ -1,0 +1,26 @@
+{
+  "name": "every source unavailable yields an honest empty briefing",
+  "tool": "validate_personal_briefing",
+  "input": {
+    "sources": [
+      {
+        "id": "calendar",
+        "available": false
+      },
+      {
+        "id": "mail",
+        "available": false
+      }
+    ],
+    "briefing": {
+      "items": [],
+      "unavailable_source_ids": [
+        "calendar",
+        "mail"
+      ]
+    }
+  },
+  "expect": {
+    "ok": true
+  }
+}
