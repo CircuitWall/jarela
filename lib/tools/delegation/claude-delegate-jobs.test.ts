@@ -33,6 +33,14 @@ describe("delegate job registry on the agent path", () => {
     expect(jobs.getJob("j1", "claude")?.status).toBe("done");
   });
 
+  it("expires old finished jobs on status reads even when no new delegate starts", () => {
+    start("idle-done");
+    jobs.completeJob("idle-done", { ok: true });
+    vi.advanceTimersByTime(jobs.FINISHED_JOB_TTL_MS + 1);
+    expect(jobs.getJob("idle-done", "claude")).toBeNull();
+    expect(jobs.getJobForTool("idle-done", "claude")).toBeNull();
+  });
+
   it("evicts finished jobs after the retention window so long-running servers do not grow forever", () => {
     start("old-done");
     jobs.completeJob("old-done", { ok: true });

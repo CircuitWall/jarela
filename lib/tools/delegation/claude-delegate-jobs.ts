@@ -99,6 +99,7 @@ export function createJob(jobId: string, opts: { provider: JobProvider; projectK
 // Scoped by provider so a job_id from one delegate provider can't be read
 // through the other's status tool/route.
 export function getJob(jobId: string, provider: JobProvider): DelegateJob | null {
+  pruneFinishedJobs();
   const job = registry().get(jobId);
   return job && job.provider === provider ? job : null;
 }
