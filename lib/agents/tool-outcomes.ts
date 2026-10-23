@@ -41,11 +41,14 @@ export class ToolOutcomes {
     const call = this.calls.get(data.id);
     if (!call) return;
     const result = resultRecord(data.result);
+    const invokedResult = data.name === "invoke_tool" ? resultRecord(result?.result) : null;
     if (result?.status === "rejected" || result?.status === "blocked") {
       call.outcome = "rejected";
     } else if (data.status === "error" || failed(result)
-      || (data.name === "invoke_tool" && failed(resultRecord(result?.result)))) {
+      || failed(invokedResult)) {
       call.outcome = "failed";
+    } else if (result?.async === true || invokedResult?.async === true) {
+      call.outcome = "pending";
     } else {
       call.outcome = "succeeded";
     }
