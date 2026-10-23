@@ -34,6 +34,7 @@ export async function reindexLocalFile(args: {
 }): Promise<ReindexResult> {
   const source = getDocumentSource(args.source_id);
   if (!source) return { preview: `skipped: source ${args.source_id} missing` };
+  if (source.enabled !== 1) return { preview: `skipped: source ${args.source_id} disabled` };
   if (source.kind !== "local_folder") {
     return { preview: `skipped: source ${args.source_id} is not local_folder` };
   }
