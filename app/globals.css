@@ -473,9 +473,33 @@ body {
   --app-safe-bottom: env(safe-area-inset-bottom);
 }
 
+.chat-composer {
+  padding-bottom: max(0.25rem, var(--app-safe-bottom));
+}
+
+/* Pointer capabilities alone do not identify installed PWAs or small screens.
+ * Keep the header/status area crisp independently of the frosted chat panels. */
+@media (max-width: 767px), (hover: none) and (pointer: coarse), (display-mode: standalone), (display-mode: fullscreen) {
+  :root .app-header {
+    background-color: var(--color-surface);
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+}
+
 @media (hover: none) and (pointer: coarse) {
   :root {
     --app-safe-top: env(safe-area-inset-top);
+  }
+
+  /* Trade part of the bottom inset for side clearance: the controls stay
+   * above the home indicator and inside rounded corners without a tall chin.
+   * The shell already accounts for left/right cutouts in landscape. */
+  .chat-composer {
+    padding-inline: clamp(0.75rem, var(--app-safe-bottom), 1.5rem);
+    padding-bottom: max(0.5rem, calc(var(--app-safe-bottom) - 1rem));
   }
 }
 
