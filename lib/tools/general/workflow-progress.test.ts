@@ -9,6 +9,7 @@ process.env.JARELA_DB_DIR = tmpRoot;
 const { getDb } = await import("@/lib/db");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 const { workflowProgressTool } = await import("./workflow-progress");
+const { collectWorkflowContractFailures } = await import("@/lib/agents/workflow-step-retry");
 
 function parse(raw: unknown) {
   return JSON.parse(String(raw)) as Record<string, unknown>;
@@ -217,5 +218,61 @@ describe("workflow_progress tool", () => {
     expect(out.ok).toBe(false);
     expect(String(out.error)).toContain("not found");
     expect(out.state).toBeTruthy();
+  });
+
+  const step = (id: string, extra: Record<string, unknown> = {}) => ({
+    id, label: `Step ${id}`, input: "in", output: "out", validation: "check", ...extra,
+  });
+
+  it("keeps needs_user on agent-created steps so the retry loop leaves them for the user", async () => {
+    const args = {
+      workflow_id: "trip-plan",
+      items: [step("book", { status: "needs_attention", needs_user: true }), step("pack")],
+      needs_attention_reason: "Need the user's passport number",
+    };
+    const raw = await workflowProgressTool.invoke(args);
+    const out = parse(raw);
+    expect(out.ok).toBe(true);
+    const checklist = (out.state as { checklist: Array<Record<string, unknown>> }).checklist;
+    expect(checklist[0]).toMatchObject({ id: "book", needs_user: true });
+    expect(collectWorkflowContractFailures([{ args, result: raw }])).toEqual([]);
+  });
+
+  it("still retries a needs_attention step that is not waiting on the user", async () => {
+    const args = { workflow_id: "trip-plan", items: [step("book", { status: "needs_attention" })] };
+    const raw = await workflowProgressTool.invoke(args);
+    expect(collectWorkflowContractFailures([{ args, result: raw }]).map((f) => f.key)).toEqual(["trip-plan:book"]);
+  });
+
+  it("rejects needs_user on a step that is not needs_attention, so it cannot dodge retries", async () => {
+    const out = parse(await workflowProgressTool.invoke({
+      workflow_id: "trip-plan",
+      items: [step("book", { status: "checking", needs_user: true })],
+    }));
+    expect(out.ok).toBe(false);
+    expect(String(out.error)).toContain("needs_user");
+  });
+
+  it("rejects duplicate item ids and completion while a step needs attention", async () => {
+    const dup = parse(await workflowProgressTool.invoke({ workflow_id: "w", items: [step("a"), step("a")] }));
+    expect(dup.ok).toBe(false);
+    expect(String(dup.error)).toContain("unique");
+
+    const blocked = parse(await workflowProgressTool.invoke({
+      workflow_id: "w",
+      phase: "complete",
+      items: [step("a", { status: "done", validation_evidence: "ran" }), step("b", { status: "needs_attention", needs_user: true })],
+    }));
+    expect(blocked.ok).toBe(false);
+    expect(String(blocked.error)).toContain("need attention");
+  });
+
+  it("rejects malformed agent snapshots at the schema boundary", async () => {
+    await expect(workflowProgressTool.invoke({ workflow_id: "bad id!", items: [step("a")] })).rejects.toThrow();
+    await expect(workflowProgressTool.invoke({ workflow_id: "w", items: [step("a", { validation: "  " })] })).rejects.toThrow();
+    await expect(workflowProgressTool.invoke({
+      workflow_id: "w",
+      items: Array.from({ length: 13 }, (_, i) => step(`s${i}`)),
+    })).rejects.toThrow();
   });
 });
