@@ -52,7 +52,25 @@ function registry(): Map<string, DelegateJob> {
   return g[JOBS_SYM];
 }
 
+// Finished jobs stay pollable for a while, then are dropped so a long-running
+// server does not keep every delegate's steps and result in memory forever.
+export const FINISHED_JOB_TTL_MS = 6 * 60 * 60_000;
+export const MAX_FINISHED_JOBS = 100;
+
+function pruneFinishedJobs(now = Date.now()): void {
+  const finished: Array<[string, number]> = [];
+  for (const [id, job] of registry()) {
+    if (job.status === "running" || job.finishedAt === null) continue;
+    if (now - job.finishedAt > FINISHED_JOB_TTL_MS) registry().delete(id);
+    else finished.push([id, job.finishedAt]);
+  }
+  if (finished.length <= MAX_FINISHED_JOBS) return;
+  finished.sort((a, b) => a[1] - b[1]);
+  for (const [id] of finished.slice(0, finished.length - MAX_FINISHED_JOBS)) registry().delete(id);
+}
+
 export function createJob(jobId: string, opts: { provider: JobProvider; projectKey: string; sessionId: string; parentMessage: string; resumed: boolean; launch?: unknown }, config?: ToolConfig): DelegateJob {
+  pruneFinishedJobs();
   const threadId = config?.configurable?.thread_id;
   const tracked = typeof threadId === "string" ? startOwnedAsyncCall(`${opts.provider}_delegate`, threadId,
     config?.configurable?.signal_continuation === true, { delegate_job_id: jobId }) : null;
