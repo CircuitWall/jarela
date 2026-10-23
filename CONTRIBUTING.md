@@ -200,6 +200,11 @@ Breaking changes are never published automatically. The workflow marks them
 for human review and waits for a manually prepared major release. A manual
 `workflow_dispatch` of the nightly workflow defaults to dry-run mode.
 
+The workflow opens its PR with `GITHUB_TOKEN`, so the repository must enable
+**Settings → Actions → General → Allow GitHub Actions to create and approve
+pull requests**. If PR creation fails, the workflow deletes the release branch
+it pushed so the next run can start clean.
+
 ### Human-owned releases
 
 Use this process for breaking/major releases and workspace package releases:

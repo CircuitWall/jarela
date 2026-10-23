@@ -253,7 +253,7 @@ jobs:
         run: npm run packages:test
 
       - name: Upload runnable standalone bundle
-        # Downstream jobs (unit-coverage skips it, e2e reuses it) instead of
+        # The e2e job reuses this bundle instead of
         # re-running `next build`. `npm start` reads from .next/standalone/,
         # which postbuild has already hydrated with public/ + .next/static.
         # include-hidden-files is required: the bundle has its own nested
@@ -271,7 +271,9 @@ jobs:
   unit-coverage:
     name: Unit coverage (>=80%)
     runs-on: ubuntu-latest
-    needs: [build, changes]
+    # Independent of the build artifact, so run alongside `build` for faster
+    # feedback instead of queueing behind it.
+    needs: [changes]
     # Skip for doc-only, release-metadata-only, and post-merge main runs.
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_validation) || (github.event_name == 'pull_request' && needs.changes.outputs.app == 'true' && needs.changes.outputs.release_meta_only != 'true') }}
     timeout-minutes: 15
@@ -306,6 +308,12 @@ jobs:
     # runtime behaviour, and on post-merge main where PR CI already ran it.
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_validation) || (github.event_name == 'pull_request' && needs.changes.outputs.app == 'true' && needs.changes.outputs.release_meta_only != 'true') }}
     timeout-minutes: 30
+    # The official image ships the browsers and their system libraries, so
+    # the job never runs `playwright install --with-deps`. That apt step used
+    # to stall on the runner mirror until the job timed out. The tag must
+    # match @playwright/test; `npm run lint` enforces this.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
     env:
       JARELA_DB_DIR: /tmp/jarela-e2e
       JARELA_E2E_BASE_URL: http://127.0.0.1:4312
@@ -317,6 +325,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # The image ships Node 24, but the standalone bundle's native modules
+      # were compiled by the build job on Node 22, so pin the same ABI here.
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
@@ -324,27 +334,8 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        timeout-minutes: 10
         run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
-
-      - name: Resolve Playwright version
-        id: pw
-        run: |
-          echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        uses: actions/cache@v5
-        id: pw-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: ms-playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-
-      - name: Install Playwright browsers
-        if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium webkit
-
-      - name: Install Playwright system deps (cache-hit branch)
-        if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium webkit
 
       - name: Download runnable standalone bundle
         uses: actions/download-artifact@v7
@@ -353,6 +344,7 @@ jobs:
           path: .next/standalone
 
       - name: Install optional integration packages for E2E
+        timeout-minutes: 10
         run: |
           mkdir -p "$JARELA_DB_DIR/packages"
           npm install --prefix "$JARELA_DB_DIR/packages" \
@@ -384,9 +376,11 @@ jobs:
       - name: Run live integration tests (no LLM)
         # Folded here from the former `integration` job — shares the server
         # instance already started above, saving a full redundant startup cycle.
+        timeout-minutes: 5
         run: npm run test:live
 
       - name: Run Playwright tests with e2e coverage gate
+        timeout-minutes: 15
         run: npm run test:e2e:coverage
 
       - name: Upload Playwright report
