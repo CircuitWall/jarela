@@ -71,7 +71,7 @@ export interface ExecAllowResult {
 // Obviously-destructive commands blocked in "mostly_safe" mode unless the
 // caller passes allow_unsafe. Shared by local_exec and terminal tools.
 const BLOCKED_EXEC_PATTERNS = [
-  /\brm\s+-rf\s+\/(?=$|[\s*]|\w)/i,
+  /\brm\s+-rf\s+['"]?\/(?=$|[\s*'"\\]|\w)/i,
   /\bshutdown\b/i,
   /\breboot\b/i,
   /\bmkfs\b/i,
@@ -79,7 +79,8 @@ const BLOCKED_EXEC_PATTERNS = [
 ];
 
 export function isBlockedExecCommand(command: string): boolean {
-  return BLOCKED_EXEC_PATTERNS.some((p) => p.test(command));
+  const normalized = command.replace(/\\\r?\n|`\r?\n|\^\r?\n/g, "");
+  return BLOCKED_EXEC_PATTERNS.some((p) => p.test(normalized));
 }
 
 export function checkExecAllowed(

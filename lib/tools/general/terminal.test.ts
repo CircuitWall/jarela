@@ -85,6 +85,41 @@ describe("terminal tools as used by an agent", () => {
       },
     );
 
+    it("does not allow a blocked command to be split across shell continuation lines", async () => {
+      const s = await openSession();
+      await call(terminalSendTool, { session_id: "s1", input: "rm -rf \\\n" });
+      const result = await call(terminalSendTool, { session_id: "s1", input: "/\n" });
+      expect(result.error).toMatch(/blocked by safety policy/);
+      expect(s.sent).toEqual(["rm -rf \\\n"]);
+    });
+
+    it("does not allow a blocked command to be split across separate sends", async () => {
+      const s = await openSession();
+      await call(terminalSendTool, { session_id: "s1", input: "rm -rf " });
+      const result = await call(terminalSendTool, { session_id: "s1", input: "/\n" });
+      expect(result.error).toMatch(/blocked by safety policy/);
+      expect(s.sent).toEqual(["rm -rf "]);
+    });
+
+    it("checks quoted root paths assembled across separate sends", async () => {
+      const s = await openSession();
+      const result = await call(terminalSendTool, { session_id: "s1", input: "rm -rf '/" });
+      expect(result.error).toMatch(/blocked by safety policy/);
+      expect(s.sent).toEqual([]);
+    });
+
+    it("requires unfinished input to be cancelled before terminal_exec", async () => {
+      const s = await openSession();
+      await call(terminalSendTool, { session_id: "s1", input: "rm -rf " });
+      const blocked = await call(terminalExecTool, { session_id: "s1", command: "/" });
+      expect(blocked.exit_code).toBe(126);
+      expect(s.executed).toEqual([]);
+
+      await call(terminalSendTool, { session_id: "s1", input: "\x03" });
+      await call(terminalExecTool, { session_id: "s1", command: "ls" });
+      expect(s.executed).toEqual(["ls"]);
+    });
+
     it("applies the same gate through the unified terminal tool", async () => {
       const s = await openSession();
       const result = await call(terminalTool, { action: "send", session_id: "s1", input: "shutdown -h now\n" });
