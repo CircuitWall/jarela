@@ -38,6 +38,14 @@ Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what
 
 ## Agent usage profiles
 
+The top-left agent switcher keeps the current agent first, followed by agent
+icons that fade with distance. Hover or keyboard focus restores their opacity;
+selecting one brings it forward and opens its chat with an animated handoff.
+The strip scrolls horizontally on small screens and respects reduced motion.
+Background icons retain the existing default/latest-message ordering. Unread
+notifications use the same per-agent tracking as the menu and appear as bright
+dots, independent of icon fading; opening the agent's chat clears its unread state.
+
 Choose a **Persona** under an agent's **Identity** settings:
 
 | Profile | Replies | Chat | Suggested defaults |

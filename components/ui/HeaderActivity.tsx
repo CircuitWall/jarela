@@ -3,7 +3,7 @@ import { useActivity } from "@/lib/ui/loading";
 import { CountdownRing } from "./CountdownRing";
 
 // The single live-status surface: "is the agent alive, and what step is it
-// on". Sticky next to the agent dropdown, so it stays readable at any scroll
+// on". Sticky next to the agent icon strip, so it stays readable at any scroll
 // position — the message list carries the detail (tool arguments, results),
 // this carries the summary. Returns null when nothing is in flight.
 export function HeaderActivity() {

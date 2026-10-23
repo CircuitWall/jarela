@@ -1,5 +1,5 @@
 "use client";
-import { Check, ChevronDown, Menu } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Activity, useCallback, useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
@@ -27,7 +27,6 @@ import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
 import { UpdateAvailableBanner } from "@/components/ui/UpdateAvailableBanner";
 import { ServerStatus } from "@/components/ui/ServerStatus";
 import { Toaster } from "@/components/ui/Toaster";
-import { Logo } from "@/components/ui/Logo";
 import { BootScreen } from "@/components/ui/BootScreen";
 import { ScreenLock } from "@/components/setup/ScreenLock";
 import { UnlockScreen } from "@/components/setup/UnlockScreen";
@@ -35,6 +34,7 @@ import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
+import { AgentSwitcher } from "./AgentSwitcher";
 
 const ADVANCED_TABS = new Set(["dashboard", "tasks", "tools", "memory", "bridges", "logs", "env"]);
 
@@ -49,8 +49,6 @@ export function AppShell() {
   );
 
   const [showMenu, setShowMenu] = useState(false);
-  const [showAgentPicker, setShowAgentPicker] = useState(false);
-  const agentPickerRef = useRef<HTMLDivElement | null>(null);
 
   // Lazy-mount tabs on first visit, then keep them mounted via <Activity> so
   // state survives subsequent switches. Without this, opening the app forces
@@ -174,29 +172,6 @@ export function AppShell() {
       return a?.icon ?? null;
     },
   });
-
-  // Dismiss the logo-anchored agent picker when tapping outside it.
-  useEffect(() => {
-    if (!showAgentPicker) return;
-    function onPointerDown(e: MouseEvent) {
-      const root = agentPickerRef.current;
-      if (!root) return;
-      if (!root.contains(e.target as Node)) setShowAgentPicker(false);
-    }
-    function onEscape(e: KeyboardEvent) {
-      if (e.key === "Escape") setShowAgentPicker(false);
-    }
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onEscape);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onEscape);
-    };
-  }, [showAgentPicker]);
-
-  const activeAgent = state.activeAgentId
-    ? agents.find((a) => a.id === state.activeAgentId) ?? null
-    : null;
 
   // Screen-lock overlay (presence check) AND master-key-locked overlay
   // (decrypt). Distinct from the boot-time gate in `app/page.tsx`:
@@ -376,92 +351,19 @@ export function AppShell() {
           height: "calc(3rem + var(--app-safe-top))",
         }}
       >
-        <div className="relative flex items-center gap-2 select-none" ref={agentPickerRef}>
-          <button
-            type="button"
-            onClick={() => setShowAgentPicker((v) => !v)}
-            className="control-tap inline-flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-surface-3/60 transition-colors"
-            title={activeAgent ? `Active agent: ${activeAgent.name} — click to switch` : "Select active agent"}
-            aria-haspopup="menu"
-            aria-expanded={showAgentPicker}
-          >
-            {activeAgent?.icon ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={activeAgent.icon}
-                alt=""
-                className="h-6 w-6 rounded-md object-cover shrink-0"
-              />
-            ) : activeAgent ? (
-              <span
-                aria-hidden
-                className="h-6 w-6 rounded-md bg-surface-3 text-[11px] font-semibold text-fg-subtle inline-flex items-center justify-center shrink-0"
-              >
-                {activeAgent.name.charAt(0).toUpperCase()}
-              </span>
-            ) : (
-              // No active agent yet — fall back to the app mark. The Logo
-              // component renders both color variants and CSS picks the
-              // visible one based on the active theme.
-              <Logo className="h-6 w-auto" />
-            )}
-            <span className="text-fg font-semibold tracking-tight truncate max-w-[12rem] sm:max-w-[16rem]">
-              {activeAgent?.name ?? getAppName()}
-            </span>
-            <ChevronDown size={14} className={`text-fg-faint transition-transform ${showAgentPicker ? "rotate-180" : ""}`} />
-          </button>
-          {showAgentPicker && (
-            <div
-              role="menu"
-              className="panel-scrollbar absolute top-full left-0 mt-2 w-[min(24rem,calc(100vw-2rem))] max-h-[55vh] overflow-y-auto rounded-xl border border-border bg-surface-2/95 backdrop-blur-md shadow-2xl p-1.5"
-            >
-              {agentsLoading ? (
-                <p role="status" className="text-xs text-fg-faint px-2 py-2">Loading agents…</p>
-              ) : agents.length === 0 ? (
-                <p className="text-xs text-fg-faint px-2 py-2">No agents available yet.</p>
-              ) : (
-                agents.map((a) => {
-                  const selected = a.id === state.activeAgentId;
-                  return (
-                    <button
-                      key={a.id}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={selected}
-                      onClick={() => {
-                        dispatch({ type: "SET_AGENT", agentId: a.id });
-                        dispatch({ type: "SET_TAB", tab: "chat" });
-                        setShowAgentPicker(false);
-                      }}
-                      className={`control-tap w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-sm transition-colors ${
-                        selected
-                          ? "bg-surface-3 text-fg"
-                          : "text-fg-muted hover:bg-surface-3/60 hover:text-fg"
-                      }`}
-                    >
-                      <span className="w-4 h-4 shrink-0 inline-flex items-center justify-center text-accent">
-                        {selected ? <Check size={14} /> : null}
-                      </span>
-                      {a.icon ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={a.icon} alt="" className="w-5 h-5 rounded-md object-cover shrink-0" />
-                      ) : (
-                        <span className="w-5 h-5 rounded-md bg-surface-3 text-[10px] font-semibold text-fg-subtle inline-flex items-center justify-center shrink-0">
-                          {a.name.charAt(0).toUpperCase()}
-                        </span>
-                      )}
-                      <span className="truncate flex-1">{a.name}</span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
+        <AgentSwitcher
+          agents={agents}
+          activeAgentId={state.activeAgentId}
+          loading={agentsLoading}
+          onSelect={(agentId) => {
+            dispatch({ type: "SET_AGENT", agentId });
+            dispatch({ type: "SET_TAB", tab: "chat" });
+          }}
+        />
         <HeaderActivity />
         <button
           onClick={() => { setShowMenu((v) => !v); }}
-          className={`control-tap ml-auto relative p-2.5 rounded transition-colors ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
+          className={`control-tap ml-auto relative shrink-0 p-2.5 rounded transition-colors ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
           title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
         >
           <Menu size={21} />
