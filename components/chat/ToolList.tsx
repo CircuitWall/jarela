@@ -145,8 +145,11 @@ const COLLAPSE_THRESHOLD = 3;
 // tool events (loaded with each assistant message from /threads/:id). One
 // card per call id; a parallel batch naturally renders as a stack of cards
 // with simultaneous progress bars.
-export function ToolList({ events }: { events: ToolEvent[] }) {
-  const groups = useMemo(() => groupByCallId(events), [events]);
+export function ToolList({ events, errorsOnly = false }: { events: ToolEvent[]; errorsOnly?: boolean }) {
+  const groups = useMemo(() => {
+    const all = groupByCallId(events);
+    return errorsOnly ? all.filter((group) => group.status === "error") : all;
+  }, [events, errorsOnly]);
   // Remember the first wall-clock instant each call id was observed so the
   // progress bar resumes correctly across re-renders and the start time
   // survives parent re-mounts within the same stream.

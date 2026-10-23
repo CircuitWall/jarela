@@ -6,6 +6,8 @@ import type { Credential, IntegrationDefinition, IntegrationStatus } from "@/api
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { Dialog } from "@/components/ui/Dialog";
 import { IntegrationCard } from "./IntegrationCard";
+import { filterIntegrationsForProfile } from "@/lib/integrations/categories";
+import { USAGE_PROFILES, type UsageProfile } from "@/lib/agents/usage-profile";
 
 type Category = NonNullable<IntegrationDefinition["category"]>;
 
@@ -30,6 +32,7 @@ const CATEGORY_LABELS: Record<Category, string> = {
 };
 
 interface Props {
+  usageProfile?: UsageProfile;
   // When set, the picker opens directly on a specific category (e.g.
   // "llm" when launched from the ModelEditor's "+ New credential" button).
   initialCategory?: Category;
@@ -58,7 +61,8 @@ interface Props {
 // providers grouped by category, then drops the user into the same
 // IntegrationCard editor the Credentials panel renders inline — so
 // OAuth Connect, Test, and the setup guides are all in one place.
-export function AddCredentialDialog({ initialCategory, directProviderName, lockCategory, credential, createNew, onClose, onSaved }: Props) {
+export function AddCredentialDialog({ usageProfile = "custom", initialCategory, directProviderName, lockCategory, credential, createNew, onClose, onSaved }: Props) {
+  const [showAll, setShowAll] = useState(false);
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
   const [loading, setLoading] = useState(true);
@@ -104,15 +108,16 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
 
   const grouped = useMemo(() => {
     const out = new Map<Category, IntegrationDefinition[]>();
-    for (const def of defs) {
+    for (const def of filterIntegrationsForProfile(defs, statuses, showAll ? "custom" : usageProfile)) {
       const cat = (def.category ?? "other") as Category;
+      if (category && cat !== category) continue;
       const arr = out.get(cat) ?? [];
       arr.push(def);
       out.set(cat, arr);
     }
     for (const [, arr] of out) arr.sort((a, b) => a.label.localeCompare(b.label));
     return out;
-  }, [defs]);
+  }, [defs, statuses, showAll, usageProfile, category]);
 
   const displayGroups = useMemo(() => {
     const groups: Array<{ key: string; label: string; categories: Category[] }> = [];
@@ -188,6 +193,14 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
       )}
       {step === "pick" && (
         <div className="p-4 space-y-4">
+          {USAGE_PROFILES[usageProfile].compactChat && (
+            <div className="flex items-center justify-between gap-2 text-xs text-fg-muted">
+              <span>{showAll ? "All integrations" : `${USAGE_PROFILES[usageProfile].label} integrations`}</span>
+              <button type="button" onClick={() => setShowAll((value) => !value)} className="text-accent hover:underline">
+                {showAll ? "Use agent profile" : "Show all integrations"}
+              </button>
+            </div>
+          )}
           {loading && <p className="text-fg-faint text-sm text-center py-6">Loading…</p>}
           {!loading && !loadError && defs.length === 0 && (
             <p className="text-fg-faint text-sm text-center py-6">No credential providers available.</p>

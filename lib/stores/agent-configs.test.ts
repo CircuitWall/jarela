@@ -18,6 +18,7 @@ const {
   getAgentTierProportions,
   DISPLAY_FILTER_DEFAULTS,
   listAgentConfigs,
+  duplicateAgentConfig,
 } = await import("./agent-configs");
 const { getDb } = await import("@/lib/db");
 const { createThread } = await import("./threads");
@@ -36,6 +37,42 @@ const seedAgent = (id: string) =>
     instructions: "",
     tools: [],
   });
+
+describe("usage profiles", () => {
+  it("preserves tuned sliders even if a legacy client updates only MBTI", () => {
+    const fields = { id: "legacy-style", name: "Legacy style", identity: "", instructions: "", tools: [] };
+    const tuned = {
+      adaptive_persona_strength: 12, adaptive_empathy: 23,
+      adaptive_expressiveness: 87, adaptive_verbosity: 91,
+    };
+    upsertAgentConfig({ ...fields, ...tuned, adaptive_mbti: "ISFJ" });
+    expect(upsertAgentConfig({ ...fields, adaptive_mbti: "ENFP" })).toMatchObject(tuned);
+    expect(upsertAgentConfig({ ...fields, usage_profile: "dev" })).toMatchObject(tuned);
+    expect(duplicateAgentConfig(fields.id)).toMatchObject(tuned);
+  });
+
+  it("defaults to Everything and retains profile, tuned settings and filters across partial updates and duplication", () => {
+    const created = seedAgent("profile-test");
+    expect(created.usage_profile).toBe("custom");
+    upsertAgentConfig({
+      id: created.id, name: created.name, identity: "", instructions: "", tools: [],
+      usage_profile: "home", adaptive_mbti: "ISFJ", citation_strictness: "standard",
+    });
+    updateAgentDisplayFilters(created.id, { thinking: false });
+    const updated = upsertAgentConfig({
+      id: created.id, name: "Renamed", identity: "", instructions: "", tools: [],
+    });
+    expect(updated.usage_profile).toBe("home");
+    expect(updated.adaptive_mbti).toBe("ISFJ");
+    expect(updated.citation_strictness).toBe("standard");
+    expect(getAgentDisplayFilters(created.id)?.thinking).toBe(false);
+    const copy = duplicateAgentConfig(created.id);
+    expect(copy?.usage_profile).toBe("home");
+    expect(copy?.adaptive_mbti).toBe("ISFJ");
+    expect(getAgentDisplayFilters(copy!.id)?.thinking).toBe(false);
+    expect(seedAgent("other-profile-test").usage_profile).toBe("custom");
+  });
+});
 
 describe("warm summary limit", () => {
   it("defaults to 50 and persists custom values including zero", () => {

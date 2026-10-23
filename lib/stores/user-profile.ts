@@ -2,15 +2,8 @@ import { getDb } from "@/lib/db";
 
 const now = () => new Date().toISOString();
 
-// Persona presets (see ADR — to be written). Drives the Credentials
-// panel's category filter so the agent surface stays calm.
-//
-//   home   → llm + mail + calendar + chat
-//   work   → everything except chat-only (everyone uses work mail/cal/jira)
-//   dev    → everything (including infrastructure)
-//   custom → no filter, show everything
-//
-// NULL in the DB also means "no filter".
+// Legacy API preference. Migrated once to agent usage profiles (ADR-0105);
+// retained for compatibility, no longer read by credential discovery.
 export type UserPreset = "home" | "work" | "dev" | "custom";
 
 export interface UserProfileRow {

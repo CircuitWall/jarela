@@ -11,6 +11,7 @@ import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Dialog } from "@/components/ui/Dialog";
+import { USAGE_PROFILES } from "@/lib/agents/usage-profile";
 
 interface QueuedMessageView {
   id: string;
@@ -104,6 +105,9 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingHotSinceSeq, setPendingHotSinceSeq] = useState<number | null>(null);
   const [topControlsOpen, setTopControlsOpen] = useState(false);
+  const [revealedForAgent, setRevealedForAgent] = useState<string | null>(null);
+  const compactChat = USAGE_PROFILES[agentConfig?.usage_profile ?? "custom"].compactChat;
+  const showDiagnostics = !compactChat || (!!agentConfig && revealedForAgent === agentConfig.id);
   const [summaryPopoverOpen, setSummaryPopoverOpen] = useState(false);
   const hasStreamingContent = !!streamingContent;
   const hasThinkingContent = !!thinkingContent;
@@ -180,13 +184,14 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
           agentConfig={agentConfig}
           userProfile={userProfile}
           showToolEvents={filters.tool_use && !hideInternalOperations}
+          showDiagnostics={showDiagnostics && !hideInternalOperations}
           contextWindowTokens={contextWindowTokens ?? null}
           isLatest={i === visibleMessages.length - 1 && !hasStreamingContent}
           onRetry={onRetryMessage}
         />
       );
     });
-  }, [visibleMessages, steeredSegments, threadId, agentConfig, userProfile, filters.tool_use, hideInternalOperations, contextWindowTokens, hasStreamingContent, onRetryMessage]);
+  }, [visibleMessages, steeredSegments, threadId, agentConfig, userProfile, filters.tool_use, hideInternalOperations, showDiagnostics, contextWindowTokens, hasStreamingContent, onRetryMessage]);
 
   const hiddenCount = displayMessages.length - visibleMessages.length;
   const effectiveHotSinceSeq = hotSinceSeq ?? null;
@@ -853,17 +858,18 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
   return (
     <WorkflowStepRetryContext.Provider value={retryWorkflowStep}>
     <div ref={hostRef} className="flex-1 flex flex-col min-h-0 relative">
-      {visibleMessages.length > 0 && (
+      {(visibleMessages.length > 0 || compactChat) && (
         <div className="shrink-0 px-4 pt-[calc(var(--app-safe-top)+3rem)] pb-1">
-          <div className="w-full border-b border-border/45 bg-surface/30 px-2 py-1 backdrop-blur-sm">
+          <div className="w-full rounded-lg border border-border/45 bg-surface/30 px-2 py-1 backdrop-blur-sm">
             <button
               type="button"
               onClick={() => setTopControlsOpen((v) => !v)}
               aria-expanded={topControlsOpen}
-              className="w-full flex items-center gap-2 py-0.5 text-[11px] text-fg-faint hover:text-fg transition-colors"
+              className="control-tap w-full flex items-center gap-1.5 rounded-md py-0.5 text-[11px] text-fg-muted hover:text-fg transition-colors"
             >
               <CollapseChevron open={topControlsOpen} size={10} />
-              <span className="font-semibold uppercase tracking-[0.16em]">Filters & focus</span>
+              <span className="font-medium">Filters & focus</span>
+              {compactChat && <span className="text-[10px] text-fg-faint">· {showDiagnostics ? "Details on" : "Chat only"}</span>}
               {hiddenCount > 0 && (
                 <span className="ml-auto text-[10px] text-fg-faint" aria-live="polite">
                   {hiddenCount} hidden
@@ -873,7 +879,23 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
 
             {topControlsOpen && (
               <div className="mt-1 flex items-center gap-1.5 flex-wrap py-1">
-                {availableChips.map((key) => {
+                {compactChat && (
+                  <button
+                    type="button"
+                    className={`control-tap inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] leading-4 transition-colors ${
+                      showDiagnostics
+                        ? "border-accent/40 bg-accent/10 text-fg"
+                        : "border-border/60 bg-surface-2/70 text-fg-muted hover:text-fg hover:border-accent/40"
+                    }`}
+                    aria-pressed={showDiagnostics}
+                    aria-label={showDiagnostics ? "Hide technical details" : "Show technical details"}
+                    onClick={() => setRevealedForAgent(showDiagnostics ? null : agentConfig?.id ?? null)}
+                  >
+                    {showDiagnostics ? <Eye size={10} /> : <EyeOff size={10} />}
+                    Technical details
+                  </button>
+                )}
+                {availableChips.filter((key) => showDiagnostics || (key !== "tool_use" && key !== "thinking")).map((key) => {
                   const on = filters[key];
                   const Icon = on ? Eye : EyeOff;
                   return (
@@ -882,7 +904,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
                       type="button"
                       onClick={() => toggle(key)}
                       className={[
-                        "inline-flex items-center gap-1 rounded-none border px-2 py-0.5 text-[10px] leading-4 transition-colors",
+                        "control-tap inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] leading-4 transition-colors",
                         on
                           ? "border-border/70 bg-surface-2/70 text-fg-muted hover:text-fg"
                           : "border-border/35 bg-transparent text-fg-faint line-through decoration-fg-faint/60 hover:text-fg-muted",
@@ -909,7 +931,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
                     type="button"
                     onClick={scrollToBoundaryLine}
                     disabled={!hasContextPin}
-                    className="control-tap ml-auto rounded-none border border-border/60 bg-surface-2/70 px-2 py-0.5 text-[10px] leading-4 text-fg-faint transition-colors hover:border-accent/40 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border/60 disabled:hover:text-fg-faint"
+                    className="control-tap ml-auto rounded-md border border-border/60 bg-surface-2/70 px-2 py-0.5 text-[10px] leading-4 text-fg-muted transition-colors hover:border-accent/40 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border/60 disabled:hover:text-fg-muted"
                     title={hasContextPin ? "Locate the focus boundary in the message list" : "Set a focus boundary first (drag the divider or pin a message) to enable this"}
                   >
                     Locate boundary line
@@ -1021,7 +1043,7 @@ export function MessageList({ threadId, messages, steeredSegments, agentConfig, 
         thinkingContent={thinkingContent}
         streamingContent={streamingContent}
         toolEvents={toolEvents}
-        filters={hideInternalOperations ? { ...filters, tool_use: false, thinking: false } : filters}
+        filters={hideInternalOperations || !showDiagnostics ? { ...filters, tool_use: false, thinking: false } : filters}
         threadId={threadId ?? null}
         agentConfig={agentConfig ?? null}
         showStreamingAvatar={visibleMessages.length === 0 || visibleMessages[visibleMessages.length - 1].role !== "assistant"}
@@ -1218,10 +1240,11 @@ function LiveTurnActivity({
 }) {
   const showThinking = !!thinkingContent && filters.thinking;
   const showTools = !!toolEvents && toolEvents.length > 0 && filters.tool_use;
+  const hasTools = !!toolEvents?.length;
   // Until the first delta lands there is nothing else to render, and the
   // conversation would otherwise sit empty while the model works.
   const showDots = !!streaming && !showThinking && !streamingContent && !showTools;
-  if (!showThinking && !streamingContent && !showTools && !showDots) return null;
+  if (!showThinking && !streamingContent && !hasTools && !showDots) return null;
   return (
     <div data-testid="live-turn-activity" className="mt-1 flex w-full min-w-0 flex-col gap-1">
       {showDots && <div className="min-w-0 pl-9"><ThinkingDots /></div>}
@@ -1234,14 +1257,14 @@ function LiveTurnActivity({
           showAvatar={showStreamingAvatar}
         />
       )}
-      {showTools && <div className="min-w-0 pl-9"><ToolList events={toolEvents} /></div>}
+      {!!toolEvents?.length && <div className="min-w-0 pl-9"><ToolList events={toolEvents} errorsOnly={!showTools} /></div>}
     </div>
   );
 }
 
 const HistoryRow = memo(function HistoryRow({
   message, steeredSegment, segmentShowAvatar, attachedActivity, startsTurn, separated,
-  threadId, agentConfig, userProfile, showToolEvents, contextWindowTokens, isLatest, onRetry,
+  threadId, agentConfig, userProfile, showToolEvents, showDiagnostics, contextWindowTokens, isLatest, onRetry,
 }: {
   message: Message;
   steeredSegment?: SteeredSegment;
@@ -1253,6 +1276,7 @@ const HistoryRow = memo(function HistoryRow({
   agentConfig?: AgentConfig | null;
   userProfile?: UserProfile | null;
   showToolEvents: boolean;
+  showDiagnostics: boolean;
   contextWindowTokens: number | null;
   isLatest: boolean;
   onRetry?: Props["onRetryMessage"];
@@ -1283,6 +1307,7 @@ const HistoryRow = memo(function HistoryRow({
           userProfile={userProfile}
           showAvatar={startsTurn}
           showToolEvents={showToolEvents}
+          showDiagnostics={showDiagnostics}
           contextWindowTokens={contextWindowTokens}
           isLatest={isLatest}
           onRetry={onRetry}

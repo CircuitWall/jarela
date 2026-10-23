@@ -466,6 +466,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureEmbeddingColumns(db);
   ensureMessageEmbeddingJobsTable(db);
   ensureUserProfileLocationColumns(db);
+  ensureAgentUsageProfileColumn(db);
   ensureProxyConfigSchemeAndCaBundle(db);
   ensureThreadsAgentIdUnique(db);
   ensureMessagesCategoryColumn(db);
@@ -740,6 +741,16 @@ function ensureProxyConfigSchemeAndCaBundle(db: DatabaseSync): void {
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("scheme"))    db.exec("ALTER TABLE proxy_config ADD COLUMN scheme TEXT NOT NULL DEFAULT 'http'");
   if (!names.has("ca_bundle")) db.exec("ALTER TABLE proxy_config ADD COLUMN ca_bundle TEXT");
+}
+
+export function ensureAgentUsageProfileColumn(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
+  if (columns.some((column) => column.name === "usage_profile")) return;
+  db.exec("ALTER TABLE agent_configs ADD COLUMN usage_profile TEXT NOT NULL DEFAULT 'custom' CHECK(usage_profile IN ('home','work','dev','custom'))");
+  db.exec(`UPDATE agent_configs SET usage_profile = COALESCE(
+    (SELECT preset FROM user_profile WHERE preset IN ('home','work','dev','custom') LIMIT 1),
+    'custom'
+  )`);
 }
 
 function ensureUserProfileLocationColumns(db: DatabaseSync): void {

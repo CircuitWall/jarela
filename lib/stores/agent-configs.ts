@@ -1,6 +1,8 @@
 import { getDb } from "@/lib/db";
 import { withDbTransaction } from "@/lib/db/transaction";
-import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
+import type { MbtiType } from "@/lib/agents/adaptive-persona-presets";
+import { DEFAULT_PERSONA_STYLE } from "@/lib/agents/usage-profile";
+import type { UsageProfile } from "@/lib/agents/usage-profile";
 
 const now = () => new Date().toISOString();
 
@@ -16,6 +18,7 @@ export function parseCitationStrictness(value: unknown): CitationStrictness | nu
 }
 
 export interface AgentConfigRow {
+  usage_profile?: UsageProfile;
   id: string;
   name: string;
   icon: string | null;
@@ -34,7 +37,7 @@ export interface AgentConfigRow {
   adaptive_empathy: number;          // 0..100, baseline empathetic tone
   adaptive_expressiveness: number;   // 0..100, restrained -> energetic
   adaptive_verbosity: number;        // 0..100, concise -> detailed
-  adaptive_mbti: string;             // one of 16 MBTI types
+  adaptive_mbti: string;             // deprecated compatibility field; ignored by persona
   voice_enabled: number;             // 1 = expose mic/play UI for this agent
   voice_model: string;               // Gemini TTS model id
   voice_name: string;                // Gemini prebuilt voice name (Kore, Puck, …)
@@ -140,6 +143,7 @@ export function getAgentConfig(id: string): AgentConfigRow | null {
 }
 
 export interface UpsertAgentInput {
+  usage_profile?: UsageProfile;
   id: string;
   name: string;
   icon?: string | null;
@@ -253,17 +257,11 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
   const db = getDb();
   const existing = getAgentConfig(input.id);
   const created_at = existing?.created_at ?? t;
-  const existingMbti = toMbti(existing?.adaptive_mbti);
-  const mbti = input.adaptive_mbti ?? existingMbti ?? "INTJ";
-  const preset = MBTI_PRESETS[mbti];
-  // Omitted sliders keep their tuned values; they only fall back to the
-  // preset when the type changes or the agent is new. Otherwise every
-  // partial update (approved proposals, tool edits) reset them.
-  const keepTuned = existing !== null && existing !== undefined && mbti === existingMbti;
-  const strength = input.adaptive_persona_strength ?? (keepTuned ? existing.adaptive_persona_strength : preset.strength);
-  const empathy = input.adaptive_empathy ?? (keepTuned ? existing.adaptive_empathy : preset.empathy);
-  const expressiveness = input.adaptive_expressiveness ?? (keepTuned ? existing.adaptive_expressiveness : preset.expressiveness);
-  const verbosity = input.adaptive_verbosity ?? (keepTuned ? existing.adaptive_verbosity : preset.verbosity);
+  const mbti = input.adaptive_mbti ?? existing?.adaptive_mbti ?? "INTJ";
+  const strength = input.adaptive_persona_strength ?? existing?.adaptive_persona_strength ?? DEFAULT_PERSONA_STYLE.strength;
+  const empathy = input.adaptive_empathy ?? existing?.adaptive_empathy ?? DEFAULT_PERSONA_STYLE.empathy;
+  const expressiveness = input.adaptive_expressiveness ?? existing?.adaptive_expressiveness ?? DEFAULT_PERSONA_STYLE.expressiveness;
+  const verbosity = input.adaptive_verbosity ?? existing?.adaptive_verbosity ?? DEFAULT_PERSONA_STYLE.verbosity;
   if (input.is_default) db.prepare("UPDATE agent_configs SET is_default=0").run();
   // harness_id: explicit `undefined` means "keep existing"; explicit `null`
   // means "use the global default". Empty string is normalised to null too,
@@ -344,9 +342,9 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
          harness_id, delegate_targets, context_tier_proportions,
          anti_hallucination_mode, anti_hallucination_model_config, citation_strictness,
-        tool_credentials, router_policy, router_enabled, usage_strategy,
+        tool_credentials, router_policy, router_enabled, usage_strategy, usage_profile, display_filters,
          created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -395,6 +393,8 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
       routerPolicy,
       routerEnabled,
       usageStrategy,
+      input.usage_profile ?? existing?.usage_profile ?? "custom",
+      existing?.display_filters ?? null,
       created_at,
       t,
     );
@@ -421,10 +421,6 @@ function serialiseToolCredentials(
   return JSON.stringify(cleaned);
 }
 
-function toMbti(v: string | null | undefined): MbtiType | null {
-  if (!v) return null;
-  return (v in MBTI_PRESETS ? v : null) as MbtiType | null;
-}
 
 export function deleteAgentConfig(id: string): boolean {
   return (

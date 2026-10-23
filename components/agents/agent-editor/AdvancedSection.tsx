@@ -4,7 +4,6 @@ import { Section } from "./Section";
 import { HarnessField } from "./HarnessField";
 import { AntiHallucinationFields, CitationStrictnessField } from "./HallucinationFields";
 import { TierOverrideField } from "./TierOverrideField";
-import { AdaptivePersonaFields } from "./AdaptivePersonaFields";
 import { VoiceFields } from "./VoiceFields";
 import { ToolCredentialsSection } from "./ToolCredentialsSection";
 import { Select } from "@/components/ui/Select";
@@ -122,8 +121,6 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
           <Divider />
         </>
       )}
-      <AdaptivePersonaFields form={form} />
-      <Divider />
       <VoiceFields
         form={form}
         models={models}

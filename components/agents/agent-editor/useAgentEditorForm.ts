@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { DEFAULT_HOT_TURN_LIMIT, type AgentConfig, type AgentConfigIn } from "@/api/types";
 import { useTools } from "@/hooks/useTools";
 import { isBasicToolCategory } from "@/lib/tools/runtime/categories";
-import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import type { UsageStrategy } from "@/lib/agents/usage-strategy";
+import { DEFAULT_PERSONA_STYLE, USAGE_PROFILES, type UsageProfile } from "@/lib/agents/usage-profile";
 import { useAgentExternalData } from "./useAgentExternalData";
 import { useAgentToolHandlers } from "./useAgentToolHandlers";
 
@@ -27,6 +27,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [icon, setIcon] = useState<string | null>(agent?.icon ?? null);
   const [identity, setIdentity] = useState(agent?.identity ?? "");
   const [instructions, setInstructions] = useState(agent?.instructions ?? "");
+  const [usageProfile, setUsageProfile] = useState<UsageProfile>(agent?.usage_profile ?? "custom");
   const [isDefault, setIsDefault] = useState<boolean>(agent?.is_default ?? false);
   const [modelConfigName, setModelConfigName] = useState<string>(agent?.model_config_name ?? "");
   const [historyLimit, setHistoryLimit] = useState<number>(agent?.history_limit ?? 50);
@@ -57,7 +58,10 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   // the user drags a handle, so saving an unmodified agent keeps inherit.
   const [tierOverride, setTierOverride] = useState<TierOverride>(agent?.context_tier_proportions ?? null);
   const [adaptivePersonaEnabled, setAdaptivePersonaEnabled] = useState<boolean>(agent?.adaptive_persona_enabled ?? false);
-  const [adaptiveMbti, setAdaptiveMbti] = useState<MbtiType>(initialMbti(agent?.adaptive_mbti));
+  const [adaptiveStrength, setAdaptiveStrength] = useState(agent?.adaptive_persona_strength ?? DEFAULT_PERSONA_STYLE.strength);
+  const [adaptiveEmpathy, setAdaptiveEmpathy] = useState(agent?.adaptive_empathy ?? DEFAULT_PERSONA_STYLE.empathy);
+  const [adaptiveExpressiveness, setAdaptiveExpressiveness] = useState(agent?.adaptive_expressiveness ?? DEFAULT_PERSONA_STYLE.expressiveness);
+  const [adaptiveVerbosity, setAdaptiveVerbosity] = useState(agent?.adaptive_verbosity ?? DEFAULT_PERSONA_STYLE.verbosity);
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(agent?.voice_enabled ?? false);
   const [voiceModel, setVoiceModel] = useState<string>(agent?.voice_model ?? "gemini-2.5-flash-preview-tts");
   const [voiceName, setVoiceName] = useState<string>(agent?.voice_name ?? "Kore");
@@ -66,6 +70,19 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [routerPolicy, setRouterPolicy] = useState<RouterPolicy>(agent?.router_policy ?? "");
   const [routerEnabled, setRouterEnabled] = useState<RouterEnabled>(agent?.router_enabled ?? null);
   const [usageStrategy, setUsageStrategy] = useState<UsageStrategyOverride>(agent?.usage_strategy ?? "");
+  function selectUsageProfile(value: UsageProfile) {
+    if (value === usageProfile) return;
+    setUsageProfile(value);
+    const defaults = USAGE_PROFILES[value];
+    if (defaults.style) {
+      setAdaptivePersonaEnabled(true);
+      setAdaptiveStrength(defaults.style.strength);
+      setAdaptiveEmpathy(defaults.style.empathy);
+      setAdaptiveExpressiveness(defaults.style.expressiveness);
+      setAdaptiveVerbosity(defaults.style.verbosity);
+      setCitationStrictness(defaults.citationStrictness);
+    }
+  }
   const external = useAgentExternalData(agent?.id);
   const handlers = useAgentToolHandlers(tools, setSelectedTools);
   useEffect(() => {
@@ -81,6 +98,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   }, [tools]);
   const fields = {
     name, setName, icon, setIcon, identity, setIdentity, instructions, setInstructions,
+    usageProfile, selectUsageProfile,
     isDefault, setIsDefault, iconInputRef, handleIconFile: handleIconFileFor(setIcon),
     modelConfigName, setModelConfigName,
     historyLimit, setHistoryLimit, historyWindowHours, setHistoryWindowHours,
@@ -89,7 +107,9 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
     delegateTargets, setDelegateTargets, harnessId, setHarnessId,
     antiHallucMode, setAntiHallucMode, antiHallucModel, setAntiHallucModel,
     citationStrictness, setCitationStrictness, tierOverride, setTierOverride,
-    adaptivePersonaEnabled, setAdaptivePersonaEnabled, adaptiveMbti, setAdaptiveMbti,
+    adaptivePersonaEnabled, setAdaptivePersonaEnabled,
+    adaptiveStrength, setAdaptiveStrength, adaptiveEmpathy, setAdaptiveEmpathy,
+    adaptiveExpressiveness, setAdaptiveExpressiveness, adaptiveVerbosity, setAdaptiveVerbosity,
     voiceEnabled, setVoiceEnabled, voiceModel, setVoiceModel,
     voiceName, setVoiceName, voiceSttModel, setVoiceSttModel,
     voiceAutoSpeak, setVoiceAutoSpeak,
@@ -97,11 +117,6 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
     usageStrategy, setUsageStrategy,
   };
   return { ...fields, ...external, ...handlers, buildPayload: () => buildAgentPayload(fields) };
-}
-
-function initialMbti(value: string | null | undefined): MbtiType {
-  const v = value ?? "INTJ";
-  return (v in MBTI_PRESETS ? v : "INTJ") as MbtiType;
 }
 
 function handleIconFileFor(setIcon: (v: string | null) => void) {
@@ -115,6 +130,7 @@ function handleIconFileFor(setIcon: (v: string | null) => void) {
 }
 
 interface PayloadFields {
+  usageProfile: UsageProfile;
   name: string; icon: string | null; identity: string; instructions: string;
   isDefault: boolean; modelConfigName: string;
   historyLimit: number; historyWindowHours: number; hotTurnLimit: number; warmSummaryLimit: number; selectedTools: string[];
@@ -122,7 +138,9 @@ interface PayloadFields {
   delegateTargets: string[]; harnessId: string; tierOverride: TierOverride;
   antiHallucMode: AntiHallucMode; antiHallucModel: string;
   citationStrictness: CitationStrictness;
-  adaptivePersonaEnabled: boolean; adaptiveMbti: MbtiType;
+  adaptivePersonaEnabled: boolean;
+  adaptiveStrength: number; adaptiveEmpathy: number;
+  adaptiveExpressiveness: number; adaptiveVerbosity: number;
   voiceEnabled: boolean; voiceModel: string; voiceName: string;
   voiceSttModel: string; voiceAutoSpeak: boolean;
   routerPolicy: RouterPolicy; routerEnabled: RouterEnabled;
@@ -131,6 +149,7 @@ interface PayloadFields {
 
 function buildAgentPayload(f: PayloadFields): AgentConfigIn {
   return {
+    usage_profile: f.usageProfile,
     name: f.name.trim(),
     icon: f.icon ?? null,
     identity: f.identity.trim(),
@@ -143,7 +162,10 @@ function buildAgentPayload(f: PayloadFields): AgentConfigIn {
     warm_summary_limit: Math.max(0, Math.floor(f.warmSummaryLimit)),
     is_default: f.isDefault,
     adaptive_persona_enabled: f.adaptivePersonaEnabled,
-    adaptive_mbti: f.adaptiveMbti,
+    adaptive_persona_strength: f.adaptiveStrength,
+    adaptive_empathy: f.adaptiveEmpathy,
+    adaptive_expressiveness: f.adaptiveExpressiveness,
+    adaptive_verbosity: f.adaptiveVerbosity,
     voice_enabled: f.voiceEnabled,
     voice_model: f.voiceModel,
     voice_name: f.voiceName,

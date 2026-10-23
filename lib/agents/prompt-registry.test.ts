@@ -19,6 +19,7 @@ const { buildSystemPrompt, CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL } =
 const { listStaticPrompts, promptsAffectedBy, SYSTEM_PROMPT_SOURCE_PREFIXES } = await import("./prompt-registry");
 const { getAllToolCatalogAsync, applyAgentPermissionsToCatalog } = await import("@/lib/tools");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
+import { getUsageStrategyProfile } from "./usage-strategy";
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* held open */ }
@@ -28,6 +29,35 @@ const { agentCfg, budget, buildVariants } = await import("./prompt-variants");
 
 const variants = await buildVariants();
 const staticPrompts = listStaticPrompts();
+
+describe("usage profile audit fixtures", () => {
+  it("renders editable profile defaults in a single persona chapter in both navigation modes", async () => {
+    const { USAGE_PROFILES, USAGE_PROFILE_VALUES } = await import("./usage-profile");
+    for (const profile of USAGE_PROFILE_VALUES) {
+      for (const mode of ["essential", "full"]) {
+        const variant = variants.find((entry) => entry.id === `usage-profile-${profile}${mode === "full" ? "-full" : ""}`);
+        expect(variant, `${profile}/${mode}`).toBeDefined();
+        expect(variant!.prompt).toContain(`User interface mode: ${mode}.`);
+        expect(variant!.prompt).toContain(`Citation setting: ${USAGE_PROFILES[profile].citationStrictness}.`);
+        expect(variant!.prompt.match(/^--- Persona ---$/gm)).toHaveLength(1);
+        expect(variant!.prompt).not.toContain("--- Usage profile ---");
+        expect(variant!.prompt).not.toContain("--- Adaptive persona ---");
+        expect(variant!.prompt).not.toContain("MBTI");
+        if (USAGE_PROFILES[profile].style) {
+          expect(variant!.prompt).toContain(`Target warmth: ${USAGE_PROFILES[profile].style!.empathy}/100`);
+        } else {
+          expect(variant!.prompt).toContain("Style customization: off");
+        }
+      }
+    }
+  });
+
+  it("invalidates assembled artifacts when persona defaults or combination fixtures change", () => {
+    for (const path of ["lib/agents/usage-profile.ts", "lib/agents/prompt-variants.ts"]) {
+      expect(promptsAffectedBy([path]).systemPrompt).toBe(true);
+    }
+  });
+});
 
 if (process.env.JARELA_PROMPT_DUMP === "1") {
   const outDir = join(process.cwd(), ".prompts");
@@ -228,14 +258,13 @@ describe("prompt registry coverage", () => {
 });
 
 describe("assembled agent system prompt", () => {
-  it("keeps cost-saving response guidance in the dynamic suffix for every variant", () => {
-    for (const { id, prompt } of variants) {
+  it("keeps the configured resource-strategy guidance in the dynamic suffix for every variant", () => {
+    for (const { id, prompt, usageStrategy = "cost_saving" } of variants) {
       const dynamic = prompt.split(CACHE_SPLIT_SENTINEL)[1] ?? "";
       const stable = prompt.split(CACHE_SPLIT_SENTINEL)[0];
-      expect(dynamic, `${id}: concise response instruction missing`).toContain("Answer in the fewest words that fully satisfy the request.");
-      expect(dynamic, `${id}: lead-with-result instruction missing`).toContain("Lead with the result.");
-      expect(dynamic, `${id}: no-repetition instruction missing`).toContain("Do not restate the request, narrate routine steps, or add unsolicited background.");
-      expect(stable, `${id}: strategy instruction leaked into cached prefix`).not.toContain("Economical response style");
+      const instruction = getUsageStrategyProfile(usageStrategy).promptInstruction;
+      expect(dynamic, `${id}: strategy instruction missing`).toContain(instruction);
+      expect(stable, `${id}: strategy instruction leaked into cached prefix`).not.toContain(instruction);
     }
   });
 
@@ -260,6 +289,12 @@ describe("assembled agent system prompt", () => {
       expect(sharedBlock, `${id}: shared block leaked per-turn state`).not.toContain("--- Enabled tools ---");
       expect(sharedBlock, `${id}: shared block leaked the agent identity`).not.toContain("You are Jarela");
     }
+  });
+
+  it("shares the composition contract across all profile, persona, and transport fixtures", () => {
+    const sharedBlocks = variants.map(({ prompt }) => prompt.split(CACHE_SHARED_SPLIT_SENTINEL)[0]);
+    expect(new Set(sharedBlocks).size).toBe(1);
+    expect(sharedBlocks[0]).toContain("--- Instruction composition ---");
   });
 
   it("keeps the action vocabulary and destructive-confirmation rules once in the shared SOP", () => {

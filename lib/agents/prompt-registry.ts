@@ -191,6 +191,8 @@ export const SYSTEM_PROMPT_SOURCE_PREFIXES = [
   "lib/agents/harness/",
   "lib/agents/adaptive-persona.ts",
   "lib/agents/usage-strategy.ts",
+  "lib/agents/usage-profile.ts",
+  "lib/agents/prompt-variants.ts",
 ] as const;
 
 /**

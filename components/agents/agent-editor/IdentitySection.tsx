@@ -3,6 +3,8 @@ import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { TextInput, FIELD_CLASS } from "@/components/ui/TextField";
 import type { AgentEditorForm } from "./useAgentEditorForm";
 import { Section } from "./Section";
+import { USAGE_PROFILES, USAGE_PROFILE_VALUES } from "@/lib/agents/usage-profile";
+import { AdaptivePersonaFields } from "./AdaptivePersonaFields";
 
 export function IdentitySection({ form }: { form: AgentEditorForm }) {
   return (
@@ -19,8 +21,41 @@ export function IdentitySection({ form }: { form: AgentEditorForm }) {
           />
         </label>
       </div>
+      <fieldset className="space-y-2">
+        <legend className="text-xs text-fg-subtle">Persona</legend>
+        <p className="text-[11px] text-fg-faint">
+          Choose how this agent communicates, displays technical details, and filters credential discovery.
+          Saved credentials and tool permissions are unchanged.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {USAGE_PROFILE_VALUES.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={form.usageProfile === value}
+              onClick={() => form.selectUsageProfile(value)}
+              className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
+                form.usageProfile === value
+                  ? "border-accent/60 bg-accent/15 text-fg"
+                  : "border-border bg-surface-3 text-fg-muted hover:text-fg"
+              }`}
+            >
+              <div className="text-xs font-medium">{USAGE_PROFILES[value].label}</div>
+              <div className="text-[10px] text-fg-faint mt-0.5">{USAGE_PROFILES[value].hint}</div>
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-fg-faint">
+          Selecting Home, Work, or Developer applies editable style defaults.
+          Home and Work suggest standard citations; Developer suggests strict citations.
+          Grounding remains independently editable in Advanced settings.
+          Custom / Everything keeps your current style and grounding settings.
+          Failures and approvals stay visible in every profile.
+        </p>
+        <AdaptivePersonaFields form={form} />
+      </fieldset>
       <label className="block">
-        <span className="text-xs text-fg-subtle mb-1 block">Persona</span>
+        <span className="text-xs text-fg-subtle mb-1 block">Role and identity</span>
         <MarkdownTextarea
           className={`${FIELD_CLASS} min-h-[4rem] resize-y`}
           value={form.identity}

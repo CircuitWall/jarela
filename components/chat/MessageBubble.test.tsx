@@ -18,6 +18,33 @@ afterEach(() => {
 });
 
 describe("MessageBubble image attachments", () => {
+  it("hides technical metadata but not failed responses, and reveals diagnostics on request", () => {
+    const message: Message = {
+      id: "profile-diagnostics",
+      role: "assistant",
+      content: "Here is the useful summary.",
+      created_at: "2026-10-23T12:00:00.000Z",
+      transcript_status: "failed",
+      status_reason: "Provider disconnected",
+      metadata: { memory_recall: { memory_hits: 2, message_hits: 1 } },
+      tool_events: [
+        { id: "ok", phase: "result", name: "successful_tool", payload: { ok: true } },
+        { id: "bad", phase: "result", name: "failed_tool", payload: { error: "Permission denied" } },
+      ],
+    };
+    const { rerender } = render(
+      <AppProvider><MessageBubble message={message} showDiagnostics={false} /></AppProvider>,
+    );
+    expect(screen.getByText("Here is the useful summary.")).toBeTruthy();
+    expect(screen.getByText("Response failed")).toBeTruthy();
+    expect(screen.getByText(/Provider disconnected/)).toBeTruthy();
+    expect(screen.getByText("failed_tool")).toBeTruthy();
+    expect(screen.queryByText("successful_tool")).toBeNull();
+    expect(screen.queryByText(/Recalled/)).toBeNull();
+    rerender(<AppProvider><MessageBubble message={message} showDiagnostics /></AppProvider>);
+    expect(screen.getByText("successful_tool")).toBeTruthy();
+    expect(screen.getByText(/Recalled/)).toBeTruthy();
+  });
   it("renders sent images at viewport-sized bubble width while preserving original pixel bounds", () => {
     const content = JSON.stringify([
       { type: "image", media_type: "image/png", data: "iVBORw0KGgo=" },

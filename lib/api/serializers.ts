@@ -14,6 +14,7 @@ import { parseJsonSafe } from "@/lib/utils/json";
 export function agentToResponse(a: AgentConfigRow) {
   return {
     id: a.id,
+    usage_profile: a.usage_profile ?? "custom",
     name: a.name,
     icon: a.icon,
     identity: a.identity,

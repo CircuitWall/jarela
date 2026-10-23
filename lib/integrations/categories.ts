@@ -6,9 +6,9 @@
 // chat-bot keys, and a casual chat user does not want to see GitHub /
 // infrastructure tokens at all.
 //
-// We let the user pick a single "preset" in the Profile editor and use
-// it to filter the Credentials list. Picking "custom" (or leaving it
-// unset → null) shows everything — exactly today's behaviour.
+// Each agent's usage profile selects a discovery filter. "custom"
+// (Everything) leaves the catalog unfiltered. Saved credentials remain
+// visible independently of discovery.
 //
 // This mapping is intentionally small and conservative: a "home" user
 // still gets LLM keys (otherwise nothing works), and a "work" user
@@ -16,11 +16,23 @@
 // office toolbelt). "dev" sees everything, same as "custom".
 
 import type { IntegrationCategory } from "@/lib/stores/integrations";
-import type { UserPreset } from "@/lib/stores/user-profile";
+import type { UsageProfile } from "@/lib/agents/usage-profile";
+import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
 
-export const PRESET_CATEGORIES: Record<UserPreset, ReadonlySet<IntegrationCategory> | null> = {
+export const PRESET_CATEGORIES: Record<UsageProfile, ReadonlySet<IntegrationCategory> | null> = {
   home: new Set<IntegrationCategory>(["llm", "mail", "calendar", "chat", "other"]),
   work: new Set<IntegrationCategory>(["llm", "mail", "calendar", "issue-tracker", "infrastructure", "other"]),
   dev: null,    // null = show all
   custom: null, // null = show all
 };
+
+export function filterIntegrationsForProfile(
+  definitions: IntegrationDefinition[],
+  statuses: Record<string, IntegrationStatus>,
+  profile: UsageProfile,
+): IntegrationDefinition[] {
+  const allowed = PRESET_CATEGORIES[profile];
+  return allowed === null ? definitions : definitions.filter((definition) =>
+    !definition.category || allowed.has(definition.category) || statuses[definition.name]?.configured === true,
+  );
+}

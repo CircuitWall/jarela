@@ -1,3 +1,5 @@
+import type { UsageProfile } from "@/lib/agents/usage-profile";
+
 export interface AgentInfo {
   id: string;
   name: string;
@@ -8,6 +10,7 @@ export interface AgentInfo {
 export const DEFAULT_HOT_TURN_LIMIT = 12;
 
 export interface AgentConfig {
+  usage_profile?: UsageProfile;
   id: string;
   name: string;
   icon: string | null;
@@ -26,6 +29,7 @@ export interface AgentConfig {
   adaptive_empathy: number;
   adaptive_expressiveness: number;
   adaptive_verbosity: number;
+  /** @deprecated Compatibility only; does not affect style or prompts. */
   adaptive_mbti: string;
   voice_enabled: boolean;
   voice_model: string;
@@ -102,6 +106,7 @@ export interface AgentConfig {
 export type CitationStrictness = "off" | "informational" | "standard" | "strict";
 
 export interface AgentConfigIn {
+  usage_profile?: UsageProfile;
   name: string;
   icon?: string | null;
   identity?: string;
@@ -119,6 +124,7 @@ export interface AgentConfigIn {
   adaptive_empathy?: number;
   adaptive_expressiveness?: number;
   adaptive_verbosity?: number;
+  /** @deprecated Compatibility only; does not apply style presets. */
   adaptive_mbti?: string;
   voice_enabled?: boolean;
   voice_model?: string;

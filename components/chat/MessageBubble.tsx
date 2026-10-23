@@ -19,6 +19,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { stripDeclaredReferencesFence } from "@/api/message-content";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownContent, ContentPartView } from "./MessageContent";
+import { USAGE_PROFILES } from "@/lib/agents/usage-profile";
 
 interface ExtractedRef {
   title: string;
@@ -444,6 +445,7 @@ type Props = {
   // When false, suppress the inline ToolList for this message. Driven by
   // the chat-panel filter toolbar's `tool_use` toggle.
   showToolEvents?: boolean;
+  showDiagnostics?: boolean;
   // Thread-level fallback for the ContextUsageBar baseline when a row's
   // usage snapshot predates the per-row context_window_tokens column.
   contextWindowTokens?: number | null;
@@ -1023,7 +1025,8 @@ function messageTextForCopy(content: string | ContentPart[]): string {
 // reconciliations per character. Props are pure data (no callbacks), and
 // `messages` array preserves identity for unchanged rows after the
 // `concat` in handleDone, so default shallow-equality is enough.
-export const MessageBubble = memo(function MessageBubble({ message, attachedActivity, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null, isLatest = false, onRetry }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, attachedActivity, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, showDiagnostics, contextWindowTokens = null, isLatest = false, onRetry }: Props) {
+  const diagnosticsVisible = showDiagnostics ?? !USAGE_PROFILES[agentConfig?.usage_profile ?? "custom"].compactChat;
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
@@ -1437,7 +1440,7 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
               {streaming && <span className="jarela-stream-caret" aria-hidden="true" />}
             </div>
           )}
-          {!isUser && !streaming && "usage" in message && message.usage && (contextWindowTokens ?? message.usage.context_window_tokens) ? (
+          {diagnosticsVisible && !isUser && !streaming && "usage" in message && message.usage && (contextWindowTokens ?? message.usage.context_window_tokens) ? (
             <div className="-mx-4 -mb-3 mt-3">
               <ContextUsageBar
                 usage={message.usage}
@@ -1466,15 +1469,14 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
             {message.status === 'steering' ? "Steering…" : "Sending…"}
           </span>
         )}
-        {((!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0)
-          || routingDecision
-          || memoryRecall) && (
+        {((!isUser && !streaming && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0)
+          || (diagnosticsVisible && (routingDecision || memoryRecall))) && (
           <div className="mt-1 flex w-full min-w-0 flex-col items-start gap-1">
-            {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
-              <ToolList events={message.tool_events} />
+            {!isUser && !streaming && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
+              <ToolList events={message.tool_events} errorsOnly={!diagnosticsVisible || !showToolEvents} />
             )}
-            {routingDecision && <RoutingDecisionSummary decision={routingDecision} />}
-            {memoryRecall && (
+            {diagnosticsVisible && routingDecision && <RoutingDecisionSummary decision={routingDecision} />}
+            {diagnosticsVisible && memoryRecall && (
               <MemoryRecallBadge memoryHits={memoryRecall.memory_hits} messageHits={memoryRecall.message_hits} />
             )}
           </div>

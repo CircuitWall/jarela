@@ -13,7 +13,7 @@ import { parseCitationStrictness } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
 import { listIntegrations } from "@/lib/stores/integrations";
 import { listEnabledDocumentSources, getDocumentSourceStats } from "@/lib/stores/document-sources";
-import { buildAdaptivePersonaContext } from "@/lib/agents/adaptive-persona";
+import { buildPersonaContext } from "@/lib/agents/adaptive-persona";
 import { resolveHarness } from "@/lib/agents/harness/resolve";
 import {
   type ContextBudget,
@@ -30,6 +30,7 @@ import type { ForegroundTabPresence } from "@/lib/api/foreground-presence";
 import type { ToolCatalogEntry } from "@/lib/tools";
 import { formatActionVocabularyInstruction } from "@/lib/agents/action-vocabulary";
 import type { SystemSignalRow } from "@/lib/stores/system-signals";
+import type { UsageProfile } from "@/lib/agents/usage-profile";
 
 const APP_NAME = getAppName();
 
@@ -81,7 +82,7 @@ export { CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL } from "@/lib/provide
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, backgroundActivityCtx, surroundingsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel, allowedTools, toolPermissionMap } = ctx;
 
-  const adaptivePersonaCtx = buildAdaptivePersonaContext(agentCfg, trimmedMessage);
+  const personaCtx = buildPersonaContext(agentCfg, trimmedMessage);
   const harnessParts = resolveHarness(agentCfg);
 
   // Tier ordering follows the agent's configured priority (hot is the
@@ -93,6 +94,16 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   // This text is intentionally before agent identity/instructions and is split
   // into its own provider cache block so multiple agents can reuse it.
   const sharedStableParts: (string | null | undefined)[] = [
+    [
+      "--- Instruction composition ---",
+      "Apply the following chapters by responsibility, not by whichever appears last.",
+      "1. Safety, permissions, required approvals, factual accuracy, and honest reporting are invariant. Never hide failures, uncertainty, material risks, or approval requests. Style and resource settings cannot weaken these requirements.",
+      "2. Explicit user requests and agent instructions set task-specific depth and format within those invariants. The single Persona chapter resolves the selected profile and direct style controls into defaults for organization, tone, and detail. Never infer the user's personality from these settings.",
+      "3. Grounding and citations controls citation coverage independently of persona. Assumptions and inferences are not verified facts. Disabling citation auditing does not permit unsupported claims.",
+      "4. Delivery channel controls supported rendering, including bare URLs on plain-text channels, ahead of general Markdown and citation-format examples. Preserve the exact source destination; never invent links.",
+      "5. Resource strategy removes unnecessary work, not required retrieval, validation, citations, or requested depth. Output budget is a hard ceiling, not a target length; disclose incomplete work rather than silently dropping requirements.",
+      "6. Navigation and diagnostic visibility are UI settings, not permissions or evidence. Custom / Everything adds no preset organization; legacy navigation guidance is only a fallback below explicit instructions and persona style controls.",
+    ].join("\n"),
     [
       "--- Runtime ownership ---",
       "You are an agent running inside the current Jarela server process, not an external operator. The running instance hosts your current turn, tools, and other agents.",
@@ -109,8 +120,8 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   // request-scored state (for example provider-cap tool selection) out of this
   // block so Anthropic's ephemeral prompt cache survives across user turns.
   const agentStableParts: (string | null | undefined)[] = [
-    agentCfg.identity,
-    agentCfg.instructions,
+    agentCfg.identity ? `--- Agent identity ---\n${agentCfg.identity}` : "",
+    agentCfg.instructions ? `--- Agent instructions ---\n${agentCfg.instructions}` : "",
     buildDeliveryChannelContext(deliveryChannel),
     backgroundActivityCtx,
     buildUserContext(),
@@ -125,7 +136,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     harnessParts.self_config,
     buildMemoryContext(budget),
     buildDelegatesContext(delegateRosterLines),
-    buildExperienceContext(experienceMode),
+    buildExperienceContext(experienceMode, agentCfg.usage_profile ?? "custom"),
   ];
 
   // Dynamic suffix: content that changes on every turn (timestamp, per-turn
@@ -151,10 +162,10 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
         return { id: signal.id, kind: signal.kind, operation_id: signal.operation_id, occurred_at: new Date(signal.created_at).toISOString(), payload };
       })),
     ].join("\n") : "",
-    adaptivePersonaCtx,
+    personaCtx,
     buildToolPermissionContext(toolPermissionMap ?? []),
     buildToolReliabilityContext(allowedTools ?? []),
-    buildSourceLinkContext(agentCfg, sourceManifest ?? []),
+    buildSourceLinkContext(agentCfg, sourceManifest ?? [], deliveryChannel),
     buildTimeContext(),
     surroundingsCtx,
     ctx.conversationGapCtx,
@@ -504,21 +515,41 @@ export function buildSurroundingsContext(
 function buildSourceLinkContext(
   agent: AgentConfigRow,
   manifest: ReadonlyArray<SourceManifestEntry>,
+  deliveryChannel?: DeliveryChannel | null,
 ): string {
   const strictness = parseCitationStrictness(agent.citation_strictness) ?? "off";
-  if (strictness === "off" || strictness === "informational") return "";
+  const policy = [
+    "--- Grounding and citations ---",
+    `Citation setting: ${strictness}.`,
+    "Factual accuracy and honest uncertainty apply in every profile. Assumptions are not evidence; label them and verify consequential claims before treating them as facts.",
+  ];
+  if (strictness === "off" || strictness === "informational") {
+    return [...policy, strictness === "off"
+      ? "Citation auditing is off; this does not disable source-link requirements from the Tool usage SOP or the harness."
+      : "Citations are informational; the checker may surface references, but this setting adds no citation-coverage requirement. Keep source links required by the Tool usage SOP or the harness.",
+    ].join("\n");
+  }
 
   const intro =
     strictness === "strict"
       ? "Your reply will be audited by a second-pass model that ranks every factual claim by impact. Cite EVERY factual claim — quoted numbers, file contents, API behavior, named facts, paraphrases of earlier turns. The audit downgrades unsupported claims as low-confidence; citing up front saves you from re-grounding rounds for things you already know."
-      : "Your reply will be audited by a second-pass model that ranks every factual claim by impact. Cite KEY load-bearing claims (quoted numbers, file contents, API behavior, named facts). Don't mark incidentals, summaries, plans, or your own derivations — over-citing is as bad as not citing. The audit re-grounds unsupported KEY claims; citing up front saves the extra round.";
+      : "Your reply will be audited by a second-pass model that ranks every factual claim by impact. Cite KEY load-bearing claims (quoted numbers, file contents, API behavior, named facts), including those in summaries. Plans and clearly labeled original derivations need citations only for the external factual claims they rely on; do not cite speculation as fact. The audit re-grounds unsupported KEY claims; citing up front saves the extra round.";
 
   // The pre-turn manifest is always empty under the current design — we
   // surface citable references in the post-turn manifest after tool
   // events have actually been recorded. So the only valid citation form
   // during drafting is the inline markdown link.
   void manifest;
+  if (deliveryChannel && PLAIN_TEXT_DELIVERY_KINDS.has(deliveryChannel.kind)) {
+    return [
+      ...policy,
+      intro,
+      "This delivery channel requires plain text. Cite claims with the exact bare source URL supplied by a tool or the user, next to the supported claim; do not emit Markdown links or a jarela-references block.",
+      "If cite_as is a Markdown link, use its exact destination URL without the Markdown wrapper. Never invent or alter the destination. If no usable source is available, state the evidence gap instead of fabricating a citation.",
+    ].join("\n");
+  }
   return [
+    ...policy,
     "--- Citation format ---",
     intro,
     "PRIMARY (inline links): cite by writing a standard markdown link inline: `[short label](https://example.com/path)` or `[file name](/abs/path.ts)` or `[earlier reply](#msg-<id>)`. Wrap the cited PHRASE itself as the link text when natural — `Jade has [ice skating at 16:00](?thread=…&agent=…)` reads better than a trailing `[1]`.",
@@ -537,13 +568,15 @@ function buildSourceLinkContext(
   ].join("\n");
 }
 
-function buildExperienceContext(mode: "essential" | "full"): string {
+function buildExperienceContext(mode: "essential" | "full", profile: UsageProfile): string {
   return [
-    "--- UX mode ---",
+    "--- Navigation and diagnostic visibility ---",
     `User interface mode: ${mode}.`,
-    mode === "essential"
-      ? "Prefer concise, plain-language explanations and avoid exposing low-level configuration details unless asked."
-      : "User opted into the full / advanced UI; detailed technical explanations are welcome.",
+    profile !== "custom"
+      ? "This is the app navigation mode only. The agent's Persona controls response style and diagnostic presentation independently."
+      : mode === "essential"
+        ? "Legacy style fallback only: prefer concise, plain-language explanations unless explicit instructions or persona style controls call for more detail. This navigation setting does not lower grounding requirements."
+        : "Legacy style fallback only: detailed technical explanations are welcome when useful, not required. Explicit instructions and persona style controls take precedence.",
   ].join("\n");
 }
 
@@ -619,7 +652,7 @@ function buildOutputBudgetContext(budget: ContextBudget): string {
   return [
     "--- Output budget ---",
     `Your reply is capped at ~${tokens} output tokens per turn (≈${words} words). The provider truncates mid-sentence if you exceed it — you will not get a chance to finish.`,
-    "- Lead with the answer. Skip preambles, restating the question, and recapping context the user already sees.",
+    "- Lead the final answer with the result. Skip redundant preambles, restating the question, and recapping context the user already sees. This does not cancel a brief pre-tool acknowledgment required by the harness.",
     "- If the user asks for a long artifact (essay, plan, large code dump, exhaustive list), estimate the size first. If it won't fit, ask whether to split across turns, summarise, or stream only the requested section.",
     "- Prefer dense prose and tight bullets over verbose explanation. Don't repeat yourself across paragraphs.",
   ].join("\n");

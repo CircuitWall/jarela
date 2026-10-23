@@ -2,23 +2,24 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MessageList } from "./MessageList";
-import type { Message } from "@/api/types";
+import type { AgentConfig, Message } from "@/api/types";
 
 const renderCounts = vi.hoisted(() => new Map<string, number>());
 vi.mock("./MessageBubble", () => ({
-  MessageBubble: ({ message, attachedActivity, showAvatar, showToolEvents }: {
+  MessageBubble: ({ message, attachedActivity, showAvatar, showToolEvents, showDiagnostics }: {
     message: Pick<Message, "id" | "content">;
     attachedActivity?: { source_kind: string };
     showAvatar?: boolean;
     showToolEvents?: boolean;
+    showDiagnostics?: boolean;
   }) => {
     renderCounts.set(message.id, (renderCounts.get(message.id) ?? 0) + 1);
-    return <div data-activity-kind={attachedActivity?.source_kind} data-show-avatar={String(showAvatar)} data-show-tool-events={String(showToolEvents)}>{message.content}</div>;
+    return <div data-activity-kind={attachedActivity?.source_kind} data-show-avatar={String(showAvatar)} data-show-tool-events={String(showToolEvents)} data-show-diagnostics={String(showDiagnostics)}>{message.content}</div>;
   },
 }));
 
 vi.mock("./ToolList", () => ({
-  ToolList: () => <div data-testid="tool-list">tools</div>,
+  ToolList: ({ errorsOnly }: { errorsOnly?: boolean }) => errorsOnly ? null : <div data-testid="tool-list">tools</div>,
 }));
 
 function mkMessage(id: string, role: "user" | "assistant", content: string, created_at: string): Message {
@@ -68,6 +69,44 @@ function installPointerCapture(button: HTMLButtonElement) {
 }
 
 describe("MessageList conversation focus", () => {
+  it.each(["home", "work"] as const)("keeps %s chat-first with revealable live and persisted diagnostics", (usage_profile) => {
+    const messages = [mkMessage("profile-message", "assistant", "Short answer", "2026-10-23T12:00:00.000Z")];
+    const agentConfig = { id: `profile-${usage_profile}`, usage_profile } as AgentConfig;
+    const { container } = render(
+      <MessageList messages={messages} agentConfig={agentConfig} streaming
+        thinkingContent="Diagnostic reasoning"
+        toolEvents={[{ id: "call-1", phase: "call", name: "test_tool", payload: {} }]}
+      />,
+    );
+    expect(screen.getByText("Short answer")).toBeTruthy();
+    expect(container.querySelector('[data-show-diagnostics="false"]')).toBeTruthy();
+    expect(screen.queryByText("Diagnostic reasoning")).toBeNull();
+    expect(screen.queryByTestId("tool-list")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show technical details" })).toBeNull();
+    const controls = screen.getByRole("button", { name: /Filters & focus/ });
+    expect(controls.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(controls);
+    fireEvent.click(screen.getByRole("button", { name: "Show technical details" }));
+    expect(container.querySelector('[data-show-diagnostics="true"]')).toBeTruthy();
+    expect(screen.getByTestId("tool-list")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Filters & focus/ }).textContent).toContain("Details on");
+    fireEvent.click(screen.getByRole("button", { name: "Hide technical details" }));
+    expect(container.querySelector('[data-show-diagnostics="false"]')).toBeTruthy();
+    expect(screen.queryByTestId("tool-list")).toBeNull();
+    fireEvent.click(controls);
+    expect(screen.queryByRole("button", { name: "Show technical details" })).toBeNull();
+    expect(controls.textContent).toContain("Chat only");
+  });
+
+  it("shows developer diagnostics regardless of the Home reveal state", () => {
+    const messages = [mkMessage("profile-dev", "assistant", "Verified answer", "2026-10-23T12:00:00.000Z")];
+    const { container } = render(
+      <MessageList messages={messages} agentConfig={{ id: "dev", usage_profile: "dev" } as AgentConfig} />,
+    );
+    expect(container.querySelector('[data-show-diagnostics="true"]')).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show technical details" })).toBeNull();
+  });
+
   it("shows only the latest retry message and treats hidden-only history as empty", () => {
     const previousAttempt = mkMessage("retry-old", "user", "Please draft a plan.", "2026-10-21T08:00:00.000Z");
     previousAttempt.metadata = { hidden_from_chat: true };
