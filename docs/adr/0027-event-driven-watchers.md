@@ -117,6 +117,9 @@ chat-panel filter toolbar can group/hide them.
 * **Built-in tools only.** Watchers refuse to schedule MCP / external
   tools — the scheduler has no per-request context, so any tool that
   needs a thread/agent context can't be polled safely.
+* **Read-only tools only.** Every poll repeats the call, so watchers
+  refuse write and execute tools on the tool and HTTP surfaces, and the
+  poller refuses them for older rows.
 * **Interval floor of 60 s.** A runaway watcher otherwise hammers
   providers; enforced in both the store (`clampInterval`) and the zod
   schemas on the HTTP + tool surfaces.

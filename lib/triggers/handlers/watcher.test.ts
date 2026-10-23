@@ -125,6 +125,23 @@ describe("watcherHandler (ADR-0027)", () => {
     errSpy.mockRestore();
   });
 
+  it("never invokes a write-capability tool registered by an older watcher row", async () => {
+    let writes = 0;
+    registerTools("Files", "write", [tool(
+      async () => { writes += 1; return `write ${writes}`; },
+      { name: "watcher_test_write", description: "test-only write", schema: z.object({}).passthrough() },
+    )]);
+    const w = createWatcher({
+      agent_id: "a", label: "unsafe", tool_name: "watcher_test_write", interval_seconds: 60,
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const firings = await watcherHandler.getDueFirings(new Date(Date.parse(w.next_run_at) + 1));
+    expect(firings).toHaveLength(0);
+    expect(writes).toBe(0);
+    expect(getWatcher(w.id)!.last_error).toMatch(/read-only/);
+    errSpy.mockRestore();
+  });
+
   // ADR-0030 — the firing prompt's trailing directive comes from
   // `reaction_prompt` when set; otherwise it falls back to the default.
   it("substitutes reaction_prompt for the default directive when set", async () => {

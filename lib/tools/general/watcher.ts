@@ -5,7 +5,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { registeredTools } from "../runtime/registry";
+import { registeredCapability, registeredTools } from "../runtime/registry";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import {
   createWatcher,
@@ -50,6 +50,12 @@ export const scheduleWatcherTool = tool(
     if (!target) {
       return JSON.stringify({
         error: `Tool "${toolName}" is not a built-in tool. Watchers can only poll built-in tools.`,
+      });
+    }
+    const capability = registeredCapability(toolName);
+    if (capability !== "read") {
+      return JSON.stringify({
+        error: `Tool "${toolName}" has ${capability ?? "unknown"} capability. Watchers can only poll read-only tools, because every poll repeats the call.`,
       });
     }
     try {
@@ -101,6 +107,7 @@ export const scheduleWatcherTool = tool(
       "watcher instead.\n\n" +
       "LIMITS (be honest with the user about these):\n" +
       "  • Built-in tools only (no MCP / external tools — scheduler runs without per-request context).\n" +
+      "  • Read-only tools only: every poll repeats the call, so write/execute tools are refused.\n" +
       "  • Minimum interval 60 seconds.\n" +
       "  • Diff is byte-exact SHA-256 of the tool's stringified result. If the tool " +
       "returns volatile fields (e.g. `updated` timestamps, view counts) the watcher " +
