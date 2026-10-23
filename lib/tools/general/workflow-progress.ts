@@ -22,6 +22,7 @@ const workflowProgressSchema = z.object({
     validation: z.string().trim().min(1).max(500).describe("A concrete check for confirming the expected output."),
     validation_evidence: z.string().trim().min(1).max(500).optional(),
     status: workflowItemStatusSchema.optional(),
+    needs_user: z.boolean().optional().describe("Set true on a needs_attention item that only the user can unblock; it is then not retried automatically."),
   })).max(12).optional().describe("For agent-created workflows, send the complete current checklist snapshot on every update. Every item requires input, output, and validation; completed items also require observed validation_evidence. Omitted item statuses default to pending."),
   item_id: z.string().optional().describe("Optional checklist item id to update."),
   status: workflowItemStatusSchema.optional().describe("For version_adoption only: checklist item status. Requires item_id."),
@@ -30,7 +31,7 @@ const workflowProgressSchema = z.object({
   summary: z.string().max(300).optional().describe("Optional short workflow summary shown in the chat checklist."),
   detail: z.string().max(300).optional().describe("Optional live progress text to stream immediately to the UI."),
   needs_attention_reason: z.string().max(300).optional().describe("Optional reason shown when the item or workflow needs user attention."),
-  needs_user: z.boolean().optional().describe("For version_adoption only: set true when item_id cannot progress without the user's input or approval."),
+  needs_user: z.boolean().optional().describe("For version_adoption: set true when item_id cannot progress without the user's input or approval. Agent-created workflows set needs_user on the item instead."),
 });
 
 function versionAdoptionPhase(phase: string | undefined): "impact_radius" | "adoption" | "complete" | undefined {
@@ -58,6 +59,13 @@ export const workflowProgressTool = tool(
           ok: false,
           workflow_id: input.workflow_id,
           error: "Every completed workflow item requires observed validation_evidence.",
+        });
+      }
+      if (input.items.some((item) => item.needs_user && item.status !== "needs_attention")) {
+        return JSON.stringify({
+          ok: false,
+          workflow_id: input.workflow_id,
+          error: "needs_user is only valid on items with status needs_attention.",
         });
       }
       if (input.item_id || input.status) {
