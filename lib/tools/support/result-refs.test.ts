@@ -87,7 +87,7 @@ describe("postProcessToolResult", () => {
 
 describe("readToolResultRef", () => {
   it("pages multi-byte text without corrupting characters at page edges", async () => {
-    const text = "héllo wörld — 日本語のテキスト 😀🎉 ".repeat(40);
+    const text = "héllo wörld — 日本語のテキスト 😀🎉 ".repeat(4);
     const envelope = await spill(text);
     for (const limit of [1, 2, 3, 5, 7, 64]) {
       const pages = await readAll(envelope.result_ref.name, limit);

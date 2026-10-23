@@ -10,26 +10,82 @@ import type { ToolConfig } from "../filesystem/workspace-context";
 import { currentWorkspace } from "../filesystem/workspace-context";
 import { withStreamDefault } from "../support/tool-metadata";
 
-// Evict idle sessions every 60 s. .unref() so this timer doesn't keep Node alive.
-setInterval(() => evictIdleSessions(getConfig().terminalIdleTtlMs), 60_000).unref();
-
 const DEFAULT_SHELL = platform() === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
+const pendingSendInput = new Map<string, string>();
+
+// Evict idle sessions every 60 s. .unref() so this timer doesn't keep Node alive.
+setInterval(() => {
+  evictIdleSessions(getConfig().terminalIdleTtlMs);
+  const activeIds = new Set(listSessions().map((session) => session.sessionId));
+  for (const sessionId of pendingSendInput.keys()) {
+    if (!activeIds.has(sessionId)) pendingSendInput.delete(sessionId);
+  }
+}, 60_000).unref();
 
 function checkCommand(command: string, allowUnsafe: boolean | undefined, mode: SafetyMode): string | null {
   const gate = checkExecAllowed(command, { mode, allowUnsafe, blockedByPattern: isBlockedExecCommand(command) });
   return gate.allowed ? null : (gate.reason ?? "command blocked by safety policy");
 }
 
-// Raw stdin typed into a shell is executed line by line, so every printable
-// line must pass the same gate as exec. Pure control input such as Ctrl-C is allowed.
-function checkSendInput(input: string, allowUnsafe: boolean | undefined, mode: SafetyMode): string | null {
-  for (const line of input.split(/\r\n|\r|\n/)) {
-    const printable = line.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").trim();
-    if (!printable) continue;
-    const deny = checkCommand(printable, allowUnsafe, mode);
-    if (deny) return deny;
+function isUnescapedTrailingCharacter(input: string, character: string): boolean {
+  let count = 0;
+  for (let i = input.length - 1; i >= 0 && input[i] === character; i--) count++;
+  return count % 2 === 1;
+}
+
+function continuesShellInput(input: string): boolean {
+  const line = input.slice(input.lastIndexOf("\n") + 1).trimEnd();
+  return (
+    isUnescapedTrailingCharacter(line, "\\") ||
+    isUnescapedTrailingCharacter(line, "`") ||
+    isUnescapedTrailingCharacter(line, "^") ||
+    /(?:&&|\|\||\|)$/.test(line)
+  );
+}
+
+function normalizeShellInput(input: string): string {
+  return input.replace(/\\\n|`\n|\^\n/g, "");
+}
+
+function checkSendInput(
+  sessionId: string,
+  input: string,
+  allowUnsafe: boolean | undefined,
+  mode: SafetyMode,
+): { deny: string | null; pending: string } {
+  const cancelled = input.includes("\x03");
+  const prior = cancelled ? "" : (pendingSendInput.get(sessionId) ?? "");
+  const printable = input.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").replace(/\r\n?/g, "\n");
+  const combined = prior + printable;
+  const lines = combined.split("\n");
+  const hasTrailingNewline = combined.endsWith("\n");
+  const completeLines = lines.length - 1;
+  let pending = "";
+
+  for (let i = 0; i < completeLines; i++) {
+    pending += lines[i];
+    if (continuesShellInput(pending)) {
+      pending += "\n";
+      continue;
+    }
+    const command = normalizeShellInput(pending).trim();
+    if (command) {
+      const deny = checkCommand(command, allowUnsafe, mode);
+      if (deny) return { deny, pending: prior };
+    }
+    pending = "";
   }
-  return null;
+
+  if (!hasTrailingNewline) {
+    pending += lines[lines.length - 1];
+    const command = normalizeShellInput(pending).trim();
+    if (command) {
+      const deny = checkCommand(command, allowUnsafe, mode);
+      if (deny) return { deny, pending: prior };
+    }
+  }
+
+  return { deny: null, pending };
 }
 
 function clip(text: string, max = getConfig().execMaxOutputBytes): { value: string; truncated: boolean } {
@@ -128,6 +184,16 @@ async function execInTerminalSession(
   if (deny) return JSON.stringify({ exit_code: 126, stderr: deny, safety_mode: mode });
 
   const sid = session_id ?? implicitSessionId(config);
+  const unsafeAllowed = mode === "bypass" || (mode === "mostly_safe" && allow_unsafe === true);
+  if (pendingSendInput.has(sid) && !unsafeAllowed) {
+    return JSON.stringify({
+      exit_code: 126,
+      stderr: "Cannot execute while terminal input is incomplete. Send Ctrl-C to cancel it or pass allow_unsafe=true.",
+      safety_mode: mode,
+      session_id: sid,
+    });
+  }
+  pendingSendInput.delete(sid);
   const workspaceRoot = currentWorkspace(config)?.root;
 
   let session: TerminalSession;
@@ -174,14 +240,16 @@ async function sendToTerminalSession(
   if (!session) return JSON.stringify({ error: `No active session "${sid}"` });
 
   const mode = resolveSafetyMode();
-  const deny = checkSendInput(input, allow_unsafe, mode);
-  if (deny) return JSON.stringify({ error: deny, safety_mode: mode, session_id: sid });
+  const checked = checkSendInput(sid, input, allow_unsafe, mode);
+  if (checked.deny) return JSON.stringify({ error: checked.deny, safety_mode: mode, session_id: sid });
 
   try {
     session.send(input);
   } catch (err) {
     return JSON.stringify({ error: String(err) });
   }
+  if (checked.pending) pendingSendInput.set(sid, checked.pending);
+  else pendingSendInput.delete(sid);
 
   if (wait_ms && wait_ms > 0) {
     await new Promise((r) => setTimeout(r, wait_ms));
@@ -207,6 +275,7 @@ async function readTerminalSession(
 
 function closeTerminalSession({ session_id }: { session_id?: string }, config?: ToolConfig): string {
   const sid = session_id ?? implicitSessionId(config);
+  pendingSendInput.delete(sid);
   if (!getSession(sid)) return JSON.stringify({ error: `No active session "${sid}"`, session_id: sid });
   removeSession(sid);
   return JSON.stringify({ ok: true, session_id: sid });

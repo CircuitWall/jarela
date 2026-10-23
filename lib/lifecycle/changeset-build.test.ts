@@ -71,7 +71,19 @@ describe("writeReleaseChangeset", () => {
       web_search: { description: "Search.", parameters: { type: "object", properties: { query: {} }, required: ["query"] } },
     }, { "system.Rules": { source: "s.ts", text: "be careful" } });
 
-    const entry = writeReleaseChangeset({ root, version: "2.3.0", nextSnapshot: next, date: "2026-02-01" });
+    const gitEnv = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"] as const;
+    const savedGitEnv = new Map(gitEnv.map((key) => [key, process.env[key]]));
+    for (const key of gitEnv) delete process.env[key];
+    let entry: ReturnType<typeof writeReleaseChangeset>;
+    try {
+      entry = writeReleaseChangeset({ root, version: "2.3.0", nextSnapshot: next, date: "2026-02-01" });
+    } finally {
+      for (const key of gitEnv) {
+        const value = savedGitEnv.get(key);
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
 
     expect(entry).toMatchObject({ version: "2.3.0", previous_version: "2.2.0", commits: [] });
     expect(entry.hints).toHaveLength(2);

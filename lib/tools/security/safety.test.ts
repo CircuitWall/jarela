@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { checkExecAllowed, checkFsAllowed, isBlockedExecCommand, resolveSafetyMode } from "./safety";
 
 describe("isBlockedExecCommand", () => {
-  it.each(["rm -rf /", "rm -rf / ", "rm -rf /*", "sudo rm -rf / --no-preserve-root", "rm -rf /usr", "shutdown -h now", "mkfs.ext4 /dev/sda1"])(
+  it.each(["rm -rf /", "rm -rf / ", "rm -rf /*", "rm -rf '/'", 'rm -rf "/"', "sudo rm -rf / --no-preserve-root", "rm -rf /usr", "rm -rf \\\n/", "shutdown -h now", "mkfs.ext4 /dev/sda1"])(
     "blocks %j",
     (command) => expect(isBlockedExecCommand(command)).toBe(true),
   );
