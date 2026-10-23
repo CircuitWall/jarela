@@ -561,6 +561,23 @@ sequenceDiagram
 | Stream resilience | reattach within seconds of network change | EventSource auto-reconnect + 4000-event replay buffer in `lib/agents/run-registry.ts` (ADR-0008) |
 | CI on every push | required | `.github/workflows/ci.yml`: lint + tsc + build + live integration suite |
 
+## Release documentation boundary
+
+The manually dispatched `.github/workflows/release-docs.yml` runs a pinned
+Copilot CLI against a previous stable tag and exact main SHA. It uses a
+Copilot-enabled secret in a read-permission generation job, then passes a
+validated documentation-only patch to a separate PR-writing job. A maintainer,
+not the model, reviews and merges the PR. Accepted decisions live in
+`docs/releases/<version>.json`.
+
+`scripts/release-docs.mjs` provides the deterministic record/scope checks shared
+by ordinary PR CI, nightly preparation/resume/tagging, and app-tag publishing.
+Source changes invalidate reviews; documentation and narrowly allowed generated
+release metadata/version-only bumps may follow them. Missing or stale reviews
+block publication. Neither CI nor the nightly scheduler starts paid AI sessions.
+This optional authoring service is outside the Jarela process and stores no app
+state. See [ADR-0106](adr/0106-on-demand-release-documentation.md).
+
 ## External Dependencies
 
 | Dependency | Purpose | Failure mode |
@@ -572,6 +589,7 @@ sequenceDiagram
 | User shell rc (`~/.zshrc`/`~/.bashrc`) on macOS/Linux, User-scope env on Windows | Source for credential env vars (ADR-0016); probed at boot + on demand | Probe failure surfaces a warning, app falls back to whatever is already in `process.env`; tools surface "not configured" via the existing env-then-DB resolver |
 | GitHub API (`api.github.com`) | Native `github_*` tools — issues, PRs, repos (ADR-0015); Copilot OAuth for the model provider | Tool call returns the API error; agent can recover or skip |
 | SQLite (local) | Persistence | Fatal — startup fails fast with clear error |
+| Copilot CLI / GitHub Copilot (release infrastructure only) | On-demand documentation proposals with a 50-credit soft session limit | Explicit workflow failure; release stays blocked until a reviewed record is merged; manual documentation PRs remain available |
 
 ## Decisions
 

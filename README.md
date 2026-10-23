@@ -110,6 +110,12 @@ Full docs are organized under the docs site and source docs folder:
 - [API reference](docs/api.md)
 - [Contributing](CONTRIBUTING.md)
 
+App publication requires a version-to-version documentation review. Maintainers
+can manually run Copilot to propose a documentation PR; ordinary CI and nightly
+releases never start paid AI sessions. See the
+[on-demand release documentation workflow](CONTRIBUTING.md#on-demand-release-documentation).
+This is development/release infrastructure, not a cloud dependency of the app.
+
 ## Modular design
 
 Jarela is a single Next.js process organized around domain modules and explicit runtime boundaries:

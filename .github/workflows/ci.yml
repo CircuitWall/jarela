@@ -23,6 +23,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  documentation:
+    name: Release documentation gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Validate documentation records and release version changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          RELEASE_VALIDATION: ${{ inputs.release_validation }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_VALIDATION" = "true" ]; then
+            node scripts/release-docs.mjs check "$(node -p 'require("./package.json").version')"
+          elif [ "$EVENT" = "workflow_dispatch" ]; then
+            git fetch origin main
+            node scripts/release-docs.mjs pr "$(git merge-base HEAD origin/main)"
+          elif [[ -n "$BASE_SHA" && ! "$BASE_SHA" =~ ^0+$ ]]; then
+            node scripts/release-docs.mjs pr "$BASE_SHA"
+          else
+            echo "::error::Cannot resolve the base for documentation validation."
+            exit 1
+          fi
+
   conventions:
     name: Commit and PR conventions
     runs-on: ubuntu-latest

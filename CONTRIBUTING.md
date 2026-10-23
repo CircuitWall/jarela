@@ -198,7 +198,8 @@ At 03:00 UTC, `.github/workflows/nightly-release.yml` checks `main` for commits
 since the latest reachable `vX.Y.Z` tag. If there are no new commits, it does
 nothing. Otherwise it applies the app versioning rule above and generates the
 version bump, changelog entry, and adoption changeset in a `chore/release-*`
-PR. It dispatches CI for that PR because pushes made with `GITHUB_TOKEN` do
+PR, but only after a version-bound documentation review has been merged
+(see below). It dispatches CI for that PR because pushes made with `GITHUB_TOKEN` do
 not start PR workflows. It rebases and merges only after the required
 `Lint, typecheck, build` check and release changeset check pass, then tags the
 merged commit and dispatches `.github/workflows/release.yml`.
@@ -212,11 +213,100 @@ The workflow opens its PR with `GITHUB_TOKEN`, so the repository must enable
 pull requests**. If PR creation fails, the workflow deletes the release branch
 it pushed so the next run can start clean.
 
+### On-demand release documentation
+
+Documentation generation is **manual only**. Nightly releases and ordinary CI
+never invoke Copilot or spend AI credits. A missing or stale review blocks the
+release rather than silently generating one or bypassing documentation.
+
+One-time setup:
+
+1. Enable Actions PR creation using the repository setting above.
+2. Add the Actions repository secret `COPILOT_DOCS_TOKEN`: a fine-grained PAT
+   belonging to an account with Copilot CLI access and the **Copilot Requests**
+   account permission. Do not grant this token repository-write privileges;
+   the separate PR-writing job uses `GITHUB_TOKEN`. Organizational Copilot
+   policies must permit CLI use. Never paste the token into a prompt, PR, or log.
+3. Check the token owner's Copilot allowance and additional-usage budget.
+   The workflow sets `--max-ai-credits 50` (nominally $0.50 at current credit
+   pricing), but this is a **soft cap**: a final model response can exceed it.
+   Disable paid additional usage if you need to prevent overage charges.
+   Standard Actions runners are free for this public repository.
+
+For each app release:
+
+1. Read the intended version from the nightly plan, or choose the human-owned
+   major version. Under **Actions > Release documentation > Run workflow**,
+   select `main` and enter that stable version, without `v`. Alternatively:
+   ```bash
+   gh workflow run release-docs.yml --ref main -f version=X.Y.Z
+   ```
+   This is the only trigger that starts the paid Copilot step. Do not dispatch
+   it unless you intend to use the token owner's AI allowance.
+2. **Input:** the workflow resolves the previous reachable stable version tag
+   and exact main SHA. **Output:** Copilot proposes necessary public Markdown
+   edits plus `docs/releases/X.Y.Z.json`. The decision is either `updated`,
+   listing documentation actually changed since the previous tag, or
+   `unnecessary`, with an explicit substantive rationale. Existing documentation
+   updates in the release range can satisfy the updated decision.
+3. **Validation:** the workflow rejects non-documentation edits, checks the
+   record's version and source, scans for secrets/sensitive terms, opens a PR,
+   and explicitly dispatches CI. A maintainer must inspect the documentation,
+   evidence, and decision, then merge it. Copilot never approves or merges it.
+   CI proves record structure and provenance, not semantic completeness.
+4. Retry the nightly workflow with `dry_run=false`, or continue the human-owned
+   release. CI and app-tag publication both enforce the documentation gate.
+   New source, dependency, or configuration changes invalidate the review;
+   documentation and generated release metadata/version-only bumps do not.
+
+Retries reuse an accepted review or an open PR for the same version and source,
+without another AI session. If main advances during generation, the workflow
+fails before pushing; dispatch a fresh review. If an older source PR remains
+open, close it when replacing it with a current review. If a branch exists
+without a PR, inspect/clean up that branch before retrying; it is never
+overwritten. After a PR is opened, failed CI dispatch can be retried with
+`gh workflow run ci.yml --ref <documentation-branch>` without rerunning Copilot.
+Missing credentials, model failures, invalid output, and exhausted allowance
+fail explicitly and leave the release blocked.
+
+To check a merged review locally (no AI or network call):
+
+```bash
+node scripts/release-docs.mjs check X.Y.Z
+```
+
+For an audited manual alternative, create the same version-bound record and
+documentation edits in a normal PR; this does not require a Copilot credential.
+Run `node scripts/release-docs.mjs context X.Y.Z` on the intended source commit
+to obtain `version`, `previousTag`, and `reviewedSha`, then copy those exact
+values into this record shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "version": "X.Y.Z",
+  "previousTag": "vA.B.C",
+  "reviewedSha": "the full 40-character source commit SHA",
+  "decision": "updated",
+  "rationale": "Explain which version-to-version changes were reviewed and why these documentation changes cover them.",
+  "documentation": ["README.md"]
+}
+```
+
+Use `"decision": "unnecessary"` and `"documentation": []` only with a specific
+explanation of why no documentation changes are needed. For `"updated"`, list
+regular Markdown files actually changed since the previous tag. Commit the
+record, run the local check, and have a maintainer review the normal PR.
+See [ADR-0106](docs/adr/0106-on-demand-release-documentation.md) for the schema's
+trust boundaries and validation limits.
+
 ### Human-owned releases
 
 Use this process for breaking/major releases and workspace package releases:
 
 1. **Open a release PR** from `chore/release-<version>`:
+   - For app releases, first merge the version-to-version documentation review
+     above. Workspace package releases keep their existing tag-specific flow.
    - Bump `version` in `package.json` to the new `MAJOR.MINOR.PATCH`.
    - In `CHANGELOG.md`, promote `[Unreleased]` entries under a new heading
      `## [<version>] - YYYY-MM-DD`. Keep `[Unreleased]` empty above it.

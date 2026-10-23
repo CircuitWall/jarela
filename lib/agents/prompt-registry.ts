@@ -23,6 +23,7 @@ import { buildFabricationNudge, buildCitationRetryNudge } from "./retry-prompts"
 import { buildFirstRunAgentInstructions, buildFirstRunKickoff } from "./first-run-onboarding";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { renderDocumentationPrompt } from "../../scripts/release-docs.mjs";
 
 export interface StaticPrompt {
   id: string;
@@ -61,6 +62,16 @@ export function listStaticPrompts(): StaticPrompt[] {
   const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
   const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
   const prompts: StaticPrompt[] = [
+    {
+      id: "release.documentation-review",
+      source: "scripts/prompts/release-docs.txt",
+      purpose: "Proposes version-bound public documentation updates or a justified unnecessary decision for a human-reviewed release PR.",
+      text: renderDocumentationPrompt({
+        version: "2.5.4",
+        previousTag: "v2.5.3",
+        reviewedSha: "0123456789abcdef0123456789abcdef01234567",
+      }),
+    },
     {
       id: "skill.personal-briefing",
       source: "lib/skills/builtins/personal-briefing/SKILL.md",
