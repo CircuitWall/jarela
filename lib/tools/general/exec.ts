@@ -6,23 +6,11 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
-import { checkExecAllowed, resolveSafetyMode } from "../security/safety";
+import { checkExecAllowed, isBlockedExecCommand, resolveSafetyMode } from "../security/safety";
 import { TerminalSession } from "@/lib/terminal";
 import { getConfig } from "@/lib/env/config";
 import { currentWorkspace, type ToolConfig } from "../filesystem/workspace-context";
 import { withStreamDefault } from "../support/tool-metadata";
-
-const BLOCKED_PATTERNS = [
-  /\brm\s+-rf\s+\/\b/i,
-  /\bshutdown\b/i,
-  /\breboot\b/i,
-  /\bmkfs\b/i,
-  /:\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;/,
-];
-
-function isBlockedCommand(command: string): boolean {
-  return BLOCKED_PATTERNS.some((p) => p.test(command));
-}
 
 function clip(text: string, max = getConfig().execMaxOutputBytes): { value: string; truncated: boolean } {
   if (text.length <= max) return { value: text, truncated: false };
@@ -39,7 +27,7 @@ async function runLocalCommand(command: string, options: {
   if (!command.trim()) return JSON.stringify({ exit_code: 1, stderr: "command is required" });
 
   const mode = resolveSafetyMode();
-  const gate = checkExecAllowed(command, { mode, allowUnsafe: options.allow_unsafe, blockedByPattern: isBlockedCommand(command) });
+  const gate = checkExecAllowed(command, { mode, allowUnsafe: options.allow_unsafe, blockedByPattern: isBlockedExecCommand(command) });
   if (!gate.allowed) return JSON.stringify({ exit_code: 126, stderr: gate.reason, safety_mode: mode });
 
   const timeout = options.timeout_ms ?? 60_000;

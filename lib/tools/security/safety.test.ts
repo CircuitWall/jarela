@@ -1,5 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { checkExecAllowed, checkFsAllowed, resolveSafetyMode } from "./safety";
+import { checkExecAllowed, checkFsAllowed, isBlockedExecCommand, resolveSafetyMode } from "./safety";
+
+describe("isBlockedExecCommand", () => {
+  it.each(["rm -rf /", "rm -rf / ", "rm -rf /*", "sudo rm -rf / --no-preserve-root", "rm -rf /usr", "shutdown -h now", "mkfs.ext4 /dev/sda1"])(
+    "blocks %j",
+    (command) => expect(isBlockedExecCommand(command)).toBe(true),
+  );
+
+  it.each(["rm -rf ./build", "rm -rf node_modules", "ls /", "echo hello"])(
+    "allows %j",
+    (command) => expect(isBlockedExecCommand(command)).toBe(false),
+  );
+});
 
 const ORIGINAL = process.env.JARELA_TOOL_SAFETY;
 

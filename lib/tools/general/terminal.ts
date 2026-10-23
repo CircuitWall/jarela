@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { platform } from "node:os";
 import { TerminalSession, getSession, putSession, removeSession, listSessions, sessionCount, evictIdleSessions } from "@/lib/terminal";
 import { registerLangChainPackage } from "../packages/langchain-package";
-import { checkExecAllowed, resolveSafetyMode, type SafetyMode } from "../security/safety";
+import { checkExecAllowed, isBlockedExecCommand, resolveSafetyMode, type SafetyMode } from "../security/safety";
 import { getConfig } from "@/lib/env/config";
 import type { ToolConfig } from "../filesystem/workspace-context";
 import { currentWorkspace } from "../filesystem/workspace-context";
@@ -14,21 +14,22 @@ import { withStreamDefault } from "../support/tool-metadata";
 setInterval(() => evictIdleSessions(getConfig().terminalIdleTtlMs), 60_000).unref();
 
 const DEFAULT_SHELL = platform() === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
-const BLOCKED_PATTERNS = [
-  /\brm\s+-rf\s+\/\b/i,
-  /\bshutdown\b/i,
-  /\breboot\b/i,
-  /\bmkfs\b/i,
-  /:\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;/,
-];
-
-function isBlocked(command: string): boolean {
-  return BLOCKED_PATTERNS.some((p) => p.test(command));
-}
 
 function checkCommand(command: string, allowUnsafe: boolean | undefined, mode: SafetyMode): string | null {
-  const gate = checkExecAllowed(command, { mode, allowUnsafe, blockedByPattern: isBlocked(command) });
+  const gate = checkExecAllowed(command, { mode, allowUnsafe, blockedByPattern: isBlockedExecCommand(command) });
   return gate.allowed ? null : (gate.reason ?? "command blocked by safety policy");
+}
+
+// Raw stdin typed into a shell is executed line by line, so every printable
+// line must pass the same gate as exec. Pure control input such as Ctrl-C is allowed.
+function checkSendInput(input: string, allowUnsafe: boolean | undefined, mode: SafetyMode): string | null {
+  for (const line of input.split(/\r\n|\r|\n/)) {
+    const printable = line.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").trim();
+    if (!printable) continue;
+    const deny = checkCommand(printable, allowUnsafe, mode);
+    if (deny) return deny;
+  }
+  return null;
 }
 
 function clip(text: string, max = getConfig().execMaxOutputBytes): { value: string; truncated: boolean } {
@@ -121,6 +122,7 @@ async function execInTerminalSession(
   { session_id, command, timeout_ms, allow_unsafe }: { session_id?: string; command: string; timeout_ms?: number; allow_unsafe?: boolean },
   config?: ToolConfig,
 ): Promise<string> {
+  if (!command.trim()) return JSON.stringify({ exit_code: 1, stderr: "command is required" });
   const mode = resolveSafetyMode();
   const deny = checkCommand(command, allow_unsafe, mode);
   if (deny) return JSON.stringify({ exit_code: 126, stderr: deny, safety_mode: mode });
@@ -136,12 +138,16 @@ async function execInTerminalSession(
   }
 
   const result = await session.exec(command, timeout_ms ?? 60_000);
+  const stdout = clip(result.stdout);
+  const stderr = clip(result.stderr, 2_000);
+  const truncated = stdout.truncated || stderr.truncated;
 
   if (result.timedOut) {
     return JSON.stringify({
       exit_code: 124,
-      stdout: result.stdout,
-      stderr: result.stderr,
+      stdout: stdout.value,
+      stderr: stderr.value,
+      truncated,
       timed_out: true,
       session_id: sid,
       cwd: result.cwd,
@@ -151,20 +157,25 @@ async function execInTerminalSession(
 
   return JSON.stringify({
     exit_code: result.exitCode,
-    stdout: result.stdout,
-    stderr: result.stderr,
+    stdout: stdout.value,
+    stderr: stderr.value,
+    truncated,
     session_id: sid,
     cwd: result.cwd,
   });
 }
 
 async function sendToTerminalSession(
-  { session_id, input, wait_ms }: { session_id?: string; input: string; wait_ms?: number },
+  { session_id, input, wait_ms, allow_unsafe }: { session_id?: string; input: string; wait_ms?: number; allow_unsafe?: boolean },
   config?: ToolConfig,
 ): Promise<string> {
   const sid = session_id ?? implicitSessionId(config);
   const session = getSession(sid);
   if (!session) return JSON.stringify({ error: `No active session "${sid}"` });
+
+  const mode = resolveSafetyMode();
+  const deny = checkSendInput(input, allow_unsafe, mode);
+  if (deny) return JSON.stringify({ error: deny, safety_mode: mode, session_id: sid });
 
   try {
     session.send(input);
@@ -196,6 +207,7 @@ async function readTerminalSession(
 
 function closeTerminalSession({ session_id }: { session_id?: string }, config?: ToolConfig): string {
   const sid = session_id ?? implicitSessionId(config);
+  if (!getSession(sid)) return JSON.stringify({ error: `No active session "${sid}"`, session_id: sid });
   removeSession(sid);
   return JSON.stringify({ ok: true, session_id: sid });
 }
@@ -211,7 +223,7 @@ const terminalSchema = z.object({
   timeout_ms: z.number().optional().describe("Kill timeout in ms for action='run' or action='exec' (default 60000)."),
   wait_ms: z.number().optional().describe("Milliseconds to wait before reading output for action='send' or action='read'."),
   clear: z.boolean().optional().describe("Clear buffered output after action='read'."),
-  allow_unsafe: z.boolean().optional().describe("Bypass safety block for a single action='exec' call."),
+  allow_unsafe: z.boolean().optional().describe("Bypass the mostly_safe block for a single action='exec' or action='send' call."),
 });
 
 export const terminalTool = withStreamDefault(tool(
@@ -282,16 +294,17 @@ export const terminalExecTool = withStreamDefault(tool(
 // ── terminal_send ─────────────────────────────────────────────────────────────
 
 export const terminalSendTool = tool(
-  async ({ session_id, input, wait_ms }, config?: ToolConfig) =>
-    sendToTerminalSession({ session_id, input, wait_ms }, config),
+  async ({ session_id, input, wait_ms, allow_unsafe }, config?: ToolConfig) =>
+    sendToTerminalSession({ session_id, input, wait_ms, allow_unsafe }, config),
   {
     name: "terminal_send",
     description:
-      "Send raw bytes to an interactive process's stdin (e.g. answer a REPL prompt, send Ctrl-C via '\\x03'). Returns buffered stdout after wait_ms.",
+      "Send raw bytes to an interactive process's stdin (e.g. answer a REPL prompt, send Ctrl-C via '\\x03'). Typed lines pass the same safety policy as terminal_exec. Returns buffered stdout after wait_ms.",
     schema: z.object({
       input: z.string().describe("Raw input to send to stdin"),
       session_id: z.string().optional().describe("Session id (default: implicit per-thread session)"),
       wait_ms: z.number().optional().describe("Milliseconds to wait for output before returning (default 0)"),
+      allow_unsafe: z.boolean().optional().describe("Bypass the mostly_safe block for a single call"),
     }),
   },
 );
