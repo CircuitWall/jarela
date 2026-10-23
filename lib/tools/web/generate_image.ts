@@ -45,6 +45,18 @@ interface ImagenResponse {
   error?: { message?: string };
 }
 
+async function readProviderJson<T extends { error?: { message?: string } }>(res: Response, provider: string, apiKey: string): Promise<T> {
+  const raw = await res.text();
+  let json: T | null = null;
+  try { json = JSON.parse(raw) as T; } catch { /* handled below */ }
+  if (!res.ok) {
+    const detail = json?.error?.message ?? (raw.trim().slice(0, 200) || "request failed");
+    throw new Error(`${provider} ${res.status}: ${detail.split(apiKey).join("[redacted]")}`);
+  }
+  if (!json) throw new Error(`${provider} returned an invalid response`);
+  return json;
+}
+
 async function callGemini(model: string, prompt: string, apiKey: string): Promise<{ data: Buffer; mime: string }> {
   const url = `${ENDPOINT}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const body = {
@@ -62,10 +74,7 @@ async function callGemini(model: string, prompt: string, apiKey: string): Promis
   } catch (err) {
     throw new Error(`Gemini request failed: ${describeError(err)}`);
   }
-  const json = (await res.json()) as GeminiResponse;
-  if (!res.ok) {
-    throw new Error(`Gemini ${res.status}: ${json.error?.message ?? "request failed"}`);
-  }
+  const json = await readProviderJson<GeminiResponse>(res, "Gemini", apiKey);
   const parts = json.candidates?.[0]?.content?.parts ?? [];
   for (const p of parts) {
     const inline = p.inlineData ?? p.inline_data;
@@ -94,10 +103,7 @@ async function callImagen(model: string, prompt: string, apiKey: string, n: numb
   } catch (err) {
     throw new Error(`Imagen request failed: ${describeError(err)}`);
   }
-  const json = (await res.json()) as ImagenResponse;
-  if (!res.ok) {
-    throw new Error(`Imagen ${res.status}: ${json.error?.message ?? "request failed"}`);
-  }
+  const json = await readProviderJson<ImagenResponse>(res, "Imagen", apiKey);
   const preds = json.predictions ?? [];
   const out: Array<{ data: Buffer; mime: string }> = [];
   for (const p of preds) {
