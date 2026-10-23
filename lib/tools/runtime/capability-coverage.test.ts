@@ -45,6 +45,14 @@ describe("capability coverage", () => {
     expect(registeredCapability("refresh_model_pricing")).toBe("write");
   });
 
+  it("keeps schedule_watcher example tools pollable (read-only)", () => {
+    expect(registeredCapability("file_list")).toBe("read");
+    for (const name of ["web_fetch", "jira_get_issue", "jira_search", "confluence_get_page"]) {
+      const cap = registeredCapability(name);
+      if (cap) expect(cap, `${name} is a watcher example`).toBe("read");
+    }
+  });
+
   it("read/write/execute distribution sanity (every bucket non-empty)", () => {
     const counts = { read: 0, write: 0, execute: 0 };
     for (const t of registeredTools()) {

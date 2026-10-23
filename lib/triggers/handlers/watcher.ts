@@ -23,7 +23,7 @@ import {
   recordWatcherPollError,
   type WatcherRow,
 } from "@/lib/stores/watchers";
-import { registeredTools } from "@/lib/tools/runtime/registry";
+import { registeredCapability, registeredTools } from "@/lib/tools/runtime/registry";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { truncateBytes } from "@/lib/utils/text";
 import type { TriggerFiring, TriggerHandler, TriggerOutcome } from "../types";
@@ -242,6 +242,9 @@ function recordPollActivity(
 async function invokeWatcherTool(watcher: WatcherRow): Promise<string> {
   const entry = registeredTools().find((t) => t.name === watcher.tool_name);
   if (!entry) throw new Error(`tool "${watcher.tool_name}" is not registered`);
+  if (registeredCapability(watcher.tool_name) !== "read") {
+    throw new Error(`tool "${watcher.tool_name}" is not read-only; watchers cannot repeat side-effecting calls`);
+  }
   let args: unknown;
   try { args = JSON.parse(watcher.tool_args); }
   catch (e) { throw new Error(`tool_args is not valid JSON: ${errorMessage(e)}`); }
