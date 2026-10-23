@@ -12,7 +12,7 @@ export default defineConfig({
     globals: false,
     testTimeout: 15_000,
     hookTimeout: 15_000,
-    setupFiles: ["./tests/setup-rtl.ts"],
+    setupFiles: ["./tests/setup-data-dir.ts", "./tests/setup-rtl.ts"],
     // Node 25 stabilized a native `globalThis.localStorage` (Web Storage
     // API) that's a stub without `--localstorage-file` set. It shadows
     // jsdom's own Storage implementation in the same realm, so any
