@@ -65,6 +65,7 @@
     "!public/sw.js",
     "!public/swe-worker-*.js",
     "scripts/jarela-bin.mjs",
+    "scripts/backup.mjs",
     "scripts/build-extension.mjs",
     "scripts/first-run-prompt.mjs",
     "scripts/postinstall-hint.mjs",

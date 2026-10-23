@@ -3,6 +3,8 @@
 //
 // Subcommands:
 //   jarela [start]         — build if needed, then run server (default)
+//   jarela update          — upgrade to the latest published version
+//   jarela backup [dir]    — snapshot the data dir (no key material)
 //   jarela install-service — register OS-native autostart (per-user, no admin)
 //   jarela uninstall-service
 //   jarela --version | -v
@@ -26,6 +28,9 @@ function printHelp() {
 Usage:
   jarela [start]              start the server in the foreground (default)
   jarela update               upgrade Jarela to the latest published version
+  jarela backup [folder]      write a consistent snapshot of your data
+                              (databases, attachments, provider config) to a
+                              new folder; key material is never copied
   jarela install-service      register an OS-native autostart service for the
                               current user (Windows Scheduled Task / macOS
                               LaunchAgent / Linux systemd --user). No admin.
@@ -37,7 +42,8 @@ Environment:
   JARELA_PORT      / PORT      — TCP port (default 4312)
   JARELA_HOSTNAME  / HOSTNAME  — bind address (default 127.0.0.1)
   JARELA_DB_DIR                — data dir (default ~/.jarela on Unix,
-                                 %LOCALAPPDATA%\\Jarela on Windows)
+                                 %LOCALAPPDATA%\\Jarela on Windows); also
+                                 the source for jarela backup
   JARELA_RECURSION_LIMIT       — max LangGraph steps per run (default 200)
   JARELA_VOICE_TIMEOUT_MS      — Gemini voice request timeout (default 60000)
   JARELA_IMAGE_TIMEOUT_MS      — Gemini image request timeout (default 60000)
@@ -70,6 +76,12 @@ if (cmd === "update") {
   const { runUpdate } = await import("./update.mjs");
   try { const code = await runUpdate({ root }); process.exit(code); }
   catch (e) { console.error(`[jarela] update failed: ${e?.message ?? e}`); process.exit(1); }
+}
+
+if (cmd === "backup") {
+  const { runBackup } = await import("./backup.mjs");
+  try { process.exit(runBackup({ dest: process.argv[3] })); }
+  catch (e) { console.error(`[jarela] backup failed: ${e?.message ?? e}`); process.exit(1); }
 }
 
 if (cmd === "install-service") {
