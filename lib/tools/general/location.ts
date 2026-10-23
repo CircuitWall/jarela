@@ -29,8 +29,19 @@ export const getUserLocationTool = tool(
         how_to_enable: "Reload the app so the browser can request a fix.",
       });
     }
+    if (
+      !Number.isFinite(profile.location_lat) || Math.abs(profile.location_lat) > 90 ||
+      !Number.isFinite(profile.location_lng) || Math.abs(profile.location_lng) > 180
+    ) {
+      return JSON.stringify({
+        available: false,
+        reason: "stored coordinates are invalid",
+        how_to_enable: "Reload the app so the browser can request a new fix.",
+      });
+    }
     const updatedAt = profile.location_updated_at;
-    const ageMs = updatedAt ? Date.now() - Date.parse(updatedAt) : null;
+    const updatedMs = updatedAt ? Date.parse(updatedAt) : Number.NaN;
+    const ageMs = Number.isFinite(updatedMs) ? Math.max(0, Date.now() - updatedMs) : null;
     return JSON.stringify({
       available: true,
       lat: profile.location_lat,
