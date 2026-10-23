@@ -5,9 +5,10 @@
 //   jarela [start]         — build if needed, then run server (default)
 //   jarela install-service — register OS-native autostart (per-user, no admin)
 //   jarela uninstall-service
+//   jarela --version | -v
 //   jarela --help | -h
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -29,6 +30,7 @@ Usage:
                               current user (Windows Scheduled Task / macOS
                               LaunchAgent / Linux systemd --user). No admin.
   jarela uninstall-service    undo install-service
+  jarela --version, -v        print the installed version
   jarela --help, -h           show this help
 
 Environment:
@@ -52,6 +54,16 @@ Environment:
 if (cmd === "--help" || cmd === "-h" || cmd === "help") {
   printHelp();
   process.exit(0);
+}
+
+if (cmd === "--version" || cmd === "-v" || cmd === "version") {
+  try {
+    console.log(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version);
+    process.exit(0);
+  } catch (e) {
+    console.error(`[jarela] could not read package version: ${e?.message ?? e}`);
+    process.exit(1);
+  }
 }
 
 if (cmd === "update") {
