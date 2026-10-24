@@ -212,6 +212,15 @@ explicitly to classify changes without creating a release PR or publishing.
 Start a new run after changing inputs; **Re-run jobs** retains the original
 run's inputs.
 
+Nightly orchestration is unattended after repository permissions are configured:
+it dispatches release-validation CI, waits for that run on the exact release
+head, verifies its successful build job, and merges only that head. CI
+waits are bounded and fail explicitly on timeout; they never bypass
+failed checks or request automatic approving reviews. Failed runs may be retried
+and reuse a valid bot-owned release PR, or close a stale PR for regeneration.
+Repository rules requiring human approvals or protected-environment approvals
+must be satisfied separately; the workflow does not override those policies.
+
 The workflow opens its PR with `GITHUB_TOKEN`, so the repository must enable
 **Settings → Actions → General → Allow GitHub Actions to create and approve
 pull requests**. If PR creation fails, the workflow deletes the release branch

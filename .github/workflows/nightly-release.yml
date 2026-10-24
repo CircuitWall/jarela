@@ -77,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           tag_sha="$(git rev-parse "${TAG}^{commit}")"
-          runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs" -F per_page=100)"
+          runs="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs" -F per_page=100)"
           run_json="$(jq -c --arg sha "$tag_sha" '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.created_at) | last // empty' <<<"$runs")"
           if [ -z "$run_json" ]; then
             gh workflow run release.yml --ref "$TAG"
@@ -113,8 +113,9 @@ jobs:
           if [ -n "$pr" ]; then
             body="$(jq -r '.[0].body // ""' <<<"$prs")"
             author="$(jq -r '.[0].author.login // ""' <<<"$prs")"
+            is_bot="$(jq -r '.[0].author.is_bot // false' <<<"$prs")"
             base_ref="$(jq -r '.[0].baseRefName // ""' <<<"$prs")"
-            if [[ "$author" != "github-actions[bot]" || "$base_ref" != "main" ]]; then
+            if [[ "$is_bot" != "true" || "$base_ref" != "main" || ( "$author" != "github-actions[bot]" && "$author" != "app/github-actions" ) ]]; then
               echo "::error::Existing release PR $pr was not created by the release bot against main."
               exit 1
             fi
@@ -247,7 +248,7 @@ jobs:
           set -euo pipefail
           run_id=""
           for attempt in $(seq 1 90); do
-            runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" -f "branch=$BRANCH" -f event=workflow_dispatch -F per_page=50)"
+            runs="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs" -f "branch=$BRANCH" -f event=workflow_dispatch -F per_page=50)"
             run_id="$(jq -r --arg sha "$HEAD_SHA" '[.workflow_runs[] | select(.head_sha == $sha)] | sort_by(.created_at) | last | .id // empty' <<<"$runs")"
             [ -n "$run_id" ] && break
             sleep 10
@@ -257,7 +258,8 @@ jobs:
             exit 1
           fi
 
-          for attempt in $(seq 1 180); do
+          completed=false
+          for attempt in $(seq 1 360); do
             run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$run_id")"
             status="$(jq -r '.status' <<<"$run")"
             conclusion="$(jq -r '.conclusion // ""' <<<"$run")"
@@ -266,13 +268,18 @@ jobs:
                 echo "::error::Release PR CI concluded $conclusion."
                 exit 1
               fi
+              completed=true
               break
             fi
             sleep 10
           done
 
-          check_runs="$(gh api "repos/${GITHUB_REPOSITORY}/commits/$HEAD_SHA/check-runs?per_page=100")"
-          required_check="$(jq -r '[.check_runs[] | select(.name == "Lint, typecheck, build" and .conclusion == "success")] | length' <<<"$check_runs")"
+          if [ "$completed" != "true" ]; then
+            echo "::error::Timed out waiting for release CI run $run_id on $HEAD_SHA."
+            exit 1
+          fi
+          jobs="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/runs/$run_id/jobs" -f filter=latest -F per_page=100)"
+          required_check="$(jq -r '[.jobs[] | select(.name == "Lint, typecheck, build" and .conclusion == "success")] | length' <<<"$jobs")"
           if [ "$required_check" -lt 1 ]; then
             echo "::error::The required Lint, typecheck, build check is not green on $HEAD_SHA."
             exit 1
@@ -289,7 +296,6 @@ jobs:
           PLANNED_MAIN_SHA: ${{ steps.plan.outputs.main_sha }}
         run: |
           set -euo pipefail
-          gh pr checks "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --watch --interval 10 --fail-fast
           git fetch origin main --tags
           current_main="$(git rev-parse origin/main)"
           if [ "$current_main" != "$PLANNED_MAIN_SHA" ]; then
@@ -298,7 +304,7 @@ jobs:
             exit 0
           fi
 
-          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --rebase --delete-branch
+          gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --rebase --delete-branch --match-head-commit "$HEAD_SHA"
           merge_sha="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json mergeCommit --jq .mergeCommit.oid)"
           git fetch origin main --tags
           git merge-base --is-ancestor "$merge_sha" origin/main

@@ -102,7 +102,7 @@ jobs:
         run: npm audit signatures
 
       - name: Audit OAuth proxy dependencies
-        working-directory: proxy
+        working-directory: functions/google-oauth-proxy
         run: |
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
