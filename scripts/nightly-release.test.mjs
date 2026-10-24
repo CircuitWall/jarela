@@ -31,6 +31,38 @@ describe("nightly workflow defaults", () => {
     const dryRun = steps.find((text) => text.startsWith("Describe dry-run plan\n"));
     expect(dryRun).toContain("if: github.event_name == 'workflow_dispatch' && inputs.dry_run");
   });
+
+  it("uses explicit GET for filtered GitHub API reads instead of implicit POST", () => {
+    const filteredReads = workflow.split("\n").filter((line) => line.includes("gh api") && / -[fF] /.test(line));
+    expect(filteredReads).toHaveLength(3);
+    for (const line of filteredReads) expect(line).toContain("gh api --method GET");
+    expect(workflow).toContain('/actions/runs/$run_id/jobs" -f filter=latest');
+    expect(workflow).not.toContain("check-runs?");
+  });
+
+  it("can reuse both GitHub Actions author representations but requires bot identity", () => {
+    expect(workflow).toContain('.[0].author.is_bot // false');
+    expect(workflow).toContain('"$is_bot" != "true"');
+    expect(workflow).toContain('"$author" != "github-actions[bot]" && "$author" != "app/github-actions"');
+    expect(workflow).toContain("<!-- jarela-nightly-release -->");
+    expect(workflow).toContain('commit_count" != "1"');
+  });
+
+  it("fails explicitly on CI timeout and pins validation and merge to the release head", () => {
+    expect(workflow).toContain('select(.head_sha == $sha)');
+    expect(workflow).toContain('completed=false');
+    expect(workflow).toContain('completed=true');
+    expect(workflow).toContain('if [ "$completed" != "true" ]; then');
+    expect(workflow).not.toContain("gh pr checks");
+    expect(workflow).toContain('--match-head-commit "$HEAD_SHA"');
+  });
+
+  it("audits the existing OAuth proxy project rather than a missing directory", () => {
+    const publishing = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+    expect(publishing).toContain("working-directory: functions/google-oauth-proxy");
+    const proxy = JSON.parse(readFileSync(new URL("../functions/google-oauth-proxy/package-lock.json", import.meta.url), "utf8"));
+    expect(proxy.lockfileVersion).toBeGreaterThanOrEqual(2);
+  });
 });
 
 describe("nightly release policy", () => {
