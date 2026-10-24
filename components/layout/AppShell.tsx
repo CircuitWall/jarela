@@ -356,6 +356,7 @@ export function AppShell() {
           activeAgentId={state.activeAgentId}
           loading={agentsLoading}
           onSelect={(agentId) => {
+            setShowMenu(false);
             dispatch({ type: "SET_AGENT", agentId });
             dispatch({ type: "SET_TAB", tab: "chat" });
           }}
@@ -486,14 +487,9 @@ export function AppShell() {
         {showMenu && (
           <MenuPanel
             activeTab={state.activeTab}
-            agentId={state.activeAgentId}
-            agents={agents}
-            agentsLoading={agentsLoading}
             onClose={() => setShowMenu(false)}
-            onAgentChange={(agentId) => dispatch({ type: "SET_AGENT", agentId })}
             onSetTab={(tab) => {
               dispatch({ type: "SET_TAB", tab });
-              setShowMenu(false);
             }}
           />
         )}

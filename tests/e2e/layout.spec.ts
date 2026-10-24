@@ -77,6 +77,47 @@ test("menu tray uses position:fixed when open", async ({ page }) => {
   expect(position).toBe("fixed");
 });
 
+test("selecting a header agent closes the open menu", async ({ page }) => {
+  await openIsolatedMockChat(page);
+  await page.locator("header button").filter({ has: page.locator("svg") }).last().click();
+  const menu = page.getByRole("navigation", { name: "Main navigation" });
+  await expect(menu).toBeVisible();
+  await page.getByRole("group", { name: "Switch agent" }).getByRole("button").first().click();
+  await expect(menu).toHaveCount(0);
+});
+
+for (const width of [320, 390]) {
+  test(`destination menu fits and scrolls at ${width}px`, async ({ page }) => {
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await dismissOverlayBanners(page);
+    await page.addInitScript(() => localStorage.setItem("jarela.experience.mode", "full"));
+    await page.setViewportSize({ width, height: 568 });
+    await page.goto("/");
+    await waitForAppReady(page);
+    await page.locator("header button").filter({ has: page.locator("svg") }).last().click();
+    const menu = page.getByRole("navigation", { name: "Main navigation" });
+    await expect(menu).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    for (const label of ["Agents", "Knowledge", "Automations", "Usage", "Profile", "Settings"]) {
+      const button = menu.getByRole("button", { name: label, exact: true });
+      await button.scrollIntoViewIfNeeded();
+      const bounds = await button.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.height).toBeGreaterThanOrEqual(44);
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+    }
+    await menu.locator("summary").click();
+    const capabilities = menu.getByRole("button", { name: "Capabilities", exact: true });
+    await capabilities.scrollIntoViewIfNeeded();
+    await capabilities.click();
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Packages", exact: true })).toBeVisible();
+    expect(pageErrors).toEqual([]);
+  });
+}
+
 test("navigation stays clickable underneath an overlapping error notification", async ({ page }) => {
   await page.goto("/");
   await waitForAppReady(page);
@@ -88,17 +129,13 @@ test("navigation stays clickable underneath an overlapping error notification", 
   await page.locator("header button").filter({ has: page.locator("svg") }).last().click();
   const settings = page.getByRole("button", { name: "Settings", exact: true });
   const settingsBounds = await settings.boundingBox();
-  const notificationBounds = await notification.boundingBox();
   expect(settingsBounds).not.toBeNull();
-  expect(notificationBounds).not.toBeNull();
   const center = {
     x: settingsBounds!.x + settingsBounds!.width / 2,
     y: settingsBounds!.y + settingsBounds!.height / 2,
   };
-  expect(center.x).toBeGreaterThan(notificationBounds!.x);
-  expect(center.x).toBeLessThan(notificationBounds!.x + notificationBounds!.width);
-  expect(center.y).toBeGreaterThan(notificationBounds!.y);
-  expect(center.y).toBeLessThan(notificationBounds!.y + notificationBounds!.height);
+  expect(await settings.evaluate((el, point) =>
+    el.contains(document.elementFromPoint(point.x, point.y)), center)).toBe(true);
   await settings.click();
   await expect(page.getByRole("tab", { name: "Credentials", exact: true })).toBeVisible();
   await expect(notification).toBeVisible();

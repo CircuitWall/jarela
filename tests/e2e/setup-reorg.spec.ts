@@ -42,15 +42,16 @@ async function openMenu(page: import("@playwright/test").Page) {
   await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
 }
 
-test("menu separates common from advanced and Capabilities hosts sub-tabs", async ({ page }) => {
+test("menu groups destinations and Capabilities hosts sub-tabs", async ({ page }) => {
   await openMenu(page);
 
-  // Common destinations are visible up top. Knowledge has its own Advanced
-  // destination, while capability surfaces live under Capabilities. The former
-  // Credentials/Models/Test-runs/Logs/Environment entries are now Settings sub-tabs.
-  for (const label of ["Chat", "Agents", "Settings", "Profile", "Usage", "Automations", "Capabilities", "Knowledge"]) {
-    await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  for (const label of ["Agents", "Settings", "Profile", "Usage", "Automations", "Knowledge"]) {
+    await expect(navigation.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
+  await expect(navigation.getByRole("button", { name: "Chat", exact: true })).toHaveCount(0);
+  await navigation.locator("summary").filter({ hasText: "Advanced" }).click();
+  await expect(navigation.getByRole("button", { name: "Capabilities", exact: true })).toBeVisible();
 
   // These are no longer top-level buttons in the menu.
   for (const label of [
@@ -69,6 +70,7 @@ test("menu separates common from advanced and Capabilities hosts sub-tabs", asyn
 
   // Click Capabilities to mount the full capability sub-tab strip.
   await page.getByRole("button", { name: "Capabilities", exact: true }).click();
+  await expect(navigation).toHaveCount(0);
   const packagesTab = page.getByRole("tab", { name: "Packages", exact: true });
   await expect(packagesTab).toBeVisible();
   await expect(page.getByRole("tab", { name: "Documents", exact: true })).toHaveCount(0);
