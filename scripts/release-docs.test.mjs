@@ -235,15 +235,16 @@ describe("on-demand release wiring", () => {
     expect(workflow("ci")).not.toContain("copilot@");
   });
 
-  it("enforces the gate in nightly, PR/manual CI, and tag publishing", () => {
+  it("keeps documentation optional in nightly, PR/manual CI, and tag publishing", () => {
     for (const name of ["nightly-release", "ci", "release"]) {
-      expect(workflow(name), name).toContain("node scripts/release-docs.mjs check");
-      expect(workflow(name), name).toContain("fetch-depth: 0");
+      expect(workflow(name), name).not.toContain("release-docs.mjs");
+      expect(workflow(name), name).not.toContain("COPILOT_DOCS_TOKEN");
     }
-    expect(workflow("ci")).toContain("node scripts/release-docs.mjs pr");
     const publishing = workflow("release");
-    expect(publishing.indexOf("node scripts/release-docs.mjs check")).toBeLessThan(publishing.indexOf("npm ci"));
     expect(publishing).toContain('if [ "$GITHUB_REF" != "refs/tags/v$version" ]');
+    expect(workflow("nightly-release")).toContain("npm run release:changeset -- --check");
+    expect(publishing).toContain("npm run release:changeset -- --check");
+    expect(workflow("release-docs")).toContain('node scripts/release-docs.mjs check "$VERSION"');
   });
 
   it("assembles the exact release context and requires evidence, explicit decisions, and human review", () => {

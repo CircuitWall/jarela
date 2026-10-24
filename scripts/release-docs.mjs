@@ -163,7 +163,7 @@ function main() {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { main(); } catch (error) {
     console.error(`Documentation gate: ${error.message}`);
-    console.error("Run the on-demand Release documentation workflow, review and merge its PR, then retry the release. Do not bypass the gate.");
+    console.error("Refresh the optional documentation review and retry this check. Documentation reviews are not required to release.");
     process.exitCode = 1;
   }
 }

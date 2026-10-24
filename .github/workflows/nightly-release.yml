@@ -69,13 +69,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
         run: echo "Dry run only; no release PR, merge, tag, or publish was attempted." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Require an accepted version-to-version documentation review
-        if: (steps.plan.outputs.action == 'release' || steps.plan.outputs.action == 'resume') && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
-        env:
-          VERSION: ${{ steps.plan.outputs.version }}
-          TARGET: ${{ steps.plan.outputs.target_sha || steps.plan.outputs.main_sha }}
-        run: node scripts/release-docs.mjs check "$VERSION" "$TARGET"
-
       - name: Recover a failed release for the latest tag
         if: steps.plan.outputs.action == 'none' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
         env:
@@ -341,7 +334,6 @@ jobs:
             echo "::error::Tag $tag would not match package version $package_version at $target_sha."
             exit 1
           fi
-          node scripts/release-docs.mjs check "$VERSION" "$target_sha"
 
           remote_tag="$(git ls-remote origin "refs/tags/$tag" | cut -f1)"
           if [ -n "$remote_tag" ]; then

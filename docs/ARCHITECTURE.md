@@ -570,11 +570,13 @@ validated documentation-only patch to a separate PR-writing job. A maintainer,
 not the model, reviews and merges the PR. Accepted decisions live in
 `docs/releases/<version>.json`.
 
-`scripts/release-docs.mjs` provides the deterministic record/scope checks shared
-by ordinary PR CI, nightly preparation/resume/tagging, and app-tag publishing.
-Source changes invalidate reviews; documentation and narrowly allowed generated
-release metadata/version-only bumps may follow them. Missing or stale reviews
-block publication. Neither CI nor the nightly scheduler starts paid AI sessions.
+`scripts/release-docs.mjs` provides deterministic record/scope checks for the
+optional documentation workflow and local review. Ordinary PR CI, nightly
+preparation/resume/tagging, and app-tag publishing do not require documentation
+reviews or Copilot credentials. Source changes invalidate optional reviews;
+documentation and narrowly allowed generated release metadata/version-only bumps
+may follow them. Missing or stale reviews never block publication.
+Neither CI nor the nightly scheduler starts paid AI sessions.
 This optional authoring service is outside the Jarela process and stores no app
 state. See [ADR-0106](adr/0106-on-demand-release-documentation.md).
 
@@ -589,7 +591,7 @@ state. See [ADR-0106](adr/0106-on-demand-release-documentation.md).
 | User shell rc (`~/.zshrc`/`~/.bashrc`) on macOS/Linux, User-scope env on Windows | Source for credential env vars (ADR-0016); probed at boot + on demand | Probe failure surfaces a warning, app falls back to whatever is already in `process.env`; tools surface "not configured" via the existing env-then-DB resolver |
 | GitHub API (`api.github.com`) | Native `github_*` tools — issues, PRs, repos (ADR-0015); Copilot OAuth for the model provider | Tool call returns the API error; agent can recover or skip |
 | SQLite (local) | Persistence | Fatal — startup fails fast with clear error |
-| Copilot CLI / GitHub Copilot (release infrastructure only) | On-demand documentation proposals with a 50-credit soft session limit | Explicit workflow failure; release stays blocked until a reviewed record is merged; manual documentation PRs remain available |
+| Copilot CLI / GitHub Copilot (optional documentation infrastructure only) | On-demand documentation proposals with a 50-credit soft session limit | Explicit documentation workflow failure; releases remain independent; manual documentation PRs remain available |
 
 ## Decisions
 

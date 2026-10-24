@@ -41,7 +41,7 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Require accepted app documentation before publishing
+      - name: Verify app publication uses a version-matching tag
         if: startsWith(github.ref_name, 'v')
         run: |
           set -euo pipefail
@@ -50,7 +50,6 @@ jobs:
             echo "::error::App publication requires a version-matching tag, not a branch."
             exit 1
           fi
-          node scripts/release-docs.mjs check "$version"
 
       - name: Pin npm for workspace lockfile compatibility
         # npm 11.14.x re-resolves newer workspace patch versions during npm ci
