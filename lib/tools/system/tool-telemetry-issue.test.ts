@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-tool-telemetry-issue-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -28,6 +29,10 @@ afterEach(() => {
 });
 
 describe("report_tool_telemetry_issue", () => {
+  it("keeps the telemetry tool serializable for provider tool schemas", () => {
+    expect(convertToOpenAITool(reportToolTelemetryIssueTool).function.name).toBe("report_tool_telemetry_issue");
+  });
+
   it("builds one complaint issue across multiple failing tools", async () => {
     const suffix = `${Date.now()}`;
     const fileTool = `file_read_${suffix}`;
@@ -86,6 +91,18 @@ describe("report_tool_telemetry_issue", () => {
     expect(out).toMatchObject({ ok: true, created: false, owner: "CircuitWall", repo: "jarela" });
     expect(out.issue.title).toContain("Tool telemetry complaint");
     expect(out.hint).toContain("create_issue=true");
+  });
+
+  it("truncates an overlong issue title override", async () => {
+    const title = "t".repeat(160);
+    const out = JSON.parse(String(await reportToolTelemetryIssueTool.invoke({
+      tool_names: ["missing_tool"],
+      title,
+    })));
+
+    expect(out.ok).toBe(true);
+    expect(out.issue.title).toBe(`${"t".repeat(119)}…`);
+    expect(out.issue.title).toHaveLength(120);
   });
 
   it("skips automatic filing when GitHub auth is absent", async () => {

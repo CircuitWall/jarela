@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getMemory, putMemory, listMemory, deleteMemory, searchMemoryRows } from "@/lib/stores/memory";
 import { getDefaultChatMinSimilarity, searchMemory } from "@/lib/embeddings";
 import { CURRENT_STRUCTURED_MEMORY_VERSION, StructuredMemoryInputSchema } from "@/lib/memory/record";
+import { truncateText } from "@/lib/utils/text";
 import { registerLangChainPackage } from "../packages/langchain-package";
 
 export const memoryReadTool = tool(
@@ -40,7 +41,11 @@ export const memoryWriteTool = tool(
 
 export const memoryUpsertTool = tool(
   async ({ namespace, key, record }) => {
-    const saved = putMemory(namespace, key, { version: CURRENT_STRUCTURED_MEMORY_VERSION, ...record });
+    const saved = putMemory(namespace, key, {
+      version: CURRENT_STRUCTURED_MEMORY_VERSION,
+      ...record,
+      summary: record.summary === null ? null : truncateText(record.summary, 280),
+    });
     return JSON.stringify({ ok: true, namespace: saved.namespace, key: saved.key, kind: record.kind });
   },
   {

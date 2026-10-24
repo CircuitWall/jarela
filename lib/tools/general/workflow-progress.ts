@@ -7,30 +7,40 @@ import {
   recordVersionAdoptionWorkflowProgress,
 } from "@/lib/stores/version-adoption";
 import { errorMessage } from "@/lib/utils/error";
+import { truncateText } from "@/lib/utils/text";
 
 const workflowItemStatusSchema = z.enum(["pending", "checking", "done", "needs_attention", "skipped"]);
 
 const workflowProgressSchema = z.object({
   workflow_id: z.string().min(1).max(80).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/)
     .describe("Use version_adoption for the system-owned adoption workflow; otherwise use a stable task slug."),
-  phase: z.string().max(80).optional().describe("Optional current phase. For version_adoption, use impact_radius, adoption, or complete."),
+  phase: z.string().transform((value) => truncateText(value, 80)).optional()
+    .describe("Optional current phase, truncated to 80 characters. For version_adoption, use impact_radius, adoption, or complete."),
   items: z.array(z.object({
     id: z.string().min(1).max(64).regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
-    label: z.string().min(1).max(120),
-    input: z.string().trim().min(1).max(500).describe("The concrete inputs or prerequisites for this step."),
-    output: z.string().trim().min(1).max(500).describe("The expected result this step must produce."),
-    validation: z.string().trim().min(1).max(500).describe("A concrete check for confirming the expected output."),
-    validation_evidence: z.string().trim().min(1).max(500).optional(),
+    label: z.string().min(1).transform((value) => truncateText(value, 120))
+      .describe("Short step label, truncated to 120 characters."),
+    input: z.string().trim().min(1).transform((value) => truncateText(value, 500))
+      .describe("The concrete inputs or prerequisites for this step, truncated to 500 characters."),
+    output: z.string().trim().min(1).transform((value) => truncateText(value, 500))
+      .describe("The expected result this step must produce, truncated to 500 characters."),
+    validation: z.string().trim().min(1).transform((value) => truncateText(value, 500))
+      .describe("A concrete check for confirming the expected output, truncated to 500 characters."),
+    validation_evidence: z.string().trim().min(1).transform((value) => truncateText(value, 500)).optional()
+      .describe("Observed validation evidence, truncated to 500 characters."),
     status: workflowItemStatusSchema.optional(),
     needs_user: z.boolean().optional().describe("Set true on a needs_attention item that only the user can unblock; it is then not retried automatically."),
   })).max(12).optional().describe("For agent-created workflows, send the complete current checklist snapshot on every update. Every item requires input, output, and validation; completed items also require observed validation_evidence. Omitted item statuses default to pending."),
   item_id: z.string().optional().describe("Optional checklist item id to update."),
   status: workflowItemStatusSchema.optional().describe("For version_adoption only: checklist item status. Requires item_id."),
-  validation_evidence: z.string().trim().min(1).max(500).optional()
-    .describe("Exact check performed and observed result. Required when marking a version_adoption item done."),
-  summary: z.string().max(300).optional().describe("Optional short workflow summary shown in the chat checklist."),
-  detail: z.string().max(300).optional().describe("Optional live progress text to stream immediately to the UI."),
-  needs_attention_reason: z.string().max(300).optional().describe("Optional reason shown when the item or workflow needs user attention."),
+  validation_evidence: z.string().trim().min(1).transform((value) => truncateText(value, 500)).optional()
+    .describe("Exact check performed and observed result. Required when marking a version_adoption item done; truncated to 500 characters."),
+  summary: z.string().transform((value) => truncateText(value, 300)).optional()
+    .describe("Optional short workflow summary shown in the chat checklist, truncated to 300 characters."),
+  detail: z.string().transform((value) => truncateText(value, 300)).optional()
+    .describe("Optional live progress text to stream immediately to the UI, truncated to 300 characters."),
+  needs_attention_reason: z.string().transform((value) => truncateText(value, 300)).optional()
+    .describe("Optional reason shown when the item or workflow needs user attention, truncated to 300 characters."),
   needs_user: z.boolean().optional().describe("For version_adoption: set true when item_id cannot progress without the user's input or approval. Agent-created workflows set needs_user on the item instead."),
 });
 

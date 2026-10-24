@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { truncateBytes } from "./text";
+import { truncateBytes, truncateText } from "./text";
 
 describe("truncateBytes", () => {
   it("returns the original string under the cap", () => {
@@ -34,5 +34,19 @@ describe("truncateBytes", () => {
 
   it("handles zero cap", () => {
     expect(truncateBytes("anything", 0)).toEqual({ text: "", truncated: true });
+  });
+});
+
+describe("truncateText", () => {
+  it("returns text under the character limit unchanged", () => {
+    expect(truncateText("short", 5)).toBe("short");
+  });
+
+  it("truncates overlong text and marks the shortened value", () => {
+    expect(truncateText("abcdefgh", 5)).toBe("abcd…");
+  });
+
+  it("does not split a surrogate pair when truncating", () => {
+    expect(truncateText("abc😀def", 5)).toBe("abc…");
   });
 });
