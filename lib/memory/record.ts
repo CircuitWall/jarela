@@ -60,7 +60,8 @@ const StructuredMemoryEnvelopeV2Schema = StructuredMemoryCoreV2Schema.extend({
 // the current schema version) and no `history` (server-managed).
 export const StructuredMemoryInputSchema = z.object({
   ...sharedCoreFields,
-  summary: z.string().trim().max(280).nullable().default(null),
+  summary: z.string().trim().nullable().default(null)
+    .describe("Optional short memory summary, truncated to 280 characters when stored."),
   aliases: z.array(z.string().trim().min(1).max(48)).max(8).default([]),
   status: z.enum(MEMORY_STATUSES).default("active"),
 }).strict();

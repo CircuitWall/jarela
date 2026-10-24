@@ -14,3 +14,21 @@ export function truncateBytes(s: string, maxBytes: number): { text: string; trun
   }
   return { text: s.slice(0, end), truncated: true };
 }
+
+export function truncateText(s: string, maxChars: number): string {
+  if (s.length <= maxChars) return s;
+  if (maxChars <= 0) return "";
+
+  let end = maxChars - 1;
+  if (
+    end > 0
+    && end < s.length
+    && s.charCodeAt(end - 1) >= 0xD800
+    && s.charCodeAt(end - 1) <= 0xDBFF
+    && s.charCodeAt(end) >= 0xDC00
+    && s.charCodeAt(end) <= 0xDFFF
+  ) {
+    end -= 1;
+  }
+  return `${s.slice(0, end)}…`;
+}

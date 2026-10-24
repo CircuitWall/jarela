@@ -12,6 +12,7 @@ import { isCategoryEnabled } from "@/lib/stores/builtin-tools";
 import { getMemory, putMemory } from "@/lib/stores/memory";
 import { getFingerprint, recordSeen } from "@/lib/stores/change-tracker";
 import { errorMessage } from "@/lib/utils/error";
+import { truncateText } from "@/lib/utils/text";
 
 const DEFAULT_OWNER = "CircuitWall";
 const DEFAULT_REPO = "jarela";
@@ -147,7 +148,8 @@ export const reportToolTelemetryIssueTool = tool(
       min_failure_count: z.number().int().min(1).max(100_000).optional().describe("Minimum recorded failure-pattern count required before a tool is included. Default 2."),
       max_tools: z.number().int().min(1).max(50).optional().describe("Maximum tools to include. Default 10."),
       include_successful: z.boolean().optional().describe("Include healthy/successful tools too. Default false."),
-      title: z.string().min(1).max(120).optional().describe("Optional issue title override."),
+      title: z.string().min(1).transform((value) => truncateText(value, 120)).optional()
+        .describe("Optional issue title override, truncated to 120 characters."),
       create_issue: z.boolean().optional().describe("When true, create the GitHub issue in CircuitWall/jarela. Default false."),
       labels: z.array(z.string()).optional().describe("Optional existing GitHub label names to apply when create_issue=true."),
     }),

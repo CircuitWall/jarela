@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-workflow-progress-tool-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -33,6 +34,10 @@ beforeEach(() => {
 });
 
 describe("workflow_progress tool", () => {
+  it("keeps the workflow tool serializable for provider tool schemas", () => {
+    expect(convertToOpenAITool(workflowProgressTool).function.name).toBe("workflow_progress");
+  });
+
   it("updates version adoption phase and item status", async () => {
     const out = parse(await workflowProgressTool.invoke({
       workflow_id: "version_adoption",
@@ -132,6 +137,55 @@ describe("workflow_progress tool", () => {
         { id: "configure-provider", status: "checking" },
         { id: "verify-connection", status: "pending" },
       ],
+    });
+  });
+
+  it("truncates overlong narrative fields without rejecting the update", async () => {
+    const progress: unknown[] = [];
+    const config = { writer: (chunk: unknown) => progress.push(chunk) };
+    const out = parse(await workflowProgressTool.invoke({
+      workflow_id: "long_narrative",
+      phase: "p".repeat(100),
+      summary: "s".repeat(480),
+      detail: "d".repeat(480),
+      needs_attention_reason: "r".repeat(480),
+      items: [{
+        id: "long-step",
+        label: "l".repeat(180),
+        input: "i".repeat(520),
+        output: "o".repeat(520),
+        validation: "v".repeat(520),
+        validation_evidence: "e".repeat(520),
+      }],
+    }, config));
+
+    expect(out.ok).toBe(true);
+    expect(progress).toEqual([{
+      id: "",
+      name: "workflow_progress",
+      text: `${"d".repeat(299)}…`,
+    }]);
+    const state = out.state as {
+      phase: string;
+      summary: string;
+      error: string;
+      checklist: Array<{
+        label: string;
+        input: string;
+        output: string;
+        validation: string;
+        validation_evidence: string;
+      }>;
+    };
+    expect(state.phase).toHaveLength(80);
+    expect(state.summary).toHaveLength(300);
+    expect(state.error).toHaveLength(300);
+    expect(state.checklist[0]).toMatchObject({
+      label: `${"l".repeat(119)}…`,
+      input: `${"i".repeat(499)}…`,
+      output: `${"o".repeat(499)}…`,
+      validation: `${"v".repeat(499)}…`,
+      validation_evidence: `${"e".repeat(499)}…`,
     });
   });
 

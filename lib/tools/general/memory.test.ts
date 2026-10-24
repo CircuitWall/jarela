@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 
 // Pin JARELA_DB_DIR to a hermetic tmpdir so the SQLite store doesn't touch
 // the user's real ~/.jarela database. Must be set BEFORE importing the
@@ -65,6 +66,10 @@ describe("memoryDeleteTool", () => {
 });
 
 describe("memoryUpsertTool", () => {
+  it("keeps memory_upsert serializable for provider tool schemas", () => {
+    expect(convertToOpenAITool(memoryUpsertTool).function.name).toBe("memory_upsert");
+  });
+
   it("stores a durable fact as a structured JSON record at the current schema version", async () => {
     const output = await memoryUpsertTool.invoke({
       namespace: "facts",
@@ -89,6 +94,27 @@ describe("memoryUpsertTool", () => {
       aliases: [],
       summary: null,
     });
+  });
+
+  it("truncates an overlong summary before storing a structured memory record", async () => {
+    const summary = "s".repeat(520);
+    await memoryUpsertTool.invoke({
+      namespace: "facts",
+      key: "long-summary",
+      record: {
+        kind: "fact",
+        subject: "Long summary",
+        content: "A valid structured memory record.",
+        tags: [],
+        confidence: "explicit",
+        source: "conversation",
+        summary,
+      },
+    });
+
+    const stored = JSON.parse(getMemory("facts", "long-summary")!.value);
+    expect(stored.summary).toBe(`${"s".repeat(279)}…`);
+    expect(stored.summary).toHaveLength(280);
   });
 
   it("keeps a dated revision history for structured memory updates", async () => {
