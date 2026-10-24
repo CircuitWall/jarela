@@ -25,7 +25,7 @@ jobs:
   release:
     name: Prepare and publish nightly release
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 180
     env:
       GH_REPO: ${{ github.repository }}

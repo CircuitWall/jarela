@@ -21,7 +21,7 @@ jobs:
   propose:
     name: Propose documentation with Copilot
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     outputs:
       create: ${{ steps.plan.outputs.create }}
@@ -113,7 +113,7 @@ jobs:
     name: Open documentation review PR
     needs: propose
     if: needs.propose.outputs.create == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       actions: write

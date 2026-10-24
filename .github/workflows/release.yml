@@ -26,7 +26,7 @@ permissions:
 jobs:
   release-security:
     name: Release security gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -124,7 +124,7 @@ jobs:
           - os: macos-latest
             target: darwin
             archive: tar.gz
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             target: linux
             archive: tar.gz
           - os: windows-latest
@@ -286,7 +286,7 @@ jobs:
 
   release:
     name: Attach archives to GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: bundle
     steps:
       - name: Download all artifacts
@@ -311,7 +311,7 @@ jobs:
 
   npm-publish:
     name: Publish to npm
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: bundle
     # Gated by JARELA_NPM_PUBLISH so a fork (or this repo before npm Trusted
     # Publishing is configured) doesn't try and fail. Auth uses npm's
@@ -397,7 +397,7 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: ubuntu-26.04
             arch_tag: amd64
           - platform: linux/arm64
             runner: ubuntu-24.04-arm
@@ -472,7 +472,7 @@ jobs:
 
   docker-manifest:
     name: Publish to Docker Hub (manifest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: docker-build
     if: ${{ vars.JARELA_DOCKER_PUBLISH == 'true' }}
     permissions:
@@ -599,7 +599,7 @@ jobs:
 
   publish-atlassian-langchain:
     name: Publish @circuitwall/atlassian-langchain
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: release-security
     if: startsWith(github.ref_name, 'atlassian-langchain-v')
     permissions:
@@ -634,7 +634,7 @@ jobs:
 
   publish-jira-align-langchain:
     name: Publish @circuitwall/jira-align-langchain
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: release-security
     if: startsWith(github.ref_name, 'jira-align-langchain-v')
     permissions:
@@ -669,7 +669,7 @@ jobs:
 
   publish-github-langchain:
     name: Publish @circuitwall/github-langchain
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: release-security
     if: startsWith(github.ref_name, 'github-langchain-v')
     permissions:
@@ -704,7 +704,7 @@ jobs:
 
   publish-ms-todo-langchain:
     name: Publish @circuitwall/ms-todo-langchain
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: release-security
     if: startsWith(github.ref_name, 'ms-todo-langchain-v')
     permissions:
@@ -739,7 +739,7 @@ jobs:
 
   publish-icloud-langchain:
     name: Publish @circuitwall/icloud-langchain
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: release-security
     if: startsWith(github.ref_name, 'icloud-langchain-v')
     permissions:
