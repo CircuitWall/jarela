@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-24
+
+### Added
+
+- ci: Add nightly app release pipeline
+- chat: Render latest agent reply in menu
+- skills: Add code-validated personal briefing pilot
+- cli: Add a version command to verify upgrades
+- skills: Run representative fixtures against workflow check tools
+- agents: Add duplicate so tuned agents can be reused as templates
+- cli: Add a backup command that snapshots data without keys
+- workspace: Reuse recent workspace tree scans
+- integrations: Add declarative credential probes
+- agents: Add unified per-agent persona profiles
+- ui: Add animated agent switcher with unread indicators
+- release: Add on-demand copilot documentation gate
+
+### Fixed
+
+- deps: Update next 16.4.0 to 16.4.2 for security
+- setup: Fix first-run model selection and save recovery
+- agents: Keep async tool handoffs out of success evidence
+- credentials: Add retry for provider catalog failures
+- scheduler: Fix unhandled tick failures and recovery
+- documents: Skip queued reindex jobs for disabled sources
+- tools: Skip invalid stored location coordinates
+- tools: Keep watchers limited to read-only tools
+- tools: Keep provider status in image generation errors
+- tools: Skip inverted calendar event windows before sending invites
+- tools: Keep user-blocked agent workflow steps out of retries
+- tools: Keep scheduled tasks from firing empty or bogus schedules
+- privacy: Remove attachment files when their conversation is deleted
+- privacy: Keep files referenced by encrypted memory entries
+- release: Detect prerelease upgrades and explain update failures
+- release: Use full prerelease identifiers in update checks
+- tools: Drop finished delegate jobs after a retention window
+- tools: Drop expired delegate jobs on status reads too
+- tools: Keep terminal input behind the exec safety gate
+- terminal: Gate continued terminal input
+- skills: Keep frontmatter skill descriptions visible to agents
+- skills: Render block-scalar frontmatter descriptions
+- cli: Block backups that reach the data dir through links
+- workspace: Use the on-disk root as the tree scan cache key
+- agents: Render local date and time in the system prompt
+- agents: Normalize local offset signs in the time context
+- chat: Normalize metadata row spacing
+- chat: Normalize metadata width on narrow screens
+- chat: Prevent oversized photos from reaching the model
+- chat: Keep gif and svg photos by extension
+- ci: Use loopback for the e2e server inside the container
+- tests: Prevent tests from writing to the real data dir
+- pwa: Fix mobile safe areas and frosted chat overlays
+- release: Remove mandatory documentation review gates
+- release: Publish nightly dispatches by default
+- release: Fix unattended validation and publication
+- release: Fix existing release pr lookup
+
+### Changed
+
+- e2e: Pin runner to ubuntu 24.04
+- e2e: Run playwright in its container to stop install hangs
+- npm: Allow more registry retries to survive resets
+- deps: Enable weekly grouped github actions updates
+- hooks: Run only related unit tests before commit
+- deps: Bump the actions group with 5 updates
+- ui: Update persona browser checks for agent profiles
+
 ### Added
 
 - Built-in and drop-in provider integrations can declare read-only HTTPS credential probes instead of hand-written probe code.
