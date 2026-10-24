@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "2.6.0",
+  "version": "2.6.1",
   "prompts": {
     "static.agent.compaction-group": {
       "source": "lib/agents/compaction-pipeline.ts",
@@ -8414,14 +8414,10 @@
               },
               "summary": {
                 "default": null,
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "maxLength": 280
-                  },
-                  {
-                    "type": "null"
-                  }
+                "description": "Optional short memory summary, truncated to 280 characters when stored.",
+                "type": [
+                  "string",
+                  "null"
                 ]
               },
               "aliases": {
@@ -9972,10 +9968,9 @@
             "type": "boolean"
           },
           "title": {
-            "description": "Optional issue title override.",
+            "description": "Optional issue title override, truncated to 120 characters.",
             "type": "string",
-            "minLength": 1,
-            "maxLength": 120
+            "minLength": 1
           },
           "create_issue": {
             "description": "When true, create the GitHub issue in CircuitWall/jarela. Default false.",
@@ -11220,9 +11215,8 @@
             "description": "Use version_adoption for the system-owned adoption workflow; otherwise use a stable task slug."
           },
           "phase": {
-            "description": "Optional current phase. For version_adoption, use impact_radius, adoption, or complete.",
-            "type": "string",
-            "maxLength": 80
+            "description": "Optional current phase, truncated to 80 characters. For version_adoption, use impact_radius, adoption, or complete.",
+            "type": "string"
           },
           "items": {
             "description": "For agent-created workflows, send the complete current checklist snapshot on every update. Every item requires input, output, and validation; completed items also require observed validation_evidence. Omitted item statuses default to pending.",
@@ -11240,30 +11234,27 @@
                 "label": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 120
+                  "description": "Short step label, truncated to 120 characters."
                 },
                 "input": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 500,
-                  "description": "The concrete inputs or prerequisites for this step."
+                  "description": "The concrete inputs or prerequisites for this step, truncated to 500 characters."
                 },
                 "output": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 500,
-                  "description": "The expected result this step must produce."
+                  "description": "The expected result this step must produce, truncated to 500 characters."
                 },
                 "validation": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 500,
-                  "description": "A concrete check for confirming the expected output."
+                  "description": "A concrete check for confirming the expected output, truncated to 500 characters."
                 },
                 "validation_evidence": {
+                  "description": "Observed validation evidence, truncated to 500 characters.",
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 500
+                  "minLength": 1
                 },
                 "status": {
                   "type": "string",
@@ -11306,25 +11297,21 @@
             ]
           },
           "validation_evidence": {
-            "description": "Exact check performed and observed result. Required when marking a version_adoption item done.",
+            "description": "Exact check performed and observed result. Required when marking a version_adoption item done; truncated to 500 characters.",
             "type": "string",
-            "minLength": 1,
-            "maxLength": 500
+            "minLength": 1
           },
           "summary": {
-            "description": "Optional short workflow summary shown in the chat checklist.",
-            "type": "string",
-            "maxLength": 300
+            "description": "Optional short workflow summary shown in the chat checklist, truncated to 300 characters.",
+            "type": "string"
           },
           "detail": {
-            "description": "Optional live progress text to stream immediately to the UI.",
-            "type": "string",
-            "maxLength": 300
+            "description": "Optional live progress text to stream immediately to the UI, truncated to 300 characters.",
+            "type": "string"
           },
           "needs_attention_reason": {
-            "description": "Optional reason shown when the item or workflow needs user attention.",
-            "type": "string",
-            "maxLength": 300
+            "description": "Optional reason shown when the item or workflow needs user attention, truncated to 300 characters.",
+            "type": "string"
           },
           "needs_user": {
             "description": "For version_adoption: set true when item_id cannot progress without the user's input or approval. Agent-created workflows set needs_user on the item instead.",
