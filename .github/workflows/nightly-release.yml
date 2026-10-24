@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 180
     env:
       GH_REPO: ${{ github.repository }}
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v7
         with:
@@ -244,6 +245,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ steps.release-pr.outputs.branch }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
         run: |
           set -euo pipefail
           run_id=""
@@ -284,6 +286,7 @@ jobs:
             echo "::error::The required Lint, typecheck, build check is not green on $HEAD_SHA."
             exit 1
           fi
+          node scripts/approve-release-ci.mjs
 
       - name: Merge release PR and create release tag
         id: merge
