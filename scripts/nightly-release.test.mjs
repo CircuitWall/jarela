@@ -1,9 +1,37 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { classifyRelease, parseVersion, releaseCommitMatchesBase, renderReleaseNotes } from "./nightly-release.mjs";
 
 function commit(subject, body = "", sha = "sha") {
   return { subject, body, sha };
 }
+
+describe("nightly workflow defaults", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/nightly-release.yml", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
+  it("publishes by default on manual dispatch and retains the nightly schedule", () => {
+    expect(workflow).toMatch(/dry_run:\s*\n\s+description:.*\n\s+required: false\s*\n\s+type: boolean\s*\n\s+default: false/);
+    expect(workflow).toContain('- cron: "0 3 * * *"');
+    expect(workflow).toContain("if: github.ref == 'refs/heads/main'");
+  });
+
+  it("keeps explicit dry runs from entering the release and recovery paths", () => {
+    const steps = workflow.split("      - name: ");
+    const guard = "(github.event_name != 'workflow_dispatch' || !inputs.dry_run)";
+    for (const name of [
+      "Recover a failed release for the latest tag",
+      "Check for an existing nightly release PR",
+      "Verify changeset for a resumed release",
+      "Tag and dispatch the release workflow",
+    ]) {
+      const step = steps.find((text) => text.startsWith(`${name}\n`));
+      expect(step, name).toBeDefined();
+      expect(step.split("\n").find((line) => line.trimStart().startsWith("if:")), name).toContain(guard);
+    }
+    const dryRun = steps.find((text) => text.startsWith("Describe dry-run plan\n"));
+    expect(dryRun).toContain("if: github.event_name == 'workflow_dispatch' && inputs.dry_run");
+  });
+});
 
 describe("nightly release policy", () => {
   it("preserves the current tag when there are no unreleased commits", () => {

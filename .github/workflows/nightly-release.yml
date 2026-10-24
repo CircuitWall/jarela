@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Only classify changes; do not open, merge, or publish a release
+        description: Dry run only (optional); skip release PR creation, merge, and publication
         required: false
         type: boolean
-        default: true
+        default: false
 
 permissions:
   actions: write
