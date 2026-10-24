@@ -87,6 +87,8 @@ URL: https://github.com/CircuitWall/jarela
 # The staged standalone payload contains prebuilt native addons for several
 # architectures. Preserve those binaries instead of running host strip on them.
 %global __strip /bin/true
+%global debug_package %{nil}
+%global __debug_install_post %{nil}
 BuildArch: x86_64
 Source0: jarela-$VERSION.tar.gz
 

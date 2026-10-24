@@ -63,6 +63,7 @@ jobs:
       packages:          ${{ steps.filter.outputs.packages }}
       pkg_meta:          ${{ steps.filter.outputs.pkg_meta }}
       workflows:         ${{ steps.filter.outputs.workflows }}
+      native_packages:   ${{ steps.filter.outputs.native_packages }}
       release_meta_only: ${{ steps.release-meta.outputs.only }}
     steps:
       - uses: actions/checkout@v7
@@ -103,6 +104,10 @@ jobs:
               - 'scripts/check-npm-package.mjs'
             workflows:
               - '.github/workflows/**'
+            native_packages:
+              - 'scripts/package-native-linux.sh'
+              - 'scripts/test-native-linux.sh'
+              - '.github/workflows/ci.yml'
 
       - name: Detect release metadata-only change
         id: release-meta
@@ -120,29 +125,25 @@ jobs:
             range="$BEFORE..$HEAD_SHA"
           fi
 
-          node - "$range" <<'NODE'
-          const { execFileSync } = require('node:child_process');
-          const fs = require('node:fs');
-          const range = process.argv[2];
-          const allowed = new Set(['CHANGELOG.md', 'package.json', 'package-lock.json']);
-          const changed = execFileSync('git', ['diff', '--name-only', range], { encoding: 'utf8' })
-            .trim()
-            .split(/\r?\n/)
-            .filter(Boolean);
-          let only = changed.length > 0 && changed.every((file) => allowed.has(file));
+          node scripts/ci-release-metadata.mjs "$range"
 
-          for (const file of ['package.json', 'package-lock.json']) {
-            if (!only || !changed.includes(file)) continue;
-            const diff = execFileSync('git', ['diff', '-U0', range, '--', file], { encoding: 'utf8' });
-            for (const line of diff.split(/\r?\n/)) {
-              if (!/^[+-]/.test(line) || /^[+-]{3}/.test(line)) continue;
-              if (!/^[-+]\s*"version":\s*"[^"]+",?$/.test(line)) only = false;
-            }
-          }
-
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `only=${only ? 'true' : 'false'}\n`);
-          console.log(`release_meta_only=${only ? 'true' : 'false'} changed=${changed.join(',') || '(none)'}`);
-          NODE
+  native-packages:
+    name: Native Linux package smoke test
+    runs-on: ubuntu-26.04
+    needs: [changes]
+    if: ${{ needs.changes.outputs.native_packages == 'true' || (github.event_name == 'workflow_dispatch' && inputs.release_validation) }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Install native packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm cpio
+      - name: Verify DEB and RPM packages preserve prebuilt payloads
+        run: bash scripts/test-native-linux.sh
 
   security:
     name: Security checks
