@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-10-24
+
+### Fixed
+
+- release: Fix commit parsing for merged release recovery
+- release: Fix linux packages and duplicate release validation
+
+### Changed
+
+- workflows: Pin linux runners to 26.04
+
 ## [2.6.0] - 2026-10-24
 
 ### Added

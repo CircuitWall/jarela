@@ -11,6 +11,24 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 2.6.1
+
+From 2.6.0 · 2026-10-24
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- fix(release): fix linux packages and duplicate release validation
+- ci(workflows): pin linux runners to 26.04
+- fix(release): fix commit parsing for merged release recovery
+
 ## 2.6.0
 
 From 2.5.3 · 2026-10-24

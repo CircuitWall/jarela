@@ -3640,6 +3640,19 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "2.6.1",
+      "previous_version": "2.6.0",
+      "date": "2026-10-24",
+      "hints": [],
+      "commits": [
+        "fix(release): fix linux packages and duplicate release validation",
+        "ci(workflows): pin linux runners to 26.04",
+        "fix(release): fix commit parsing for merged release recovery"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }
