@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { luhn, mod97, personnummer_check } from "./validators";
+import { credential_shape, luhn, mod97, personnummer_check } from "./validators";
 
 describe("luhn", () => {
   it("accepts valid Luhn digits", () => {
@@ -56,4 +56,17 @@ describe("mod97 (IBAN)", () => {
   it("rejects non-iban garbage", () => {
     expect(mod97("not an iban")).toBe(false);
   });
+});
+
+describe("credential_shape", () => {
+  it.each(["Tr0ub4dor&3", "aB3kQ9vXp2mR7tYn", "whsec_9xQ2mK7pL4", "session=abc123def456"])("accepts %s", (v) => {
+    expect(credential_shape(v)).toBe(true);
+  });
+
+  it.each(["process.env.API_KEY", "user:123:profile", "MyApp-Production", "abcdefghij", "12345678", "item-1", "two words1"])(
+    "rejects %s",
+    (v) => {
+      expect(credential_shape(v)).toBe(false);
+    },
+  );
 });

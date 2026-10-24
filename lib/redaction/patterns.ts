@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { getDataDir } from "@/lib/db/data-dir";
 
-export const VALIDATOR_NAMES = ["luhn", "mod97", "personnummer_check"] as const;
+export const VALIDATOR_NAMES = ["luhn", "mod97", "personnummer_check", "credential_shape"] as const;
 
 const PatternSchema = z.object({
   name: z.string().min(1),
@@ -37,12 +37,58 @@ const DigitRunHeuristicSchema = z.object({
   exclude_patterns: z.array(z.string()).default([]),
 });
 
+const DEFAULT_DIGIT_RUN = {
+  enabled: true,
+  // 8 digits catches phone numbers (and longer: credit cards, IBAN
+  // tails, account numbers) while leaving 6-digit OTPs, 5-digit ZIPs,
+  // and 4-digit PINs / years alone.
+  min_digits: 8,
+  // Spaces, hyphens, and dots are the common human-readable
+  // separators for numeric secrets. `/` is intentionally excluded so
+  // dates like `2026/06/19` stay unmatched.
+  separators: " -.",
+  // Everyday numbers that are 8+ digits once separators are ignored:
+  // dates (also inside model ids like gpt-4o-2024-08-06), IPv4 addresses,
+  // plain decimals and coordinates, and Unix timestamps (s or ms).
+  exclude_patterns: [
+    "^(?:\\d{4}[-.]\\d{1,2}[-.]\\d{1,2}|\\d{1,2}[-.]\\d{1,2}[-.]\\d{4})$",
+    "^\\d{1,3}(?:\\.\\d{1,3}){3}$",
+    "^\\d+\\.\\d+$",
+    "^1[5-9]\\d{8}(?:\\d{3})?$",
+  ] as string[],
+};
+
+// Shared pieces for "key = value" credential patterns. Values are masked
+// only when they look like data, not code: references such as
+// `os.environ[...]`, `${VAR}`, `<placeholder>`, plain lower-case words
+// (`string`, `required`, `none`), and function calls stay visible.
+const CODE_REF = "(?!(?:os|process|env|self|this|config|settings|window|request|req|ctx|import)[.\\[]|\\$|%|\\{\\{|<)";
+const NOT_PLAIN_WORD = "(?![a-z_]+(?:[\\s\"',;&)\\]}>]|$))";
+const NOT_CALL = "(?![^\\s\"',;&]*\\()";
+const UNQUOTED_VALUE = `${CODE_REF}${NOT_PLAIN_WORD}${NOT_CALL}[^\\s"',;&]`;
+const QUOTED_VALUE = "(?!\\$\\{|\\{\\{|<)[^\"'\\r\\n]";
+const PASSWORD_KEY = "(?:[Pp]ass(?:word|wd|phrase)|PASS(?:WORD|WD|PHRASE)|[_-][Ss]ecret|[_-]SECRET)";
+// Any identifier whose last word names a credential: `api_key`,
+// `STRIPE_WEBHOOK_SECRET`, `x-api-key`, `accessToken`, `client.secret`,
+// `db_password`, `credentials`, `session_id`. The leading lookbehind keeps
+// `monkey`/`hotkey` from matching, and the value still has to pass
+// `credential_shape`, so unknown credential formats are caught by context
+// rather than by vendor prefix.
+const CREDENTIAL_WORD_LOWER = "(?:key|apikey|token|secret|pass(?:word|wd|phrase)?|credentials?|auth|signature|cookie|session(?:[_-]?id)?|pat)";
+const CREDENTIAL_WORD_UPPER = "(?:KEY|APIKEY|TOKEN|SECRET|PASS(?:WORD|WD|PHRASE)?|CREDENTIALS?|AUTH|SIGNATURE|COOKIE|SESSION(?:_?ID)?|PAT)";
+const CREDENTIAL_WORD_CAP = "(?:Key|Token|Secret|Pass(?:word|wd|phrase)?|Credentials?|Auth|Signature|Cookie|Session(?:Id)?)";
+const CREDENTIAL_KEY =
+  `(?<![A-Za-z0-9])(?:[A-Za-z0-9]+[_.-])*(?:${CREDENTIAL_WORD_LOWER}|${CREDENTIAL_WORD_UPPER}|(?:[a-z][A-Za-z0-9]*)?${CREDENTIAL_WORD_CAP})`;
+const KEY_SEPARATOR = "\\s*(?:=>|[:=])\\s*";
+
 const RedactionConfigSchema = z.object({
   patterns: z.array(PatternSchema).default([]),
   heuristics: z
     .object({
       high_entropy: EntropyHeuristicSchema,
-      digit_run: DigitRunHeuristicSchema.optional(),
+      // Pattern files written before digit_run existed omit it; treat a
+      // missing block as the default rather than silently disabling it.
+      digit_run: DigitRunHeuristicSchema.default(DEFAULT_DIGIT_RUN),
     })
     .default({
       high_entropy: {
@@ -52,12 +98,7 @@ const RedactionConfigSchema = z.object({
         char_class: "[A-Za-z0-9_=+/.-]",
         exclude_patterns: [],
       },
-      digit_run: {
-        enabled: true,
-        min_digits: 8,
-        separators: " -.",
-        exclude_patterns: [],
-      },
+      digit_run: DEFAULT_DIGIT_RUN,
     }),
   field_name_allowlist: z.array(z.string()).default([]),
 });
@@ -91,6 +132,48 @@ export const DEFAULT_REDACTION_CONFIG: RedactionConfig = {
       enabled: true,
     },
     {
+      name: "github_fine_grained_token",
+      regex: "github_pat_[A-Za-z0-9_]{50,}",
+      type_hint: "github_token",
+      enabled: true,
+    },
+    {
+      name: "gitlab_token",
+      regex: "glpat-[A-Za-z0-9_-]{20,}",
+      type_hint: "gitlab_token",
+      enabled: true,
+    },
+    {
+      name: "slack_token",
+      regex: "xox[abposr]-[A-Za-z0-9-]{10,}",
+      type_hint: "slack_token",
+      enabled: true,
+    },
+    {
+      name: "stripe_key",
+      regex: "\\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}",
+      type_hint: "stripe_key",
+      enabled: true,
+    },
+    {
+      name: "google_api_key",
+      regex: "AIza[A-Za-z0-9_-]{35}",
+      type_hint: "google_api_key",
+      enabled: true,
+    },
+    {
+      name: "npm_token",
+      regex: "\\bnpm_[A-Za-z0-9]{36}\\b",
+      type_hint: "npm_token",
+      enabled: true,
+    },
+    {
+      name: "huggingface_token",
+      regex: "\\bhf_[A-Za-z0-9]{30,}\\b",
+      type_hint: "huggingface_token",
+      enabled: true,
+    },
+    {
       name: "jwt",
       regex: "eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+",
       type_hint: "jwt",
@@ -106,6 +189,12 @@ export const DEFAULT_REDACTION_CONFIG: RedactionConfig = {
       name: "bearer_header",
       regex: "Bearer\\s+[A-Za-z0-9._~+/=-]{20,}",
       type_hint: "bearer_token",
+      enabled: true,
+    },
+    {
+      name: "basic_auth_header",
+      regex: "(?<=[Aa]uthorization[\"']?\\s*:\\s*[\"']?[Bb]asic\\s+)[A-Za-z0-9+/]{8,}={0,2}",
+      type_hint: "basic_auth",
       enabled: true,
     },
     {
@@ -142,6 +231,78 @@ export const DEFAULT_REDACTION_CONFIG: RedactionConfig = {
       validator: "luhn",
       enabled: true,
     },
+    // Credential assignments mask only the value (lookbehind keeps the key
+    // visible) so the model still knows what kind of value was held back.
+    // `pwd` is left out on purpose: it is the shell working-directory
+    // command and shows up constantly in tool output.
+    {
+      name: "password_quoted",
+      regex: `(?<=${PASSWORD_KEY}["']?\\s*[:=]\\s*["'])${QUOTED_VALUE}{3,}(?=["'])`,
+      type_hint: "password",
+      enabled: true,
+    },
+    {
+      name: "password_assignment",
+      regex: `(?<=${PASSWORD_KEY}\\s*[:=]\\s*)${UNQUOTED_VALUE}{3,}`,
+      type_hint: "password",
+      enabled: true,
+    },
+    {
+      name: "password_phrase",
+      regex: "(?<=\\b(?:[Pp]ass(?:word|phrase|code)|PASSWORD)\\s+(?:is|was)\\s+)(?![a-z]+\\b)[^\\s\"',;]{4,}(?<!\\.)",
+      type_hint: "password",
+      enabled: true,
+    },
+    {
+      name: "credential_quoted",
+      regex: `(?<=${CREDENTIAL_KEY}["']?${KEY_SEPARATOR}["'])[^"'\\r\\n]{8,}(?=["'])`,
+      type_hint: "credential",
+      validator: "credential_shape",
+      enabled: true,
+    },
+    {
+      name: "credential_assignment",
+      regex: `(?<=${CREDENTIAL_KEY}${KEY_SEPARATOR})[^\\s"',;&<>(){}\\[\\]]{8,}`,
+      type_hint: "credential",
+      validator: "credential_shape",
+      enabled: true,
+    },
+    {
+      name: "pin_code",
+      regex: "(?<=\\b(?:PIN|[Pp]in [Cc]ode|PIN [Cc]ode|[Pp]asscode|CVV|CVC|[Cc]vv|[Cc]vc|[Ss]ecurity [Cc]ode)(?:\\s+(?:is|was))?\\s*[:=#]?\\s*)\\d{3,8}\\b",
+      type_hint: "pin",
+      enabled: true,
+    },
+    {
+      name: "labelled_private_key",
+      regex: "(?<=\\b(?:[Pp]rivate[ _-]?[Kk]ey|PRIVATE_KEY|[Ss]eed)\\W{0,4}(?:0x)?)[a-fA-F0-9]{64}\\b",
+      type_hint: "private_key",
+      enabled: true,
+    },
+    {
+      name: "us_phone",
+      regex: "\\(\\d{3}\\)\\s?\\d{3}[-.\\s]\\d{4}\\b",
+      type_hint: "phone",
+      enabled: true,
+    },
+    {
+      name: "bank_account",
+      regex: "(?<=\\b(?:[Kk]onto(?:nummer|nr\\.?)?|[Bb]ank [Aa]ccount(?: [Nn]o\\.?| [Nn]umber)?|[Aa]ccount [Nn](?:o\\.?|umber))\\s*[:#]?\\s*)\\d[\\d -]{5,}\\d",
+      type_hint: "bank_account",
+      enabled: true,
+    },
+    {
+      name: "passport_number",
+      regex: "(?<=\\b[Pp]assport\\s*(?:(?:[Nn]o\\.?|[Nn]umber|#)\\s*)?[:#]?\\s*)(?=[A-Z]*\\d)[A-Z0-9]{6,9}\\b",
+      type_hint: "passport_number",
+      enabled: true,
+    },
+    {
+      name: "url_credentials",
+      regex: "(?<=\\b[A-Za-z][A-Za-z0-9+.-]*://[^\\s:/@]+:)[^\\s@/]+(?=@)",
+      type_hint: "url_password",
+      enabled: true,
+    },
   ],
   heuristics: {
     high_entropy: {
@@ -162,21 +323,14 @@ export const DEFAULT_REDACTION_CONFIG: RedactionConfig = {
         "^(?:\\w+=)?[a-f0-9]{64}$",
         "^(?:\\w+=)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
         "^(?:\\w+=)?[0-9A-HJKMNP-TV-Z]{26}$",
-        "^[a-z]{2,8}_[A-Za-z0-9]{14,}$",
+        // Prefixed object ids (`cus_…`, `msg_…`, `call_…`, `toolu_…`) are
+        // up to 24 chars after the prefix. Longer prefixed values are
+        // treated as tokens, which covers credential formats with an
+        // unknown vendor prefix.
+        "^[a-z]{2,8}_[A-Za-z0-9]{14,24}$",
       ],
     },
-    digit_run: {
-      enabled: true,
-      // 8 digits catches phone numbers (and longer: credit cards, IBAN
-      // tails, account numbers) while leaving 6-digit OTPs, 5-digit ZIPs,
-      // and 4-digit PINs / years alone.
-      min_digits: 8,
-      // Spaces, hyphens, and dots are the common human-readable
-      // separators for numeric secrets. `/` is intentionally excluded so
-      // dates like `2026/06/19` stay unmatched.
-      separators: " -.",
-      exclude_patterns: [],
-    },
+    digit_run: DEFAULT_DIGIT_RUN,
   },
   field_name_allowlist: [
     "id", "_id", "uuid", "guid", "node_id",
@@ -245,8 +399,45 @@ export function loadRedactionConfig(): RedactionConfig {
     return DEFAULT_REDACTION_CONFIG;
   }
 
-  cache = { config: result.data, mtimeMs };
-  return result.data;
+  cache = { config: upgradeLegacyDefaults(withMissingDefaultPatterns(result.data)), mtimeMs };
+  return cache.config;
+}
+
+// Entropy excludes that earlier versions wrote into pattern files, mapped to
+// their current form. Only exact copies of a retired default are replaced;
+// excludes the user wrote are left alone.
+const LEGACY_ENTROPY_EXCLUDES: Record<string, string> = {
+  "^[a-f0-9]{40}$": "^(?:\\w+=)?[a-f0-9]{40}$",
+  "^[a-f0-9]{64}$": "^(?:\\w+=)?[a-f0-9]{64}$",
+  "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$":
+    "^(?:\\w+=)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+  "^[0-9A-HJKMNP-TV-Z]{26}$": "^(?:\\w+=)?[0-9A-HJKMNP-TV-Z]{26}$",
+  // Hid every prefixed token, including credentials with unknown prefixes.
+  "^[a-z]{2,8}_[A-Za-z0-9]{14,}$": "^[a-z]{2,8}_[A-Za-z0-9]{14,24}$",
+};
+
+function upgradeLegacyDefaults(config: RedactionConfig): RedactionConfig {
+  const excludes = config.heuristics.high_entropy.exclude_patterns;
+  if (!excludes.some((p) => p in LEGACY_ENTROPY_EXCLUDES)) return config;
+  return {
+    ...config,
+    heuristics: {
+      ...config.heuristics,
+      high_entropy: {
+        ...config.heuristics.high_entropy,
+        exclude_patterns: excludes.map((p) => LEGACY_ENTROPY_EXCLUDES[p] ?? p),
+      },
+    },
+  };
+}
+
+// A pattern file is a snapshot of the defaults at the time it was written,
+// so built-in patterns added later would never apply. Append any default
+// pattern whose name is absent; users turn one off with `enabled: false`.
+function withMissingDefaultPatterns(config: RedactionConfig): RedactionConfig {
+  const names = new Set(config.patterns.map((p) => p.name));
+  const missing = DEFAULT_REDACTION_CONFIG.patterns.filter((p) => !names.has(p.name));
+  return missing.length === 0 ? config : { ...config, patterns: [...config.patterns, ...missing] };
 }
 
 // Write the default config to disk if no file exists yet. Idempotent —

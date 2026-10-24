@@ -37,7 +37,7 @@ export interface MaskContext {
 // Matches `«SECRET:<id> ...»` with anything (or nothing) between the id and
 // the closing brace, so the rehydrator stays compatible with future metadata
 // additions and ignores model-emitted typos in the trailing fields.
-const PLACEHOLDER_RE = /«SECRET:([a-z0-9]+)[^»]*»/g;
+export const PLACEHOLDER_RE = /«SECRET:([a-z0-9]+)[^»]*»/g;
 
 // Build a non-leaking content fingerprint so the agent can tell whether two
 // placeholders refer to the same underlying value across runs / threads (the
@@ -85,7 +85,13 @@ export function createMaskContext(config: RedactionConfig): MaskContext {
 
   function applyMatches(text: string, matches: Match[]): MaskResult {
     if (matches.length === 0) return { text, summary: [] };
-    const sorted = matches.slice().sort((a, b) => a.start - b.start);
+    // Payloads can be masked twice (chat model, then the provider layer);
+    // never re-mask text that is already a placeholder.
+    const placeholders = Array.from(text.matchAll(PLACEHOLDER_RE), (p) => [p.index, p.index + p[0].length]);
+    const sorted = matches
+      .filter((m) => !placeholders.some(([start, end]) => m.start < end && m.end > start))
+      .sort((a, b) => a.start - b.start);
+    if (sorted.length === 0) return { text, summary: [] };
     const counts = new Map<string, number>();
     const out: string[] = [];
     let i = 0;

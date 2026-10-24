@@ -8,7 +8,7 @@
 // longer match wins (prevents an entropy match from chopping a regex
 // match in half).
 
-import { VALIDATORS } from "./validators";
+import { VALIDATORS, WORD_PIECE } from "./validators";
 import type { RedactionConfig } from "./patterns";
 
 export interface Match {
@@ -70,6 +70,7 @@ export function detectMatches(text: string, config: RedactionConfig): Match[] {
       if (value.length < heuristic.min_length) continue;
       if (shannonEntropy(value) < heuristic.min_entropy) continue;
       if (excludes.some((re) => re.test(value))) continue;
+      if (isWordShaped(value)) continue;
       raw.push({
         start: m.index,
         end: m.index + value.length,
@@ -145,6 +146,9 @@ export function detectMatches(text: string, config: RedactionConfig): Match[] {
       if (exStart !== m.index || exEnd !== m.index + raw0.length) {
         const broadToken = text.slice(exStart, exEnd);
         if (broadExcludes.some((re) => re.test(broadToken))) continue;
+        // Numeric ids inside a URL or path (`/actions/runs/40131489834`)
+        // are resource ids, not account numbers.
+        if (broadToken.includes("/") && isWordShaped(broadToken)) continue;
       }
       const offset = raw0.indexOf(value);
       raw.push({
@@ -158,6 +162,15 @@ export function detectMatches(text: string, config: RedactionConfig): Match[] {
   }
 
   return resolveOverlaps(raw);
+}
+
+// URLs, paths, file names, and slugs clear the entropy bar because they mix
+// many different letters, but every separator-delimited piece is an
+// ordinary word, number, or short fragment. Random secrets contain at least
+// one long piece mixing case and digits, so they never qualify.
+export function isWordShaped(value: string): boolean {
+  const pieces = value.split(/[/._=+-]+/).filter((p) => p.length > 0);
+  return pieces.length > 1 && pieces.every((p) => p.length <= 5 || WORD_PIECE.test(p));
 }
 
 // Shannon entropy in bits/char. Pure ASCII counting; good enough for

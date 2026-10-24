@@ -14,6 +14,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { writeBinaryFile } from "@/lib/files";
 import { getConfig } from "@/lib/env/config";
+import { maskOutboundText } from "@/lib/redaction/mask-provider";
 import { resolveGoogleApiKey, timeoutSignal } from "@/lib/utils/google-api";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { withStreamDefault } from "../support/tool-metadata";
@@ -60,7 +61,7 @@ async function readProviderJson<T extends { error?: { message?: string } }>(res:
 async function callGemini(model: string, prompt: string, apiKey: string): Promise<{ data: Buffer; mime: string }> {
   const url = `${ENDPOINT}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const body = {
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    contents: [{ role: "user", parts: [{ text: maskOutboundText(prompt) }] }],
     generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
   };
   let res: Response;
@@ -89,7 +90,7 @@ async function callGemini(model: string, prompt: string, apiKey: string): Promis
 async function callImagen(model: string, prompt: string, apiKey: string, n: number, aspect: string): Promise<Array<{ data: Buffer; mime: string }>> {
   const url = `${ENDPOINT}/${encodeURIComponent(model)}:predict?key=${encodeURIComponent(apiKey)}`;
   const body = {
-    instances: [{ prompt }],
+    instances: [{ prompt: maskOutboundText(prompt) }],
     parameters: { sampleCount: Math.max(1, Math.min(4, n)), aspectRatio: aspect },
   };
   let res: Response;
