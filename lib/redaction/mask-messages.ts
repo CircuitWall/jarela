@@ -3,8 +3,8 @@
 // swapped for «SECRET:...» placeholders, and records per-payload
 // summaries on the run context for later UI surfacing.
 
-import type { InvokeMessage, ContentPart, OpenAITool } from "@/lib/tools/runtime/types";
-import type { RedactionSummary } from "./mask";
+import type { InvokeMessage, ContentPart } from "@/lib/tools/runtime/types";
+import type { MaskContext, RedactionSummary } from "./mask";
 import { getMaskRunContext, recordSummary } from "./context";
 
 function mergeSummaries(...lists: RedactionSummary[]): RedactionSummary {
@@ -15,20 +15,18 @@ function mergeSummaries(...lists: RedactionSummary[]): RedactionSummary {
   return Array.from(totals.entries()).map(([type_hint, count]) => ({ type_hint, count }));
 }
 
-function maskContent(content: string | ContentPart[]): {
+export function maskContentWith(ctx: MaskContext, content: string | ContentPart[]): {
   content: string | ContentPart[];
   summary: RedactionSummary;
 } {
-  const run = getMaskRunContext();
-  if (!run) return { content, summary: [] };
   if (typeof content === "string") {
-    const r = run.ctx.maskText(content);
+    const r = ctx.maskText(content);
     return { content: r.text, summary: r.summary };
   }
   const summaries: RedactionSummary[] = [];
   const parts: ContentPart[] = content.map((p) => {
     if (p.type === "text") {
-      const r = run.ctx.maskText(p.text);
+      const r = ctx.maskText(p.text);
       summaries.push(r.summary);
       return { ...p, text: r.text };
     }
@@ -41,18 +39,43 @@ function maskContent(content: string | ContentPart[]): {
 // model's request to invoke a tool — we mask before sending so the
 // provider doesn't see secrets the model picked up from prior tool
 // outputs and is now passing forward.
-function maskJsonArgs(jsonStr: string): { args: string; summary: RedactionSummary } {
-  const run = getMaskRunContext();
-  if (!run) return { args: jsonStr, summary: [] };
+function maskJsonArgs(ctx: MaskContext, jsonStr: string): { args: string; summary: RedactionSummary } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonStr);
   } catch {
-    const r = run.ctx.maskText(jsonStr);
+    const r = ctx.maskText(jsonStr);
     return { args: r.text, summary: r.summary };
   }
-  const r = run.ctx.maskJson(parsed);
+  const r = ctx.maskJson(parsed);
   return { args: r.text, summary: r.summary };
+}
+
+function maskMessageWith(ctx: MaskContext, m: InvokeMessage): { message: InvokeMessage; summary: RedactionSummary } {
+  const masked = { ...m };
+  const summaries: RedactionSummary[] = [];
+
+  const c = maskContentWith(ctx, m.content);
+  masked.content = c.content;
+  summaries.push(c.summary);
+
+  if (m.tool_calls?.length) {
+    masked.tool_calls = m.tool_calls.map((tc) => {
+      const a = maskJsonArgs(ctx, tc.function.arguments);
+      summaries.push(a.summary);
+      return {
+        ...tc,
+        function: { ...tc.function, arguments: a.args },
+      };
+    });
+  }
+  return { message: masked, summary: mergeSummaries(...summaries) };
+}
+
+// Mask an InvokeMessage[] payload against an explicit MaskContext without
+// recording run summaries. Used by background model calls.
+export function maskInvokeMessagesWith(ctx: MaskContext, messages: InvokeMessage[]): InvokeMessage[] {
+  return messages.map((m) => maskMessageWith(ctx, m).message);
 }
 
 // Walk an InvokeMessage[] payload and mask sensitive content in place.
@@ -62,28 +85,10 @@ export function maskInvokeMessages(messages: InvokeMessage[]): InvokeMessage[] {
   const run = getMaskRunContext();
   if (!run) return messages;
   return messages.map((m, i) => {
-    const masked = { ...m };
-    const summaries: RedactionSummary[] = [];
-
-    const c = maskContent(m.content);
-    masked.content = c.content;
-    summaries.push(c.summary);
-
-    if (m.tool_calls?.length) {
-      masked.tool_calls = m.tool_calls.map((tc) => {
-        const a = maskJsonArgs(tc.function.arguments);
-        summaries.push(a.summary);
-        return {
-          ...tc,
-          function: { ...tc.function, arguments: a.args },
-        };
-      });
+    const { message, summary } = maskMessageWith(run.ctx, m);
+    if (summary.length > 0) {
+      recordSummary(`msg:${i}:${m.role}`, summary);
     }
-
-    const merged = mergeSummaries(...summaries);
-    if (merged.length > 0) {
-      recordSummary(`msg:${i}:${m.role}`, merged);
-    }
-    return masked;
+    return message;
   });
 }

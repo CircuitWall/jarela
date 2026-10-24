@@ -5,6 +5,7 @@
 // same source as lib/tools/generate_image.ts.
 
 import { getConfig } from "@/lib/env/config";
+import { maskOutboundText } from "@/lib/redaction/mask-provider";
 import {
   resolveGoogleApiKey as resolveGoogleApiKeyShared,
   timeoutSignal,
@@ -52,7 +53,7 @@ export async function geminiTts(opts: {
 }): Promise<{ wav: Buffer; mime: "audio/wav" }> {
   const url = `${ENDPOINT}/${encodeURIComponent(opts.model)}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
   const style = opts.style?.trim();
-  const spoken = style ? `${style.replace(/:\s*$/, "")}: ${opts.text}` : opts.text;
+  const spoken = maskOutboundText(style ? `${style.replace(/:\s*$/, "")}: ${opts.text}` : opts.text, { speakable: true });
   const speakers = (opts.speakers ?? []).filter((s) => s.name && s.voiceName).slice(0, 2);
   const speechConfig: Record<string, unknown> =
     speakers.length >= 2
@@ -104,7 +105,8 @@ export async function geminiTts(opts: {
 /**
  * Transcribe audio via a Gemini multimodal model. Returns the verbatim
  * transcript, preserving the speaker's original language (including code-
- * switched English/Chinese).
+ * switched English/Chinese). Raw audio can't be pattern-masked, so this is
+ * the one model call outside outbound redaction (ADR-0064).
  */
 export async function geminiStt(opts: {
   apiKey: string;

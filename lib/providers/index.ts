@@ -4,6 +4,7 @@ import { getBuiltinProviderNames, getBuiltinProviders } from "./registry";
 import { loadExternalProviders } from "./external";
 import { getConfig } from "@/lib/env/config";
 import { parseRateLimitOverrides, ProviderRateLimiter, withProviderRateLimits } from "./rate-limit";
+import { withRedaction } from "@/lib/redaction/mask-provider";
 
 const limitedProviders = new WeakMap<ModelProvider, ModelProvider>();
 const providerGlobals = globalThis as typeof globalThis & {
@@ -31,6 +32,9 @@ export function listProviderNames(): string[] {
   return Object.keys(getProviders()).sort((a, b) => a.localeCompare(b));
 }
 
+// Every provider handed out here is rate-limited and redacted: outbound
+// payloads are masked and responses rehydrated (ADR-0064), so no caller can
+// reach a model with unmasked content.
 export function getProvider(name: string): ModelProvider {
   const all = getProviders();
   const p = all[name];
@@ -40,7 +44,7 @@ export function getProvider(name: string): ModelProvider {
     providerGlobals.__jarelaProviderRateLimiter ??= new ProviderRateLimiter(
       parseRateLimitOverrides(getConfig().providerRateLimits),
     );
-    limited = withProviderRateLimits(p, providerGlobals.__jarelaProviderRateLimiter);
+    limited = withRedaction(withProviderRateLimits(p, providerGlobals.__jarelaProviderRateLimiter));
     limitedProviders.set(p, limited);
   }
   return limited;

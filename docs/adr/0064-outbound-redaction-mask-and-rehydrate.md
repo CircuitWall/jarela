@@ -57,7 +57,7 @@ User-editable JSON at `~/.jarela/redaction-patterns.json` (consistent with [ADR-
 }
 ```
 
-`validator` references a built-in named function (`luhn`, `mod97`, `personnummer_check`). Arbitrary code from the JSON file is **not** executed — keeps the trust model of an editable config simple.
+`validator` references a built-in named function (`luhn`, `mod97`, `personnummer_check`, `credential_shape`). Arbitrary code from the JSON file is **not** executed — keeps the trust model of an editable config simple.
 
 ### Default pattern set (v1)
 
@@ -75,6 +75,37 @@ User-editable JSON at `~/.jarela/redaction-patterns.json` (consistent with [ADR-
 | IBAN | `\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b` | mod97 |
 | Swedish bankgiro | `\b\d{3,4}-\d{4}\b` | luhn |
 | Swedish plusgiro | `\b\d{2,8}-\d\b` | luhn |
+| Password assignment | `password=…`, `DB_PASSWORD: …`, `client_secret = …` (value only, via lookbehind) | — |
+| Quoted password | `"password": "…"`, `PASSPHRASE='…'` (value only) | — |
+| URL credentials | password in `scheme://user:password@host` (value only) | — |
+
+`pwd` is intentionally not a password key: it is the shell working-directory command and appears constantly in tool output.
+
+### Detection layers: known and unknown credentials
+
+Detection works in three layers so that credentials in formats Jarela has never seen are still caught:
+
+1. **Known formats.** Vendor patterns with a fixed shape: the table above plus GitHub fine-grained tokens, GitLab, Slack, Stripe, Google API keys, npm, and Hugging Face tokens, Basic auth headers, and labelled personal data (PIN/CVV, `private key` + 64 hex, `(555) 123-4567` phone numbers, passport numbers, bank account numbers after `konto`/`account number`).
+2. **Unknown credentials, identified by their key.** `credential_quoted` / `credential_assignment` match any identifier whose last word names a credential (`key`, `token`, `secret`, `password`, `credential(s)`, `auth`, `signature`, `cookie`, `session_id`, `pat`, in snake, kebab, camel, or upper case), followed by `:`, `=`, or `=>`. Examples: `STRIPE_WEBHOOK_SECRET=…`, `x-api-key: …`, `"signing_key": "…"`, `accessToken = "…"`. The value is masked only if it passes the `credential_shape` validator: 8+ characters, no whitespace, at least two character classes, and at least one piece that is not a plain word, number, or short fragment. That keeps code and config readable: `key="item-1"`, `cache_key = "user:123:profile"`, `API_KEY=process.env.API_KEY`, `apiKey: string`, and `token = getToken()` are left alone. Values after an explicit password key (`password_*`, `password_phrase` for "my password is …") are masked even when they look like words, except for type names, code references, and placeholders.
+3. **Unknown, unlabelled credentials.** The high-entropy heuristic below catches random tokens with no key name, including prefixed tokens with an unknown vendor prefix (`acme_` + 25 or more random characters).
+
+Usability guards, verified against a probe of 53 sensitive and 66 everyday strings (51 caught, 65 left readable): dates (`2026-10-24`, `24.10.2026`, `gpt-4o-2024-08-06`), IPv4 addresses, decimals and coordinates, Unix timestamps, URLs, file paths, slugs, numeric IDs in URL paths, semver, hashes, UUIDs, ULIDs, and short prefixed object IDs (`cus_…`, `msg_…`, `call_…`) stay visible. Known limits: email addresses and postal addresses are not masked (no reliable pattern, and masking emails would get in the way of mail workflows), and a bare 8+ digit number such as `12345678` is masked because it cannot be told apart from an account number.
+
+When a pattern file contains an exact copy of a retired default entropy exclude, the loader upgrades it to the current version; excludes the user wrote are kept as they are.
+
+A pattern file is a snapshot of the defaults at the time it was materialized. When loading it, Jarela appends any built-in pattern whose `name` is missing from the file and treats a missing `heuristics.digit_run` block as the default, so defaults added later still apply. To turn off a built-in pattern or heuristic, keep its entry and set `enabled: false`; deleting it re-enables the default.
+
+### Provider-level enforcement
+
+Masking is enforced at the provider boundary, not at individual call sites. `getProvider()` (`lib/providers/index.ts`) is the only way code obtains a `ModelProvider`, and it wraps every provider (built-in or external) with `withRedaction` (`lib/redaction/mask-provider.ts`) on top of the rate limiter. So chat turns, compaction, conversation summaries, citation and hallucination classifiers, pricing extraction, and embeddings are all redacted, and new callers are covered without opting in.
+
+- **`chat` / `invoke` / `streamInvoke`:** outbound messages are masked with the active run's context (or a fresh one when called outside a turn), and responses are rehydrated so callers, stored summaries, and recaps keep real values locally. Streams use one `StreamRehydrator` per channel (text, thinking, each tool call's argument deltas), flushed before `stop` and at end of stream, so placeholders split across deltas resolve correctly. Citation snippets are rehydrated too.
+- **`embed`:** inputs are masked; there is nothing to rehydrate.
+- **Idempotency:** the chat model masks messages first to record per-message summaries for the UI, then the provider layer masks again. Masking skips any span that is already a placeholder, so the second pass is a no-op on masked text and only catches content the first pass did not see.
+- **Direct model calls:** image generation (`generate_image`) and Gemini text-to-speech send prompts with `fetch` rather than through a provider, so they call `maskOutboundText` first. TTS swaps placeholders for the word "redacted" so the voice does not read placeholder syntax.
+- **Not covered:** speech-to-text sends raw audio, which cannot be pattern-matched. Health probes, model-list, and test-key requests carry no user content.
+
+Pricing extraction is masked like everything else. The digit-run heuristic (8+ digits, dots allowed as separators) can mask very long per-token prices such as `0.00000015`; per-million-token prices like `3.00` stay readable.
 
 ### High-entropy heuristic
 
@@ -100,7 +131,9 @@ Catches unknown-shape secrets (random IDs, opaque tokens) the pattern set misses
 }
 ```
 
-The `exclude_patterns` allowlist is required: without it, every git SHA, sha256 hash, and UUID in tool output gets masked, which destroys git/CI/build agents. Default allowlist includes git SHAs (40-hex, 64-hex), UUIDs, ULIDs (Crockford base32, 26 chars), and prefixed framework IDs (`cus_…`, `pi_…`, `gid_…`, etc.).
+The `exclude_patterns` allowlist is required: without it, every git SHA, sha256 hash, and UUID in tool output gets masked, which destroys git/CI/build agents. Default allowlist includes git SHAs (40-hex, 64-hex), UUIDs, ULIDs (Crockford base32, 26 chars), and prefixed framework IDs up to 24 characters after the prefix (`cus_…`, `pi_…`, `msg_…`, etc.). Longer prefixed values are treated as tokens.
+
+Independently of the allowlist, a candidate whose separator-delimited pieces (`/ . _ = + -`) are all ordinary words, numbers, or short fragments is skipped. This keeps URLs, paths, file names, and Kubernetes-style names readable, while random secrets always contain a long mixed piece. The digit-run heuristic also excludes dates, IPv4 addresses, plain decimals, Unix timestamps, and numeric IDs inside URL or file paths.
 
 ### Field-name allowlist for structured tool output
 

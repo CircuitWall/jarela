@@ -76,8 +76,29 @@ export function mod97(value: string): boolean {
   return remainder === 1;
 }
 
+// A piece of an identifier, path, or URL that reads as ordinary text:
+// a number, an acronym, a lower/Capitalized/camelCase word, or a short
+// hex fragment (commit prefixes, pod hashes).
+export const WORD_PIECE = /^(?:\d+|[A-Z]+|(?:[A-Z]?[a-z]+)+|[0-9a-f]{1,10})$/;
+
+// Generic credential check for values found next to a credential-looking
+// key name (`*_key`, `*Token`, `x-api-key`, `*_SECRET`, ...). This is what
+// lets unknown credential formats be masked without hiding ordinary config
+// values: the value must be 8+ chars with no whitespace, mix at least two
+// character classes, and contain at least one piece that is not a plain
+// word, number, or short fragment. `process.env.API_KEY`, `user:123:profile`,
+// and `MyApp-Production` stay visible; `Tr0ub4dor&3` and random tokens don't.
+export function credential_shape(value: string): boolean {
+  if (value.length < 8 || /\s/.test(value)) return false;
+  const classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((re) => re.test(value)).length;
+  if (classes < 2) return false;
+  const pieces = value.split(/[^A-Za-z0-9]+/).filter((p) => p.length > 0);
+  return pieces.some((p) => p.length > 3 && !WORD_PIECE.test(p));
+}
+
 export const VALIDATORS: Record<string, Validator> = {
   luhn,
   mod97,
   personnummer_check,
+  credential_shape,
 };

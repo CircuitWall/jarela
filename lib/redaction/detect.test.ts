@@ -46,7 +46,7 @@ describe("detectMatches", () => {
   });
 
   it("masks long high-entropy strings via heuristic", () => {
-    const text = "token=aB3kQ9vXp2mR7tYn4wL8jH5sZ6cF1dG0";
+    const text = "use aB3kQ9vXp2mR7tYn4wL8jH5sZ6cF1dG0 here";
     const matches = detectMatches(text, cfg);
     expect(matches.length).toBeGreaterThanOrEqual(1);
     const heur = matches.find((m) => m.source === "heuristic");
@@ -184,5 +184,94 @@ describe("digit_run heuristic", () => {
     const matches = digitRunMatches("acct  12345678  done");
     expect(matches).toHaveLength(1);
     expect(matches[0].value).toBe("12345678");
+  });
+});
+
+describe("credential assignment patterns", () => {
+  const cfg = DEFAULT_REDACTION_CONFIG;
+  const passwordValues = (text: string) =>
+    detectMatches(text, cfg).filter((m) => m.type_hint === "password" || m.type_hint === "url_password").map((m) => m.value);
+
+  it.each([
+    ["password=Hunter2!Summer", "Hunter2!Summer"], // jarela-secret-ok
+    ["DB_PASSWORD: Hunter2!Summer", "Hunter2!Summer"], // jarela-secret-ok
+    ['{"password":"Tr0ub4dor&3"}', "Tr0ub4dor&3"], // jarela-secret-ok
+    ["export PASSPHRASE='correct horse battery'", "correct horse battery"], // jarela-secret-ok
+    ["client_secret = abcXYZ123", "abcXYZ123"], // jarela-secret-ok
+  ])("masks only the value in %s", (text, value) => {
+    expect(passwordValues(text)).toEqual([value]);
+  });
+
+  it("masks the password in URL credentials but keeps user and host", () => {
+    const text = "postgres://admin:S3cretPassw0rd@db.example.com:5432/app"; // jarela-secret-ok
+    const matches = detectMatches(text, cfg);
+    expect(matches.map((m) => m.value)).toEqual(["S3cretPassw0rd"]); // jarela-secret-ok
+    expect(matches[0].type_hint).toBe("url_password");
+  });
+
+  it("leaves ordinary prose, shell pwd output, and plain URLs alone", () => {
+    expect(passwordValues("Reset your password from the settings page.")).toEqual([]);
+    expect(passwordValues("pwd: /home/user/project")).toEqual([]);
+    expect(passwordValues("see https://example.com/docs@v2 and http://host:8080/path")).toEqual([]);
+  });
+});
+
+describe("detection coverage and usability", () => {
+  const cfg = DEFAULT_REDACTION_CONFIG;
+  // Mixed-case alphanumeric filler with high entropy; assembled at runtime so
+  // no literal here looks like a real credential to the secret scanner.
+  const rnd = (n: number) => "aB3kQ9vXp2mR7tYn4wL8jH5sZ6cF1dG0eN".repeat(4).slice(0, n);
+  const masked = (text: string) => detectMatches(text, cfg).map((m) => m.value);
+
+  it.each([
+    ["npm token", `npm_${rnd(36)}`, `npm_${rnd(36)}`],
+    ["huggingface token", `hf_${rnd(34)}`, `hf_${rnd(34)}`],
+    ["google api key", `AIza${rnd(35)}`, `AIza${rnd(35)}`],
+    ["basic auth header", "Authorization: Basic YWRtaW46aHVudGVyMjJ4", "YWRtaW46aHVudGVyMjJ4"],
+    ["password phrase", "my password is Summer2024!", "Summer2024!"],
+    ["PIN", "the door PIN is 4821", "4821"],
+    ["CVV", "cvv 123 exp 12/27", "123"],
+    ["labelled private key", `private key 0x${"9c1e7036".repeat(8)}`, "9c1e7036".repeat(8)],
+    ["US phone", "call (555) 123-4567", "(555) 123-4567"],
+    ["passport", "passport no. X12345678", "X12345678"],
+    ["bank account", "konto 8327-9 123 456 789-0", "8327-9 123 456 789-0"],
+  ])("catches a known format: %s", (_label, text, value) => {
+    expect(masked(text)).toEqual([value]);
+  });
+
+  it.each([
+    ["webhook secret env", "STRIPE_WEBHOOK_SECRET=", ""],
+    ["x-api-key header", "x-api-key: ", ""],
+    ["signing key json", '{"signing_key": "', '"}'],
+    ["vendor token env", "MYVENDOR_TOKEN=", ""],
+    ["camelCase field", 'const accessToken = "', '";'],
+    ["ruby hash", ':auth_token => "', '"'],
+    ["yaml", "  client_secret: ", ""],
+  ])("catches an unknown credential by its key name: %s", (_label, before, after) => {
+    expect(masked(`${before}${rnd(24)}${after}`)).toEqual([rnd(24)]);
+  });
+
+  it("catches unlabelled random tokens and long tokens with an unknown prefix", () => {
+    expect(masked(`here: ${rnd(32)}`)).toEqual([rnd(32)]);
+    expect(masked(`use acme_${rnd(40)} for prod`)).toEqual([`acme_${rnd(40)}`]);
+  });
+
+  it.each([
+    "released on 2026-10-24, deadline 24.10.2026, model gpt-4o-2024-08-06",
+    "createdAt 1729800000000 from 192.168.100.200 at 59.329323, 18.068581",
+    "https://github.com/CircuitWall/jarela/actions/runs/40131489834/job/120985027608",
+    "docs/adr/0064-outbound-redaction-mask-and-rehydrate.md and s3://bucket/exports/2026/10/24/report-final.csv",
+    "pod jarela-web-7d9f8c6b5-x2k4p",
+    `<Row key="item-1" /> cache_key = "user:123:profile"`,
+    "API_KEY=process.env.API_KEY",
+    "interface Cfg { apiKey: string; password: string }",
+    "const token = getToken(); password = os.environ['DB_PASSWORD']",
+    "password: <your password here>",
+    'max_tokens: 4096, primaryKey: "id", foreign_key: user_id, hotkey: Ctrl+Shift+P',
+    'sessionId: thread-42, fetch(url, { "credentials": "include" }), auth: required',
+    "customer cus_NffrFeUfNV2Hib, message msg_01XFDUDYJgAACzvnptvVoYEL",
+    "the password is required; account 42 was created",
+  ])("keeps everyday text readable: %s", (text) => {
+    expect(masked(text)).toEqual([]);
   });
 });
