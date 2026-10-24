@@ -198,8 +198,8 @@ At 03:00 UTC, `.github/workflows/nightly-release.yml` checks `main` for commits
 since the latest reachable `vX.Y.Z` tag. If there are no new commits, it does
 nothing. Otherwise it applies the app versioning rule above and generates the
 version bump, changelog entry, and adoption changeset in a `chore/release-*`
-PR, but only after a version-bound documentation review has been merged
-(see below). It dispatches CI for that PR because pushes made with `GITHUB_TOKEN` do
+PR. Documentation review is optional and never blocks release.
+It dispatches CI for that PR because pushes made with `GITHUB_TOKEN` do
 not start PR workflows. It rebases and merges only after the required
 `Lint, typecheck, build` check and release changeset check pass, then tags the
 merged commit and dispatches `.github/workflows/release.yml`.
@@ -215,9 +215,10 @@ it pushed so the next run can start clean.
 
 ### On-demand release documentation
 
-Documentation generation is **manual only**. Nightly releases and ordinary CI
-never invoke Copilot or spend AI credits. A missing or stale review blocks the
-release rather than silently generating one or bypassing documentation.
+Documentation generation is **optional and manual only**. Nightly releases and
+ordinary CI never invoke Copilot or spend AI credits. Releases do not require a
+documentation review, review record, or Copilot token. Skip this entire section
+if you only want to publish a release.
 
 One-time setup:
 
@@ -233,7 +234,7 @@ One-time setup:
    Disable paid additional usage if you need to prevent overage charges.
    Standard Actions runners are free for this public repository.
 
-For each app release:
+When you want a documentation proposal:
 
 1. Read the intended version from the nightly plan, or choose the human-owned
    major version. Under **Actions > Release documentation > Run workflow**,
@@ -253,11 +254,12 @@ For each app release:
    record's version and source, scans for secrets/sensitive terms, opens a PR,
    and explicitly dispatches CI. A maintainer must inspect the documentation,
    evidence, and decision, then merge it. Copilot never approves or merges it.
-   CI proves record structure and provenance, not semantic completeness.
-4. Retry the nightly workflow with `dry_run=false`, or continue the human-owned
-   release. CI and app-tag publication both enforce the documentation gate.
-   New source, dependency, or configuration changes invalidate the review;
-   documentation and generated release metadata/version-only bumps do not.
+   The documentation workflow proves record structure and provenance, not
+   semantic completeness; ordinary CI does not require review records.
+4. Release independently using the nightly workflow with `dry_run=false`,
+   or continue the human-owned release. New source, dependency, or configuration
+   changes invalidate the optional review; documentation and generated release
+   metadata/version-only bumps do not. Neither case blocks publication.
 
 Retries reuse an accepted review or an open PR for the same version and source,
 without another AI session. If main advances during generation, the workflow
@@ -267,7 +269,7 @@ without a PR, inspect/clean up that branch before retrying; it is never
 overwritten. After a PR is opened, failed CI dispatch can be retried with
 `gh workflow run ci.yml --ref <documentation-branch>` without rerunning Copilot.
 Missing credentials, model failures, invalid output, and exhausted allowance
-fail explicitly and leave the release blocked.
+fail the optional documentation workflow explicitly, without blocking releases.
 
 To check a merged review locally (no AI or network call):
 
@@ -305,8 +307,7 @@ trust boundaries and validation limits.
 Use this process for breaking/major releases and workspace package releases:
 
 1. **Open a release PR** from `chore/release-<version>`:
-   - For app releases, first merge the version-to-version documentation review
-     above. Workspace package releases keep their existing tag-specific flow.
+   - Documentation proposals above are optional, not a release prerequisite.
    - Bump `version` in `package.json` to the new `MAJOR.MINOR.PATCH`.
    - In `CHANGELOG.md`, promote `[Unreleased]` entries under a new heading
      `## [<version>] - YYYY-MM-DD`. Keep `[Unreleased]` empty above it.

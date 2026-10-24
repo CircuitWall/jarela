@@ -175,7 +175,7 @@ jobs:
 
           A maintainer must review the documentation and the explicit updated/unnecessary
           decision, then merge this PR. This workflow does not approve or merge it.
-          After merging, retry the nightly release (or continue the human-owned release).
+          This is an optional documentation proposal, not a prerequisite for release.
           Source changes after the reviewed commit invalidate this review.
 
           Validation: documentation-only scope, version/source binding, git diff check,
@@ -189,5 +189,5 @@ jobs:
             echo "::error::PR creation failed. Enable Actions PR creation in repository settings, then retry."
             exit 1
           fi
-          echo "Review and merge $url before releasing $VERSION." >> "$GITHUB_STEP_SUMMARY"
+          echo "Optional documentation proposal: $url. Releases do not depend on this PR." >> "$GITHUB_STEP_SUMMARY"
           gh workflow run ci.yml --ref "$BRANCH"

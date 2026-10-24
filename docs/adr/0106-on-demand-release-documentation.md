@@ -5,8 +5,9 @@ Status: Accepted
 ## Context
 
 Version adoption changesets describe prompt and tool-schema changes, not whether
-the public manuals cover a release. Documentation must be reviewed between
-versions before publication, without scheduled AI costs or AI self-approval.
+the public manuals cover a release. Maintainers may request documentation review
+between versions, without scheduled AI costs or AI self-approval. Documentation
+review is optional and must not prevent publication.
 
 ## Decision
 
@@ -35,12 +36,16 @@ substantive rationale, and either changed documentation or an explicit
 is automatically approved. Records are Git-tracked release metadata, not app
 state, and add no runtime cloud dependency.
 
-Nightly preparation, resume/tagging, release PR CI, and app-tag publication all
-require a valid record. New source changes invalidate it; Markdown documentation,
+Nightly preparation, resume/tagging, ordinary CI, and app-tag publication do not
+require a record or Copilot credentials. Record validation belongs only to the
+optional documentation workflow and local checks. New source changes invalidate
+an optional review; Markdown documentation,
 the record itself, generated adoption metadata, and package-version-only bumps
 may follow the reviewed source without requiring another AI review. Changed
 dependencies and other source/configuration changes invalidate it. Workspace
-package tags keep their existing release process.
+package tags keep their existing release process. Missing, stale, or failed
+documentation reviews never block a release. This replaces the initial mandatory
+release-gate policy at the maintainer's request.
 
 ## Validation
 
