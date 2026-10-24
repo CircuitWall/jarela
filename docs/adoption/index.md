@@ -11,6 +11,121 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 2.6.0
+
+From 2.5.3 · 2026-10-24
+
+### Tools
+
+- `read_agent_config` — changed; description changed
+- `schedule_watcher` — changed; description changed
+- `terminal` — changed; params changed: `allow_unsafe`
+- `terminal_send` — changed; description changed; params added: `allow_unsafe`
+- `validate_personal_briefing` — added; params added: `async_run`, `briefing`, `deadline_ms`, `sources`, `stream`; now required: `briefing`, `sources`
+- `workflow_progress` — changed; params changed: `items`, `needs_user`
+- `workspace_init` — changed; description changed; params added: `refresh_scan`
+- `write_skill` — changed; params changed: `content`
+
+### Prompts
+
+- `static.harness.builtin:default.plan_first` — changed (`lib/agents/harness/presets.ts`)
+
+    ```diff
+    + - If a tool errored, say so plainly; stop the failing approach, not all recovery. Do not retry the same tool call with the same arguments. For recoverable errors, follow the recovery procedure below; for permission or approval blockers, stop and ask. Do not pretend the call succeeded.
+    - - If a tool errored, say so plainly and stop. Do not retry the same tool call with the same arguments. Do not pretend the call succeeded.
+    ```
+
+- `static.release.documentation-review` — added (`scripts/prompts/release-docs.txt`)
+- `static.skill.personal-briefing` — added (`lib/skills/builtins/personal-briefing/SKILL.md`)
+- `system.Acknowledge before acting` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + - If a tool errored, say so plainly; stop the failing approach, not all recovery. Do not retry the same tool call with the same arguments. For recoverable errors, follow the recovery procedure below; for permission or approval blockers, stop and ask. Do not pretend the call succeeded.
+    - - If a tool errored, say so plainly and stop. Do not retry the same tool call with the same arguments. Do not pretend the call succeeded.
+    ```
+
+- `system.Agent identity` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Agent instructions` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Available skills` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + - personal-briefing (builtin): Use when: preparing a personal daily briefing from the owner's configured calendar, messages, or other read-only sources.
+    ```
+
+- `system.Citation format` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Enabled tools` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + You can execute the 84 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 166 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    + - Basic > Agent > validate_personal_briefing: read/builtin/enabled reason=basic_default
+    - You can execute the 83 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 166 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    ```
+
+- `system.Fast response style` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Grounding and citations` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.High-reasoning response style` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Instruction composition` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Navigation and diagnostic visibility` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Output budget` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + - Lead the final answer with the result. Skip redundant preambles, restating the question, and recapping context the user already sees. This does not cancel a brief pre-tool acknowledgment required by the harness.
+    - - Lead with the answer. Skip preambles, restating the question, and recapping context the user already sees.
+    ```
+
+- `system.Persona` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Tool usage SOP` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    - You are Jarela, a local assistant.
+    - Be terse.
+    ```
+
+- `system.UX mode` — removed (`lib/agents/prepare/system-prompt.ts`)
+
+### Commits
+
+- fix(release): remove mandatory documentation review gates
+- test(ui): update persona browser checks for agent profiles
+- feat(release): add on-demand copilot documentation gate
+- fix(pwa): fix mobile safe areas and frosted chat overlays
+- feat(ui): add animated agent switcher with unread indicators
+- feat(agents): add unified per-agent persona profiles
+- ci(deps): bump the actions group with 5 updates
+- ci(hooks): run only related unit tests before commit
+- ci(deps): enable weekly grouped github actions updates
+- fix(tests): prevent tests from writing to the real data dir
+- ci(npm): allow more registry retries to survive resets
+- fix(ci): use loopback for the e2e server inside the container
+- ci(e2e): run playwright in its container to stop install hangs
+- fix(chat): keep gif and svg photos by extension
+- fix(chat): prevent oversized photos from reaching the model
+- feat(integrations): add declarative credential probes
+- fix(chat): normalize metadata width on narrow screens
+- fix(chat): normalize metadata row spacing
+- fix(agents): normalize local offset signs in the time context
+- fix(agents): render local date and time in the system prompt
+- fix(workspace): use the on-disk root as the tree scan cache key
+- feat(workspace): reuse recent workspace tree scans
+- fix(cli): block backups that reach the data dir through links
+- feat(cli): add a backup command that snapshots data without keys
+- fix(skills): render block-scalar frontmatter descriptions
+- fix(skills): keep frontmatter skill descriptions visible to agents
+- fix(terminal): gate continued terminal input
+- fix(tools): keep terminal input behind the exec safety gate
+- feat(agents): add duplicate so tuned agents can be reused as templates
+- fix(tools): drop expired delegate jobs on status reads too
+- fix(tools): drop finished delegate jobs after a retention window
+- fix(release): use full prerelease identifiers in update checks
+- fix(release): detect prerelease upgrades and explain update failures
+- fix(privacy): keep files referenced by encrypted memory entries
+- fix(privacy): remove attachment files when their conversation is deleted
+- feat(skills): run representative fixtures against workflow check tools
+- fix(tools): keep scheduled tasks from firing empty or bogus schedules
+- feat(cli): add a version command to verify upgrades
+- fix(tools): keep user-blocked agent workflow steps out of retries
+- fix(tools): skip inverted calendar event windows before sending invites
+
 ## 2.5.3
 
 From 2.5.2 · 2026-10-22
