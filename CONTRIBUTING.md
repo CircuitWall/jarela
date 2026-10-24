@@ -206,7 +206,11 @@ merged commit and dispatches `.github/workflows/release.yml`.
 
 Breaking changes are never published automatically. The workflow marks them
 for human review and waits for a manually prepared major release. A manual
-`workflow_dispatch` of the nightly workflow defaults to dry-run mode.
+`workflow_dispatch` of the nightly workflow publishes by default, just like the
+scheduled run, after the normal release checks pass. Select **Dry run only**
+explicitly to classify changes without creating a release PR or publishing.
+Start a new run after changing inputs; **Re-run jobs** retains the original
+run's inputs.
 
 The workflow opens its PR with `GITHUB_TOKEN`, so the repository must enable
 **Settings → Actions → General → Allow GitHub Actions to create and approve
