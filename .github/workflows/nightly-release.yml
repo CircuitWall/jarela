@@ -107,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           branch="chore/release-$VERSION"
-          prs="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REPOSITORY_OWNER:$branch" --state open --json number,body,author,baseRefName)"
+          prs="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open --json number,body,author,baseRefName,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)]')"
           pr="$(jq -r '.[0].number // empty' <<<"$prs")"
 
           if [ -n "$pr" ]; then
