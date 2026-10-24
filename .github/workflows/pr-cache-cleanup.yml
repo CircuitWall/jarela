@@ -13,7 +13,7 @@ permissions:
 jobs:
   cleanup:
     name: Delete caches for the closed PR
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Fork PRs get a read-only token that cannot delete caches.
     if: github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 5

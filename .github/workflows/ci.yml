@@ -25,7 +25,7 @@ concurrency:
 jobs:
   conventions:
     name: Commit and PR conventions
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -56,7 +56,7 @@ jobs:
     # metadata-only changes; push-to-main keeps only conventions + security
     # scans because the merge was already gated by PR CI.
     name: Detect changed paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       app:               ${{ steps.filter.outputs.app }}
       deps:              ${{ steps.filter.outputs.deps }}
@@ -146,7 +146,7 @@ jobs:
 
   security:
     name: Security checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: [changes]
     timeout-minutes: 10
     steps:
@@ -180,7 +180,7 @@ jobs:
 
   build:
     name: Lint, typecheck, build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: [changes]
     # Expensive validation runs once, on PRs that touch runtime/package/test
     # surfaces. Skip docs-only, workflow-only, release-metadata-only, and
@@ -272,7 +272,7 @@ jobs:
 
   unit-coverage:
     name: Unit coverage (>=80%)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Independent of the build artifact, so run alongside `build` for faster
     # feedback instead of queueing behind it.
     needs: [changes]
