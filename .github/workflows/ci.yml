@@ -1,5 +1,9 @@
 name: CI
 
+env:
+  # CPU binaries ship in npm; hosted runners do not need the optional CUDA download.
+  ONNXRUNTIME_NODE_INSTALL: skip
+
 on:
   # Run full validation on PRs and a light sanity pass on post-merge main.
   # Feature-branch pushes are intentionally excluded: the pull_request run

@@ -228,6 +228,12 @@ and reuse a valid bot-owned release PR from this repository, or close a stale PR
 for regeneration. Fork PRs are excluded from the release-branch lookup.
 Repository rules requiring human approvals or protected-environment approvals
 must be satisfied separately; the workflow does not override those policies.
+After full dispatched validation passes, nightly approves any contributor-gated
+CI run only for the exact same-repository release-bot PR head and CI workflow.
+This is workflow execution approval, not a PR review or a repository-wide policy
+change. Forks, other actors, other workflows, and changed heads are excluded.
+CPU-only CI skips ONNX's optional CUDA download; npm's bundled CPU runtime and
+all tests remain enabled.
 Release-validation CI also builds smoke-test DEB and RPM installers and verifies
 their metadata, extracted payloads, and bundled Node runtime. RPM packaging
 preserves prebuilt binaries without generating separate debug packages.
