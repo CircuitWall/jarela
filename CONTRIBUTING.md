@@ -203,6 +203,8 @@ It dispatches CI for that PR because pushes made with `GITHUB_TOKEN` do
 not start PR workflows. It rebases and merges only after the required
 `Lint, typecheck, build` check and release changeset check pass, then tags the
 merged commit and dispatches `.github/workflows/release.yml`.
+If tagging fails after the version bump merges, the next nightly run resumes
+from that merged release commit after verifying its recorded release base.
 
 Breaking changes are never published automatically. The workflow marks them
 for human review and waits for a manually prepared major release. A manual
