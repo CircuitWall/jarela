@@ -199,8 +199,13 @@ since the latest reachable `vX.Y.Z` tag. If there are no new commits, it does
 nothing. Otherwise it applies the app versioning rule above and generates the
 version bump, changelog entry, and adoption changeset in a `chore/release-*`
 PR. Documentation review is optional and never blocks release.
-It dispatches CI for that PR because pushes made with `GITHUB_TOKEN` do
-not start PR workflows. It rebases and merges only after the required
+It explicitly dispatches full release-validation CI so validation does not
+depend on bot-triggered PR workflows starting. If PR CI also starts, generated
+release metadata (including the three adoption files) skips its expensive build,
+unit coverage, and E2E jobs; those run once in the dispatched validation instead.
+Source or dependency changes still require full PR validation: only the root
+manifest and lockfile root versions may change in a metadata-only release.
+It rebases and merges only after the required
 `Lint, typecheck, build` check and release changeset check pass, then tags the
 merged commit and dispatches `.github/workflows/release.yml`.
 If tagging fails after the version bump merges, the next nightly run resumes
@@ -223,6 +228,9 @@ and reuse a valid bot-owned release PR from this repository, or close a stale PR
 for regeneration. Fork PRs are excluded from the release-branch lookup.
 Repository rules requiring human approvals or protected-environment approvals
 must be satisfied separately; the workflow does not override those policies.
+Release-validation CI also builds smoke-test DEB and RPM installers and verifies
+their metadata, extracted payloads, and bundled Node runtime. RPM packaging
+preserves prebuilt binaries without generating separate debug packages.
 
 The workflow opens its PR with `GITHUB_TOKEN`, so the repository must enable
 **Settings → Actions → General → Allow GitHub Actions to create and approve
