@@ -2,19 +2,20 @@ import { test, expect } from "@playwright/test";
 import { dismissOverlayBanners, seedMockAgent, waitForAppReady } from "./helpers";
 
 // Coverage for the menu reorganization (common vs. advanced tabs +
-// new "Tools" entry), the persona preset on the Profile editor, and
+// new "Tools" entry), the per-agent persona in the Identity editor, and
 // the structured memory preview.
 //
 // Tests in this file run serially: they all share one webServer (and
-// therefore one JARELA_DB_DIR), so parallel writes to /api/v1/profile
+// therefore one JARELA_DB_DIR), so parallel writes to agent profiles
 // from one test would race against state assertions in another.
 test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ request, page }) => {
-  await seedMockAgent(request);
-  // Reset the profile preset so the persona-chip + Profile-preset
-  // tests don't bleed into each other (or into reruns).
-  await request.put("/api/v1/profile", { data: { preset: null } });
+  const { agent } = await seedMockAgent(request);
+  const reset = await request.put(`/api/v1/agents/${encodeURIComponent(agent)}`, {
+    data: { usage_profile: "custom" },
+  });
+  expect(reset.ok()).toBeTruthy();
   // CI runs without an OS keychain, so the at-rest crypto bootstrap falls
   // back to a keyfile and surfaces a fixed banner that covers the menu
   // panel and intercepts clicks on tabs underneath. The OS-notification
@@ -156,38 +157,53 @@ test("Knowledge search merges document and chat hits and filters by channel", as
   await expect(page.getByText("Deployment steps")).toHaveCount(0);
 });
 
-test("Profile preset picker round-trips through the API", async ({ page, request }) => {
-  const initialPreset = await request.put("/api/v1/profile", { data: { preset: "home" } });
+test("Agent persona picker round-trips through the API and reload", async ({ page, request }) => {
+  const { agent } = await seedMockAgent(request);
+  const agentUrl = `/api/v1/agents/${encodeURIComponent(agent)}`;
+  const initialPreset = await request.put(agentUrl, { data: { usage_profile: "home" } });
   expect(initialPreset.ok()).toBeTruthy();
+  await page.reload();
+  await waitForAppReady(page);
 
   await openMenu(page);
-  await page.getByRole("button", { name: "Profile", exact: true }).click();
+  await page.getByRole("button", { name: "Agents", exact: true }).click();
+  await page.locator(`[data-deep-link-id="${agent}"]`).click();
 
-  // Persona section heading.
-  await expect(page.getByText(/Filters the Credentials list/i)).toBeVisible();
+  const persona = page.getByRole("group", { name: "Persona", exact: true });
+  await expect(persona).toBeVisible();
 
-  const homeBtn = page.getByRole("button", { name: /^Home\b/ });
+  const homeBtn = persona.getByRole("button", { name: /^Home\b/ });
   await expect(homeBtn).toHaveAttribute("aria-pressed", "true");
 
   // Pick the "Work" preset.
-  const workBtn = page.getByRole("button", { name: /^Work\b/ });
+  const workBtn = persona.getByRole("button", { name: /^Work\b/ });
   await workBtn.click();
   await expect(workBtn).toHaveAttribute("aria-pressed", "true");
 
   // Save and verify the API persisted it.
-  await page.getByRole("button", { name: /^Save profile$/ }).click();
-  await expect(page.getByText("Profile saved")).toBeVisible();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(persona).toBeHidden();
 
-  const r = await request.get("/api/v1/profile");
+  const r = await request.get(agentUrl);
   expect(r.ok()).toBeTruthy();
-  const body = await r.json() as { preset?: string | null };
-  expect(body.preset).toBe("work");
+  const body = await r.json() as { usage_profile: string };
+  expect(body.usage_profile).toBe("work");
+  await page.reload();
+  await waitForAppReady(page);
+  await page.locator(`[data-deep-link-id="${agent}"]`).click();
+  await expect(persona.getByRole("button", { name: /^Work\b/ })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("Credentials list filter chip reflects the active preset", async ({ page, request }) => {
-  // Pre-set the preset via the API so the panel renders with it on first paint.
-  const put = await request.put("/api/v1/profile", { data: { preset: "home" } });
+test("Credentials discovery follows the active agent persona, not the legacy profile", async ({ page, request }) => {
+  const { agent } = await seedMockAgent(request);
+  const put = await request.put(`/api/v1/agents/${encodeURIComponent(agent)}`, {
+    data: { usage_profile: "home" },
+  });
   expect(put.ok()).toBeTruthy();
+  const legacy = await request.put("/api/v1/profile", { data: { preset: "work" } });
+  expect(legacy.ok()).toBeTruthy();
+  await page.reload();
+  await waitForAppReady(page);
 
   // Credentials now lives as a sub-tab of Settings.
   await openMenu(page);
@@ -205,9 +221,12 @@ test("Credentials list filter chip reflects the active preset", async ({ page, r
   // exact: "GitHub Copilot" is an LLM integration allowed under home.
   await expect(page.getByRole("heading", { name: "GitHub", exact: true })).toHaveCount(0);
 
-  // Click chip → navigates to Profile.
+  // The chip opens the active agent's Identity editor, not the user profile.
   await chip.click();
-  await expect(page.getByText(/Filters the Credentials list/i)).toBeVisible();
+  const persona = page.getByRole("group", { name: "Persona", exact: true });
+  await expect(persona).toBeVisible();
+  await expect(persona.getByRole("button", { name: /^Home\b/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("E2E Mock");
 });
 
 test("memory previews show summaries, mask secrets, and open the full editor", async ({ page, request }) => {

@@ -23,12 +23,11 @@ test("Profile panel mounts the Name + About me form fields", async ({ page }) =>
   await expect(page.getByRole("button", { name: "Save profile" })).toBeVisible();
 });
 
-test("Profile panel surfaces persona switcher and Tailscale serve recipe", async ({ page }) => {
+test("Profile panel keeps personal settings without the agent persona picker", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Profile", exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "Tailscale serve" })).toBeVisible();
-  // Two buttons match "Everything" (one is the "Developer" persona description).
-  // Pick the persona toggle that's pressed by default.
-  await expect(page.getByRole("button", { name: /Everything\s+No filter/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Persona", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^(Home|Work|Developer|Everything)\b/ })).toHaveCount(0);
 });
 
 test("Normal mode keeps Profile editor and opens wizard only on demand", async ({ page, request }) => {
