@@ -3313,6 +3313,333 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "2.6.0",
+      "previous_version": "2.5.3",
+      "date": "2026-10-24",
+      "hints": [],
+      "commits": [
+        "fix(release): fix existing release pr lookup",
+        "fix(release): fix unattended validation and publication",
+        "fix(release): publish nightly dispatches by default",
+        "fix(release): remove mandatory documentation review gates",
+        "test(ui): update persona browser checks for agent profiles",
+        "feat(release): add on-demand copilot documentation gate",
+        "fix(pwa): fix mobile safe areas and frosted chat overlays",
+        "feat(ui): add animated agent switcher with unread indicators",
+        "feat(agents): add unified per-agent persona profiles",
+        "ci(deps): bump the actions group with 5 updates",
+        "ci(hooks): run only related unit tests before commit",
+        "ci(deps): enable weekly grouped github actions updates",
+        "fix(tests): prevent tests from writing to the real data dir",
+        "ci(npm): allow more registry retries to survive resets",
+        "fix(ci): use loopback for the e2e server inside the container",
+        "ci(e2e): run playwright in its container to stop install hangs",
+        "fix(chat): keep gif and svg photos by extension",
+        "fix(chat): prevent oversized photos from reaching the model",
+        "feat(integrations): add declarative credential probes",
+        "fix(chat): normalize metadata width on narrow screens",
+        "fix(chat): normalize metadata row spacing",
+        "fix(agents): normalize local offset signs in the time context",
+        "fix(agents): render local date and time in the system prompt",
+        "fix(workspace): use the on-disk root as the tree scan cache key",
+        "feat(workspace): reuse recent workspace tree scans",
+        "fix(cli): block backups that reach the data dir through links",
+        "feat(cli): add a backup command that snapshots data without keys",
+        "fix(skills): render block-scalar frontmatter descriptions",
+        "fix(skills): keep frontmatter skill descriptions visible to agents",
+        "fix(terminal): gate continued terminal input",
+        "fix(tools): keep terminal input behind the exec safety gate",
+        "feat(agents): add duplicate so tuned agents can be reused as templates",
+        "fix(tools): drop expired delegate jobs on status reads too",
+        "fix(tools): drop finished delegate jobs after a retention window",
+        "fix(release): use full prerelease identifiers in update checks",
+        "fix(release): detect prerelease upgrades and explain update failures",
+        "fix(privacy): keep files referenced by encrypted memory entries",
+        "fix(privacy): remove attachment files when their conversation is deleted",
+        "feat(skills): run representative fixtures against workflow check tools",
+        "fix(tools): keep scheduled tasks from firing empty or bogus schedules"
+      ],
+      "prompts": [
+        {
+          "id": "static.harness.builtin:default.plan_first",
+          "source": "lib/agents/harness/presets.ts",
+          "change": "changed",
+          "added_lines": [
+            "- If a tool errored, say so plainly; stop the failing approach, not all recovery. Do not retry the same tool call with the same arguments. For recoverable errors, follow the recovery procedure below; for permission or approval blockers, stop and ask. Do not pretend the call succeeded."
+          ],
+          "removed_lines": [
+            "- If a tool errored, say so plainly and stop. Do not retry the same tool call with the same arguments. Do not pretend the call succeeded."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.release.documentation-review",
+          "source": "scripts/prompts/release-docs.txt",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.skill.personal-briefing",
+          "source": "lib/skills/builtins/personal-briefing/SKILL.md",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Acknowledge before acting",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "- If a tool errored, say so plainly; stop the failing approach, not all recovery. Do not retry the same tool call with the same arguments. For recoverable errors, follow the recovery procedure below; for permission or approval blockers, stop and ask. Do not pretend the call succeeded."
+          ],
+          "removed_lines": [
+            "- If a tool errored, say so plainly and stop. Do not retry the same tool call with the same arguments. Do not pretend the call succeeded."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Agent identity",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Agent instructions",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Available skills",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "- personal-briefing (builtin): Use when: preparing a personal daily briefing from the owner's configured calendar, messages, or other read-only sources."
+          ],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Citation format",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Enabled tools",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "You can execute the 84 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 166 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.",
+            "- Basic > Agent > validate_personal_briefing: read/builtin/enabled reason=basic_default"
+          ],
+          "removed_lines": [
+            "You can execute the 83 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 166 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Fast response style",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Grounding and citations",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.High-reasoning response style",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Instruction composition",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Navigation and diagnostic visibility",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Output budget",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "- Lead the final answer with the result. Skip redundant preambles, restating the question, and recapping context the user already sees. This does not cancel a brief pre-tool acknowledgment required by the harness."
+          ],
+          "removed_lines": [
+            "- Lead with the answer. Skip preambles, restating the question, and recapping context the user already sees."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Persona",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Tool usage SOP",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [],
+          "removed_lines": [
+            "You are Jarela, a local assistant.",
+            "Be terse."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.UX mode",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "removed",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "read_agent_config",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Read this agent's non-secret functional runtime configuration: tools, model override, history window and hot-turn limit, persona profile and direct style controls, harness, delegates, citation/router/voice settings, and instruction counts. Presentation-only fields such as icon/avatar are omitted. This tool can only read the current agent.",
+          "previous_description": "Read this agent's non-secret functional runtime configuration: tools, model override, history window and hot-turn limit, harness, delegates, citation/router/voice settings, and instruction counts. Presentation-only fields such as icon/avatar are omitted. This tool can only read the current agent.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "schedule_watcher",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Register an event-driven watcher: poll one built-in tool every N seconds and re-engage this agent only when the tool's output changes since the previous poll. Unlike schedule_task, this consumes zero LLM tokens between changes — the scheduler runs the tool, hashes the result (SHA-256 of the stringified return value), and only fires the agent on a diff. The agent receives the previous + current results as context.\n\nWHEN TO USE (use this instead of schedule_task whenever the user wants to be notified about CHANGES rather than at fixed times):\n  • 'tell me when Jira issue ABC-123 changes status'…",
+          "previous_description": "Register an event-driven watcher: poll one built-in tool every N seconds and re-engage this agent only when the tool's output changes since the previous poll. Unlike schedule_task, this consumes zero LLM tokens between changes — the scheduler runs the tool, hashes the result (SHA-256 of the stringified return value), and only fires the agent on a diff. The agent receives the previous + current results as context.\n\nWHEN TO USE (use this instead of schedule_task whenever the user wants to be notified about CHANGES rather than at fixed times):\n  • 'tell me when Jira issue ABC-123 changes status'…",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "terminal",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "allow_unsafe"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "terminal_send",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Send raw bytes to an interactive process's stdin (e.g. answer a REPL prompt, send Ctrl-C via '\\x03'). Typed lines pass the same safety policy as terminal_exec. Returns buffered stdout after wait_ms.",
+          "previous_description": "Send raw bytes to an interactive process's stdin (e.g. answer a REPL prompt, send Ctrl-C via '\\x03'). Returns buffered stdout after wait_ms.",
+          "params_added": [
+            "allow_unsafe"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "validate_personal_briefing",
+          "change": "added",
+          "description_changed": false,
+          "description": "Validate a personal briefing's structure, references against caller-supplied source IDs, and disclosure of unavailable sources. Use after drafting and before presenting a briefing. Does not prove retrieval provenance or factual accuracy and never authorizes external actions. No network calls or persistent writes.",
+          "params_added": [
+            "async_run",
+            "briefing",
+            "deadline_ms",
+            "sources",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "briefing",
+            "sources"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "workflow_progress",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "items",
+            "needs_user"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "workspace_init",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Register a project directory as the active workspace for this thread and return its context bundle (git state, languages, scripts, tree, README head, convention files, required_reading, recommended_next_steps). Recent tree scans for the same directory and entry cap are reused for 15 minutes; the response includes the original `scan.tree_scanned_at` and `scan.tree_cache_hit`. Pass `refresh_scan: true` to force a fresh tree scan. Git status, README, scripts, and conventions are still checked on every call. After this call, file_*/local_exec calls with relative paths resolve against the workspac…",
+          "previous_description": "Register a project directory as the active workspace for this thread and return its context bundle (git state, languages, scripts, tree, README head, convention files, required_reading, recommended_next_steps). After this call, file_*/local_exec calls with relative paths resolve against the workspace root instead of $HOME. Call this once at the start of any coding task. CRITICAL: the response includes a `required_reading` array of workspace-relative instruction files (CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, .github/instructions/*.instructions.md, CONTRIBUTING.md, README, ADR in…",
+          "params_added": [
+            "refresh_scan"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "write_skill",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "content"
+          ],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
