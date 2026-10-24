@@ -48,6 +48,12 @@ describe("nightly workflow defaults", () => {
     expect(workflow).toContain('commit_count" != "1"');
   });
 
+  it("finds release PRs with the supported branch-only head filter and excludes forks", () => {
+    expect(workflow).toContain('--head "$branch" --state open');
+    expect(workflow).not.toContain('--head "$GITHUB_REPOSITORY_OWNER:$branch"');
+    expect(workflow).toContain("select(.isCrossRepository == false)");
+  });
+
   it("fails explicitly on CI timeout and pins validation and merge to the release head", () => {
     expect(workflow).toContain('select(.head_sha == $sha)');
     expect(workflow).toContain('completed=false');

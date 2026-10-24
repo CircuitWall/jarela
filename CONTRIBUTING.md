@@ -217,7 +217,8 @@ it dispatches release-validation CI, waits for that run on the exact release
 head, verifies its successful build job, and merges only that head. CI
 waits are bounded and fail explicitly on timeout; they never bypass
 failed checks or request automatic approving reviews. Failed runs may be retried
-and reuse a valid bot-owned release PR, or close a stale PR for regeneration.
+and reuse a valid bot-owned release PR from this repository, or close a stale PR
+for regeneration. Fork PRs are excluded from the release-branch lookup.
 Repository rules requiring human approvals or protected-environment approvals
 must be satisfied separately; the workflow does not override those policies.
 
