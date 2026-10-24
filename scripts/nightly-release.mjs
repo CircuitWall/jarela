@@ -121,12 +121,15 @@ function getLatestTag() {
   return tags[0];
 }
 
-function readCommits(range) {
-  const log = git("log", "--reverse", "--format=%H%x1f%s%x1f%b%x1e", range);
-  return log.split("\x1e").filter(Boolean).map((record) => {
+export function parseCommitLog(log) {
+  return log.split("\x1e").map((record) => record.trim()).filter(Boolean).map((record) => {
     const [sha = "", subject = "", ...body] = record.split("\x1f");
     return { sha, subject, body: body.join("\x1f").trim() };
   });
+}
+
+function readCommits(range) {
+  return parseCommitLog(git("log", "--reverse", "--format=%H%x1f%s%x1f%b%x1e", range));
 }
 
 export function createPlan({ currentVersion, latestTag, commits }) {

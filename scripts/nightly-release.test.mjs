@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { classifyRelease, parseVersion, releaseCommitMatchesBase, renderReleaseNotes } from "./nightly-release.mjs";
+import { classifyRelease, parseCommitLog, parseVersion, releaseCommitMatchesBase, renderReleaseNotes } from "./nightly-release.mjs";
 
 function commit(subject, body = "", sha = "sha") {
   return { subject, body, sha };
@@ -72,6 +72,26 @@ describe("nightly workflow defaults", () => {
 });
 
 describe("nightly release policy", () => {
+  it.each(["\n", "\r\n"])("parses git log record newlines without contaminating recovery revisions (%j)", (newline) => {
+    const base = "0123456789abcdef0123456789abcdef01234567";
+    const release = "abcdef0123456789abcdef0123456789abcdef01";
+    const commits = parseCommitLog(
+      `${base}\x1ffix(chat): improve history\x1f\x1e${newline}`
+      + `${release}\x1fchore(release): bump to 2.5.4\x1fRelease base: ${base}${newline}\x1e${newline}`,
+    );
+    expect(commits).toEqual([
+      commit("fix(chat): improve history", "", base),
+      commit("chore(release): bump to 2.5.4", `Release base: ${base}`, release),
+    ]);
+    expect(classifyRelease({ currentVersion: "2.5.4", latestTag: "v2.5.3", commits }))
+      .toMatchObject({ action: "resume", targetSha: release });
+    expect(releaseCommitMatchesBase(commits[1], base)).toBe(true);
+  });
+
+  it("ignores empty git log records", () => {
+    expect(parseCommitLog("\n\x1e\r\n")).toEqual([]);
+  });
+
   it("preserves the current tag when there are no unreleased commits", () => {
     expect(classifyRelease({ currentVersion: "2.5.3", latestTag: "v2.5.3", commits: [] }))
       .toMatchObject({ action: "none", version: "2.5.3", latestTag: "v2.5.3" });
