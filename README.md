@@ -43,8 +43,18 @@ icons that fade with distance. Hover or keyboard focus restores their opacity;
 selecting one brings it forward and opens its chat with an animated handoff.
 The strip scrolls horizontally on small screens and respects reduced motion.
 Background icons retain the existing default/latest-message ordering. Unread
-notifications use the same per-agent tracking as the menu and appear as bright
+notifications use shared per-agent tracking and appear as bright
 dots, independent of icon fading; opening the agent's chat clears its unread state.
+
+The menu is destination-based rather than a second agent picker. Workspace
+contains Agents, plus Knowledge, Automations, and Usage in Full mode.
+Profile and Settings live under Preferences; Capabilities is under the
+collapsible Advanced section in Full mode. Models, credentials, and logs remain
+in Settings. Full-width, touch-friendly rows use complete labels on small screens
+and close the menu after navigation. Switch agents or return to chat using the
+header strip; selecting an agent there also closes the menu.
+Public branding values, including unset values, are inlined at build time so
+default logos and names do not require a browser-side Node `process.env` shim.
 
 Choose a **Persona** under an agent's **Identity** settings:
 

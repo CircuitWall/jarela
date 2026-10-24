@@ -5,6 +5,29 @@ const releaseReadableClientBundles =
   process.env.JARELA_DISABLE_CLIENT_MINIFICATION === "1";
 
 const nextConfig: NextConfig = {
+  // Inline unset public branding values too: browser builds must not depend
+  // on a runtime process.env shim to resolve the default logo or app name.
+  env: Object.fromEntries([
+    "NEXT_PUBLIC_APP_NAME",
+    "NEXT_PUBLIC_APP_SHORT_NAME",
+    "NEXT_PUBLIC_APP_DESCRIPTION",
+    "NEXT_PUBLIC_APP_ISSUE_URL",
+    "NEXT_PUBLIC_APP_LOGO_LIGHT",
+    "NEXT_PUBLIC_APP_LOGO_DARK",
+    "NEXT_PUBLIC_APP_FAVICON_SVG",
+    "NEXT_PUBLIC_APP_FAVICON_ICO",
+    "NEXT_PUBLIC_APP_ICON_192",
+    "NEXT_PUBLIC_APP_ICON_512",
+    "NEXT_PUBLIC_APP_ICON_192_MASKABLE",
+    "NEXT_PUBLIC_APP_ICON_512_MASKABLE",
+    "NEXT_PUBLIC_APP_ICON_192_LIGHT",
+    "NEXT_PUBLIC_APP_ICON_512_LIGHT",
+    "NEXT_PUBLIC_APP_ICON_192_MASKABLE_LIGHT",
+    "NEXT_PUBLIC_APP_ICON_512_MASKABLE_LIGHT",
+    "NEXT_PUBLIC_APP_APPLE_TOUCH_ICON",
+    "NEXT_PUBLIC_APP_ACCENT_COLOR",
+    "NEXT_PUBLIC_APP_ACCENT_HOVER_COLOR",
+  ].map((key) => [key, process.env[key] ?? ""])),
   // Pin the workspace root to *this* project. Without this, Next walks up
   // looking for a lockfile and trips over the parent ../package-lock.json,
   // emitting a "multiple lockfiles detected" warning every build.
@@ -139,4 +162,3 @@ const withSerwist = withSerwistInit({
 });
 
 export default withSerwist(nextConfig);
-

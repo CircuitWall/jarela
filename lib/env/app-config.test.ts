@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   UPSTREAM_NAME,
   UPSTREAM_URL,
@@ -12,6 +12,10 @@ import {
   getAppName,
   getAppShortName,
 } from "./app-config";
+
+vi.mock("@serwist/next", () => ({
+  default: () => (config: unknown) => config,
+}));
 
 const KEYS = [
   "NEXT_PUBLIC_APP_NAME",
@@ -50,6 +54,23 @@ describe("app-config", () => {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
+  });
+
+  it("inlines all public branding defaults in browser builds without exposing private environment values", async () => {
+    vi.resetModules();
+    const { default: config } = await import("../../next.config");
+    expect(Object.keys(config.env ?? {}).sort()).toEqual([...KEYS].sort());
+    for (const key of KEYS) expect(config.env?.[key]).toBe("");
+  });
+
+  it("preserves build-time branding overrides", async () => {
+    process.env.NEXT_PUBLIC_APP_NAME = "Synthetic fork";
+    process.env.NEXT_PUBLIC_APP_LOGO_LIGHT = "/synthetic-logo.svg";
+    vi.resetModules();
+    const { default: config } = await import("../../next.config");
+    expect(config.env?.NEXT_PUBLIC_APP_NAME).toBe("Synthetic fork");
+    expect(config.env?.NEXT_PUBLIC_APP_LOGO_LIGHT).toBe("/synthetic-logo.svg");
+    expect(config.env?.NEXT_PUBLIC_APP_LOGO_DARK).toBe("");
   });
 
   describe("getAppName", () => {

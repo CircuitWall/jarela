@@ -79,7 +79,9 @@ test("deep link ?tab=credentials&item=integrations (legacy) still lands on Netwo
 
 test("Built-in tools panel lists categories and toggles persist", async ({ page, request }) => {
   await openMenu(page);
-  await page.getByRole("button", { name: "Capabilities", exact: true }).click();
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  await navigation.locator("summary").filter({ hasText: "Advanced" }).click();
+  await navigation.getByRole("button", { name: "Capabilities", exact: true }).click();
   // Packages is the default sub-tab and lists every built-in category.
   await expect(page.getByRole("heading", { name: "Packages", exact: true })).toBeVisible();
 
