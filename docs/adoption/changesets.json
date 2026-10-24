@@ -3640,6 +3640,63 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "2.6.1",
+      "previous_version": "2.6.0",
+      "date": "2026-10-24",
+      "hints": [],
+      "commits": [
+        "fix(release): add scoped release workflow approval",
+        "fix(tools): normalize narrative field lengths",
+        "fix(release): fix linux packages and duplicate release validation",
+        "ci(workflows): pin linux runners to 26.04",
+        "fix(release): fix commit parsing for merged release recovery"
+      ],
+      "prompts": [],
+      "tools": [
+        {
+          "name": "memory_upsert",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "record"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "report_tool_telemetry_issue",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "title"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "workflow_progress",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "detail",
+            "items",
+            "needs_attention_reason",
+            "phase",
+            "summary",
+            "validation_evidence"
+          ],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
