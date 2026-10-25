@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.2] - 2026-10-25
+
+### Added
+
+- ui: Add docked navigation and full-width chat
+
+### Fixed
+
+- ui: Update menu navigation and fix browser startup
+- redaction: Add provider-wide masking and broader detection
+- e2e: Fix panel selectors for docked navigation
+
+### Changed
+
+- docs: Update docs site toolchain to zensical
+- deps: Update runtimes and dependencies to latest patches
+- deps: Bump actions/setup-python from 6 to 7 in the actions group
+- deps: Bump p-queue from 9.3.5 to 10.0.0
+
 ## [2.6.1] - 2026-10-24
 
 ### Fixed

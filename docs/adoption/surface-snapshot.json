@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "2.6.1",
+  "version": "2.6.2",
   "prompts": {
     "static.agent.compaction-group": {
       "source": "lib/agents/compaction-pipeline.ts",
