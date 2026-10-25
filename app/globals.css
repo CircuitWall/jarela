@@ -465,6 +465,24 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
+.app-shell {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.app-toaster {
+  right: max(1rem, calc(env(safe-area-inset-right) + 0.5rem));
+}
+
+/* Reserve workspace space for the docked navigation before adding agents. */
+@media (min-width: 80rem) {
+  .app-shell { padding-right: 20rem; }
+  .app-toaster { right: 21rem; }
+}
+@media (min-width: 96rem) {
+  .app-shell { padding-left: 16rem; }
+}
+
 /* Some desktop PWAs report a non-zero safe-area top (titlebar overlay),
  * which creates an unwanted top gap. Apply top safe-area only on
  * touch/mobile environments, not based on viewport width. */

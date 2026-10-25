@@ -34,12 +34,9 @@ test.beforeEach(async ({ request, page }) => {
 });
 
 async function openMenu(page: import("@playwright/test").Page) {
-  const menuToggle = page
-    .locator("header button")
-    .filter({ has: page.locator("svg") })
-    .last();
-  await menuToggle.click();
-  await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  if (!(await navigation.isVisible())) await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await expect(navigation).toBeVisible();
 }
 
 test("menu groups destinations and Capabilities hosts sub-tabs", async ({ page }) => {
@@ -70,7 +67,7 @@ test("menu groups destinations and Capabilities hosts sub-tabs", async ({ page }
 
   // Click Capabilities to mount the full capability sub-tab strip.
   await page.getByRole("button", { name: "Capabilities", exact: true }).click();
-  await expect(navigation).toHaveCount(0);
+  await expect(navigation).toBeVisible();
   const packagesTab = page.getByRole("tab", { name: "Packages", exact: true });
   await expect(packagesTab).toBeVisible();
   await expect(page.getByRole("tab", { name: "Documents", exact: true })).toHaveCount(0);

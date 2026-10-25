@@ -94,6 +94,11 @@ export function AppShell() {
   // → useSSE.consume → useSSE.attach), and effects keyed on `attach` re-fire,
   // forcing a message refetch + chat-window scroll. Stable refs break the cascade.
   const onMessageSent = useCallback(() => {}, []);
+  const onSelectAgent = useCallback((agentId: string) => {
+    setShowMenu(false);
+    dispatch({ type: "SET_AGENT", agentId });
+    dispatch({ type: "SET_TAB", tab: "chat" });
+  }, [dispatch]);
 
   // Click on an OS Web Notification → useEventNotifications fires a custom
   // event; handle it here to switch to the relevant agent's chat. Prefers
@@ -272,7 +277,7 @@ export function AppShell() {
     // the home indicator. Inline style instead of `h-[...]` because
     // Tailwind arbitrary values choke on commas inside `var(...)`.
     <div
-      className="flex flex-col text-fg overflow-hidden px-safe"
+      className="app-shell flex flex-col text-fg overflow-hidden"
       style={{ height: "var(--actual-vh, 100dvh)" }}
     >
       <BootScreen
@@ -355,16 +360,15 @@ export function AppShell() {
           agents={agents}
           activeAgentId={state.activeAgentId}
           loading={agentsLoading}
-          onSelect={(agentId) => {
-            setShowMenu(false);
-            dispatch({ type: "SET_AGENT", agentId });
-            dispatch({ type: "SET_TAB", tab: "chat" });
-          }}
+          onSelect={onSelectAgent}
         />
         <HeaderActivity />
         <button
+          aria-label="Menu"
+          aria-expanded={showMenu}
+          aria-controls="main-navigation"
           onClick={() => { setShowMenu((v) => !v); }}
-          className={`control-tap ml-auto relative shrink-0 p-2.5 rounded transition-colors ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
+          className={`control-tap ml-auto relative shrink-0 p-2.5 rounded transition-colors xl:hidden ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
           title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
         >
           <Menu size={21} />
@@ -375,8 +379,21 @@ export function AppShell() {
           )}
         </button>
       </header>
+      <aside
+        aria-label="Agents"
+        className="glass fixed bottom-0 left-0 z-40 hidden w-64 border-r border-border/60 pb-safe 2xl:block"
+        style={{ top: "calc(3rem + var(--app-safe-top))" }}
+      >
+        <AgentSwitcher
+          layout="sidebar"
+          agents={agents}
+          activeAgentId={state.activeAgentId}
+          loading={agentsLoading}
+          onSelect={onSelectAgent}
+        />
+      </aside>
 
-      <div className="mx-auto flex-1 relative w-full max-w-7xl overflow-hidden">
+      <div data-testid="workspace-content" className={`mx-auto min-h-0 flex-1 relative w-full overflow-hidden ${state.activeTab === "chat" ? "" : "max-w-7xl"}`}>
         {/*
           Each tab is wrapped in <Activity> on its first visit, then kept
           mounted so scroll position, expanded rows, and local form/filter
@@ -478,22 +495,19 @@ export function AppShell() {
 
         {showMenu && (
           <div
-            className="fixed left-0 right-0 bottom-0 bg-black/20 z-30"
+            className="fixed left-0 right-0 bottom-0 bg-black/20 z-30 xl:hidden"
             style={{ top: "calc(3rem + var(--app-safe-top))" }}
             onClick={() => setShowMenu(false)}
           />
         )}
 
-        {showMenu && (
-          <MenuPanel
-            activeTab={state.activeTab}
-            onClose={() => setShowMenu(false)}
-            onSetTab={(tab) => {
-              dispatch({ type: "SET_TAB", tab });
-            }}
-          />
-        )}
       </div>
+      <MenuPanel
+        open={showMenu}
+        activeTab={state.activeTab}
+        onClose={() => setShowMenu(false)}
+        onSetTab={(tab) => dispatch({ type: "SET_TAB", tab })}
+      />
     </div>
   );
 }
