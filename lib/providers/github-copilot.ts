@@ -11,6 +11,7 @@ import { getStoredOAuthToken } from "./github-copilot-auth";
 import { readErrorBody } from "@/lib/utils/error";
 import { openaiTokenLimitParams, parseOpenAIInvokeChoice, streamOpenAIEvents, toOpenAIMessages } from "./openai";
 import {
+  ANTHROPIC_API_VERSION,
   buildAnthropicMessageBody,
   translateAnthropicStreamEvents,
 } from "./anthropic";
@@ -170,13 +171,14 @@ async function resolveCopilotAuth(params: ProviderParams): Promise<CopilotAuth> 
 async function resolvedAnthropicClient(params: ProviderParams): Promise<Anthropic> {
   const auth = await resolveCopilotAuth(params);
   return new Anthropic({
-    // The SDK requires an apiKey field; we authenticate via authToken
-    // (Authorization: Bearer ...) per Copilot's contract. The empty
-    // x-api-key header the SDK still sends is ignored by Copilot.
-    apiKey: "",
+    // The SDK's authToken option sets the Authorization header expected by Copilot.
     authToken: auth.apiKey,
     baseURL: auth.baseURL,
-    defaultHeaders: { ...auth.headers, ...params.extra_headers },
+    defaultHeaders: {
+      "anthropic-version": ANTHROPIC_API_VERSION,
+      ...auth.headers,
+      ...params.extra_headers,
+    },
     maxRetries: 0,
   });
 }

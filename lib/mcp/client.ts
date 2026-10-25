@@ -1,4 +1,5 @@
 import type { StructuredToolInterface } from "@langchain/core/tools";
+import type { MCPAdapterConfig } from "@langchain/mcp-adapters";
 import {
   listMcpServers,
   setMcpServerError,
@@ -80,11 +81,11 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
       activeClient = null;
     }
 
-    const { MultiServerMCPClient } = await import("@langchain/mcp-adapters");
+    const { MCPAdapter } = await import("@langchain/mcp-adapters");
 
     // Connect each server in its own client so one broken server (e.g. missing
     // `uvx` on PATH, bad API key) doesn't poison the others. Previously a
-    // single MultiServerMCPClient.getTools() throw would mark ALL enabled
+    // single MCPAdapter.listTools() throw would mark ALL enabled
     // servers with the same error message — confusing because the UI showed
     // e.g. google-maps tagged with the `time` server's connection error.
     const tools: StructuredToolInterface[] = [];
@@ -92,7 +93,7 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
     const subClients: Array<{ close: () => Promise<void> }> = [];
 
     for (const row of enabled) {
-      let serverConfig: Record<string, unknown>;
+      let serverConfig: MCPAdapterConfig["servers"][string];
       try {
         const spec = JSON.parse(row.spec) as McpStdioSpec | McpHttpSpec;
         if (row.transport === "stdio") {
@@ -101,6 +102,8 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
             transport: "stdio",
             command: s.command,
             args: s.args ?? [],
+            mode: "auto",
+            elicitation: false,
             // Inherit host env (PATH, HOME, proxies, registry configs) and
             // layer spec.env on top. See buildSubprocessEnv below.
             env: buildSubprocessEnv(s.env ?? {}),
@@ -111,6 +114,8 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
             transport: "http",
             url: s.url,
             headers: s.headers ?? {},
+            mode: "auto",
+            elicitation: false,
           };
         }
       } catch (err) {
@@ -119,11 +124,13 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
       }
 
       try {
-        const client = new MultiServerMCPClient({
-          mcpServers: { [row.name]: serverConfig },
+        const client = new MCPAdapter({
+          servers: { [row.name]: serverConfig },
           throwOnLoadError: false,
-        } as ConstructorParameters<typeof MultiServerMCPClient>[0]);
-        const serverTools = (await client.getTools()) as unknown as StructuredToolInterface[];
+          prefixToolNameWithServerName: false,
+          onConnectionError: "throw",
+        });
+        const serverTools = (await client.listTools()) as unknown as StructuredToolInterface[];
         tools.push(...serverTools);
         for (const t of serverTools) {
           const raw = (t as { metadata?: Record<string, unknown> }).metadata ?? {};

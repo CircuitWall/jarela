@@ -1,13 +1,17 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
+  ANTHROPIC_API_VERSION,
   CACHE_SHARED_SPLIT_SENTINEL,
   CACHE_SPLIT_SENTINEL,
+  anthropicProvider,
   withSystemCacheControl,
   withToolsCacheControl,
   withLastToolResultCacheControl,
   buildAnthropicMessageBody,
 } from "./anthropic";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("withSystemCacheControl", () => {
   it("wraps non-empty text in a TextBlockParam with ephemeral cache_control", () => {
@@ -157,5 +161,31 @@ describe("withLastToolResultCacheControl", () => {
     const snapshot = JSON.stringify(msgs);
     withLastToolResultCacheControl(msgs);
     expect(JSON.stringify(msgs)).toBe(snapshot);
+  });
+});
+
+describe("Anthropic SDK API version", () => {
+  it("keeps sampling options on the prior Messages API version", async () => {
+    let requestHeaders: Headers | undefined;
+    let requestBody: Record<string, unknown> | undefined;
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestHeaders = new Headers(init?.headers);
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ error: { message: "mock failure" } }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(anthropicProvider.invoke!(
+      "claude-sonnet-4",
+      [{ role: "user", content: "synthetic prompt" }],
+      { api_key: "synthetic-key", temperature: 0.2, top_p: 0.8, top_k: 40 },
+      [],
+    )).rejects.toThrow();
+
+    expect(requestHeaders?.get("anthropic-version")).toBe(ANTHROPIC_API_VERSION);
+    expect(requestBody).toMatchObject({ temperature: 0.2, top_p: 0.8, top_k: 40 });
   });
 });

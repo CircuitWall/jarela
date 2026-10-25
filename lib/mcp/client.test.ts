@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mcpToolsByServer = vi.hoisted(() => new Map<string, unknown[]>());
+const mcpAdapterConfigs = vi.hoisted(() => [] as unknown[]);
 
 vi.mock("@/lib/env/allowlist", () => ({
   getInjectedSubprocessEnv: vi.fn(() => ({})),
@@ -16,15 +17,16 @@ vi.mock("@/lib/stores/mcp-servers", () => ({
 }));
 
 vi.mock("@langchain/mcp-adapters", () => ({
-  MultiServerMCPClient: class {
-    private opts: { mcpServers: Record<string, unknown> };
+  MCPAdapter: class {
+    private opts: { servers: Record<string, unknown> };
 
-    constructor(opts: { mcpServers: Record<string, unknown> }) {
+    constructor(opts: { servers: Record<string, unknown> }) {
       this.opts = opts;
+      mcpAdapterConfigs.push(opts);
     }
 
-    async getTools() {
-      const serverName = Object.keys(this.opts.mcpServers)[0];
+    async listTools() {
+      const serverName = Object.keys(this.opts.servers)[0];
       return mcpToolsByServer.get(serverName) ?? [];
     }
 
@@ -52,6 +54,7 @@ describe("buildSubprocessEnv", () => {
     mockedListMcpServers.mockReset();
     mockedListMcpServers.mockReturnValue([]);
     mcpToolsByServer.clear();
+    mcpAdapterConfigs.length = 0;
     vi.resetModules();
   });
 
@@ -83,6 +86,17 @@ describe("buildSubprocessEnv", () => {
       const { getMcpTools, getMcpToolMeta } = await import("./client");
       await getMcpTools();
 
+      expect(mcpAdapterConfigs[0]).toMatchObject({
+        servers: {
+          filesystem: {
+            transport: "stdio",
+            mode: "auto",
+            elicitation: false,
+          },
+        },
+        prefixToolNameWithServerName: false,
+        onConnectionError: "throw",
+      });
       expect(getMcpToolMeta("read_file")).toMatchObject({
         category: "Files",
         credentials_required: ["fs_token"],

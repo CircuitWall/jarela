@@ -20,6 +20,22 @@ function resolveApiKey(params: ProviderParams): string | undefined {
   return resolveProviderApiKey("anthropic", params);
 }
 
+// Keep the prior API version while the provider still exposes sampling options
+// that the 2026 API version rejects for every model.
+export const ANTHROPIC_API_VERSION = "2023-06-01";
+
+function createAnthropicClient(params: ProviderParams): Anthropic {
+  return new Anthropic({
+    apiKey: resolveApiKey(params),
+    baseURL: params.base_url,
+    defaultHeaders: {
+      "anthropic-version": ANTHROPIC_API_VERSION,
+      ...params.extra_headers,
+    },
+    maxRetries: 0,
+  });
+}
+
 // Models from Opus 4.7 onward (and Sonnet 5+) reject temperature/top_p/top_k
 // with a 400. Strip them when the model ID indicates a modern family.
 function isModernAnthropicModel(modelId: string): boolean {
@@ -237,6 +253,7 @@ export function withLastToolResultCacheControl(
 ): Anthropic.MessageParam[] {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
+    if (m.role !== "user") continue;
     if (typeof m.content === "string") continue;
     const blocks = m.content;
     for (let j = blocks.length - 1; j >= 0; j--) {
@@ -329,12 +346,7 @@ export const anthropicProvider: ModelProvider = {
   name: "anthropic",
 
   async chat(model_id, messages, params, signal): Promise<ProviderStreamResult> {
-    const client = new Anthropic({
-      apiKey: resolveApiKey(params),
-      baseURL: params.base_url,
-      defaultHeaders: params.extra_headers,
-      maxRetries: 0,
-    });
+    const client = createAnthropicClient(params);
 
     const systemMsg = messages.find((m) => m.role === "system");
     const systemText = typeof systemMsg?.content === "string"
@@ -369,12 +381,7 @@ export const anthropicProvider: ModelProvider = {
   },
 
   async invoke(model_id, messages, params, tools, signal): Promise<InvokeResult> {
-    const client = new Anthropic({
-      apiKey: resolveApiKey(params),
-      baseURL: params.base_url,
-      defaultHeaders: params.extra_headers,
-      maxRetries: 0,
-    });
+    const client = createAnthropicClient(params);
 
     const systemMsg = messages.find((m) => m.role === "system");
     const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
@@ -412,12 +419,7 @@ export const anthropicProvider: ModelProvider = {
 
   streamInvoke(model_id, messages, params, tools, signal): AsyncIterable<ProviderStreamEvent> {
     return (async function* () {
-      const client = new Anthropic({
-        apiKey: resolveApiKey(params),
-        baseURL: params.base_url,
-        defaultHeaders: params.extra_headers,
-        maxRetries: 0,
-      });
+      const client = createAnthropicClient(params);
 
       const systemMsg = messages.find((m) => m.role === "system");
       const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";

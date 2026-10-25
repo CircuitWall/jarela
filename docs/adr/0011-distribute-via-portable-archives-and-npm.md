@@ -13,7 +13,8 @@ informed:
 To install Jarela today a user must clone the git repo and run
 `scripts/install-to-system.sh` (macOS) or `scripts/install-to-system.ps1`
 (Windows), both of which themselves invoke `npm run build`. That requires
-git, Node 22+, npm, and the entire repo on disk before the app does
+git, Node 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+, npm, and the entire repo
+on disk before the app does
 anything. For anyone outside the development loop this is a wall.
 
 How should we ship Jarela so that (a) a non-developer can install it
