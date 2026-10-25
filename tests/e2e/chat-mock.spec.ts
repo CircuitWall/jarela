@@ -102,7 +102,10 @@ test("composer sends a message and the mock reply renders", async ({ page }) => 
 
   // Send button exposes aria-label="Send" when idle; its title string
   // changes between idle and streaming, so prefer the accessible name.
-  await page.locator('button[aria-label="Send"]').click();
+  const sendButton = page.getByRole("button", { name: "Send", exact: true })
+    .within(page.locator(".chat-composer"));
+  await expect(sendButton).toBeEnabled();
+  await sendButton.click();
 
   // The mock provider streams the marker back; assert it lands in the
   // rendered message list. Use .last() because the marker also appears
