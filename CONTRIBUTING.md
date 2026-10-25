@@ -149,6 +149,14 @@ release; fewer produce a PATCH release. Breaking changes are held for a human
 to prepare the appropriate major release. Workspace packages continue to use
 the generic semver table above.
 
+Raising a published package's minimum supported Node version is a breaking
+change. Bump each affected workspace package independently: MAJOR for packages
+at 1.0.0 or later, MINOR for pre-1.0 packages. Keep the package's `engines`
+range, build target, tests, and README runtime requirements aligned with the
+app's supported Node lines. Use the `packages` scope for workspace-only
+breaking commits; the nightly app-release classifier does not treat these as
+app-breaking, because workspace packages use their own versions and tags.
+
 **Pre-1.0 caveat.** Per semver §4, anything in `0.y.z` is unstable. While the
 project is in `0.x`, breaking changes bump MINOR (not MAJOR), and the strict
 rule above kicks in at the `1.0.0` release.

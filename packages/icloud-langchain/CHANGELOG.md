@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-25
+
+### Changed
+
+- Require Node 24.15.0+ on Node 24.x or Node 26.0.0+, and build for Node 24.
+  This drops support for Node 20 and is a breaking runtime requirement.
+
 ## [0.2.1] - 2026-10-08
 
 The 0.2.0 tag never reached npm because its publish failed, so this release

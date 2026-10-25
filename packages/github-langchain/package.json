@@ -1,6 +1,6 @@
 {
   "name": "@circuitwall/github-langchain",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "LangChain tools for the GitHub REST API — direct REST calls, no MCP, no gh CLI, proxy-aware. Extracted from Jarela.",
   "license": "Apache-2.0",
   "author": "Andrew Ge Wu",
@@ -47,7 +47,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "build": "node ../../scripts/build-workspace-package.mjs",

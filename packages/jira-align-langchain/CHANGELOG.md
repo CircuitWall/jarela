@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0] - 2026-10-25
+
+### Changed
+
+- Require Node 24.15.0+ on Node 24.x or Node 26.0.0+, and build for Node 24.
+  This drops support for Node 20 and is a breaking runtime requirement.
+
 ## [1.0.1] - 2026-10-08
 
 ### Fixed

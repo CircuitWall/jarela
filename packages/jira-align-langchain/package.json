@@ -1,6 +1,6 @@
 {
   "name": "@circuitwall/jira-align-langchain",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "LangChain tools for Atlassian Jira Align (portfolio / SAFe agile) — direct REST calls, no MCP, proxy-aware. Extracted from Jarela.",
   "license": "Apache-2.0",
   "author": "Andrew Ge Wu",
@@ -48,7 +48,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "build": "node ../../scripts/build-workspace-package.mjs",

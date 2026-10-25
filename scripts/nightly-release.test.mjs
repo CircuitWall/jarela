@@ -138,6 +138,21 @@ describe("nightly release policy", () => {
     expect(footerBreaking).toMatchObject({ action: "manual", reason: "breaking-change" });
   });
 
+  it("keeps independently versioned workspace package breaks out of app release classification", () => {
+    const plan = classifyRelease({
+      currentVersion: "2.5.3",
+      latestTag: "v2.5.3",
+      commits: [
+        commit(
+          "build(packages)!: require Node 24",
+          "BREAKING CHANGE: workspace packages now require Node 24.15.0+ or 26.0.0+",
+        ),
+      ],
+    });
+
+    expect(plan).toMatchObject({ action: "release", bump: "patch", version: "2.5.4" });
+  });
+
   it("resumes a merged release commit whose tag push did not complete", () => {
     const plan = classifyRelease({
       currentVersion: "2.5.4",
