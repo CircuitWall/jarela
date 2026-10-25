@@ -304,8 +304,8 @@ export const INTEGRATIONS = {
     category: "mail" as IntegrationCategory,
     description:
       "Used by the gmail_* and calendar_* tools (search/read/draft/label/archive mail; " +
-      "list/create/update/delete calendar events). Drafts only \u2014 this integration " +
-      "intentionally cannot send mail. One-click Connect uses the bundled Jarela Google " +
+      "list/create/update/delete calendar events; send mail when explicitly requested). " +
+      "One-click Connect uses the bundled Jarela Google " +
       "client (Desktop type, PKCE-only \u2014 no client secret ships in the binary); " +
       "advanced users can paste their own OAuth client below and Jarela will use that instead.",
     fields: [
@@ -346,7 +346,7 @@ export const INTEGRATIONS = {
     description:
       "Used by the outlook_*, outlook_calendar_*, and ms_todo_* tools (search/read/draft/move/trash mail; " +
       "list/create/update/delete calendar events; manage Microsoft To Do task lists and tasks). " +
-      "Drafts only — this integration intentionally cannot send mail. Requires an Azure app " +
+      "Mail sending is available when explicitly requested. Requires an Azure app " +
       "registration. Existing connections must reconnect to grant the new Tasks scope. See the Setup guide below.",
     fields: [
       { key: "client_id", label: "Application (client) ID", placeholder: "00000000-0000-0000-0000-000000000000", secret: false, required: true },

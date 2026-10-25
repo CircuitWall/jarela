@@ -29,6 +29,7 @@ export interface RemoteIndexStats {
   unchanged: number;
   errors: number;
   removed?: number;
+  error?: string;
   /** Total chunks across this run that didn't get an embedding vector. */
   embedFailed?: number;
   /** First embed error message seen, if any. */
@@ -64,7 +65,8 @@ export async function runRemoteSource(source: DocumentSourceRow): Promise<Remote
         break;
       }
       case "gmail_mail":
-      case "outlook_mail": {
+      case "outlook_mail":
+      case "icloud_mail": {
         const s = await runMailIndexer(source);
         stats = s;
         break;
@@ -78,6 +80,7 @@ export async function runRemoteSource(source: DocumentSourceRow): Promise<Remote
     }
   } catch (err) {
     lastError = errorMessage(err);
+    stats.error = lastError;
     stats.errors++;
   }
   // Mirror the local indexer's surfacing rule: a fetch error wins; otherwise

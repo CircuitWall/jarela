@@ -10,6 +10,7 @@ export const KIND_OPTIONS: Array<{ value: DocumentSourceKind; label: string }> =
   { value: "github_repo", label: "GitHub repo files" },
   { value: "gmail_mail", label: "Gmail mail" },
   { value: "outlook_mail", label: "Outlook mail" },
+  { value: "icloud_mail", label: "iCloud mail" },
 ];
 
 export function isGithubKind(k: DocumentSourceKind): boolean {
@@ -17,11 +18,11 @@ export function isGithubKind(k: DocumentSourceKind): boolean {
 }
 
 export function isMailKind(k: DocumentSourceKind): boolean {
-  return k === "gmail_mail" || k === "outlook_mail";
+  return k === "gmail_mail" || k === "outlook_mail" || k === "icloud_mail";
 }
 
 export function integrationForSourceKind(kind: DocumentSourceKind): string | null {
-  if (isMailKind(kind)) return kind === "gmail_mail" ? "gmail" : "outlook";
+  if (isMailKind(kind)) return kind === "gmail_mail" ? "gmail" : kind === "outlook_mail" ? "outlook" : "icloud";
   if (isGithubKind(kind)) return "github";
   if (kind.startsWith("jira_") || kind.startsWith("confluence_")) return "atlassian";
   return null;
@@ -44,8 +45,14 @@ export function summarizeRemote(s: DocumentSource): string {
       const prefix = c.path_prefix ? ` /${String(c.path_prefix).replace(/^\/+|\/+$/g, "")}` : "";
       return `GitHub repo: ${slug}${ref}${prefix}`;
     }
-    case "gmail_mail":       return `Gmail: ${String(c.query ?? "?")}`;
-    case "outlook_mail":     return `Outlook: ${String(c.query ?? "?")}`;
+    case "gmail_mail":
+    case "outlook_mail":
+    case "icloud_mail": {
+      const provider = s.kind === "gmail_mail" ? "Gmail" : s.kind === "outlook_mail" ? "Outlook" : "iCloud";
+      if (!c.scope) return `${provider}: ${String(c.query ?? "?")}`;
+      const scope = c.scope === "all" ? "Whole mailbox" : c.scope === "folder" ? String(c.folder) : "Inbox";
+      return `${provider}: ${scope}${c.query ? ` · ${String(c.query)}` : ""} · ${c.retention === "mirror" ? "mirror" : "archive"}`;
+    }
     default:                 return s.path;
   }
 }

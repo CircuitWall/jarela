@@ -128,6 +128,17 @@ ensures topic filtering never compares vectors from different models, even when
 dimensions match (ADR-0109); existing sources need reindexing before topic rules
 can be evaluated.
 
+Mail document sources share a validated scope/limit/retention contract
+(ADR-0110) across Gmail, Outlook, and iCloud. The existing scheduler dispatches
+Gmail and Graph scans through their OAuth clients and iCloud scans through the
+optional iCloud package's read-only IMAP adapter. Credentials remain in the
+existing encrypted integration store (or configured environment); document
+archives remain in the existing document tables. New sources retain indexed
+mail after upstream moves/deletion; deleting the source removes its archive.
+Mail and calendar tools use the same topical categories and capability rules
+across providers: read for inspection, write for owned-content changes
+including trash/event deletion, and execute for mail sending where supported.
+
 - Keep API routes focused on transport, origin checks, and request validation.
 - Let `lib/agents/` coordinate providers and tools; connect those capabilities
   through their adapters and registries rather than importing private internals.

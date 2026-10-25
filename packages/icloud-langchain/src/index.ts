@@ -110,6 +110,7 @@ const IMAP_PORT = 993;
 interface RunImapOpts {
   mailbox?: string;
   readOnly?: boolean;
+  auth?: ICloudAuth;
 }
 
 /** Connect, run `fn` inside an opened mailbox (or none), and always log out.
@@ -120,13 +121,13 @@ async function runImap<T>(
   fn: (client: ImapFlow) => Promise<T>,
   opts: RunImapOpts = {},
 ): Promise<T | { error: string }> {
-  const auth = await resolveAuth();
+  const auth = opts.auth ?? await resolveAuth();
   if ("error" in auth) return auth;
   const client = new ImapFlow({
     host: IMAP_HOST,
     port: IMAP_PORT,
     secure: true,
-    auth: { user: imapUsername(auth.appleId), pass: auth.appPassword },
+    auth: { user: imapUsername(auth.appleId.trim()), pass: stripDashesAndZeroWidth(auth.appPassword) },
     logger: false,
   });
   try {
@@ -374,21 +375,25 @@ interface BodyPart {
   disposition: string | null;
 }
 
-function collectBodyParts(structure: unknown, prefix = ""): BodyPart[] {
+function collectBodyParts(structure: unknown, prefix = "", inlineOnly = false): BodyPart[] {
   if (!structure || typeof structure !== "object") return [];
   const s = structure as Record<string, unknown>;
+  if (inlineOnly && (String(s.disposition ?? "").toLowerCase() === "attachment"
+    || (s.parameters as Record<string, unknown> | undefined)?.name
+    || (s.dispositionParameters as Record<string, unknown> | undefined)?.filename)) return [];
   const out: BodyPart[] = [];
   const childNodes = (s.childNodes as unknown[]) ?? [];
   if (Array.isArray(childNodes) && childNodes.length > 0) {
     childNodes.forEach((child, idx) => {
       const partId = prefix ? `${prefix}.${idx + 1}` : String(idx + 1);
-      out.push(...collectBodyParts(child, partId));
+      out.push(...collectBodyParts(child, partId, inlineOnly));
     });
     return out;
   }
   const type = String(s.type ?? "");
   const subtype = String(s.subtype ?? "");
-  const fullType = type && subtype ? `${type}/${subtype}`.toLowerCase() : "application/octet-stream";
+  const fullType = type.includes("/") ? type.toLowerCase()
+    : type && subtype ? `${type}/${subtype}`.toLowerCase() : "application/octet-stream";
   const dispositionRaw = s.disposition;
   const disposition =
     typeof dispositionRaw === "string"
@@ -402,7 +407,7 @@ function collectBodyParts(structure: unknown, prefix = ""): BodyPart[] {
   const filename =
     (dispParams.filename as string | undefined) ?? (params.name as string | undefined) ?? null;
   out.push({
-    part: prefix || "1",
+    part: typeof s.part === "string" ? s.part : prefix || "1",
     type: fullType,
     size: Number(s.size ?? 0),
     filename,
@@ -420,6 +425,89 @@ async function streamToString(
     chunks.push(typeof c === "string" ? Buffer.from(c) : c);
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+export interface ICloudMailScanOptions {
+  scope: "inbox" | "folder" | "all";
+  folder?: string;
+  query?: string;
+  maxResults?: number;
+}
+
+export interface ICloudIndexedMessage {
+  id: string;
+  subject: string;
+  from: string;
+  to: string;
+  date: string | null;
+  text: string;
+  html: boolean;
+}
+
+export async function scanICloudMail(
+  auth: ICloudAuth,
+  options: ICloudMailScanOptions,
+  onMessage: (message: ICloudIndexedMessage) => Promise<void>,
+): Promise<void> {
+  if (options.scope === "folder" && !options.folder?.trim()) {
+    throw new Error("An iCloud folder path is required.");
+  }
+  if (options.maxResults !== undefined && (!Number.isInteger(options.maxResults) || options.maxResults < 1)) {
+    throw new Error("iCloud maxResults must be a positive integer.");
+  }
+  const result = await runImap(async (client) => {
+    const mailboxes = options.scope === "all"
+      ? (await client.list()).filter((box) => !box.flags.has("\\Noselect")).map((box) => box.path)
+      : [options.scope === "inbox" ? "INBOX" : options.folder!];
+    let scanned = 0;
+    for (const mailbox of mailboxes) {
+      if (scanned >= (options.maxResults ?? Infinity)) break;
+      const lock = await client.getMailboxLock(mailbox, { readOnly: true });
+      try {
+        if (!client.mailbox) throw new Error("iCloud did not open the selected mailbox.");
+        const validity = String(client.mailbox.uidValidity);
+        const query = options.query?.trim();
+        const uids = await client.search(
+          query ? { or: [{ subject: query }, { body: query }] } : { all: true },
+          { uid: true },
+        );
+        if (!Array.isArray(uids)) throw new Error("iCloud message search failed.");
+        for (const uid of uids.sort((a, b) => b - a)) {
+          if (scanned >= (options.maxResults ?? Infinity)) break;
+          const msg = await client.fetchOne(String(uid), {
+            uid: true, envelope: true, bodyStructure: true,
+          }, { uid: true });
+          if (!msg) throw new Error("An iCloud message disappeared during indexing. Retry the source.");
+          const parts = collectBodyParts(msg.bodyStructure, "", true)
+            .filter((part) => part.disposition !== "attachment" && !part.filename);
+          const part = parts.find((candidate) => candidate.type === "text/plain")
+            ?? parts.find((candidate) => candidate.type === "text/html");
+          let text = "";
+          if (part) {
+            const download = await client.download(String(uid), part.part, { uid: true, maxBytes: 40_000 });
+            if (!download.content) throw new Error("iCloud could not download a message body.");
+            text = await streamToString(download.content);
+          }
+          await onMessage({
+            id: msg.envelope?.messageId
+              ? `message-id:${msg.envelope.messageId}`
+              : `uid:${mailbox}:${validity}:${uid}`,
+            subject: msg.envelope?.subject ?? "(no subject)",
+            from: msg.envelope?.from?.map((address) => address.address ?? "").join(", ") ?? "",
+            to: msg.envelope?.to?.map((address) => address.address ?? "").join(", ") ?? "",
+            date: envelopeDateToIso(msg.envelope?.date),
+            text,
+            html: part?.type === "text/html",
+          });
+          scanned++;
+        }
+      } finally {
+        lock.release();
+      }
+    }
+    return { scanned };
+  }, { auth });
+  if ("error" in result) throw new Error(result.error);
 }
 
 export const icloudMailCreateDraftTool = tool(
@@ -1543,11 +1631,9 @@ export const icloudTools = [
 // host app can register tools per capability tier:
 //
 //   read    - inspect-only, no state change on the iCloud side.
-//   write   - create / mutate state, but reversible (drafts, moves,
+//   write   - modify owned content (drafts, moves, trash, event deletion,
 //             flag toggles, event edits, reminder completion).
-//   execute - destructive on the iCloud side. iCloud Mail moves
-//             deleted messages to Trash (recoverable for ~30 days),
-//             but CalDAV event delete is hard.
+//   execute - external side effects such as sending mail; not supported.
 export const icloudReadTools = [
   icloudMailListFoldersTool,
   icloudMailListMessagesTool,
@@ -1563,13 +1649,12 @@ export const icloudWriteTools = [
   icloudMailCreateDraftTool,
   icloudMailMoveMessageTool,
   icloudMailFlagMessageTool,
+  icloudMailDeleteMessageTool,
   icloudCalendarCreateEventTool,
   icloudCalendarUpdateEventTool,
+  icloudCalendarDeleteEventTool,
   icloudRemindersCreateTool,
   icloudRemindersCompleteTool,
 ];
 
-export const icloudExecuteTools = [
-  icloudMailDeleteMessageTool,
-  icloudCalendarDeleteEventTool,
-];
+export const icloudExecuteTools: typeof icloudWriteTools = [];

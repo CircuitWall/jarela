@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Read-only streaming `scanICloudMail` adapter for Inbox, chosen-folder, and
+  whole-mailbox indexing with optional text search and message limits.
+
+### Changed
+
+- Classify mail trash and calendar deletion as `write`, matching Gmail and
+  Outlook. The `icloudExecuteTools` export is now empty; hosts with
+  capability-based approvals should review their permissions when upgrading.
+
+### Fixed
+
+- Recognize current ImapFlow MIME type and part identifiers when reading mail.
+
 ## [0.3.0] - 2026-10-25
 
 ### Changed

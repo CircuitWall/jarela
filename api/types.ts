@@ -1124,7 +1124,8 @@ export type DocumentSourceKind =
   | "github_pulls"
   | "github_repo"
   | "gmail_mail"
-  | "outlook_mail";
+  | "outlook_mail"
+  | "icloud_mail";
 
 export interface DocumentSource {
   id: string;

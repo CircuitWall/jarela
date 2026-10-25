@@ -40,10 +40,24 @@ Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what
 ## Document indexing and recall privacy
 
 In Documents, use **Opt in to indexing** to choose a local folder or a supported
-connected integration (Gmail, Outlook, GitHub, Jira, or Confluence). Scope remote
-sources to a mailbox query, repository, project, or space. Connecting credentials
+connected integration (Gmail, Outlook, iCloud, GitHub, Jira, or Confluence). Scope remote
+sources to a mailbox, repository, project, or space. Connecting credentials
 does not automatically index content. Removing a source deletes its indexed
 documents and chunks without changing the originals.
+
+Gmail, Outlook, and iCloud mail sources offer **Inbox**, a **chosen folder or
+label**, or **whole mailbox** (including spam and trash). Search is optional.
+For chosen folders, Gmail accepts an exact label name or ID; Outlook accepts a
+folder ID or well-known name such as `sentitems`; iCloud accepts a mailbox path.
+Leave **Max results** blank for all messages, or set a positive limit. Outlook
+text search has a Microsoft Graph ceiling of 1,000 results; leave search blank
+to scan a complete folder/mailbox. New sources keep an archive: previously
+indexed messages remain even if moved, deleted, or no longer matching the
+query. Enabled sources refresh approximately every ten minutes while Jarela is
+running and unlocked; this is polling, not instant delivery. Large initial
+scans may take longer. Existing query-only Gmail/Outlook sources retain their
+previous bounded mirror behavior; recreate them to use the new scopes and
+archive defaults. iCloud indexing requires the updated iCloud package.
 
 Indexing with an embedding provider other than **Jarela Local** displays a warning
 and requires confirmation in the source setup flow. Content may be sent to that

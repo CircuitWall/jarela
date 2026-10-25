@@ -66,6 +66,14 @@ describe("default LangChain packages", () => {
         expect(registeredCategory(tool.name)).toBeDefined();
         expect(["read", "write", "execute"]).toContain(registeredCapability(tool.name));
       }
+      for (const name of ["icloud_mail_list_messages", "icloud_mail_delete_message"]) {
+        expect(registeredCategory(name)).toBe("Mail");
+      }
+      for (const name of ["icloud_calendar_list_events", "icloud_calendar_delete_event"]) {
+        expect(registeredCategory(name)).toBe("Calendar");
+      }
+      expect(registeredCapability("icloud_mail_delete_message")).toBe("write");
+      expect(registeredCapability("icloud_calendar_delete_event")).toBe("write");
     } finally {
       _resetDefaultPackages();
       if (previousPackagesDir === undefined) delete process.env.JARELA_PACKAGES_DIR;

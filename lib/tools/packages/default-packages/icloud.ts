@@ -11,9 +11,9 @@ const resolveAuthFromEnv = optionalFunction("@circuitwall/icloud-langchain", "re
 
 function byDomain(prefix: "icloud_mail_" | "icloud_calendar_" | "icloud_reminders_") {
   return {
-    read: read.filter((tool) => tool.name.startsWith(prefix)),
-    write: write.filter((tool) => tool.name.startsWith(prefix)),
-    execute: execute.filter((tool) => tool.name.startsWith(prefix)),
+    get read() { return read.filter((tool) => tool.name.startsWith(prefix)); },
+    get write() { return write.filter((tool) => tool.name.startsWith(prefix)); },
+    get execute() { return execute.filter((tool) => tool.name.startsWith(prefix)); },
   };
 }
 
@@ -43,7 +43,9 @@ function descriptor(
     category,
     integrationId: "icloud",
     npmPackage: "@circuitwall/icloud-langchain",
-    toolCounts: { read: tools.read.length, write: tools.write.length, execute: tools.execute.length },
+    get toolCounts() {
+      return { read: tools.read.length, write: tools.write.length, execute: tools.execute.length };
+    },
     description,
     register: () => registerLangChainPackage({ category, tools, auth }),
   };

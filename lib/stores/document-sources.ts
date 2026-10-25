@@ -20,6 +20,7 @@ export type DocumentSourceKind =
   | "github_repo"
   | "gmail_mail"
   | "outlook_mail"
+  | "icloud_mail"
   | "on_demand_url";
 
 export interface DocumentSourceRow {

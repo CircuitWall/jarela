@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import {
@@ -10,6 +11,7 @@ import {
   type DocumentSourceKind,
 } from "@/lib/stores/document-sources";
 import { notifyTriggerHandlers } from "@/lib/triggers";
+import { mailSourceConfigSchema } from "@/lib/documents/mail-source-config";
 
 const LocalSchema = z.object({
   path: z.string().min(1),
@@ -28,6 +30,7 @@ const REMOTE_KINDS = [
   "github_repo",
   "gmail_mail",
   "outlook_mail",
+  "icloud_mail",
 ] as const;
 const RemoteSchema = z.object({
   kind: z.enum(REMOTE_KINDS),
@@ -46,6 +49,7 @@ function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>
     case "github_repo":      return `github-repo://${String(config.owner ?? "")}/${String(config.repo ?? "")}`;
     case "gmail_mail":       return `gmail-mail://${hash}`;
     case "outlook_mail":     return `outlook-mail://${hash}`;
+    case "icloud_mail":      return `icloud-mail://${hash}`;
     default: return `remote://${kind}/${Date.now()}`;
   }
 }
@@ -100,7 +104,21 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid input" }, { status: 400 });
     }
-    const synth = syntheticPath(parsed.data.kind, parsed.data.config);
+    const { kind } = parsed.data;
+    let config = parsed.data.config;
+    if (kind === "gmail_mail" || kind === "outlook_mail" || kind === "icloud_mail") {
+      const mail = mailSourceConfigSchema.safeParse(config);
+      if (!mail.success) {
+        return NextResponse.json({ error: mail.error.issues[0]?.message ?? "invalid mail config" }, { status: 400 });
+      }
+      if (kind === "icloud_mail" && !mail.data.scope) {
+        return NextResponse.json({ error: "Choose a mailbox scope for iCloud." }, { status: 400 });
+      }
+      config = mail.data;
+    }
+    const synth = config.scope && (kind === "gmail_mail" || kind === "outlook_mail" || kind === "icloud_mail")
+      ? `${kind.replace("_", "-")}://${createHash("sha256").update(JSON.stringify(config)).digest("hex")}`
+      : syntheticPath(kind, config);
     if (getDocumentSourceByPath(synth)) {
       return NextResponse.json({ error: "source already exists for this config" }, { status: 409 });
     }
@@ -108,7 +126,7 @@ export async function POST(req: NextRequest) {
       path: synth,
       label: parsed.data.label,
       kind: parsed.data.kind,
-      config: parsed.data.config,
+      config,
     });
     await notifyTriggerHandlers("source_changed");
     return NextResponse.json(rowResponse(row), { status: 201 });

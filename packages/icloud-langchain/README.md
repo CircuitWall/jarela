@@ -70,6 +70,26 @@ const agent = createReactAgent({
 Each tool resolves auth lazily on every call, so it's safe to import
 the tools at module load and configure the resolver later.
 
+## Mail indexing adapter
+
+`scanICloudMail(auth, options, onMessage)` reads mail without invoking an agent
+tool. It accepts an explicit `ICloudAuth`, `scope` (`inbox`, `folder`, or `all`),
+an optional folder path and subject/body text query, and optional positive
+`maxResults`. Without a limit it visits all matches. Whole-mailbox scans include
+all selectable folders, including spam and trash. Each scan opens one IMAP
+connection, locks folders read-only, and awaits `onMessage` for each message.
+It downloads up to 40,000 bytes of the preferred inline text/plain or text/html
+body, never attachments, and throws on scan or callback failure. Callback
+identities use Message-ID where available, with mailbox/UIDVALIDITY/UID as a
+fallback. A UID fallback cannot deduplicate a message moved to another folder.
+HTML is marked for the host to convert to plain text before indexing.
+
+The capability exports follow the same rules as Jarela's Gmail/Outlook tools:
+reads are `read`; drafts, moves, flags, trash, and calendar deletion are `write`.
+`icloudExecuteTools` is empty because sending mail is not supported. Trash and
+calendar deletion previously belonged to `execute`; hosts using capability
+approvals should review this alignment before upgrading.
+
 ## Generating the app-specific password
 
 1. Sign in at <https://appleid.apple.com>.
