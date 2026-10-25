@@ -17,7 +17,9 @@
 # - HOSTNAME defaults to 0.0.0.0 inside the container so the port is
 #   reachable from the host. On bare metal we default to 127.0.0.1.
 # - JARELA_DB_DIR=/data — all SQLite + secrets + uploads live there.
-# - We use node:22-bookworm-slim (Debian). Keytar's native binding builds
+# - We use node:22-trixie-slim (Debian 13, the current stable release with
+#   full security support). The floating tag picks up Node and Debian
+#   security patches on every rebuild. Keytar's native binding builds
 #   fine there; at runtime there's no D-Bus / libsecret session, so
 #   master-key.ts transparently falls back to a 0600 keyfile under /data
 #   (see lib/crypto/master-key.ts). That's the documented headless path.
@@ -25,7 +27,7 @@
 ARG NODE_VERSION=22
 
 # ---------- builder ----------
-FROM node:${NODE_VERSION}-bookworm-slim AS builder
+FROM node:${NODE_VERSION}-trixie-slim AS builder
 
 # Toolchain for native modules (keytar, better-sqlite3 transitive deps).
 # libsecret-1-dev lets `npm install` finish keytar's gyp build cleanly.
@@ -65,7 +67,7 @@ COPY . .
 RUN npm run build
 
 # ---------- runner ----------
-FROM node:${NODE_VERSION}-bookworm-slim AS runner
+FROM node:${NODE_VERSION}-trixie-slim AS runner
 
 # libsecret-1-0 is only needed if you want keytar to *try* the keychain.
 # It will fail (no D-Bus session) and fall back to the keyfile anyway,

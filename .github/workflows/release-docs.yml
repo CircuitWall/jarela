@@ -40,6 +40,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
 
       - name: Resolve release and reuse existing review
         id: plan
@@ -134,6 +135,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
 
       - uses: actions/download-artifact@v8
         with:
