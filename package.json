@@ -141,7 +141,7 @@
     "release:docker:dry": "node scripts/release-docker.mjs --dry-run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.128.0",
+    "@anthropic-ai/sdk": "^1.1.0",
     "@huggingface/transformers": "^4.3.1",
     "@langchain/cohere": "^1.1.0",
     "@langchain/core": "^1.2.12",
