@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { assertSupportedNode } from "./runtime-version.mjs";
@@ -10,6 +10,10 @@ const semver = require("semver");
 describe("Node runtime floor", () => {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
+  const workspacePackages = readdirSync(new URL("../packages/", import.meta.url), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => JSON.parse(readFileSync(new URL(`../packages/${entry.name}/package.json`, import.meta.url), "utf8")));
+  const workspaceBuildScript = readFileSync(new URL("../scripts/build-workspace-package.mjs", import.meta.url), "utf8");
 
   it.each(["22.22.2", "23.0.0", "24.0.0", "24.14.9", "25.0.0", "26.0.0-rc.1"])("rejects unsupported Node %s", (version) => {
     expect(() => assertSupportedNode(version)).toThrow("Upgrade Node");
@@ -25,6 +29,14 @@ describe("Node runtime floor", () => {
     expect(pkg.engines.node).toBe("^24.15.0 || >=26.0.0");
     expect(lock.packages[""].engines.node).toBe(pkg.engines.node);
     expect(pkg.files).toContain("scripts/runtime-version.mjs");
+  });
+
+  it.each(workspacePackages)("$name declares the supported app runtime range", (workspacePackage) => {
+    expect(workspacePackage.engines.node).toBe(pkg.engines.node);
+  });
+
+  it("builds both workspace module formats for Node 24", () => {
+    expect(workspaceBuildScript.match(/target: "node24"/g) ?? []).toHaveLength(2);
   });
 
   it.each(["jarela-bin.mjs", "start-prod.mjs"])("%s fails before loading application code on unsupported Node", (entry) => {

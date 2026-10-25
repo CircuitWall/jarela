@@ -7,6 +7,8 @@ SDK (there isn't one for end-user data). Extracted from
 LangChain.js agent can give an LLM the same iCloud toolbelt without
 running the full Jarela stack.
 
+Requires Node 24.15.0+ on Node 24.x, or Node 26.0.0+; Node 25 is not supported.
+
 ## Why
 
 Apple does **not** ship an OAuth-protected REST API for a user's own

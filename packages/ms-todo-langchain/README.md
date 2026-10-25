@@ -5,9 +5,10 @@ LangChain tools for **Microsoft To Do** via the Microsoft Graph
 processes.
 
 > Extracted from [Jarela](https://github.com/CircuitWall/jarela). Works in
-> any Node 20+ LangChain.js / LangGraph project. Inherits whatever HTTP
-> proxy + CA bundle the host runtime configures, so it works on
-> locked-down corp networks where the MCP install path is blocked.
+> any Node 24.15.0+ on Node 24.x, or Node 26.0.0+ (Node 25 is not
+> supported). Inherits whatever HTTP proxy + CA bundle the host runtime
+> configures, so it works on locked-down corp networks where the MCP install
+> path is blocked.
 
 ## Install
 

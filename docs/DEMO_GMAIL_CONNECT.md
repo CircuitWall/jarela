@@ -107,7 +107,7 @@ over the connected card).
 - "Your refresh_token never leaves your machine"
 - "client_secret lives in Google Secret Manager"
 - "A Cloud Run Function injects it server-side"
-- "Region: europe-west1 · Runtime: Node 22"
+- "Region: europe-west1 · Runtime: Node 24"
 
 **Optional B-roll**: a Cloud Console tab showing the secret entry,
 the function logs, or `functions/google-oauth-proxy/README.md` open in an editor.

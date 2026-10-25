@@ -24,8 +24,9 @@ Use only immediate synchronous `get`/`all` calls. Do not mutate statement
 settings or retain iterators on shared statements. Other database callers and
 migrations continue to use ordinary `prepare`. The cache drops references on
 eviction, before migrations, and database shutdown; SQLite statements are reclaimed by garbage
-collection or connection close on the supported runtimes. It uses the common
-Node 22/24 prepared-statement API rather than Node-24-only `SQLTagStore`.
+collection or connection close on the supported runtimes. It uses the shared
+Node 24/26 prepared-statement API rather than a version-specific
+`SQLTagStore` helper, so the cache works on both supported Node lines.
 Direct schema-changing code must call `clearStatementCache(db)` before the next
 cached read: reused statements can retain outdated `SELECT *` column metadata.
 

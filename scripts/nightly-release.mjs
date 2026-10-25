@@ -23,8 +23,11 @@ function nextVersion(version, bump) {
 }
 
 function breakingCommit(commit) {
-  return /^[a-z]+(?:\([^)]+\))?!:/i.test(commit.subject)
-    || /^BREAKING[ -]CHANGE\s*:/im.test(commit.body);
+  const packageScoped = /^[a-z]+\(packages\)!:/i.test(commit.subject);
+  return !packageScoped && (
+    /^[a-z]+(?:\([^)]+\))?!:/i.test(commit.subject)
+      || /^BREAKING[ -]CHANGE\s*:/im.test(commit.body)
+  );
 }
 
 function featureCommit(commit) {

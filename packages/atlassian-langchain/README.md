@@ -7,6 +7,8 @@ Extracted from [Jarela](https://github.com/CircuitWall/jarela) so any
 LangGraph / LangChain.js agent can give an LLM the same Jira + Confluence
 toolbelt without running the full Jarela stack.
 
+Requires Node 24.15.0+ on Node 24.x, or Node 26.0.0+; Node 25 is not supported.
+
 ## Why
 
 The official `mcp-atlassian` server is great, but on locked-down corporate

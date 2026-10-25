@@ -56,4 +56,7 @@ Open an ADR first if the package is non-trivial. The general checklist:
 Packages release on tag push, matching Jarela's existing release model
 (see [CONTRIBUTING.md](../CONTRIBUTING.md#release-process)). Each package
 tracks its own `MAJOR.MINOR.PATCH` in its `package.json`; bumps follow the
-same Conventional Commits rules as Jarela.
+same Conventional Commits rules as Jarela. A higher minimum Node version is
+breaking: release each affected package with the corresponding independent
+major (or pre-1.0 minor) version bump, and keep its `engines`, build target,
+tests, and README requirement aligned with the app's supported Node lines.
