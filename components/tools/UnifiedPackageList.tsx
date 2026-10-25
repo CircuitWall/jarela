@@ -92,7 +92,7 @@ const CATEGORY_BLURB: Record<string, string> = {
   Atlassian: "Jira and Confluence read/write.",
   JiraAlign: "Jira Align portfolio-level read/write.",
   GitHub: "Issues, pull requests, code search via the GitHub API.",
-  Mail: "Read and send email via Gmail / Outlook / iCloud.",
+  Mail: "Read and manage mail via Gmail / Outlook / iCloud; send via Gmail / Outlook.",
   Calendar: "Read and write calendar events on Google / Outlook / iCloud.",
   Tasks: "Manage tasks and reminders on Microsoft To Do / iCloud Reminders.",
   Microsoft: "Microsoft Graph escape hatch + unified search + People resolver.",

@@ -10,6 +10,61 @@ import type { DocumentHit } from "@/api/types";
 afterEach(cleanup);
 
 describe("indexing consent", () => {
+  it.each([
+    ["gmail_mail", "gmail"], ["outlook_mail", "outlook"], ["icloud_mail", "icloud"],
+  ])("offers query-free Inbox archives for %s", async (kind, integration) => {
+    const submit = vi.fn().mockResolvedValue(true);
+    render(<AddSourceForm disabled={false} onSubmit={submit} configuredIntegrations={[integration]} localEmbeddings />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: kind } });
+    expect((screen.getByLabelText("Mailbox scope") as HTMLSelectElement).value).toBe("inbox");
+    fireEvent.change(screen.getByPlaceholderText("Label (required)"), { target: { value: "My Inbox" } });
+    const add = screen.getByRole("button", { name: /add/i });
+    expect(add.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(add);
+    await waitFor(() => expect(submit).toHaveBeenCalledWith({
+      kind, label: "My Inbox", config: { scope: "inbox", retention: "archive" },
+    }));
+  });
+
+  it("requires a chosen folder, validates limits, and accepts whole-mailbox scope", async () => {
+    const submit = vi.fn().mockResolvedValue(false);
+    render(<AddSourceForm disabled={false} onSubmit={submit} configuredIntegrations={["outlook"]} localEmbeddings />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "outlook_mail" } });
+    fireEvent.change(screen.getByPlaceholderText("Label (required)"), { target: { value: "Mail" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.change(screen.getByLabelText("Mailbox scope"), { target: { value: "folder" } });
+    const add = screen.getByRole("button", { name: /add/i });
+    expect(add.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Folder or label"), { target: { value: "sentitems" } });
+    fireEvent.change(screen.getByPlaceholderText("Max results (optional)"), { target: { value: "1.5" } });
+    expect(add.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText("Max results (optional)"), { target: { value: "500" } });
+    fireEvent.change(screen.getByPlaceholderText("Page size (optional)"), { target: { value: "101" } });
+    expect(add.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText("Page size (optional)"), { target: { value: "50" } });
+    fireEvent.click(add);
+    await waitFor(() => expect(submit).toHaveBeenLastCalledWith({
+      kind: "outlook_mail", label: "Mail",
+      config: { scope: "folder", folder: "sentitems", retention: "archive", max_results: 500, page_size: 50 },
+    }));
+    await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+    fireEvent.change(screen.getByLabelText("Mailbox scope"), { target: { value: "all" } });
+    fireEvent.click(add);
+    await waitFor(() => expect(submit).toHaveBeenLastCalledWith({
+      kind: "outlook_mail", label: "Mail",
+      config: { scope: "all", retention: "archive", max_results: 500, page_size: 50 },
+    }));
+  });
+
+  it("warns about Outlook search limits without requiring a query", () => {
+    render(<AddSourceForm disabled={false} onSubmit={vi.fn()} configuredIntegrations={["outlook"]} localEmbeddings />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "outlook_mail" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Optional mail search"), { target: { value: "subject:budget" } });
+    expect(screen.getByRole("alert").textContent).toContain("1,000");
+  });
+
   it("requires source opt-in and warns for a nonlocal provider", async () => {
     const submit = vi.fn().mockResolvedValue(true);
     render(<AddSourceForm disabled={false} onSubmit={submit} configuredIntegrations={["gmail"]} localEmbeddings={false} />);

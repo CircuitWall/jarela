@@ -28,6 +28,8 @@ const INITIAL: FormState = {
   addSpaceKey: "",
   addQuery: "",
   addMailQuery: "",
+  addMailScope: "inbox",
+  addMailFolder: "",
   addMailMaxResults: "",
   addMailPageSize: "",
   addRecencyDays: "",
@@ -73,13 +75,22 @@ function buildPayload(s: FormState): CreatePayload | null {
       if (prefix) config.path_prefix = prefix;
     }
   } else if (isMailKind(s.addKind)) {
-    const v = s.addMailQuery.trim();
-    if (!v) return null;
-    config.query = v;
-    const maxResults = parseInt(s.addMailMaxResults, 10);
-    if (Number.isFinite(maxResults) && maxResults > 0) config.max_results = maxResults;
-    const pageSize = parseInt(s.addMailPageSize, 10);
-    if (Number.isFinite(pageSize) && pageSize > 0) config.page_size = pageSize;
+    config.scope = s.addMailScope;
+    config.retention = "archive";
+    if (s.addMailScope === "folder") {
+      if (!s.addMailFolder.trim()) return null;
+      config.folder = s.addMailFolder.trim();
+    }
+    if (s.addMailQuery.trim()) config.query = s.addMailQuery.trim();
+    for (const [raw, key, maximum] of [
+      [s.addMailMaxResults, "max_results", Infinity],
+      [s.addMailPageSize, "page_size", 100],
+    ] as const) {
+      if (!raw.trim()) continue;
+      const value = Number(raw);
+      if (!Number.isInteger(value) || value < 1 || value > maximum) return null;
+      config[key] = value;
+    }
   }
   const recency = parseInt(s.addRecencyDays, 10);
   if (Number.isFinite(recency) && recency > 0) config.recency_days = recency;
@@ -91,6 +102,7 @@ function kindHint(kind: DocumentSourceKind): string {
   if (kind === "local_folder") return "Pick a folder on this machine.";
   if (kind === "gmail_mail") return "Requires Gmail credentials (Credentials → Gmail).";
   if (kind === "outlook_mail") return "Requires Outlook credentials (Credentials → Outlook).";
+  if (kind === "icloud_mail") return "Requires iCloud credentials (Credentials → iCloud).";
   if (isGithubKind(kind)) return "Requires GitHub credentials (Credentials → GitHub).";
   return "Requires Atlassian credentials (Credentials → Atlassian).";
 }
@@ -129,7 +141,7 @@ export function AddSourceForm({ disabled, onSubmit, configuredIntegrations, loca
     <section className="space-y-2">
       <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Opt in to indexing</label>
       <p className="text-xs text-fg-faint">
-        Choose a folder or a supported connected integration, then select the mailbox query, repository, or project to index.
+        Choose a folder or a supported connected integration, then select the mailbox scope, repository, or project to index.
         Connecting credentials alone does not enable indexing. Other tools without a document indexer are not listed.
       </p>
       <div className="flex items-center gap-2">

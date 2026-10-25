@@ -1,22 +1,20 @@
-// Remote mail indexing for Gmail and Outlook.
+// Remote mail indexing for Gmail, Outlook, and iCloud.
 //
-// These sources let the user index a filtered slice of mailbox content as
-// searchable documents. The query field is intentionally provider-native:
-// Gmail uses Gmail query syntax, Outlook uses KQL.
+// Scoped sources archive mail by default. Query-only legacy sources keep
+// their original bounded mirror semantics.
 
 import { stripHtml } from "@/lib/utils/html";
 import { truncateBytes } from "@/lib/utils/text";
 import { googleFetch, resolveGoogleAuth } from "@/lib/integrations/gmail-oauth";
 import { graphFetch, resolveMicrosoftAuth } from "@/lib/integrations/microsoft-oauth";
 import { parseSourceConfig, type DocumentSourceRow } from "@/lib/stores/document-sources";
+import { parseMailSourceConfig } from "@/lib/documents/mail-source-config";
+import { indexICloudMail } from "./icloud";
 import { evictMissing, upsertRemoteDocument } from "./upsert";
 
 import type { RemoteIndexStats } from "./index";
 
 const BODY_CAP = 40_000;
-const DEFAULT_MAX_RESULTS = 250;
-const DEFAULT_PAGE_SIZE = 100;
-const MAX_RESULTS_CAP = 5_000;
 
 interface Header {
   name?: string;
@@ -140,36 +138,31 @@ function summarizeGraphMessage(m: GraphMessage): { title: string; text: string; 
   };
 }
 
-function gmailSourceConfig(row: DocumentSourceRow): { query: string; max_results: number; page_size: number } {
-  const cfg = parseSourceConfig<{ query?: string; max_results?: number; page_size?: number }>(row) ?? {};
-  const query = String(cfg.query ?? "").trim();
-  if (!query) throw new Error("gmail_mail source config.query is required");
-  const max_results = Math.min(Math.max(Number(cfg.max_results ?? DEFAULT_MAX_RESULTS), 1), MAX_RESULTS_CAP);
-  const page_size = Math.min(Math.max(Number(cfg.page_size ?? DEFAULT_PAGE_SIZE), 1), 100);
-  return { query, max_results, page_size };
-}
-
-function outlookSourceConfig(row: DocumentSourceRow): { query: string; max_results: number; page_size: number } {
-  const cfg = parseSourceConfig<{ query?: string; max_results?: number; page_size?: number }>(row) ?? {};
-  const query = String(cfg.query ?? "").trim();
-  if (!query) throw new Error("outlook_mail source config.query is required");
-  const max_results = Math.min(Math.max(Number(cfg.max_results ?? DEFAULT_MAX_RESULTS), 1), MAX_RESULTS_CAP);
-  const page_size = Math.min(Math.max(Number(cfg.page_size ?? DEFAULT_PAGE_SIZE), 1), 100);
-  return { query, max_results, page_size };
-}
-
 async function indexGmailMail(row: DocumentSourceRow): Promise<RemoteIndexStats> {
   const auth = resolveGoogleAuth();
   if ("error" in auth) throw new Error(auth.error);
-  const { query, max_results, page_size } = gmailSourceConfig(row);
+  const { query, max_results, page_size, scope, folder, retention } = parseMailSourceConfig(parseSourceConfig(row));
+  let labelId = scope === "inbox" ? "INBOX" : undefined;
+  if (scope === "folder") {
+    const labels = await googleFetch(auth, "Gmail", "https://gmail.googleapis.com/gmail/v1/users/me", "/labels") as {
+      labels?: Array<{ id: string; name: string }>; error?: string;
+    };
+    if (labels.error) throw new Error(labels.error);
+    labelId = labels.labels?.find((label) => label.id === folder || label.name === folder)?.id;
+    if (!labelId) throw new Error("Gmail label not found. Use an exact label name or ID.");
+  }
 
   const stats: RemoteIndexStats = { scanned: 0, added: 0, updated: 0, unchanged: 0, errors: 0 };
   const keep = new Set<string>();
   let pageToken: string | undefined;
+  let messageErrors = 0;
 
   while (stats.scanned < max_results) {
     const limit = Math.min(page_size, max_results - stats.scanned);
-    const qs = new URLSearchParams({ q: query, maxResults: String(limit) });
+    const qs = new URLSearchParams({ maxResults: String(limit) });
+    if (query) qs.set("q", query);
+    if (labelId) qs.set("labelIds", labelId);
+    if (scope === "all" || scope === "folder") qs.set("includeSpamTrash", "true");
     if (pageToken) qs.set("pageToken", pageToken);
     const list = await googleFetch(
       auth,
@@ -220,6 +213,7 @@ async function indexGmailMail(row: DocumentSourceRow): Promise<RemoteIndexStats>
       if (id) keep.add(`gmail://${id}`);
       stats.scanned++;
       if (outcome.status === "rejected") {
+        messageErrors++;
         stats.errors++;
         console.warn(`[mail-indexer] message ${id} failed:`, outcome.reason);
         continue;
@@ -234,17 +228,25 @@ async function indexGmailMail(row: DocumentSourceRow): Promise<RemoteIndexStats>
     }
 
     pageToken = list.nextPageToken;
-    if (!pageToken || batch.length < limit) break;
+    if (!pageToken) break;
   }
 
-  stats.removed = evictMissing(row.id, keep);
+  if (scope && messageErrors > 0) {
+    throw new Error(`${messageErrors} Gmail messages could not be indexed. Successfully indexed emails were kept; retry the source.`);
+  }
+  stats.removed = retention === "mirror" ? evictMissing(row.id, keep) : 0;
   return stats;
 }
 
 async function indexOutlookMail(row: DocumentSourceRow): Promise<RemoteIndexStats> {
   const auth = resolveMicrosoftAuth();
   if ("error" in auth) throw new Error(auth.error);
-  const { query, max_results, page_size } = outlookSourceConfig(row);
+  const { query, max_results, page_size, scope, folder, retention } = parseMailSourceConfig(parseSourceConfig(row));
+  const endpoint = scope === "inbox" ? "/me/mailFolders/inbox/messages"
+    : scope === "folder" ? `/me/mailFolders/${encodeURIComponent(folder!)}/messages`
+      : "/me/messages";
+  const headers: Record<string, string> = { ConsistencyLevel: "eventual" };
+  if (scope) headers.Prefer = 'IdType="ImmutableId"';
 
   const stats: RemoteIndexStats = { scanned: 0, added: 0, updated: 0, unchanged: 0, errors: 0 };
   const keep = new Set<string>();
@@ -252,13 +254,13 @@ async function indexOutlookMail(row: DocumentSourceRow): Promise<RemoteIndexStat
 
   while (stats.scanned < max_results) {
     const limit = Math.min(page_size, max_results - stats.scanned);
-    const data = nextLink
-      ? await graphFetch(auth, nextLink, { headers: { ConsistencyLevel: "eventual" } })
-      : await graphFetch(
-          auth,
-          `/me/messages?$top=${limit}&$count=true&$select=id,subject,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,lastModifiedDateTime,isRead,isDraft,hasAttachments,categories,parentFolderId,webLink&$search=${encodeURIComponent(`"${query.replace(/"/g, '\\"')}"`)}`,
-          { headers: { ConsistencyLevel: "eventual" } },
-        );
+    const qs = new URLSearchParams({
+      "$top": String(limit),
+      "$select": "id",
+    });
+    if (query) qs.set("$search", `"${query.replace(/"/g, '\\"')}"`);
+    else qs.set("$orderby", "receivedDateTime desc");
+    const data = await graphFetch(auth, nextLink ?? `${endpoint}?${qs}`, { headers });
     const payload = data as { value?: GraphMessage[]; "@odata.nextLink"?: string; error?: string };
     if (payload.error) throw new Error(payload.error);
 
@@ -266,7 +268,8 @@ async function indexOutlookMail(row: DocumentSourceRow): Promise<RemoteIndexStat
     if (batch.length === 0) break;
 
     const results = await Promise.all(batch.slice(0, limit).map(async (entry) => {
-      const msg = await graphFetch(auth, `/me/messages/${encodeURIComponent(entry.id ?? "")}`) as GraphMessage & { error?: string };
+      if (!entry.id) throw new Error("Outlook returned a message without an ID.");
+      const msg = await graphFetch(auth, `/me/messages/${encodeURIComponent(entry.id)}`, { headers }) as GraphMessage & { error?: string };
       if (msg.error) throw new Error(msg.error);
       const summary = summarizeGraphMessage(msg);
       return upsertRemoteDocument(row.id, {
@@ -290,10 +293,13 @@ async function indexOutlookMail(row: DocumentSourceRow): Promise<RemoteIndexStat
     }
 
     nextLink = payload["@odata.nextLink"] ?? null;
-    if (!nextLink || batch.length < limit) break;
+    if (scope && query && stats.scanned >= 1_000 && max_results > 1_000) {
+      throw new Error("Outlook search reached Microsoft's 1,000-result ceiling. Narrow or remove the optional search for complete coverage. Indexed emails were kept.");
+    }
+    if (!nextLink) break;
   }
 
-  stats.removed = evictMissing(row.id, keep);
+  stats.removed = retention === "mirror" ? evictMissing(row.id, keep) : 0;
   return stats;
 }
 
@@ -303,6 +309,8 @@ export async function runMailIndexer(source: DocumentSourceRow): Promise<RemoteI
       return indexGmailMail(source);
     case "outlook_mail":
       return indexOutlookMail(source);
+    case "icloud_mail":
+      return indexICloudMail(source);
     default:
       throw new Error(`unsupported mail source kind: ${source.kind}`);
   }

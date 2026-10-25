@@ -18,8 +18,11 @@ export async function POST(_req: NextRequest, { params }: Params) {
   try {
     let stats;
     if (isRemoteKind(source.kind)) {
-      clearSourceEmbeddings(source.id);
       stats = await runRemoteSource(source);
+      if (stats.error) {
+        return NextResponse.json({ error: stats.error }, { status: 502 });
+      }
+      clearSourceEmbeddings(source.id);
       const backfill = await backfillSourceEmbeddings(source.id);
       stats.embedFailed = (stats.embedFailed ?? 0) + backfill.failed;
       stats.embedError ??= backfill.error;

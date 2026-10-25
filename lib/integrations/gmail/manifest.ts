@@ -4,9 +4,8 @@ export const gmailManifest: IntegrationManifest = {
   id: "gmail",
   name: "Gmail + Google Calendar",
   summary:
-    "Lets the agent search/read mail, create drafts (never send), label/archive, " +
-    "and read or modify calendar events. Drafts-only is a deliberate safety choice — " +
-    "this integration intentionally cannot send mail on the user's behalf.",
+    "Lets the agent search/read mail, create drafts, send mail when explicitly asked, " +
+    "label/archive, and read or modify calendar events.",
   category: "mail",
   prerequisites: [
     {

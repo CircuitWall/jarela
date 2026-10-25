@@ -12,6 +12,8 @@ export interface FormState {
   addSpaceKey: string;
   addQuery: string;
   addMailQuery: string;
+  addMailScope: "inbox" | "folder" | "all";
+  addMailFolder: string;
   addMailMaxResults: string;
   addMailPageSize: string;
   addRecencyDays: string;
@@ -69,13 +71,13 @@ export function LocalFolderFields(props: FieldsProps) {
 export function RemoteSourceFields(props: FieldsProps) {
   return (
     <div className="space-y-2">
-      <RemoteKindInputs state={props.state} set={props.set} />
+      <RemoteKindInputs state={props.state} set={props.set} disabled={props.disabled} />
       <RemoteLabelRow {...props} />
     </div>
   );
 }
 
-function RemoteKindInputs({ state, set }: { state: FormState; set: SetField }) {
+function RemoteKindInputs({ state, set, disabled }: { state: FormState; set: SetField; disabled: boolean }) {
   return (
     <>
       {state.addKind === "jira_project" && (
@@ -109,19 +111,7 @@ function RemoteKindInputs({ state, set }: { state: FormState; set: SetField }) {
           className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono resize-y"
         />
       )}
-      {isMailKind(state.addKind) && (
-        <textarea
-          value={state.addMailQuery}
-          onChange={(e) => set("addMailQuery", e.target.value)}
-          placeholder={
-            state.addKind === "gmail_mail"
-              ? 'Gmail query — e.g. is:unread newer_than:7d'
-              : 'KQL — e.g. isRead:false received>=2026-05-01'
-          }
-          rows={2}
-          className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono resize-y"
-        />
-      )}
+      {isMailKind(state.addKind) && <MailScopeInputs state={state} set={set} disabled={disabled} />}
       {isGithubKind(state.addKind) && <GithubOwnerRepoInputs state={state} set={set} />}
       {state.addKind === "github_pulls" && (
         <select
@@ -137,6 +127,53 @@ function RemoteKindInputs({ state, set }: { state: FormState; set: SetField }) {
       )}
       {state.addKind === "github_repo" && <GithubRepoExtras state={state} set={set} />}
     </>
+  );
+}
+
+function MailScopeInputs({ state, set, disabled }: { state: FormState; set: SetField; disabled: boolean }) {
+  return (
+    <fieldset disabled={disabled} className="space-y-2">
+      <label className="block text-xs text-fg-muted">
+        Mailbox scope
+        <select aria-label="Mailbox scope" value={state.addMailScope}
+          onChange={(e) => set("addMailScope", e.target.value as FormState["addMailScope"])}
+          className="block w-full px-2 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg">
+          <option value="inbox">Inbox</option>
+          <option value="folder">Chosen folder or label</option>
+          <option value="all">Whole mailbox (including spam and trash)</option>
+        </select>
+      </label>
+      {state.addMailScope === "folder" && (
+        <label className="block text-xs text-fg-muted">
+          Folder or label
+          <input aria-label="Folder or label" value={state.addMailFolder}
+            onChange={(e) => set("addMailFolder", e.target.value)}
+            placeholder={state.addKind === "gmail_mail" ? "Gmail label name or ID"
+              : state.addKind === "outlook_mail" ? "Outlook folder ID or well-known name (e.g. sentitems)"
+                : "iCloud folder path"}
+            className="block w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg" />
+        </label>
+      )}
+      <textarea aria-label="Optional mail search" value={state.addMailQuery}
+        onChange={(e) => set("addMailQuery", e.target.value)}
+        placeholder={state.addKind === "gmail_mail" ? "Optional Gmail query (e.g. newer_than:30d)"
+          : state.addKind === "outlook_mail" ? "Optional Outlook search (e.g. subject:budget)"
+            : "Optional text search in subject or body"}
+        rows={2}
+        className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono resize-y" />
+      <p className="text-xs text-fg-faint">
+        No search is required. Leave Max results blank to index all messages in this scope.
+        Refreshes automatically about every 10 minutes while Jarela is running and unlocked.
+        Previously indexed emails are kept, even after they are moved or deleted from your mailbox.
+        Remove this source to delete its local archive.
+      </p>
+      {state.addKind === "outlook_mail" && state.addMailQuery.trim() && (
+        <p role="alert" className="text-xs text-amber-600 dark:text-amber-400">
+          Outlook text search is limited to 1,000 results by Microsoft Graph.
+          Leave search blank for complete folder or mailbox coverage.
+        </p>
+      )}
+    </fieldset>
   );
 }
 

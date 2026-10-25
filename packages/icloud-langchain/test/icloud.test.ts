@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Readable } from "node:stream";
 
 // `imapflow.ImapFlow` is a class, so we replace it with a vi.fn() and
 // route each test through `setImap(...)` to inject the per-test instance.
@@ -58,6 +59,10 @@ import {
   icloudRemindersListListsTool,
   resolveICloudAuthFromEnv,
   setAuthResolver,
+  scanICloudMail,
+  icloudReadTools,
+  icloudWriteTools,
+  icloudExecuteTools,
 } from "../src/index.js";
 
 beforeEach(() => {
@@ -73,6 +78,18 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.ICLOUD_APPLE_ID;
   delete process.env.ICLOUD_APP_PASSWORD;
+});
+
+describe("mail and calendar capability alignment", () => {
+  it("classifies owned-content deletion as write, like Gmail and Outlook", () => {
+    const writes = icloudWriteTools.map((tool) => tool.name);
+    expect(writes).toContain("icloud_mail_delete_message");
+    expect(writes).toContain("icloud_calendar_delete_event");
+    expect(icloudExecuteTools).toEqual([]);
+    expect(icloudReadTools.every((tool) => /_(list|get)(_|$)/.test(tool.name))).toBe(true);
+    const all = [...icloudReadTools, ...icloudWriteTools, ...icloudExecuteTools];
+    expect(new Set(all.map((tool) => tool.name)).size).toBe(all.length);
+  });
 });
 
 describe("auth resolver", () => {
@@ -125,6 +142,105 @@ describe("icloud_mail_list_folders", () => {
       special_use: null,
     });
     expect(parsed.folders[1].special_use).toBe("\\Drafts");
+  });
+});
+
+describe("mail indexing scanner", () => {
+  const auth = { appleId: "synthetic@example.com", appPassword: "synthetic" };
+
+  function mailboxClient(overrides: Record<string, unknown> = {}) {
+    const client = {
+      mailbox: { uidValidity: 123n },
+      getMailboxLock: vi.fn(async () => fakeLock()),
+      search: vi.fn(async () => [1, 2]),
+      fetchOne: vi.fn(async (uid: string) => ({
+        uid: Number(uid), envelope: { subject: `Subject ${uid}`, messageId: `<${uid}@example.com>` },
+        bodyStructure: { part: "1", type: "text/plain", size: 10 },
+      })),
+      download: vi.fn(async () => ({ content: Readable.from(["Synthetic body"]) })),
+      logout: vi.fn(async () => undefined),
+      ...overrides,
+    };
+    setImap(client);
+    return client;
+  }
+
+  it("scans all Inbox messages without a query using read-only locks and UID reads", async () => {
+    const client = mailboxClient();
+    const collect = vi.fn().mockResolvedValue(undefined);
+    await scanICloudMail(auth, { scope: "inbox" }, collect);
+    expect(client.getMailboxLock).toHaveBeenCalledWith("INBOX", { readOnly: true });
+    expect(client.search).toHaveBeenCalledWith({ all: true }, { uid: true });
+    expect(client.fetchOne).toHaveBeenCalledWith("2", expect.anything(), { uid: true });
+    expect(client.download).toHaveBeenCalledWith("2", "1", { uid: true, maxBytes: 40_000 });
+    expect(collect).toHaveBeenCalledTimes(2);
+    expect(collect.mock.calls[0][0]).toMatchObject({
+      id: "message-id:<2@example.com>", subject: "Subject 2", text: "Synthetic body", html: false,
+    });
+    expect(client.logout).toHaveBeenCalledOnce();
+  });
+
+  it("enumerates selectable folders, keeps Message-ID stable across moves, and skips attachments", async () => {
+    const client = mailboxClient({
+      list: async () => [
+        { path: "INBOX", flags: new Set() },
+        { path: "Container", flags: new Set(["\\Noselect"]) },
+        { path: "Archive", flags: new Set() },
+      ],
+      search: vi.fn(async () => [1]),
+      fetchOne: vi.fn(async () => ({
+        uid: 1, envelope: { messageId: "<same@example.com>" },
+        bodyStructure: { type: "multipart/mixed", childNodes: [
+          { type: "text/plain", part: "1", disposition: "attachment", dispositionParameters: { filename: "secret.txt" } },
+          { type: "multipart/mixed", disposition: "attachment", childNodes: [
+            { type: "text/plain", part: "3.1" },
+          ] },
+          { type: "text/html", part: "2" },
+        ] },
+      })),
+    });
+    const collect = vi.fn().mockResolvedValue(undefined);
+    await scanICloudMail(auth, { scope: "all" }, collect);
+    expect(client.getMailboxLock.mock.calls.map(([path]) => path)).toEqual(["INBOX", "Archive"]);
+    expect(collect.mock.calls[0][0].id).toBe(collect.mock.calls[1][0].id);
+    expect(client.download).toHaveBeenCalledWith("1", "2", expect.anything());
+    expect(collect.mock.calls[0][0].html).toBe(true);
+  });
+
+  it("uses folder and UIDVALIDITY when Message-ID is absent and honors an optional limit", async () => {
+    const client = mailboxClient({
+      fetchOne: vi.fn(async () => ({ uid: 2, envelope: {}, bodyStructure: { type: "text/plain", part: "1" } })),
+    });
+    const collect = vi.fn().mockResolvedValue(undefined);
+    await scanICloudMail(auth, { scope: "folder", folder: "Projects", query: "budget", maxResults: 1 }, collect);
+    expect(client.getMailboxLock).toHaveBeenCalledWith("Projects", { readOnly: true });
+    expect(client.search).toHaveBeenCalledWith({ or: [{ subject: "budget" }, { body: "budget" }] }, { uid: true });
+    expect(collect).toHaveBeenCalledOnce();
+    expect(collect.mock.calls[0][0].id).toBe("uid:Projects:123:2");
+  });
+
+  it("does not impose the interactive tool's 100-message limit", async () => {
+    mailboxClient({ search: vi.fn(async () => Array.from({ length: 251 }, (_, i) => i + 1)) });
+    const collect = vi.fn().mockResolvedValue(undefined);
+    await scanICloudMail(auth, { scope: "inbox" }, collect);
+    expect(collect).toHaveBeenCalledTimes(251);
+  });
+
+  it("releases the lock and connection and surfaces body download failures", async () => {
+    const release = vi.fn();
+    const client = mailboxClient({
+      getMailboxLock: vi.fn(async () => ({ release })),
+      download: vi.fn(async () => { throw new Error("Download failed"); }),
+    });
+    await expect(scanICloudMail(auth, { scope: "inbox" }, async () => undefined)).rejects.toThrow("Download failed");
+    expect(release).toHaveBeenCalledOnce();
+    expect(client.logout).toHaveBeenCalledOnce();
+  });
+
+  it("validates folder and limit settings before connecting", async () => {
+    await expect(scanICloudMail(auth, { scope: "folder" }, async () => undefined)).rejects.toThrow("folder path");
+    await expect(scanICloudMail(auth, { scope: "inbox", maxResults: 0 }, async () => undefined)).rejects.toThrow("positive integer");
+    expect(_lastImapCtorOpts).toBeNull();
   });
 });
 

@@ -9,11 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- documents: Align Gmail, Outlook, and iCloud indexing with Inbox, chosen folder/label,
+  or whole-mailbox scopes, optional search and result limits, and automatic archive refresh.
+
 - documents: Add explicit indexing opt-in for supported connected integrations, nonlocal embedding warnings, global semantic topic exclusions, and document-level exclusions with a user-only search preview override.
 
 - tools: Add an opt-in DeepSeek Search & Fetch backend for `web_search` and `web_fetch`, using a separately encrypted credential and preserving existing backends by default.
 
 ### Changed
+
+- tools: Align iCloud mail trash and calendar deletion with Gmail/Outlook's `write`
+  capability, preserve Mail/Calendar categories after package reload, and correct
+  Gmail/Outlook send descriptions. iCloud still cannot send mail.
 
 - db: Reuse a bounded per-connection cache of prepared statements for repeated thread/history reads, without caching query results.
 - runtime: Drop Node 22 support; require Node 24.15.0+ on 24.x, or Node 26+. CLI and production launchers reject unsupported runtimes before loading the application. Upgrade Node before installing the next version; bundled installers already include Node 24.
