@@ -173,7 +173,7 @@ jarela uninstall-service
 ## Path 4 — Docker (Ubuntu / Linux)
 
 A `Dockerfile` and `docker-compose.yml` ship at the repo root. The image is
-based on `node:22-bookworm-slim` (Debian) and runs as a non-root user.
+based on `node:22-trixie-slim` (Debian 13) and runs as a non-root user.
 
 ### Quick start (docker compose)
 

@@ -39,6 +39,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
           cache: npm
 
       - name: Verify app publication uses a version-matching tag
@@ -137,6 +138,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
@@ -334,6 +336,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
           registry-url: "https://registry.npmjs.org"
 
       - name: Upgrade npm (Trusted Publishers needs >= 11.5)
@@ -442,6 +445,9 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
+          # Always resolve the newest base image so releases ship the
+          # latest Node and Debian security patches.
+          pull: true
           # Push by digest only â€” no tag is set here. The manifest job
           # below assembles the human-readable tags after both arches
           # have published their digests.
@@ -611,6 +617,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
           registry-url: "https://registry.npmjs.org"
       - name: Upgrade npm (Trusted Publishers needs >= 11.5)
         run: npm install -g npm@latest
@@ -646,6 +653,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
           registry-url: "https://registry.npmjs.org"
       - name: Upgrade npm (Trusted Publishers needs >= 11.5)
         run: npm install -g npm@latest
@@ -681,6 +689,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
           registry-url: "https://registry.npmjs.org"
       - name: Upgrade npm (Trusted Publishers needs >= 11.5)
         run: npm install -g npm@latest
@@ -716,6 +725,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
           registry-url: "https://registry.npmjs.org"
       - name: Upgrade npm (Trusted Publishers needs >= 11.5)
         run: npm install -g npm@latest
@@ -751,6 +761,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
+          check-latest: true
           registry-url: "https://registry.npmjs.org"
       - name: Upgrade npm (Trusted Publishers needs >= 11.5)
         run: npm install -g npm@latest

@@ -28,3 +28,24 @@ updates:
     commit-message:
       prefix: build
       include: scope
+
+  # npm dependencies for the app and every workspace package (one lockfile).
+  # Security fixes, patches, and minors land in one grouped weekly PR; majors
+  # arrive as individual PRs because they need review. Playwright is bumped by
+  # hand together with the CI container image, which check-ci-workflows.mjs
+  # requires to match the locked @playwright/test version.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      npm:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "@playwright/test"
+      - dependency-name: "playwright"
+      - dependency-name: "playwright-core"
+    commit-message:
+      prefix: build
+      include: scope

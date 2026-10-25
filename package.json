@@ -205,7 +205,7 @@
     }
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "1.63.0",
     "@serwist/next": "^9.5.12",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
