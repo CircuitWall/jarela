@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import { Check, Copy, ExternalLink, FileText, Loader2, Paperclip } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, FileText, Loader2, Paperclip } from "lucide-react";
 import type { ContentPart } from "@/api/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { parseHref } from "@/lib/ui/navigate";
@@ -597,12 +597,30 @@ function MermaidFence({ source }: { source: string }) {
     return <div className="my-2 rounded-md border border-border/60 bg-surface-3/40 p-3 text-xs text-fg-faint">Rendering diagram...</div>;
   }
   return (
-    <div
-      className="my-2 max-w-full overflow-x-auto rounded-md border border-border/60 bg-surface-2 p-3"
-      dangerouslySetInnerHTML={{ __html: svg }}
-      role="img"
-      aria-label="Mermaid diagram"
-    />
+    <div className="my-2 max-w-full rounded-md border border-border/60 bg-surface-2">
+      <div className="flex items-center justify-between rounded-t-md bg-surface-3 px-2 py-1 text-[10px] text-fg-faint">
+        <span>Mermaid</span>
+        <a
+          href={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`}
+          download="diagram.svg"
+          className="inline-flex items-center gap-1 rounded border border-border/60 px-1.5 py-0.5 text-fg-muted hover:text-fg transition-colors"
+          aria-label="Download diagram as SVG"
+        >
+          <Download size={10} />
+          Download SVG
+        </a>
+      </div>
+      <div
+        className="max-w-full overflow-x-auto p-3"
+        dangerouslySetInnerHTML={{ __html: svg }}
+        role="img"
+        aria-label="Mermaid diagram"
+      />
+      <details className="border-t border-border/60 px-2 py-1 text-xs text-fg-muted">
+        <summary className="cursor-pointer">Diagram source</summary>
+        <CodeFence language="mermaid" className="language-mermaid"><>{source}</></CodeFence>
+      </details>
+    </div>
   );
 }
 
