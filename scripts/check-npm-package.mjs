@@ -92,6 +92,7 @@ try {
     "package/scripts/service-install.mjs",
     "package/scripts/first-run-prompt.mjs",
     "package/scripts/start-prod.mjs",
+    "package/scripts/runtime-version.mjs",
     "package/scripts/prepare-local-embedding-model.mjs",
     "package/lib/embeddings/local-model-assets.mjs",
     "package/lib/embeddings/fetch-with-retry.mjs",
