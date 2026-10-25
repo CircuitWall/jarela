@@ -94,4 +94,9 @@ describe("documents_add_local_source", () => {
     expect(out.hits[0].passages[0].text).toHaveLength(1_200);
     expect(out.hits[1].path).toBe("notes.txt");
   });
+
+  it("does not expose an exclusion override to the model", () => {
+    expect(documentsSearch.schema.parse({ query: "notes", includeExcluded: true, include_excluded: true }))
+      .toEqual({ query: "notes" });
+  });
 });

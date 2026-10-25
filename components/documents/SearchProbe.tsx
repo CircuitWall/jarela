@@ -4,7 +4,8 @@ import { useState } from "react";
 import type { DocumentHit } from "@/api/types";
 
 interface Props {
-  onSearch: (query: string) => Promise<DocumentHit[]>;
+  onSearch: (query: string, includeExcluded?: boolean) => Promise<DocumentHit[]>;
+  onExclude: (hit: DocumentHit) => Promise<void>;
 }
 
 interface PreviewGroup {
@@ -33,18 +34,25 @@ function groupPreviewHits(hits: DocumentHit[]): PreviewGroup[] {
   return Array.from(groups.values());
 }
 
-export function SearchProbe({ onSearch }: Props) {
+export function SearchProbe({ onSearch, onExclude }: Props) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<DocumentHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const [includeExcluded, setIncludeExcluded] = useState(false);
+  const [searched, setSearched] = useState(false);
   const groups = groupPreviewHits(hits);
 
   async function runSearch() {
     const q = query.trim();
     if (!q) { setHits([]); return; }
     setSearching(true);
+    setSearched(false);
     try {
-      setHits(await onSearch(q));
+      setHits(await onSearch(q, includeExcluded));
+      setSearched(true);
+    } catch {
+      setHits([]);
+      // The panel surfaces search errors.
     } finally {
       setSearching(false);
     }
@@ -52,7 +60,20 @@ export function SearchProbe({ onSearch }: Props) {
 
   return (
     <section className="space-y-2">
-      <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Try a search</label>
+      <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Search and exclude documents</label>
+      <p className="text-xs text-fg-faint">
+        Search a topic, then exclude matching documents from assistant retrieval across all indexed sources.
+        Results are ranked and limited, not an exhaustive topic audit.
+      </p>
+      <label className="flex gap-2 items-start text-xs text-fg-muted">
+        <input type="checkbox" checked={includeExcluded} disabled={searching} onChange={(e) => {
+          setIncludeExcluded(e.target.checked);
+          setHits([]);
+          setSearched(false);
+        }} />
+        Include excluded content for this preview only. This does not authorize the assistant to retrieve it.
+      </label>
+      <p className="text-xs text-fg-faint">The search query uses your embedding provider; preview excerpts are displayed here, not sent to the chat model.</p>
       <div className="flex gap-2">
         <input
           type="text"
@@ -78,6 +99,22 @@ export function SearchProbe({ onSearch }: Props) {
                 <span className="font-mono text-fg-muted truncate flex-1">
                   {group.sourceLabel ? `${group.sourceLabel} / ` : ""}{group.relPath}
                 </span>
+                {group.hits[0]?.excluded ? (
+                  <span className="text-fg-faint ml-2">Document excluded</span>
+                ) : (
+                  <button type="button" disabled={searching} className="text-accent ml-2 shrink-0"
+                    onClick={async () => {
+                      setSearching(true);
+                      try {
+                        await onExclude(group.hits[0]);
+                        setHits((current) => current.filter((hit) => hit.document_id !== group.documentId));
+                      } catch {
+                        // The panel surfaces save errors.
+                      } finally {
+                        setSearching(false);
+                      }
+                    }}>Exclude document</button>
+                )}
               </div>
               <div className="space-y-2">
                 {group.hits.map((hit) => (
@@ -95,7 +132,7 @@ export function SearchProbe({ onSearch }: Props) {
           ))}
         </div>
       )}
-      {!searching && query.trim() && hits.length === 0 && (
+      {!searching && searched && query.trim() && hits.length === 0 && (
         <p className="text-fg-faint text-xs italic">No hits — try different terms or add more folders above.</p>
       )}
     </section>

@@ -20,6 +20,13 @@ export function isMailKind(k: DocumentSourceKind): boolean {
   return k === "gmail_mail" || k === "outlook_mail";
 }
 
+export function integrationForSourceKind(kind: DocumentSourceKind): string | null {
+  if (isMailKind(kind)) return kind === "gmail_mail" ? "gmail" : "outlook";
+  if (isGithubKind(kind)) return "github";
+  if (kind.startsWith("jira_") || kind.startsWith("confluence_")) return "atlassian";
+  return null;
+}
+
 export function summarizeRemote(s: DocumentSource): string {
   const c = s.config ?? {};
   switch (s.kind) {

@@ -135,7 +135,7 @@ async function embedWithClient(
   if (texts.length === 0) return [];
   if (!client) return null;
 
-  const keys = texts.map((t) => embeddingCacheKey(client.cacheScope ?? client.modelId, t));
+  const keys = texts.map((t) => embeddingCacheKey(client.cacheScope ?? client.signature, t));
   const results = new Array<number[] | undefined>(texts.length);
   const missIndexes: number[] = [];
   for (let i = 0; i < texts.length; i++) {
@@ -185,6 +185,16 @@ export async function embedQuery(texts: string[]): Promise<number[][] | null> {
 export async function embedQueryOne(text: string): Promise<number[] | null> {
   const out = await embedQuery([text]);
   return out?.[0] ?? null;
+}
+
+export async function embedQueryWithSignature(texts: string[]): Promise<{
+  vectors: number[][] | null; modelSignature: string | null;
+}> {
+  const client = await resolveEmbeddingClient("query");
+  return {
+    vectors: await embedWithClient(texts, client),
+    modelSignature: client?.signature ?? null,
+  };
 }
 
 export async function embedOne(text: string): Promise<number[] | null> {
@@ -458,6 +468,7 @@ type MemoryRowLike = { namespace: string; key: string; value: string; created_at
 // buildRecallContext renders them exactly like a live message (role, thread
 // tag, date). A malformed archive key falls through to a plain memory hit.
 function toRecalled(r: MemoryRowLike, score: number, policy: MemoryPolicy, wantMem: boolean, wantMsg: boolean): RecalledMemory | null {
+  if (r.namespace === "app-settings" && r.key === "document_recall_policy") return null;
   if (r.namespace === CHAT_ARCHIVE_NAMESPACE) {
     const parsed = parseChatArchiveKey(r.key);
     if (parsed) {

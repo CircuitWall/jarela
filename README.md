@@ -37,6 +37,43 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 
 Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what to expect in your first chat.
 
+## Document indexing and recall privacy
+
+In Documents, use **Opt in to indexing** to choose a local folder or a supported
+connected integration (Gmail, Outlook, GitHub, Jira, or Confluence). Scope remote
+sources to a mailbox query, repository, project, or space. Connecting credentials
+does not automatically index content. Removing a source deletes its indexed
+documents and chunks without changing the originals.
+
+Indexing with an embedding provider other than **Jarela Local** displays a warning
+and requires confirmation in the source setup flow. Content may be sent to that
+provider, including material later excluded from recall. Switching away from
+Jarela Local also requires confirmation. Locally embedded excerpts can still be
+sent to a cloud chat model when retrieved for an answer.
+
+**Global recall exclusions** apply to all indexed sources, both existing and new:
+
+- Save topic descriptions for automatic, best-effort semantic filtering of
+  matching chunks. The default similarity cutoff is 0.8; lower values exclude
+  more. Topic descriptions use the selected embedding provider.
+- Search a topic and choose **Exclude document** to block all chunks of a
+  selected document. This exact exclusion uses source ID and path, so it
+  survives reindexing within that source. Recreating a source requires selecting
+  its document exclusions again.
+- Assistant document searches respect exclusions and cannot enable an override.
+  The user-facing search preview has a separate **Include excluded content**
+  checkbox, off by default, which does not grant the assistant access.
+- If topic vectors or chunk embeddings are unavailable, invalid, or have
+  incompatible dimensions or model signatures, filtered search fails explicitly
+  rather than returning unchecked chunks. Reindex existing sources before using
+  topic rules for the first time after upgrading: older vectors have no model
+  provenance. Also reindex sources after changing embedding models.
+
+Semantic filtering is not a privacy guarantee: mixed-topic chunks and indirect
+references can be missed. Search previews are ranked and limited, not exhaustive
+audits. Exclusions do not delete stored content, prevent external embedding,
+remove excerpts already in chats, or restrict separate live email/file tools.
+
 ## Model updates
 
 The built-in pricing-maintenance agent tool also checks official model

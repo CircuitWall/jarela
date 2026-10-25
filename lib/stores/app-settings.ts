@@ -1,4 +1,7 @@
 import { getDb } from "@/lib/db";
+import {
+  defaultDocumentRecallPolicy, DocumentRecallPolicySchema, type DocumentRecallPolicy,
+} from "@/lib/documents/recall-policy";
 
 const now = () => new Date().toISOString();
 
@@ -11,6 +14,20 @@ const REDACTION_ENABLED_KEY = "redaction_enabled";
 const AMBIENT_CONTEXT_KEY = "ambient_context_enabled";
 const ARTIFACT_LIFECYCLE_KEY = "artifact_lifecycle";
 const MEMORY_POLICY_KEY = "memory_policy";
+const DOCUMENT_RECALL_POLICY_KEY = "document_recall_policy";
+
+export function getDocumentRecallPolicy(): DocumentRecallPolicy {
+  const row = getDb().prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
+    .get(NS, DOCUMENT_RECALL_POLICY_KEY) as { value: string } | undefined;
+  if (!row) return defaultDocumentRecallPolicy();
+  return DocumentRecallPolicySchema.parse(JSON.parse(row.value));
+}
+
+export function setDocumentRecallPolicy(policy: DocumentRecallPolicy): DocumentRecallPolicy {
+  const validated = DocumentRecallPolicySchema.parse(policy);
+  writeJsonSetting(DOCUMENT_RECALL_POLICY_KEY, validated);
+  return validated;
+}
 
 export type MemoryPolicy = "important" | "balanced" | "detailed";
 export const DEFAULT_MEMORY_POLICY: MemoryPolicy = "balanced";
@@ -190,4 +207,3 @@ function normalizeArtifactLifecycleSettings(input: Partial<ArtifactLifecycleSett
     include_generated_media: input.include_generated_media !== false,
   };
 }
-

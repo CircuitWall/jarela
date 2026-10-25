@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- documents: Add explicit indexing opt-in for supported connected integrations, nonlocal embedding warnings, global semantic topic exclusions, and document-level exclusions with a user-only search preview override.
+
 - tools: Add an opt-in DeepSeek Search & Fetch backend for `web_search` and `web_fetch`, using a separately encrypted credential and preserving existing backends by default.
 
 ### Changed
