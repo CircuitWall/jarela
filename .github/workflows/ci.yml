@@ -324,7 +324,7 @@ jobs:
     # to stall on the runner mirror until the job timed out. The tag must
     # match @playwright/test; `npm run lint` enforces this.
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
     env:
       JARELA_DB_DIR: /tmp/jarela-e2e
       JARELA_E2E_BASE_URL: http://127.0.0.1:4312
