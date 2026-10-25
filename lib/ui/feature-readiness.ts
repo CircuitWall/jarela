@@ -32,7 +32,8 @@ export function computeFeatureReadiness({
   hasLocalEmbeddingModel?: boolean;
 }): FeatureReadiness {
   const selectedModelCaps = selectedProvider && selectedModelId
-    ? modelCapabilities(selectedProvider, selectedModelId)
+    ? models.find((model) => model.provider === selectedProvider && model.model_id === selectedModelId)?.capabilities
+      ?? modelCapabilities(selectedProvider, selectedModelId)
     : null;
 
   const hasGoogleIntegration = isIntegrationConfigured(integrations ?? [], "google");

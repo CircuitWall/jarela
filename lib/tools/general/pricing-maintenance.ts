@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDashboardMetrics } from "@/lib/stores/dashboard-metrics";
 import { readPricingSnapshot, refreshPricingSnapshot, type PricingSnapshot } from "@/lib/pricing/snapshot";
 import { registerLangChainPackage } from "../packages/langchain-package";
+import { refreshModelUpdates } from "@/lib/pricing/model-updates";
 
 type ModelRate = NonNullable<PricingSnapshot["sources"][number]["model_rates"]>[number];
 
@@ -78,11 +79,13 @@ function ratesNotReturnedByExtraction(
 export async function refreshModelPricing(): Promise<Record<string, unknown>> {
   const previous = await readPricingSnapshot();
   const { snapshot, refreshed, reason } = await refreshPricingSnapshot({ force: true });
+  const modelUpdates = await refreshModelUpdates();
   const dashboard = await getDashboardMetrics();
   return {
     refreshed,
     reason,
     generated_at: snapshot.generated_at,
+    model_updates: modelUpdates,
     changed_rates: changedRates(previous, snapshot),
     not_returned_rates: ratesNotReturnedByExtraction(previous, snapshot),
     sources: snapshot.sources.map((source) => ({
@@ -120,7 +123,7 @@ const refreshModelPricingTool = tool(
   async () => JSON.stringify(await refreshModelPricing()),
   {
     name: "refresh_model_pricing",
-    description: "Refresh provider pricing pages and separate OpenRouter/LiteLLM reference feeds, then recalculate dashboard estimates using provider-page rates only. Returns rate changes, source health, confidence, and current-versus-recorded dashboard totals. These are estimates, not invoice amounts.",
+    description: "Refresh provider pricing and official API model documentation, update source-backed version/capability display metadata, and recalculate dashboard estimates using provider-page rates only. Multiple fetches and extractor calls can take several minutes; use deadline_ms=900000 and do not retry a timed-out refresh while it may still be running. Returns rate/model changes, adoption review candidates, source failures, and separate aggregator references. Does not switch saved models or enable native features. Costs are estimates, not invoices.",
     schema: z.object({}),
   },
 );

@@ -121,3 +121,36 @@ stage. Prefer deterministic code checks to manual inspection wherever possible.
 - Preserve null for unknown numeric fields.
 - Keep original source URL for traceability.
 - Favor deterministic parsing over speculative heuristics.
+
+## Model version and capability updates
+
+The agent pricing-maintenance tool additionally reads a bounded list of official
+model/API documentation pages. This is separate from price extraction:
+third-party pricing search results and aggregator feeds cannot establish model
+capabilities.
+
+- **Input:** official documentation, provider identity, and the configured
+  pricing extractor model.
+- **Output:** exact API model IDs, explicitly current release/version mappings,
+  sparse capability observations, standalone Search/Fetch API observations,
+  source health, change reports, and adoption-review candidates.
+- **Validation:** strict Zod output schemas; bounded model/feature counts;
+  verbatim source quotes containing the relevant model ID (and version for
+  version claims); explicit API evidence for standalone features; reject
+  conflicting observations. Requests have timeouts, bounded responses, and
+  same-origin-only redirects. Truncated source text is disclosed.
+
+Omitted capability keys remain unknown. Only explicit negative statements can
+produce `false`; absence never removes a capability or deletes a model.
+Observations retain per-field provenance in SQLite via `lib/stores/model-metadata`.
+Catalog and saved-model UI metadata may change, but runtime adapter behavior,
+model assignments, credentials, context budgets, and recorded costs do not.
+Verbatim evidence checks establish provenance, not semantic certainty: model
+extraction still requires scrutiny and live capability use requires separate
+validation.
+
+Report standalone APIs separately from model-native capabilities. Escalate
+confirmed adapter/integration gaps through deduplicated GitHub issues using
+the agent's existing permissions. Missing code access, GitHub access, or approval
+must remain explicit blockers. See [ADR-0107](adr/0107-source-backed-model-metadata.md)
+and [operating guidance](OPERATIONS.md#review-usage).

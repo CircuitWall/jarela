@@ -14,6 +14,7 @@ import { withDbTransaction } from "@/lib/db/transaction";
 import { validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
+import { resolvedModelMetadata } from "@/lib/stores/model-metadata";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -116,6 +117,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 function toResponse(r: NonNullable<ReturnType<typeof getModelConfig>>) {
   return {
     ...r,
+    ...resolvedModelMetadata(r.provider, r.model_id),
     params: redactInlineParams(r.params),
     is_default: Boolean(r.is_default),
     enabled: isModelConfigEnabled(r),

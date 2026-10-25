@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   readSnapshot: vi.fn(),
   refreshSnapshot: vi.fn(),
   getDashboardMetrics: vi.fn(),
+  refreshModelUpdates: vi.fn(),
 }));
 
 vi.mock("@/lib/pricing/snapshot", () => ({
@@ -11,6 +12,7 @@ vi.mock("@/lib/pricing/snapshot", () => ({
   refreshPricingSnapshot: mocks.refreshSnapshot,
 }));
 vi.mock("@/lib/stores/dashboard-metrics", () => ({ getDashboardMetrics: mocks.getDashboardMetrics }));
+vi.mock("@/lib/pricing/model-updates", () => ({ refreshModelUpdates: mocks.refreshModelUpdates }));
 vi.mock("../packages/langchain-package", () => ({ registerLangChainPackage: vi.fn() }));
 
 import { refreshModelPricing } from "./pricing-maintenance";
@@ -18,6 +20,7 @@ import { refreshModelPricing } from "./pricing-maintenance";
 describe("refreshModelPricing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.refreshModelUpdates.mockResolvedValue({ sources: [], changed_models: [], changed_provider_features: [], adoption_required: [] });
     mocks.readSnapshot.mockResolvedValue({
       generated_at: "2026-10-01T00:00:00.000Z",
       sources: [{ id: "openai", model_rates: [
@@ -70,6 +73,8 @@ describe("refreshModelPricing", () => {
 
     expect(mocks.refreshSnapshot).toHaveBeenCalledWith({ force: true });
     expect(mocks.getDashboardMetrics).toHaveBeenCalledWith();
+    expect(mocks.refreshModelUpdates).toHaveBeenCalledOnce();
+    expect(result.model_updates).toEqual({ sources: [], changed_models: [], changed_provider_features: [], adoption_required: [] });
     expect(result.changed_rates).toEqual([{
       provider: "openai",
       model_id: "gpt-5",

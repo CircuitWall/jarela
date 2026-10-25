@@ -86,6 +86,11 @@ function CatalogRow({ model, form }: { model: CatalogModel; form: ModelEditorFor
         )}
       </div>
       <CapBadges caps={model.capabilities} />
+      {model.model_metadata?.version && (
+        <p className="mt-1 text-[10px] text-fg-faint" title={`Source: ${model.model_metadata.version.source_url}`}>
+          Current release: {model.model_metadata.version.value}
+        </p>
+      )}
     </button>
   );
 }

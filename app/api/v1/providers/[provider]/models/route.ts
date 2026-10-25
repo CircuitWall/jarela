@@ -10,8 +10,10 @@ import {
   getKnownMaxOutputTokens,
 } from "@/lib/providers/known-context-windows";
 import { readErrorBody } from "@/lib/utils/error";
+import { listModelMetadata, resolvedModelMetadata, type ModelMetadata } from "@/lib/stores/model-metadata";
 
 export interface CatalogModel {
+  model_metadata?: ModelMetadata;
   id: string;
   context_length: number | null;
   max_output_tokens: number | null;
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   try {
     const models = await getCachedCatalog(provider, force);
-    return NextResponse.json(models, {
+    return NextResponse.json(withModelMetadata(provider, models), {
       headers: {
         "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
       },
@@ -85,10 +87,22 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     const models = await fetchCatalog(provider, body.params);
     catalogCache.delete(provider);
-    return NextResponse.json(models, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(withModelMetadata(provider, models), { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     return catalogErrorResponse(err);
   }
+}
+
+function withModelMetadata(provider: string, models: CatalogModel[]): CatalogModel[] {
+  const metadata = listModelMetadata(provider);
+  return models.map((model) => {
+    const observed = resolvedModelMetadata(provider, model.id, metadata);
+    const capabilities = { ...model.capabilities };
+    for (const [key, claim] of Object.entries(observed.model_metadata?.capabilities ?? {})) {
+      if (claim) Object.assign(capabilities, { [key]: claim.value });
+    }
+    return { ...model, capabilities, model_metadata: observed.model_metadata };
+  });
 }
 
 async function fetchCatalog(provider: string, overrides?: ProviderParams): Promise<CatalogModel[]> {

@@ -12,6 +12,8 @@
 import { SYSTEM_PROMPT as CITATION_CHECKER_PROMPT } from "@/lib/agents/citation-checker";
 import { SYSTEM_PROMPT as HALLUCINATION_CLASSIFIER_PROMPT } from "@/lib/agents/hallucination-classifier";
 import { SYSTEM_PROMPT as PRICING_EXTRACT_PROMPT } from "@/lib/pricing/llm-extract";
+import { MODEL_UPDATES_PROMPT } from "@/lib/pricing/model-updates";
+import { WEEKLY_PRICING_TASK_PROMPT } from "@/lib/pricing/maintenance-task";
 import { DESIGN_QA_PROMPT } from "@/lib/tools/delegation/claude-delegate";
 import { buildSharedToolCatalogContext } from "@/lib/agents/prepare/system-prompt";
 import { BUILTIN_HARNESSES } from "@/lib/agents/harness/presets";
@@ -62,6 +64,18 @@ export function listStaticPrompts(): StaticPrompt[] {
   const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
   const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
   const prompts: StaticPrompt[] = [
+    {
+      id: "extract.model-updates",
+      source: "lib/pricing/model-updates.ts",
+      purpose: "Extracts source-backed API model versions and capabilities without enabling runtime features.",
+      text: MODEL_UPDATES_PROMPT,
+    },
+    {
+      id: "scheduled.model-pricing-refresh",
+      source: "lib/pricing/maintenance-task.ts",
+      purpose: "Refreshes pricing/model metadata and escalates confirmed adoption gaps without leaking installation data.",
+      text: WEEKLY_PRICING_TASK_PROMPT,
+    },
     {
       id: "release.documentation-review",
       source: "scripts/prompts/release-docs.txt",

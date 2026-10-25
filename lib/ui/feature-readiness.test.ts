@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeFeatureReadiness } from "./feature-readiness";
 import type { IntegrationStatus, ModelConfig } from "@/api/types";
+import { modelCapabilities } from "@/lib/providers/capabilities";
 
 function model(provider: string, model_id: string): ModelConfig {
   return {
@@ -24,6 +25,12 @@ function integration(name: string, configured: boolean): IntegrationStatus {
 }
 
 describe("computeFeatureReadiness", () => {
+  it("uses observed capability metadata, including explicit false, instead of static hints", () => {
+    const selected = model("gemini", "gemini-2.0-flash");
+    selected.capabilities = { ...modelCapabilities(selected.provider, selected.model_id), vision: false, web_search: true };
+    const result = computeFeatureReadiness({ models: [selected], selectedProvider: selected.provider, selectedModelId: selected.model_id });
+    expect(result.selectedModelCaps).toMatchObject({ vision: false, web_search: true });
+  });
   it("reports nothing ready with empty inputs", () => {
     const r = computeFeatureReadiness({ models: [] });
     expect(r.selectedModelCaps).toBeNull();

@@ -15,6 +15,7 @@ const {
 const { scheduledTaskHandler, firingForTaskId } = await import("./scheduled-task");
 const { registerScript } = await import("@/lib/triggers/scripts");
 const { subscribe } = await import("@/lib/notifications/bus");
+const { WEEKLY_PRICING_TASK_ID, WEEKLY_PRICING_TASK_PROMPT, LEGACY_WEEKLY_PRICING_TASK_PROMPT } = await import("@/lib/pricing/maintenance-task");
 
 registerScript("reaction.test", async () => ({ preview: "test" }));
 
@@ -27,6 +28,23 @@ describe("scheduledTaskHandler (ADR-0032)", () => {
     for (const t of listScheduledTasks()) deleteScheduledTask(t.id);
   });
 
+  it("persistently upgrades the unmodified built-in pricing prompt before firing", () => {
+    createScheduledTask({
+      id: WEEKLY_PRICING_TASK_ID, agent_id: "a", prompt: LEGACY_WEEKLY_PRICING_TASK_PROMPT,
+      kind: "cron", schedule: "0 9 * * 1", silent: true,
+    });
+    const firing = firingForTaskId(WEEKLY_PRICING_TASK_ID);
+    expect(firing?.mode).toBe("prompt");
+    if (firing?.mode !== "prompt") throw new Error("expected prompt firing");
+    expect(firing.prompt).toBe(WEEKLY_PRICING_TASK_PROMPT);
+    expect(getScheduledTask(WEEKLY_PRICING_TASK_ID)).toMatchObject({ prompt: WEEKLY_PRICING_TASK_PROMPT, silent: 1, schedule: "0 9 * * 1" });
+  });
+
+  it("preserves user-customized pricing prompts", () => {
+    createScheduledTask({ id: WEEKLY_PRICING_TASK_ID, agent_id: "a", prompt: "My custom pricing procedure", kind: "cron", schedule: "0 9 * * 1" });
+    expect(firingForTaskId(WEEKLY_PRICING_TASK_ID)).toMatchObject({ prompt: "My custom pricing procedure" });
+    expect(getScheduledTask(WEEKLY_PRICING_TASK_ID)?.prompt).toBe("My custom pricing procedure");
+  });
   it("emits a PromptFiring for kind='agent_prompt' tasks (default)", async () => {
     const t = createScheduledTask({
       agent_id: "a",

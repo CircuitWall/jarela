@@ -11,6 +11,7 @@ import { getModelConfig, isModelConfigEnabled, listModelConfigs, upsertModelConf
 import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
+import { listModelMetadata, resolvedModelMetadata } from "@/lib/stores/model-metadata";
 
 const CreateBody = z.object({
   name: z.string().min(1, "name required"),
@@ -61,8 +62,10 @@ function preserveSecrets(name: string, incoming: Record<string, unknown>): Recor
 }
 
 export function GET() {
+  const metadata = listModelMetadata();
   return cachedJson(listModelConfigs().map((r) => ({
     ...r,
+    ...resolvedModelMetadata(r.provider, r.model_id, metadata),
     params: redactInlineParams(r.params),
     is_default: Boolean(r.is_default),
     enabled: isModelConfigEnabled(r),
@@ -85,6 +88,7 @@ export async function POST(req: NextRequest) {
     );
     return createdResponse({
       ...r,
+      ...resolvedModelMetadata(r.provider, r.model_id),
       params: redactInlineParams(r.params),
       is_default: Boolean(r.is_default),
       enabled: isModelConfigEnabled(r),

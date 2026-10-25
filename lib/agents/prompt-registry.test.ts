@@ -455,6 +455,23 @@ describe("prompt cache prefixes", () => {
 });
 
 describe("static prompts", () => {
+  it("keeps model updates separate from runtime activation and requires verified, deduplicated issue filing", async () => {
+    const extractor = staticPrompts.find((prompt) => prompt.id === "extract.model-updates");
+    const scheduled = staticPrompts.find((prompt) => prompt.id === "scheduled.model-pricing-refresh");
+    expect(extractor?.text).toContain("false requires an explicit statement of non-support");
+    expect(extractor?.text).toContain("these are NOT model capabilities");
+    expect(extractor?.text).toContain("verbatim");
+    for (const field of ["changed_models", "changed_provider_features", "adoption_required", "first_observed"]) {
+      expect(scheduled?.text).toContain(field);
+    }
+    expect(scheduled?.text).toContain("including closed issues");
+    expect(scheduled?.text).toContain("only after creation succeeds");
+    expect(scheduled?.text).toContain("approval is missing");
+    expect(scheduled?.text).toContain("deadline_ms=900000");
+    expect(scheduled?.text).toContain("do not start a duplicate refresh");
+    const catalog = await getAllToolCatalogAsync();
+    expect(catalog.some((tool) => tool.name === "refresh_model_pricing")).toBe(true);
+  });
   it("leaves no unresolved placeholders", () => {
     for (const p of staticPrompts) {
       expect(p.text, `${p.id}: unrendered placeholder`).not.toMatch(/\{\{[^}]+\}\}/);

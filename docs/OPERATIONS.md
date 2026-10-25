@@ -37,6 +37,32 @@ when the database, pricing snapshot, date, and selected window are unchanged.
 Database writes or pricing changes invalidate that server-side result. The
 existing browser response cache can retain metrics for up to 30 seconds.
 
+The built-in `refresh_model_pricing` agent tool and weekly maintenance task also
+check official API model documentation for rolling-version and capability
+updates. Accepted observations include source URLs, check times, and supporting
+quotes. Saved-model badges and catalog entries use this display metadata after
+refetching; saved model IDs, credentials, request parameters, routing, and
+historical costs remain unchanged. The Dashboard's **Refresh pricing** button
+remains a pricing-only operation; ask an agent to run `refresh_model_pricing`
+for the combined check.
+
+Model updates use the existing pricing extractor configuration
+(`JARELA_PRICING_LLM_EXTRACT` and `JARELA_PRICING_EXTRACTOR_MODEL`, otherwise the
+default model). This makes additional calls to your configured model provider.
+Disabled/unavailable extraction, documentation failures, and truncated sources
+are reported, not treated as successful verification. Existing observations are
+retained when a check fails or a capability is simply absent from a page.
+First-observed models are newly tracked, not necessarily newly released.
+
+Standalone provider APIs are kept separate from model capabilities: DeepSeek's
+Search & Fetch APIs do not imply that Flash's chat endpoint performs native
+search. The weekly agent reviews adoption candidates, checks existing GitHub
+issues, and files a follow-up only when code work is confirmed and the agent
+has source access, GitHub tools, credentials, and approval. It reports blockers
+instead of claiming an issue was filed. Unmodified legacy weekly prompts are
+upgraded persistently on their next firing or when setup is requested again;
+customized prompts and schedules are preserved.
+
 ![Jarela usage dashboard with token, cost, and tool reliability summaries](assets/operations-dashboard.png)
 
 ## Inspect tools

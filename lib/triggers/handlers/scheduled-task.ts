@@ -3,9 +3,11 @@ import {
   markTaskRan,
   getScheduledTask,
   computeNextRun,
+  updateScheduledTask,
   type ScheduledTaskRow,
 } from "@/lib/stores/scheduled-tasks";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+import { weeklyPricingTaskUpgrade } from "@/lib/pricing/maintenance-task";
 import type {
   TriggerFiring,
   TriggerHandler,
@@ -24,6 +26,10 @@ export const SCHEDULED_TASK_KIND = "scheduled_task";
  * unchanged.
  */
 function buildFiring(task: ScheduledTaskRow): TriggerFiring {
+  const upgrade = weeklyPricingTaskUpgrade(task);
+  if (upgrade && task.reaction_kind === "agent_prompt") {
+    task = updateScheduledTask(task.id, upgrade) ?? task;
+  }
   const expiresAt = task.kind === "cron"
     ? computeNextRun("cron", task.schedule, new Date(task.next_run_at)).getTime()
     : undefined;
