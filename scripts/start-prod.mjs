@@ -10,6 +10,9 @@
 import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { enforceNodeVersion } from "./runtime-version.mjs";
+
+enforceNodeVersion();
 
 const server = join(process.cwd(), ".next", "standalone", "server.js");
 if (!existsSync(server)) {

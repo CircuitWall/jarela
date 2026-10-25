@@ -391,8 +391,8 @@ function isStructuredTool(v: unknown): v is StructuredToolInterface {
  * import(file://…)` because Next.js's server bundler intercepts dynamic
  * `import()` calls and cannot resolve a `file://` URL to an installed
  * module at runtime — the operator hits "Cannot find module
- * 'file:///…/wikipedia_query_run.cjs'" even when the file exists. On
- * Node 22.12+ / 24+ (Jarela targets Node 25) `require()` transparently
+ * 'file:///…/wikipedia_query_run.cjs'" even when the file exists.
+ * On supported Node 24.15.0+ runtimes, `require()` transparently
  * handles ESM modules too, so this single code path covers both .cjs
  * and "type": "module" packages.
  */

@@ -32,7 +32,7 @@
     "jarela": "scripts/jarela-bin.mjs"
   },
   "engines": {
-    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+    "node": "^24.15.0 || >=26.0.0"
   },
   "workspaces": [
     "packages/*"
@@ -72,6 +72,7 @@
     "scripts/optimize-client-chunks.mjs",
     "scripts/service-install.mjs",
     "scripts/start-prod.mjs",
+    "scripts/runtime-version.mjs",
     "scripts/prepare-local-embedding-model.mjs",
     "scripts/update.mjs",
     "scripts/postbuild.mjs",
