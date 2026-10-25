@@ -39,7 +39,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "22.22.2"
+          node-version: "24.15.0"
           check-latest: true
 
       - name: Resolve release and reuse existing review
@@ -134,7 +134,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "22.22.2"
+          node-version: "24.15.0"
           check-latest: true
 
       - uses: actions/download-artifact@v8

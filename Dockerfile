@@ -17,14 +17,14 @@
 # - HOSTNAME defaults to 0.0.0.0 inside the container so the port is
 #   reachable from the host. On bare metal we default to 127.0.0.1.
 # - JARELA_DB_DIR=/data — all SQLite + secrets + uploads live there.
-# - We use node:22-trixie-slim (Debian 13, the current stable release with
+# - We use node:24-trixie-slim (Debian 13, the current stable release with
 #   full security support). The floating tag picks up Node and Debian
 #   security patches on every rebuild. Keytar's native binding builds
 #   fine there; at runtime there's no D-Bus / libsecret session, so
 #   master-key.ts transparently falls back to a 0600 keyfile under /data
 #   (see lib/crypto/master-key.ts). That's the documented headless path.
 
-ARG NODE_VERSION=22
+ARG NODE_VERSION=24
 
 # ---------- builder ----------
 FROM node:${NODE_VERSION}-trixie-slim AS builder
