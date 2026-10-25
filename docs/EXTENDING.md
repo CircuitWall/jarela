@@ -342,6 +342,18 @@ verify with the `list_tools` or `list_mcp_servers` tools. If a server's
 
 ADR: [0014](../docs/adr/0014-mcp-registry-online-discovery.md).
 
+MCP results can include both human-readable `content` and machine-readable
+`structuredContent`. Jarela appends the structured value as a text block labelled
+`Structured result (JSON):`, so agents can use exact fields even when the text is
+only a summary. Original text and multimodal content remain unchanged; private
+protocol `_meta` is not copied into that block. Existing result-size limits still
+apply. Tools without structured output retain their previous result shape.
+Server-requested interactive input (elicitation) remains disabled.
+
+Contract checked against the [MCP adapters 2.0 migration guide](https://docs.langchain.com/oss/javascript/migrate/langchain-mcp-adapters)
+on 2026-10-25. Regression tests cover HTTP discovery/invocation, structured-only
+results, multimodal preservation, and exclusion of protocol metadata.
+
 ---
 
 ## Adding a custom harness
