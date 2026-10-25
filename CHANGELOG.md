@@ -7,13 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-10-25
+
+### Added
+
+- chat: Add docked navigation and full-width chat.
+
+### Fixed
+
+- redaction: Add provider-wide masking and broader detection.
+- ui: Update menu navigation and fix browser startup.
+- e2e: Fix panel selectors for docked navigation.
+
 ### Changed
 
+- runtime: Build release archives and native packages with Node 24.15.0; use Node 24 for Docker and Node 24.15.0 for CI.
 - mcp: Include structured tool results as model-visible JSON alongside the original content, without exposing private MCP protocol metadata.
 - chat: Add sanitized SVG downloads and expandable, copyable source for Mermaid diagrams.
 - deps: Upgrade Anthropic SDK, MCP adapters, Mermaid, and jsdom major versions; retain the 2023 Anthropic Messages API version so existing sampling settings remain valid.
 - mcp: Preserve unprefixed tool names and disable elicitation prompts with MCP adapters v2.
 - runtime: Require Node 22.22.2+ on Node 22, 24.15.0+ on Node 24, or Node 26+. Users on older Node versions must upgrade Node before updating Jarela. The maintainer explicitly approved this narrower runtime support for a minor release as an exception to the usual major-release policy.
+- deps: Upgrade p-queue to 10 and update other runtime and development dependency patches; retain TypeScript 6.0.3.
+- docs: Migrate the documentation site toolchain to Zensical.
 
 ## [2.6.1] - 2026-10-24
 

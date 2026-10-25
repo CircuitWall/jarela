@@ -11,6 +11,35 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 2.7.0
+
+From 2.6.1 · 2026-10-25
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- ci(runtime): use node 24 for release builds
+- feat(chat): add mermaid source and svg export controls
+- feat(mcp): expose structured tool results to agents
+- docs(release): document approved node runtime exception
+- docs(changelog): document major dependency upgrade
+- chore(deps)!: bump major dependencies
+- fix(e2e): fix panel selectors for docked navigation
+- feat(ui): add docked navigation and full-width chat
+- build(deps): bump p-queue from 9.3.5 to 10.0.0
+- ci(deps): bump actions/setup-python from 6 to 7 in the actions group
+- build(deps): update runtimes and dependencies to latest patches
+- build(docs): update docs site toolchain to zensical
+- fix(redaction): add provider-wide masking and broader detection
+- fix(ui): update menu navigation and fix browser startup
+
 ## 2.6.1
 
 From 2.6.0 · 2026-10-24
