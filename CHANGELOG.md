@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- mcp: Include structured tool results as model-visible JSON alongside the original content, without exposing private MCP protocol metadata.
 - deps: Upgrade Anthropic SDK, MCP adapters, Mermaid, and jsdom major versions; retain the 2023 Anthropic Messages API version so existing sampling settings remain valid.
 - mcp: Preserve unprefixed tool names and disable elicitation prompts with MCP adapters v2.
 - runtime: Require Node 22.22.2+ on Node 22, 24.15.0+ on Node 24, or Node 26+. Users on older Node versions must upgrade Node before updating Jarela. The maintainer explicitly approved this narrower runtime support for a minor release as an exception to the usual major-release policy.

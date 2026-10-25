@@ -96,6 +96,7 @@ describe("buildSubprocessEnv", () => {
         },
         prefixToolNameWithServerName: false,
         onConnectionError: "throw",
+        afterToolCall: expect.any(Function),
       });
       expect(getMcpToolMeta("read_file")).toMatchObject({
         category: "Files",

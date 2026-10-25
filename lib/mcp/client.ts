@@ -10,6 +10,7 @@ import {
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { getFullShellEnv } from "@/lib/tools/security/subprocess-env";
 import { errorMessage } from "@/lib/utils/error";
+import { includeMcpStructuredContent } from "./tool-results";
 
 // Singleton MCP client manager. Connects to enabled servers on first access,
 // caches the resulting StructuredTools, and invalidates on configuration
@@ -129,6 +130,7 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
           throwOnLoadError: false,
           prefixToolNameWithServerName: false,
           onConnectionError: "throw",
+          afterToolCall: includeMcpStructuredContent,
         });
         const serverTools = (await client.listTools()) as unknown as StructuredToolInterface[];
         tools.push(...serverTools);
