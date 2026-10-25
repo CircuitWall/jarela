@@ -9,8 +9,9 @@
 // eventually repaired (see queueDocumentReindex).
 
 import { getDb } from "@/lib/db";
-import { embedQueryOne, cosine } from "@/lib/embeddings";
-import { isLocalEmbeddingsEnabled } from "@/lib/stores/app-settings";
+import { embedQueryOne, embedQueryWithSignature, cosine } from "@/lib/embeddings";
+import { getDocumentRecallPolicy, isLocalEmbeddingsEnabled } from "@/lib/stores/app-settings";
+import { DocumentExclusionUnavailableError } from "./recall-policy";
 
 // Track documents we've already queued for reindexing this session to avoid
 // repeated work. This is session-scoped; the Set resets on app restart.
@@ -31,6 +32,7 @@ export interface DocumentHit {
   text: string;
   score: number;
   match: "semantic" | "substring";
+  excluded?: boolean;
 }
 
 interface Row {
@@ -39,6 +41,7 @@ interface Row {
   chunk_index: number;
   text: string;
   embedding: string | null;
+  embedding_model_signature: string | null;
   source_id: string;
   source_label: string | null;
   rel_path: string;
@@ -47,7 +50,7 @@ interface Row {
 
 export async function searchDocuments(
   query: string,
-  opts?: { limit?: number; sourceId?: string; minSimilarity?: number },
+  opts?: { limit?: number; sourceId?: string; minSimilarity?: number; includeExcluded?: boolean },
 ): Promise<DocumentHit[]> {
   const limit = Math.min(Math.max(opts?.limit ?? 8, 1), 25);
   const db = getDb();
@@ -60,7 +63,7 @@ export async function searchDocuments(
   const rows = (
     opts?.sourceId
       ? db.prepare(
-          `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding,
+          `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding, dc.embedding_model_signature,
                   d.source_id, ds.label AS source_label, d.rel_path, d.path AS abs_path
            FROM document_chunks dc
            JOIN documents d ON dc.document_id = d.id
@@ -69,7 +72,7 @@ export async function searchDocuments(
            LIMIT ?`,
         ).all(opts.sourceId, limitRows)
       : db.prepare(
-          `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding,
+          `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding, dc.embedding_model_signature,
                   d.source_id, ds.label AS source_label, d.rel_path, d.path AS abs_path
            FROM document_chunks dc
            JOIN documents d ON dc.document_id = d.id
@@ -81,13 +84,34 @@ export async function searchDocuments(
 
   if (rows.length === 0) return [];
 
+  const policy = getDocumentRecallPolicy();
+  const candidates = rows.filter((r) => opts?.includeExcluded || !policy.excluded_documents.some(
+    (d) => d.source_id === r.source_id && d.path === r.abs_path,
+  ));
+  if (candidates.length === 0) return [];
+  const topicResult = !opts?.includeExcluded && policy.topics.length > 0
+    ? await embedQueryWithSignature(policy.topics)
+    : null;
+  const topicVectors = topicResult?.vectors ?? [];
+  if (topicResult && (!topicResult.modelSignature || !topicResult.vectors
+    || topicVectors.length !== policy.topics.length || topicVectors.some((v) => !validVector(v)))) {
+    throw new DocumentExclusionUnavailableError();
+  }
   const qVec = await embedQueryOne(trimmed);
   const scored: DocumentHit[] = [];
   const lowered = trimmed.toLowerCase();
   const minSimilarity = Math.max(0, Math.min(1, opts?.minSimilarity ?? getDefaultDocumentMinSimilarity()));
   const mismatched = new Set<string>();
 
-  for (const r of rows) {
+  for (const r of candidates) {
+    if (topicVectors.length > 0) {
+      const vector = parseVector(r.embedding);
+      if (!vector || r.embedding_model_signature !== topicResult?.modelSignature
+        || topicVectors.some((topic) => topic.length !== vector.length)) {
+        throw new DocumentExclusionUnavailableError();
+      }
+      if (topicVectors.some((topic) => topic && cosine(topic, vector) >= policy.topic_similarity)) continue;
+    }
     let score = 0;
     let match: "semantic" | "substring" = "semantic";
     if (qVec && r.embedding) {
@@ -122,7 +146,24 @@ export async function searchDocuments(
       text: r.text,
       score,
       match,
+      ...(opts?.includeExcluded ? {
+        excluded: policy.excluded_documents.some((d) => d.source_id === r.source_id && d.path === r.abs_path),
+      } : {}),
     });
+  }
+
+  function validVector(value: number[] | null): value is number[] {
+    return value !== null && value.length > 0 && value.every(Number.isFinite) && value.some((n) => n !== 0);
+  }
+
+  function parseVector(value: string | null): number[] | null {
+    if (!value) return null;
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return Array.isArray(parsed) && parsed.every((n) => typeof n === "number") && validVector(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
   }
 
   // Queue mismatched documents for reindexing if we haven't already in this session.
@@ -174,4 +215,3 @@ async function clearEmbeddingsForDocument(documentId: string): Promise<void> {
     );
   }
 }
-

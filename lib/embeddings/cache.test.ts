@@ -10,6 +10,7 @@ process.on("exit", () => {
 });
 
 const embedSpy = vi.fn();
+let providerName = "openai";
 
 vi.mock("@/lib/providers", () => ({
   getProvider: () => ({
@@ -19,14 +20,14 @@ vi.mock("@/lib/providers", () => ({
 
 vi.mock("@/lib/stores/model-config", () => ({
   getModelConfig: () => null,
-  getDefaultModelConfig: () => ({ provider: "openai", model_id: "text-embedding-3-small", params: "{}" }),
+  getDefaultModelConfig: () => ({ provider: providerName, model_id: "text-embedding-3-small", params: "{}" }),
   listModelConfigs: () => [],
   getModelParams: () => ({}),
 }));
 
 vi.mock("@/lib/stores/app-settings", () => ({ getEmbeddingModelConfigName: () => null, isLocalEmbeddingsEnabled: () => false }));
 
-const { embed, embedOne, _resetEmbeddingCache } = await import("./index");
+const { embed, embedOne, embedQueryWithSignature, _resetEmbeddingCache } = await import("./index");
 
 // A vector per distinct text, so a wrong mapping is visible rather than silent.
 function vectorFor(text: string): number[] {
@@ -36,6 +37,7 @@ function vectorFor(text: string): number[] {
 describe("embedding cache", () => {
   beforeEach(() => {
     _resetEmbeddingCache();
+    providerName = "openai";
     embedSpy.mockReset();
     embedSpy.mockImplementation((_model: string, texts: string[]) => texts.map(vectorFor));
   });
@@ -83,6 +85,18 @@ describe("embedding cache", () => {
     expect(await embed(["retry me"])).toBeNull();
 
     expect(await embed(["retry me"])).toEqual([vectorFor("retry me")]);
+    expect(embedSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reuse vectors across providers sharing the same model id", async () => {
+    embedSpy.mockResolvedValueOnce([[1, 0]]);
+    const first = await embedQueryWithSignature(["private topic"]);
+    providerName = "compatible-provider";
+    embedSpy.mockResolvedValueOnce([[0, 1]]);
+    const second = await embedQueryWithSignature(["private topic"]);
+
+    expect(first.modelSignature).not.toBe(second.modelSignature);
+    expect(second.vectors).toEqual([[0, 1]]);
     expect(embedSpy).toHaveBeenCalledTimes(2);
   });
 });

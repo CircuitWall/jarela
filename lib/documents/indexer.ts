@@ -167,15 +167,15 @@ async function backfillDocumentEmbeddings(documentId: string): Promise<{ missing
   const rows = listUnembeddedChunks(documentId);
   if (rows.length === 0) return { missing: 0, embedded: 0, embedError: null };
 
-  const { vectors, error, terminal } = await embedBestEffort(rows.map((r) => r.text));
-  const embedded = persistEmbedResults(rows.map((r) => r.id), vectors, terminal, error);
+  const { vectors, error, terminal, modelSignature } = await embedBestEffort(rows.map((r) => r.text));
+  const embedded = persistEmbedResults(rows.map((r) => r.id), vectors, terminal, error, modelSignature);
   return { missing: rows.length, embedded, embedError: error };
 }
 
 export function clearSourceEmbeddings(sourceId: string): number {
   return Number(getDb().prepare(
     `UPDATE document_chunks
-     SET embedding=NULL, embed_failed_at=NULL, embed_error=NULL
+     SET embedding=NULL, embedding_model_signature=NULL, embed_failed_at=NULL, embed_error=NULL
      WHERE document_id IN (SELECT id FROM documents WHERE source_id=?)`,
   ).run(sourceId).changes);
 }
@@ -210,16 +210,17 @@ function persistEmbedResults(
   vectors: (number[] | null)[],
   terminal: boolean[],
   error: string | null,
+  modelSignature: string | null,
 ): number {
   const db = getDb();
-  const updateEmb = db.prepare("UPDATE document_chunks SET embedding=? WHERE id=?");
+  const updateEmb = db.prepare("UPDATE document_chunks SET embedding=?, embedding_model_signature=? WHERE id=?");
   const markFailed = db.prepare("UPDATE document_chunks SET embed_failed_at=?, embed_error=? WHERE id=?");
   const now = new Date().toISOString();
   let embedded = 0;
   for (let i = 0; i < chunkIds.length; i++) {
     const v = vectors[i];
     if (v != null) {
-      updateEmb.run(JSON.stringify(v), chunkIds[i]);
+      updateEmb.run(JSON.stringify(v), modelSignature ?? null, chunkIds[i]);
       embedded++;
     } else if (terminal[i]) {
       markFailed.run(now, error, chunkIds[i]);
@@ -482,8 +483,8 @@ export async function chunkAndEmbedDocument(
 
   // embedBestEffort handles retry + halving fallback internally so a
   // single bad input or transient 429 doesn't drop the whole document.
-  const { vectors, error, terminal } = await embedBestEffort(chunks.map((c) => c.text));
-  const embedded = persistEmbedResults(chunkIds, vectors, terminal, error);
+  const { vectors, error, terminal, modelSignature } = await embedBestEffort(chunks.map((c) => c.text));
+  const embedded = persistEmbedResults(chunkIds, vectors, terminal, error, modelSignature);
   return { chunks: chunks.length, embedded, embedError: error };
 }
 

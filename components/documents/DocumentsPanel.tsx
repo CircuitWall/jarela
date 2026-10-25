@@ -7,6 +7,7 @@ import { AddSourceForm } from "./AddSourceForm";
 import { SearchProbe } from "./SearchProbe";
 import { SourceList } from "./SourceList";
 import { useDocumentsPanel } from "./useDocumentsPanel";
+import { RecallExclusions } from "./RecallExclusions";
 
 export function DocumentsPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const { dispatch } = useAppContext();
@@ -54,6 +55,8 @@ export function DocumentsPanel({ embedded = false }: { embedded?: boolean } = {}
         <AddSourceForm
           disabled={panel.loading}
           onSubmit={panel.addSource}
+          configuredIntegrations={panel.configuredIntegrations}
+          localEmbeddings={panel.localEmbeddings}
         />
 
         {embedded && (
@@ -90,7 +93,24 @@ export function DocumentsPanel({ embedded = false }: { embedded?: boolean } = {}
           onToggle={(s) => { void panel.toggleSource(s); }}
         />
 
-        {!embedded && <SearchProbe onSearch={panel.search} />}
+        {panel.recallPolicy && (
+          <>
+            <RecallExclusions key={JSON.stringify(panel.recallPolicy)} policy={panel.recallPolicy} onSave={panel.saveRecallPolicy} />
+            <SearchProbe key={`search-${JSON.stringify(panel.recallPolicy)}`} onSearch={panel.search}
+              onExclude={async (hit) => {
+                if (!panel.recallPolicy) return;
+                await panel.saveRecallPolicy({
+                  ...panel.recallPolicy,
+                  excluded_documents: [
+                    ...panel.recallPolicy.excluded_documents.filter(
+                      (d) => d.source_id !== hit.source_id || d.path !== hit.abs_path,
+                    ),
+                    { source_id: hit.source_id, path: hit.abs_path, label: hit.rel_path },
+                  ],
+                });
+              }} />
+          </>
+        )}
       </div>
     </div>
   );

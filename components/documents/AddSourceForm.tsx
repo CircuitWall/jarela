@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { api } from "@/api/client";
 import type { DocumentSourceKind } from "@/api/types";
 import { FolderPickerDialog } from "./FolderPickerDialog";
-import { KIND_OPTIONS, isGithubKind, isMailKind } from "./helpers";
+import { KIND_OPTIONS, isGithubKind, isMailKind, integrationForSourceKind } from "./helpers";
 import {
   LocalFolderFields,
   RemoteSourceFields,
@@ -15,7 +15,9 @@ type CreatePayload = Parameters<typeof api.documents.createSource>[0];
 
 interface Props {
   disabled: boolean;
-  onSubmit: (payload: CreatePayload) => Promise<void>;
+  onSubmit: (payload: CreatePayload) => Promise<boolean>;
+  configuredIntegrations: string[];
+  localEmbeddings: boolean | null;
 }
 
 const INITIAL: FormState = {
@@ -93,46 +95,74 @@ function kindHint(kind: DocumentSourceKind): string {
   return "Requires Atlassian credentials (Credentials → Atlassian).";
 }
 
-export function AddSourceForm({ disabled, onSubmit }: Props) {
+export function AddSourceForm({ disabled, onSubmit, configuredIntegrations, localEmbeddings }: Props) {
   const [state, setState] = useState<FormState>(INITIAL);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [consent, setConsent] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const set = makeSetField(setState);
   const payload = buildPayload(state);
 
   async function handleSubmit() {
-    if (!payload) return;
+    if (!payload || !consent || submitting) return;
+    setSubmitting(true);
     try {
-      await onSubmit(payload);
+      if (!(await onSubmit(payload))) return;
       setState({ ...INITIAL, addKind: state.addKind });
+      setConsent(false);
     } catch {
       // parent surfaces the error; keep form state for retry.
+    } finally {
+      setSubmitting(false);
     }
   }
 
   const fieldProps = {
     state,
     set,
-    disabled,
-    canSubmit: payload !== null,
+    disabled: disabled || submitting,
+    canSubmit: payload !== null && consent,
     onSubmit: () => void handleSubmit(),
   };
 
   return (
     <section className="space-y-2">
-      <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Add a source</label>
+      <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Opt in to indexing</label>
+      <p className="text-xs text-fg-faint">
+        Choose a folder or a supported connected integration, then select the mailbox query, repository, or project to index.
+        Connecting credentials alone does not enable indexing. Other tools without a document indexer are not listed.
+      </p>
       <div className="flex items-center gap-2">
         <select
           value={state.addKind}
-          onChange={(e) => setState({ ...INITIAL, addKind: e.target.value as DocumentSourceKind })}
+          disabled={disabled || submitting}
+          onChange={(e) => {
+            setState({ ...INITIAL, addKind: e.target.value as DocumentSourceKind });
+            setConsent(false);
+          }}
           className="px-2 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-fg"
         >
-          {KIND_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
+          {KIND_OPTIONS.map((o) => {
+            const integration = integrationForSourceKind(o.value);
+            const unavailable = integration !== null && !configuredIntegrations.includes(integration);
+            return <option key={o.value} value={o.value} disabled={unavailable}>{o.label}{unavailable ? " (connect credentials first)" : ""}</option>;
+          })}
         </select>
         <span className="text-[11px] text-fg-faint">{kindHint(state.addKind)}</span>
       </div>
 
+      <label className="flex items-start gap-2 text-xs text-fg-muted">
+        <input type="checkbox" checked={consent} disabled={disabled || submitting || localEmbeddings === null}
+          onChange={(e) => setConsent(e.target.checked)} />
+        Index this source and make its content available to assistant document search, subject to global exclusions.
+        Retrieved excerpts may be sent to the configured chat provider.
+      </label>
+      {localEmbeddings === false && (
+        <p role="alert" className="text-xs text-amber-600 dark:text-amber-400">
+          The embedding provider is not Jarela Local. Content may leave this device during indexing.
+          Recall exclusions do not prevent embedding or storage.
+        </p>
+      )}
       {state.addKind === "local_folder"
         ? <LocalFolderFields {...fieldProps} onOpenPicker={() => setPickerOpen(true)} />
         : <RemoteSourceFields {...fieldProps} />}

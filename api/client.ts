@@ -1,3 +1,4 @@
+import type { DocumentRecallPolicy } from "@/lib/documents/recall-policy";
 import type {
   AgentConfig,
   AgentConfigIn,
@@ -1231,14 +1232,20 @@ export const api = {
       request<{ deleted: boolean }>(`/documents/sources/${encodeURIComponent(id)}`, { method: "DELETE" }),
     reindex: (id: string) =>
       request<DocumentReindexResult>(`/documents/sources/${encodeURIComponent(id)}/reindex`, { method: "POST", body: "{}" }),
-    search: (q: string, opts?: { limit?: number; source_id?: string; min_similarity?: number }) => {
+    search: (q: string, opts?: { limit?: number; source_id?: string; min_similarity?: number; include_excluded?: boolean }) => {
       const p = new URLSearchParams({ q });
       if (opts?.limit) p.set("limit", String(opts.limit));
       if (opts?.source_id) p.set("source_id", opts.source_id);
       if (opts?.min_similarity !== undefined) p.set("min_similarity", String(opts.min_similarity));
+      if (opts?.include_excluded) p.set("include_excluded", "true");
       return request<{ query: string; hits: DocumentHit[]; min_similarity: number }>(`/documents/search?${p.toString()}`);
     },
     getSettings: () => request<DocumentSettings>("/documents/settings"),
+    getRecallPolicy: () => request<{ policy: DocumentRecallPolicy; local_embeddings: boolean }>("/documents/recall-policy", { cache: "no-store" }),
+    setRecallPolicy: (policy: DocumentRecallPolicy) =>
+      request<{ policy: DocumentRecallPolicy; local_embeddings: boolean }>("/documents/recall-policy", {
+        method: "PUT", body: JSON.stringify(policy),
+      }),
     setSettings: (patch: DocumentSettings) =>
       request<DocumentSettings>("/documents/settings", { method: "PUT", body: JSON.stringify(patch) }),
   },

@@ -18,7 +18,9 @@ type EmbedResult = {
   terminal: boolean[];
 };
 let embedImpl: (texts: string[]) => EmbedResult;
-const embedBestEffortSpy = vi.fn(async (texts: string[]) => embedImpl(texts));
+const embedBestEffortSpy = vi.fn(async (texts: string[]) => ({
+  ...embedImpl(texts), modelSignature: "synthetic-model",
+}));
 
 vi.mock("@/lib/embeddings", () => ({
   embed: vi.fn().mockResolvedValue(null),
@@ -73,6 +75,19 @@ function chunkRows(): Array<{ embedding: string | null; embed_failed_at: string 
 }
 
 describe("indexSource — terminal vs transient embedding failures (issue #597)", () => {
+  it("persists model provenance on ingestion and backfill, and clears it on reindex", async () => {
+    writeFileSync(join(sourceRoot, "provenance.txt"), "synthetic document content");
+    await indexSource(sourceRow);
+    const signatures = () => getDb().prepare(
+      "SELECT embedding_model_signature FROM document_chunks",
+    ).all() as Array<{ embedding_model_signature: string | null }>;
+    expect(signatures()).toEqual([{ embedding_model_signature: "synthetic-model" }]);
+    clearSourceEmbeddings(sourceId);
+    expect(signatures()).toEqual([{ embedding_model_signature: null }]);
+    await backfillSourceEmbeddings(sourceId);
+    expect(signatures()).toEqual([{ embedding_model_signature: "synthetic-model" }]);
+  });
+
   it("stops retrying a chunk whose embedding failed terminally", async () => {
     const abs = join(sourceRoot, "bad-content.txt");
     writeFileSync(abs, "some content the provider will permanently reject");

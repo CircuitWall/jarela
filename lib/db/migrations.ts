@@ -500,6 +500,7 @@ export function runMigrations(db: DatabaseSync): void {
   migrateICloudPackageIds(db);
   ensureAgentRouterColumns(db);
   ensureDocumentChunkFailureColumns(db);
+  ensureDocumentChunkProvenance(db);
   spillLegacyImageAttachments(db);
   cleanOrphanModelAssignments(db);
 }
@@ -1808,6 +1809,13 @@ function ensureAgentRouterColumns(db: DatabaseSync): void {
   }
   if (!routerCols.some((c) => c.name === "usage_strategy")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN usage_strategy TEXT");
+  }
+}
+
+function ensureDocumentChunkProvenance(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(document_chunks)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "embedding_model_signature")) {
+    db.exec("ALTER TABLE document_chunks ADD COLUMN embedding_model_signature TEXT");
   }
 }
 

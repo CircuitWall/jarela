@@ -117,6 +117,17 @@ and the boundaries new code should use.
 **Dependency direction:** UI → API routes → runtime modules → registries,
 adapters, and stores → local persistence or configured external services.
 
+Document retrieval applies the global recall policy from `lib/stores/app-settings.ts`
+inside `lib/documents/search.ts`, before returning chunks to tools. Exact
+source/path exclusions and semantic topic exclusions cover existing and future
+indexed content. Topic-filter failures block retrieval instead of falling back
+to unchecked text. Only the user-facing Documents search preview exposes an
+explicit override; `documents_search` has no override parameter. The policy
+uses the existing settings store. A nullable chunk embedding model signature
+ensures topic filtering never compares vectors from different models, even when
+dimensions match (ADR-0109); existing sources need reindexing before topic rules
+can be evaluated.
+
 - Keep API routes focused on transport, origin checks, and request validation.
 - Let `lib/agents/` coordinate providers and tools; connect those capabilities
   through their adapters and registries rather than importing private internals.

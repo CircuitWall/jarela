@@ -370,6 +370,13 @@ describe("searchMemory", () => {
     expect(hits[0].score).toBeCloseTo(0.9);
   });
 
+  it("never recalls exclusion policy topics or document labels through memory search", async () => {
+    const { searchMemory } = await import("./index");
+    seed("app-settings", "document_recall_policy", '{"topics":["private needle"],"excluded_documents":[]}', null);
+    embedSpy.mockResolvedValue([[1, 0, 0, 0]]);
+    expect(await searchMemory("private needle", { sources: "memory", literal: true })).toEqual([]);
+  });
+
   it("allows a lower semantic floor without filtering literal fallbacks", async () => {
     const { searchMemory } = await import("./index");
     seed("facts", "needle", "the needle is recorded", [0.2, Math.sqrt(0.96), 0, 0]);

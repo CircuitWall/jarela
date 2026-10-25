@@ -513,6 +513,16 @@ describe("router column migration", () => {
 });
 
 describe("document_chunks terminal-failure columns migration", () => {
+  it("adds nullable embedding provenance idempotently to existing chunks", async () => {
+    const db = getDb();
+    db.exec("ALTER TABLE document_chunks DROP COLUMN embedding_model_signature");
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+    runMigrations(db);
+    const cols = db.prepare("PRAGMA table_info(document_chunks)").all() as Array<{ name: string; notnull: number }>;
+    expect(cols.find((col) => col.name === "embedding_model_signature")?.notnull).toBe(0);
+  });
+
   it("adds embed_failed_at and embed_error on an existing database", async () => {
     const db = getDb();
 

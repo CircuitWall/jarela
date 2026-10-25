@@ -1163,6 +1163,7 @@ export interface DocumentHit {
   text: string;
   score: number;
   match: "semantic" | "substring";
+  excluded?: boolean;
 }
 
 export interface DocumentReindexResult {

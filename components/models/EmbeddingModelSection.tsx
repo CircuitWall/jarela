@@ -8,6 +8,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { Select } from "@/components/ui/Select";
 import { SettingsCard } from "@/components/ui/SettingsCard";
 import { Notice } from "@/components/ui/Notice";
+import { confirmAction } from "@/lib/ui/confirm";
 
 interface EmbeddingProbe {
   ok: boolean;
@@ -63,6 +64,10 @@ export function EmbeddingModelSection({ models }: { models: ModelConfig[] }) {
   }, [probe?.downloading]);
 
   async function save(value: string) {
+    if (value !== LOCAL_EMBEDDING_CONFIG_NAME && !(await confirmAction({
+      message: "This selection is not Jarela Local. Document, memory, and chat-history text may be sent to an external embedding provider. Recall exclusions do not prevent this processing. Continue?",
+      confirmLabel: "Use provider embeddings",
+    }))) return;
     setEmbeddingModel(value);
     setSaving(true);
     setProbe(null);
