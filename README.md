@@ -176,6 +176,9 @@ npm run docs:dev
 npm run docs:build
 ```
 
+The docs commands use [Zensical](https://zensical.org); install it with
+`pip install -r requirements-docs.txt` (Python 3.11 or newer).
+
 ## License
 
 Apache-2.0
