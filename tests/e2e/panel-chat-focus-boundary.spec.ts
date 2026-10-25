@@ -150,7 +150,7 @@ test("dragging to bottom edge still opens confirmation", async ({ page, browserN
   test.skip(browserName !== "chromium", "Pointer drag simulation is only stable in Chromium for this spec.");
   await sendMockReplies(page, 7, "pw-edge-scroll");
 
-  const scroller = page.locator(".panel-scrollbar");
+  const scroller = page.locator(".chat-message-scroll");
   await scroller.evaluate((el) => {
     const node = el as HTMLElement;
     const maxTop = Math.max(0, node.scrollHeight - node.clientHeight);
@@ -183,4 +183,3 @@ test("dragging to bottom edge still opens confirmation", async ({ page, browserN
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Move conversation focus here?")).toBeVisible();
 });
-
