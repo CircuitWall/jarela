@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { cachedRead, clearStatementCache } from "@/lib/db/statement-cache";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-threads-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -38,6 +39,39 @@ const {
   commitThreadChannelSummary,
   listLatestAssistantRepliesByAgent,
 } = await import("./threads");
+
+describe("thread statement reuse", () => {
+  it("invalidates cached statements before rerunning migrations", () => {
+    const db = getDb();
+    const sql = "SELECT * FROM threads WHERE thread_id=?";
+    const before = cachedRead(db, sql);
+    runMigrations(db);
+    expect(cachedRead(db, sql)).not.toBe(before);
+  });
+
+  it("reuses read statements without caching rows or mixing thread bindings", () => {
+    const first = createThread("statement-cache-first");
+    const second = createThread("statement-cache-second");
+    const db = getDb();
+    clearStatementCache(db);
+    const prepare = vi.spyOn(db, "prepare");
+    try {
+      expect(getThread(first.thread_id)?.agent_id).toBe("statement-cache-first");
+      expect(getThread(second.thread_id)?.agent_id).toBe("statement-cache-second");
+      expect(getThread(first.thread_id)?.message_count).toBe(0);
+      expect(prepare.mock.calls.filter(([sql]) => sql === "SELECT * FROM threads WHERE thread_id=?")).toHaveLength(1);
+      const page = getMessagesPage(first.thread_id, 10);
+      expect(page.messages).toEqual([]);
+      addMessage(first.thread_id, "user", "Fresh content");
+      expect(getMessagesPage(first.thread_id, 10).messages.map((row) => row.content)).toEqual(["Fresh content"]);
+      expect(getMessagesPage(second.thread_id, 10).messages).toEqual([]);
+      expect(getThread(first.thread_id)?.message_count).toBe(1);
+      expect(prepare.mock.calls.filter(([sql]) => sql.endsWith("WHERE thread_id=? ORDER BY rowid DESC LIMIT ?"))).toHaveLength(1);
+    } finally {
+      prepare.mockRestore();
+    }
+  });
+});
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- db: Reuse a bounded per-connection cache of prepared statements for repeated thread/history reads, without caching query results; preserve Node 22 support.
+
 ## [2.7.0] - 2026-10-25
 
 ### Added

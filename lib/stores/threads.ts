@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
+import { cachedRead } from "@/lib/db/statement-cache";
 import { withDbTransaction } from "@/lib/db/transaction";
 import { stripDeclaredReferencesFence } from "@/api/message-content";
 import { processMessageEmbeddingJobs, resetMessageEmbedCache, resetMemoryEmbedCache } from "@/lib/embeddings";
@@ -114,8 +115,8 @@ export function capToolEventPayload(ev: PersistedToolEvent): PersistedToolEvent 
 // Tool names the agent called in this thread, most recent first. Includes
 // targets reached through invoke_tool so proxied tools count as used.
 export function getRecentlyUsedToolNames(thread_id: string, maxRows = 25): string[] {
-  const rows = getDb()
-    .prepare("SELECT tool_events FROM messages WHERE thread_id=? AND tool_events IS NOT NULL ORDER BY rowid DESC LIMIT ?")
+  const rows = cachedRead(getDb(),
+    "SELECT tool_events FROM messages WHERE thread_id=? AND tool_events IS NOT NULL ORDER BY rowid DESC LIMIT ?")
     .all(thread_id, maxRows) as Array<{ tool_events: string }>;
   const seen = new Set<string>();
   for (const row of rows) {
@@ -138,14 +139,12 @@ export function getRecentlyUsedToolNames(thread_id: string, maxRows = 25): strin
 }
 
 export function listThreads(limit = 50, offset = 0): ThreadRow[] {
-  return getDb()
-    .prepare("SELECT * FROM threads ORDER BY updated_at DESC LIMIT ? OFFSET ?")
+  return cachedRead(getDb(), "SELECT * FROM threads ORDER BY updated_at DESC LIMIT ? OFFSET ?")
     .all(limit, offset) as unknown as ThreadRow[];
 }
 
 export function listThreadsByAgent(agent_id: string, limit = 50): ThreadRow[] {
-  return getDb()
-    .prepare("SELECT * FROM threads WHERE agent_id=? ORDER BY updated_at DESC LIMIT ?")
+  return cachedRead(getDb(), "SELECT * FROM threads WHERE agent_id=? ORDER BY updated_at DESC LIMIT ?")
     .all(agent_id, limit) as unknown as ThreadRow[];
 }
 
@@ -174,19 +173,19 @@ export function listLatestAssistantRepliesByAgent(): Array<{ agent_id: string; c
 }
 
 export function getThread(thread_id: string): ThreadRow | null {
-  return (getDb().prepare("SELECT * FROM threads WHERE thread_id=?").get(thread_id) as unknown as ThreadRow) ?? null;
+  return (cachedRead(getDb(), "SELECT * FROM threads WHERE thread_id=?").get(thread_id) as unknown as ThreadRow) ?? null;
 }
 
 export function getThreadMessageBySeq(thread_id: string, seq: number): MessageRow | null {
-  return (getDb().prepare(MSG_COLS_SQL + " WHERE thread_id=? AND rowid=?").get(thread_id, seq) as unknown as MessageRow | undefined) ?? null;
+  return (cachedRead(getDb(), MSG_COLS_SQL + " WHERE thread_id=? AND rowid=?").get(thread_id, seq) as unknown as MessageRow | undefined) ?? null;
 }
 
 
 // Rows that size compaction can prune: automation-channel rows are kept
 // (see pruneThreadMessages), so they must not count toward its trigger.
 export function countForegroundThreadMessages(thread_id: string, fromSeq = 0): number {
-  const row = getDb()
-    .prepare("SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid>=? AND " + foregroundCategoryGuardSql())
+  const row = cachedRead(getDb(),
+    "SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid>=? AND " + foregroundCategoryGuardSql())
     .get(thread_id, fromSeq, ...FOREGROUND_EXCLUDED_CATEGORIES) as { n: number } | undefined;
   return row?.n ?? 0;
 }
@@ -231,8 +230,7 @@ export function deleteThread(thread_id: string): boolean {
 }
 
 export function getMessages(thread_id: string): MessageRow[] {
-  return getDb()
-    .prepare(MSG_COLS_SQL + " WHERE thread_id=? ORDER BY rowid ASC")
+  return cachedRead(getDb(), MSG_COLS_SQL + " WHERE thread_id=? ORDER BY rowid ASC")
     .all(thread_id) as unknown as MessageRow[];
 }
 
@@ -295,7 +293,7 @@ export function getRecentMessagesWindow(
     sql += " LIMIT ?";
     params.push(limit);
   }
-  const rows = db.prepare(sql).all(...params) as unknown as MessageRow[];
+  const rows = cachedRead(db, sql).all(...params) as unknown as MessageRow[];
   return rows.reverse();
 }
 
@@ -321,7 +319,7 @@ export function countMessagesBetweenSeq(
   }
   sql += " LIMIT ?)";
   params.push(limit);
-  const row = getDb().prepare(sql).get(...params) as { n: number } | undefined;
+  const row = cachedRead(getDb(), sql).get(...params) as { n: number } | undefined;
   return row?.n ?? 0;
 }
 
@@ -334,11 +332,10 @@ export function getMessagesAfter(
   afterSeq: number,
   limit = 50,
 ): MessageRow[] {
-  return getDb()
-    .prepare(
-      MSG_COLS_SQL +
-        " WHERE thread_id=? AND rowid > ? ORDER BY rowid ASC LIMIT ?",
-    )
+  return cachedRead(
+    getDb(),
+    MSG_COLS_SQL + " WHERE thread_id=? AND rowid > ? ORDER BY rowid ASC LIMIT ?",
+  )
     .all(thread_id, afterSeq, limit) as unknown as MessageRow[];
 }
 
@@ -359,7 +356,7 @@ export function getMessagesPage(
   }
   sql += " ORDER BY rowid DESC LIMIT ?";
   params.push(limit + 1); // fetch one extra to detect if there's more
-  const rows = db.prepare(sql).all(...params) as unknown as MessageRow[];
+  const rows = cachedRead(db, sql).all(...params) as unknown as MessageRow[];
   const has_more = rows.length > limit;
   return { messages: rows.slice(0, limit).reverse(), has_more };
 }

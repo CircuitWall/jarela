@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { clearStatementCache } from "./statement-cache";
 import { createHash } from "node:crypto";
 import { writeFileSync, statSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import { FILES_DIR, isSafeFileName } from "@/lib/files";
 const now = () => new Date().toISOString();
 
 export function runMigrations(db: DatabaseSync): void {
+  clearStatementCache(db);
   const signalDeliveryColumns = db.prepare("PRAGMA table_info(signal_deliveries)").all() as Array<{ name: string }>;
   if (signalDeliveryColumns.length && !signalDeliveryColumns.some((column) => column.name === "wake_eligible")) {
     db.exec("ALTER TABLE signal_deliveries ADD COLUMN wake_eligible INTEGER NOT NULL DEFAULT 0");
