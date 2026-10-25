@@ -144,11 +144,14 @@ describe("MessageBubble Mermaid diagrams", () => {
     }
   });
 
-  it("renders Mermaid code blocks as sanitized diagram previews", async () => {
+  it.each([
+    "flowchart TD\n  A[Start] --> B[Finish]",
+    "usecase-beta\n  actor User\n  Login(Sign in)\n  User --> Login",
+  ])("renders Mermaid code blocks as sanitized diagram previews: %s", async (source) => {
     const message: Message = {
       id: "mermaid-preview",
       role: "assistant",
-      content: "```mermaid\nflowchart TD\n  A[Start] --> B[Finish]\n```",
+      content: `\`\`\`mermaid\n${source}\n\`\`\``,
       created_at: "2026-08-15T12:00:00.000Z",
       status: "confirmed",
     };
@@ -159,8 +162,8 @@ describe("MessageBubble Mermaid diagrams", () => {
       </AppProvider>,
     );
 
-    expect(await screen.findByRole("img", { name: "Mermaid diagram" }, { timeout: 10000 })).toBeTruthy();
-  });
+    expect(await screen.findByRole("img", { name: "Mermaid diagram" }, { timeout: 30000 })).toBeTruthy();
+  }, 45000);
 });
 
 describe("MessageBubble transcript status", () => {

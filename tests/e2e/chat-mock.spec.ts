@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { seedMockAgent, waitForAppReady } from "./helpers";
 import type { ThreadDetail, ThreadSummary } from "@/api/types";
+import { readFile } from "node:fs/promises";
 
 // Full chat round-trip using the mock provider — no LLM keys, fully
 // deterministic. Validates: agent select → composer enabled → agent run →
@@ -8,6 +9,46 @@ import type { ThreadDetail, ThreadSummary } from "@/api/types";
 
 test.beforeEach(async ({ request }) => {
   await seedMockAgent(request);
+});
+
+test("mermaid use-case diagrams expose source and download a standalone SVG", async ({ page, request }) => {
+  const { agent } = await seedMockAgent(request);
+  const response = await request.get(`/api/v1/agents/${agent}/thread`);
+  expect(response.ok()).toBeTruthy();
+  const thread = await response.json() as ThreadSummary;
+  const source = "usecase-beta\n  actor User\n  Login(Sign in)\n  User --> Login";
+  await page.route((url) => url.pathname === `/api/v1/threads/${thread.thread_id}`, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const response = await route.fetch();
+    const detail = await response.json() as ThreadDetail;
+    await route.fulfill({
+      response,
+      json: {
+        ...detail,
+        has_more: false,
+        messages: [{
+          id: "mermaid-export", seq: 1, role: "assistant",
+          content: `\`\`\`mermaid\n${source}\n\`\`\``,
+          created_at: "2026-10-25T08:00:00.000Z",
+        }],
+      },
+    });
+  });
+  await page.goto(`/?agent=${agent}&thread=${thread.thread_id}`);
+  await waitForAppReady(page);
+  await expect(page.getByRole("img", { name: "Mermaid diagram" })).toBeVisible({ timeout: 20_000 });
+  await page.getByText("Diagram source", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Copy code" })).toBeVisible();
+  const pendingDownload = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download diagram as SVG" }).click();
+  const download = await pendingDownload;
+  expect(download.suggestedFilename()).toBe("diagram.svg");
+  const path = await download.path();
+  expect(path).toBeTruthy();
+  const svg = await readFile(path!, "utf8");
+  expect(svg).toContain("<svg");
+  expect(svg).toContain('xmlns="http://www.w3.org/2000/svg"');
+  expect(svg).not.toMatch(/<script\b|\bonclick=/i);
 });
 
 for (const selectedThread of [false, true]) {

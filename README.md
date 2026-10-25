@@ -14,6 +14,7 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 - Durable, agent-targeted lifecycle signals for restarts, approvals, configuration changes, and background work
 - PWA / desktop-friendly workflow with browser extension support
 - MCP, integration manifests, and built-in tool extension points
+- Mermaid diagram previews with expandable, copyable source and sanitized SVG downloads
 - Guided first-run setup that helps you create a default assistant and personalize it in chat
 
 ## Jarela in action
