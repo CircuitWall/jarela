@@ -9,12 +9,15 @@ process.env.JARELA_DB_DIR = tmpRoot;
 
 const { upsertModelConfig, deleteModelConfig } = await import("@/lib/stores/model-config");
 const { GET, POST } = await import("./route");
+const { saveModelMetadata } = await import("@/lib/stores/model-metadata");
+const { getDb } = await import("@/lib/db");
 
 const routeParams = (provider: string) => ({ params: Promise.resolve({ provider }) });
 const request = (provider: string, fresh = true) =>
   new NextRequest(`http://localhost/api/v1/providers/${provider}/models${fresh ? "?fresh=1" : ""}`);
 
 afterEach(() => {
+  getDb().prepare("DELETE FROM memory_store WHERE namespace='model-metadata'").run();
   for (const name of ["copilot-config", "anthropic-config", "gemini-config", "deepseek-config"]) {
     deleteModelConfig(name);
   }
@@ -27,6 +30,31 @@ afterAll(() => {
 });
 
 describe("provider model catalogs", () => {
+  it("overlays persisted metadata even on cached catalogs without changing configured models", async () => {
+    const first = await GET(request("deepseek"), routeParams("deepseek"));
+    expect(first.status).toBe(200);
+    saveModelMetadata([{
+      provider: "deepseek", model_id: "deepseek-flash",
+      version: { value: "Flash-example", evidence: "deepseek-flash now uses Flash-example.", source_url: "https://api-docs.deepseek.com/", checked_at: "2026-10-25T00:00:00.000Z" },
+      capabilities: {
+        vision: { value: false, evidence: "deepseek-flash does not support images.", source_url: "https://api-docs.deepseek.com/", checked_at: "2026-10-25T00:00:00.000Z" },
+      },
+    }]);
+    const cached = await GET(request("deepseek", false), routeParams("deepseek"));
+    const models = await cached.json() as Array<{ id: string; capabilities: { vision: boolean }; model_metadata?: { version?: { value: string } } }>;
+    expect(models.find((model) => model.id === "deepseek-flash")).toMatchObject({
+      capabilities: { vision: false }, model_metadata: { version: { value: "Flash-example" } },
+    });
+    const { GET: listConfigs } = await import("@/app/api/v1/models/route");
+    const { upsertModelConfig: save, getModelConfig } = await import("@/lib/stores/model-config");
+    save("deepseek-config", "deepseek", "deepseek-flash", { max_tokens: 1234 }, true);
+    const before = getModelConfig("deepseek-config");
+    const configs = await listConfigs().json() as Array<{ name: string }>;
+    expect(configs.find((row) => row.name === "deepseek-config")).toMatchObject({
+      model_id: "deepseek-flash", capabilities: { vision: false }, params: { max_tokens: 1234 },
+    });
+    expect(getModelConfig("deepseek-config")).toEqual(before);
+  });
   it("rejects a retired PAT config as a configuration error", async () => {
     upsertModelConfig("copilot-config", "github-copilot", "gpt-4o", {
       api_key: "github_pat_synthetic",

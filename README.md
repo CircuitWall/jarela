@@ -37,6 +37,14 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 
 Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what to expect in your first chat.
 
+## Model updates
+
+The built-in pricing-maintenance agent tool also checks official model
+documentation for version and capability changes. It refreshes catalog/badge
+metadata without switching saved models or enabling new APIs; confirmed adoption
+gaps are escalated through deduplicated GitHub issues when access and approval
+are available. See [model-update operations](docs/OPERATIONS.md#review-usage).
+
 ## Agent usage profiles
 
 The top-left agent switcher keeps the current agent first, followed by agent

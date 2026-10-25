@@ -1,4 +1,6 @@
 import type { UsageProfile } from "@/lib/agents/usage-profile";
+import type { ModelCapabilities } from "@/lib/providers/capabilities";
+import type { ModelMetadata } from "@/lib/stores/model-metadata";
 
 export interface AgentInfo {
   id: string;
@@ -500,6 +502,8 @@ export interface MemorySearchHit {
 }
 
 export interface ModelConfig {
+  capabilities?: ModelCapabilities;
+  model_metadata?: ModelMetadata;
   name: string;
   provider: "openai" | "anthropic" | "github-copilot" | string;
   model_id: string;
@@ -1288,6 +1292,7 @@ export interface McpRegistryEntry {
 }
 
 export interface CatalogModel {
+  model_metadata?: ModelMetadata;
   id: string;
   context_length: number | null;
   max_output_tokens: number | null;

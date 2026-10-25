@@ -4,17 +4,20 @@ import { Database, Eye, FileText, Globe, MessageSquare, Mic, Wrench } from "luci
 import type { IntegrationStatus, ModelConfig } from "@/api/types";
 import { CapBadges } from "./CapBadges";
 import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
+import type { ModelCapabilities } from "@/lib/providers/capabilities";
 
 function FeatureCard({
   title,
   description,
   enabled,
   icon: Icon,
+  status,
 }: {
   title: string;
   description: string;
   enabled: boolean;
   icon: typeof MessageSquare;
+  status?: string;
 }) {
   return (
     <div className={`rounded-lg border px-3 py-2.5 transition-colors ${
@@ -33,7 +36,7 @@ function FeatureCard({
         <div className="min-w-0">
           <div className={`text-xs font-medium ${enabled ? "text-fg" : "text-fg-subtle"}`}>{title}</div>
           <div className={`text-[10px] uppercase tracking-wide ${enabled ? "text-emerald-700 dark:text-emerald-300" : "text-fg-faint"}`}>
-            {enabled ? "ready" : "not detected"}
+            {status ?? (enabled ? "ready" : "not detected")}
           </div>
         </div>
       </div>
@@ -49,6 +52,7 @@ interface Props {
   integrations?: IntegrationStatus[];
   title?: string;
   description?: string;
+  capabilities?: ModelCapabilities;
 }
 
 export function ModelFeatureGuide({
@@ -56,6 +60,7 @@ export function ModelFeatureGuide({
   modelId,
   models = [],
   integrations = [],
+  capabilities,
   title = "What This Model Unlocks",
   description = "Pick a provider/model once here and the compatible app features light up based on what this installation can already use.",
 }: Props) {
@@ -69,7 +74,8 @@ export function ModelFeatureGuide({
     selectedModelId: trimmedModelId,
   });
 
-  if (!readiness.selectedModelCaps) return null;
+  const selectedModelCaps = capabilities ?? readiness.selectedModelCaps;
+  if (!selectedModelCaps) return null;
 
   const featureCards = [
     {
@@ -81,13 +87,13 @@ export function ModelFeatureGuide({
     {
       title: "Images and screenshots",
       description: "Lets agents inspect screenshots, bridge images, and file attachments visually.",
-      enabled: readiness.selectedModelCaps.vision,
+      enabled: selectedModelCaps.vision,
       icon: Eye,
     },
     {
       title: "Document and file input",
       description: "Useful when the model needs to read uploaded files and richer document payloads.",
-      enabled: readiness.selectedModelCaps.files,
+      enabled: selectedModelCaps.files,
       icon: FileText,
     },
     {
@@ -101,13 +107,14 @@ export function ModelFeatureGuide({
     {
       title: "Tool calling",
       description: "Lets agents use tools reliably for actions, retrieval, and automations.",
-      enabled: readiness.selectedModelCaps.tools,
+      enabled: selectedModelCaps.tools,
       icon: Wrench,
     },
     {
       title: "Built-in web search",
-      description: "Provider-native web retrieval when the selected model supports it.",
-      enabled: readiness.selectedModelCaps.web_search,
+      description: "Advertised provider-native API search support. A capability badge does not enable it in Jarela; adapter support and configuration may still be needed.",
+      enabled: selectedModelCaps.web_search,
+      status: selectedModelCaps.web_search ? "provider supported" : "not detected",
       icon: Globe,
     },
     {
@@ -127,7 +134,7 @@ export function ModelFeatureGuide({
           <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide">{title}</p>
           <p className="text-[11px] text-fg-faint mt-1 leading-snug">{description}</p>
         </div>
-        <CapBadges provider={provider} modelId={trimmedModelId} size="sm" />
+        <CapBadges caps={selectedModelCaps} provider={provider} modelId={trimmedModelId} size="sm" />
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {featureCards.map((feature) => (
@@ -137,6 +144,7 @@ export function ModelFeatureGuide({
             description={feature.description}
             enabled={feature.enabled}
             icon={feature.icon}
+            status={feature.status}
           />
         ))}
       </div>

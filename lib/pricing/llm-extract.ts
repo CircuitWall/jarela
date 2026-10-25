@@ -113,7 +113,7 @@ function pickExtractorConfig() {
 // Trim source HTML to a single, dense plain-text view of the pricing table.
 // Strips scripts/styles, collapses whitespace, and hard-caps the payload so we
 // never ship a 500KB page to the LLM.
-function preparePageForLlm(html: string): string {
+export function preparePageForLlm(html: string): string {
   const plain = html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")

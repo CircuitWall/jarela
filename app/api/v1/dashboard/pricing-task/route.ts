@@ -7,6 +7,7 @@ import {
   WEEKLY_PRICING_TASK_DESCRIPTION,
   WEEKLY_PRICING_TASK_ID,
   WEEKLY_PRICING_TASK_PROMPT,
+  weeklyPricingTaskUpgrade,
 } from "@/lib/pricing/maintenance-task";
 
 export const dynamic = "force-dynamic";
@@ -53,8 +54,9 @@ export async function POST() {
       task = getScheduledTask(WEEKLY_PRICING_TASK_ID);
       if (!task) throw err;
     }
-  } else if (task.enabled !== 1 || task.agent_id !== defaultAgent.id) {
+  } else if (task.enabled !== 1 || task.agent_id !== defaultAgent.id || weeklyPricingTaskUpgrade(task)) {
     task = updateScheduledTask(WEEKLY_PRICING_TASK_ID, {
+      ...weeklyPricingTaskUpgrade(task),
       agent_id: defaultAgent.id,
       enabled: true,
     }) ?? task;

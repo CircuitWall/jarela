@@ -90,13 +90,13 @@ export function SelectedModelDescription({ model, prefix = "Using" }: { model: M
       <p className="inline-flex items-center gap-1.5 text-[11px] text-fg-faint">
         <span className="text-fg-subtle"><ProviderLogo name={model.provider} size={12} /></span>
         {prefix} <span className="text-fg-subtle">{model.provider}</span> / <span className="font-mono text-fg-muted">{model.model_id}</span>
-        {!modelSupportsImages(model.provider, model.model_id) && (
+        {!(model.capabilities?.vision ?? modelSupportsImages(model.provider, model.model_id)) && (
           isProviderClassified(model.provider)
             ? <span className="ml-1 text-amber-700 dark:text-amber-300">· no image input</span>
             : <span className="ml-1 text-fg-faint">· capabilities unknown</span>
         )}
       </p>
-      <CapBadges provider={model.provider} modelId={model.model_id} />
+      <CapBadges caps={model.capabilities} provider={model.provider} modelId={model.model_id} />
     </div>
   );
 }

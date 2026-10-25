@@ -64,6 +64,7 @@ export function ModelEditorBody({ form, onLoadCatalog }: BodyProps) {
         modelId={form.modelId}
         models={form.model ? [form.model] : []}
         integrations={form.integrations}
+        capabilities={form.catalog?.find((model) => model.id === form.modelId.trim())?.capabilities}
       />
       <AdvancedFieldsSection form={form} />
       <label className="flex items-center gap-2 cursor-pointer">

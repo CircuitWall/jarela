@@ -9,7 +9,7 @@ const CAP_META: Record<CapKey, { icon: LucideIcon; label: string }> = {
   files:      { icon: FileText, label: "File / document input" },
   audio:      { icon: Mic,      label: "Audio / voice input" },
   tools:      { icon: Wrench,   label: "Tool calling" },
-  web_search: { icon: Globe,    label: "Built-in web search" },
+  web_search: { icon: Globe,    label: "Provider-native web search (Jarela adapter support may be required)" },
   json_mode:  { icon: Braces,   label: "Structured JSON output" },
   streaming:  { icon: Zap,      label: "Streaming responses" },
 };

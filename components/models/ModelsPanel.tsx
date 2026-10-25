@@ -314,7 +314,12 @@ export function ModelsPanel() {
                 </div>
                 <p className="text-xs text-fg-subtle truncate">{m.model_id}</p>
                 <div className="mt-1">
-                  <CapBadges provider={m.provider} modelId={m.model_id} />
+                  <CapBadges caps={m.capabilities} provider={m.provider} modelId={m.model_id} />
+                  {m.model_metadata?.version && (
+                    <p className="mt-1 text-[10px] text-fg-faint" title={`Source: ${m.model_metadata.version.source_url}`}>
+                      Current release: {m.model_metadata.version.value}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">

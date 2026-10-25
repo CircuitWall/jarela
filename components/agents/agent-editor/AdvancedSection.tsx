@@ -32,7 +32,7 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
         <Select value={form.modelConfigName} onChange={(e) => form.setModelConfigName(e.target.value)}>
           <option value="">Automatic routing (recommended)</option>
           {models.filter((m) => isModelEnabled(m) || m.name === form.modelConfigName).map((m) => {
-            const vision = modelSupportsImages(m.provider, m.model_id);
+            const vision = m.capabilities?.vision ?? modelSupportsImages(m.provider, m.model_id);
             return (
               <option key={m.name} value={m.name}>
                 {vision ? "📷 " : ""}{m.name} · {m.provider} / {m.model_id}{isModelEnabled(m) ? "" : " (disabled)"}

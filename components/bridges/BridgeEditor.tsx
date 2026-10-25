@@ -267,7 +267,7 @@ function RouteTable({ bridge_id, module }: { bridge_id: string; module: BridgeMo
     const cfg = resolveAgentModel(a, models);
     if (!cfg) return { supported: false, classified: false, modelLabel: null };
     return {
-      supported: modelSupportsImages(cfg.provider, cfg.model_id),
+      supported: cfg.capabilities?.vision ?? modelSupportsImages(cfg.provider, cfg.model_id),
       classified: isProviderClassified(cfg.provider),
       modelLabel: `${cfg.provider} / ${cfg.model_id}`,
     };
