@@ -139,6 +139,14 @@ Mail and calendar tools use the same topical categories and capability rules
 across providers: read for inspection, write for owned-content changes
 including trash/event deletion, and execute for mail sending where supported.
 
+iCloud sending reuses the package's credential resolver and Nodemailer SMTP
+transport (`smtp.mail.me.com:587`, mandatory STARTTLS); calendar/reminders stay
+on the existing tsdav/ical.js CalDAV/iCalendar stack. The optional stored
+`mail_address` is the SMTP authentication and sender identity when it differs
+from the Apple ID; no agent-controlled From or server endpoint is exposed.
+The send tool follows the same explicit agent permission and execute
+classification as Gmail/Outlook, with no new per-send confirmation mechanism.
+
 - Keep API routes focused on transport, origin checks, and request validation.
 - Let `lib/agents/` coordinate providers and tools; connect those capabilities
   through their adapters and registries rather than importing private internals.

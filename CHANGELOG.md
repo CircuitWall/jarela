@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- mail: Add iCloud SMTP sending with mandatory STARTTLS, explicit execute-tool
+  permissions, configured sender identity, and partial/uncertain-delivery errors.
+
 - documents: Align Gmail, Outlook, and iCloud indexing with Inbox, chosen folder/label,
   or whole-mailbox scopes, optional search and result limits, and automatic archive refresh.
 
@@ -20,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - tools: Align iCloud mail trash and calendar deletion with Gmail/Outlook's `write`
   capability, preserve Mail/Calendar categories after package reload, and correct
-  Gmail/Outlook send descriptions. iCloud still cannot send mail.
+  Gmail/Outlook send descriptions.
 
 - db: Reuse a bounded per-connection cache of prepared statements for repeated thread/history reads, without caching query results.
 - runtime: Drop Node 22 support; require Node 24.15.0+ on 24.x, or Node 26+. CLI and production launchers reject unsupported runtimes before loading the application. Upgrade Node before installing the next version; bundled installers already include Node 24.

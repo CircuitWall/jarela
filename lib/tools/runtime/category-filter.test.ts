@@ -11,6 +11,7 @@ process.env.JARELA_DB_DIR = tmpRoot;
 const { getAllTools, executeTool, getAllToolCatalogAsync, applyAgentPermissionsToCatalog, applyProviderToolLimitToCatalog } = await import("../index");
 const { setCategoryEnabled } = await import("@/lib/stores/builtin-tools");
 const { registeredCategory } = await import("./registry");
+const { _setIntegrationReadiness, invalidateIntegrationReadiness } = await import("@/lib/health/probe-cache");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -29,6 +30,27 @@ describe("built-in tool category filter (runtime layer)", () => {
     const tools = getAllTools();
     const memoryTools = tools.filter((t) => registeredCategory(t.name) === "Memory");
     expect(memoryTools.length).toBeGreaterThan(0);
+  });
+
+  it("requires explicit agent permission for iCloud sending and blocks read-only turns", async () => {
+    _setIntegrationReadiness("icloud", "ready");
+    try {
+      const catalog = await getAllToolCatalogAsync();
+      const sender = catalog.find((entry) => entry.name === "icloud_mail_send_email");
+      expect(sender).toMatchObject({ category: "Mail", capability: "execute", integration: "icloud" });
+      const defaults = applyAgentPermissionsToCatalog(catalog, { tools: JSON.stringify([]) });
+      expect(defaults.find((entry) => entry.name === "icloud_mail_send_email")?.permission).toBe("disabled");
+      const allowed = applyAgentPermissionsToCatalog(catalog, { tools: JSON.stringify(["icloud_mail_send_email"]) });
+      expect(allowed.find((entry) => entry.name === "icloud_mail_send_email")?.permission).toBe("enabled");
+      await expect(executeTool("icloud_mail_send_email", {}, { signal_continuation: true }))
+        .rejects.toThrow("read-only completion turn");
+      setCategoryEnabled("Mail", false);
+      await expect(executeTool("icloud_mail_send_email", {}))
+        .rejects.toThrow("is disabled (category Mail is turned off)");
+    } finally {
+      setCategoryEnabled("Mail", true);
+      invalidateIntegrationReadiness("icloud");
+    }
   });
 
   it("getAllTools drops every tool of a disabled category", () => {

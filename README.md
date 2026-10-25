@@ -59,6 +59,18 @@ scans may take longer. Existing query-only Gmail/Outlook sources retain their
 previous bounded mirror behavior; recreate them to use the new scopes and
 archive defaults. iCloud indexing requires the updated iCloud package.
 
+### iCloud mail sending
+
+The updated iCloud package also provides `icloud_mail_send_email`, classified
+as **execute** like Gmail/Outlook sending. Enable it explicitly in the agent's
+tool permissions and only request it when you want to send immediately; use
+drafts for review. It reuses the saved app-specific password. If your Apple ID
+differs from your mail address, set **Credentials → iCloud → iCloud Mail
+address** (or `ICLOUD_MAIL_ADDRESS` with environment credentials). SMTP uses
+the full mail address, with mandatory STARTTLS on port 587. A successful send
+means SMTP acceptance, not confirmed delivery. Do not automatically retry
+uncertain or partially accepted sends. See the [package sending guide](packages/icloud-langchain/README.md#smtp-sending).
+
 Indexing with an embedding provider other than **Jarela Local** displays a warning
 and requires confirmation in the source setup flow. Content may be sent to that
 provider, including material later excluded from recall. Switching away from

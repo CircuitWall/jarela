@@ -9,13 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `icloud_mail_send_email` execute tool using Nodemailer SMTP with mandatory
+  STARTTLS, text/HTML, CC/BCC, reply threading, and sanitized delivery errors.
+- Optional `ICloudAuth.mailAddress` / `ICLOUD_MAIL_ADDRESS` for SMTP accounts
+  whose mail address differs from their Apple ID. No SMTP credentials are
+  inferred from another integration.
+
 - Read-only streaming `scanICloudMail` adapter for Inbox, chosen-folder, and
   whole-mailbox indexing with optional text search and message limits.
 
 ### Changed
 
 - Classify mail trash and calendar deletion as `write`, matching Gmail and
-  Outlook. The `icloudExecuteTools` export is now empty; hosts with
+  Outlook. Sending is the only tool in `icloudExecuteTools`; hosts with
   capability-based approvals should review their permissions when upgrading.
 
 ### Fixed

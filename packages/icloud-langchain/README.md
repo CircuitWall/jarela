@@ -1,6 +1,6 @@
 # @circuitwall/icloud-langchain
 
-LangChain tools for **iCloud Mail** (IMAP), **iCloud Calendar**, and
+LangChain tools for **iCloud Mail** (IMAP/SMTP), **iCloud Calendar**, and
 **iCloud Reminders** (CalDAV) — direct protocol calls, no MCP, no Apple
 SDK (there isn't one for end-user data). Extracted from
 [Jarela](https://github.com/CircuitWall/jarela) so any LangGraph /
@@ -16,6 +16,7 @@ iCloud Mail / Calendar / Reminders. The only programmatic paths are the
 internet standards Apple deliberately supports:
 
 - Mail → **IMAP** (`imap.mail.me.com:993`, TLS)
+- Mail sending → **SMTP** (`smtp.mail.me.com:587`, mandatory STARTTLS)
 - Calendar → **CalDAV** (`caldav.icloud.com`, PROPFIND principal
   discovery)
 - Reminders → **CalDAV** (VTODO collections under the same principal)
@@ -24,7 +25,7 @@ Auth = **Apple ID + an app-specific password** generated at
 <https://appleid.apple.com> (2FA must be on). "Sign in with Apple" is
 identity-only and cannot grant Mail / Calendar access.
 
-This package wraps [`imapflow`](https://imapflow.com),
+This package wraps [`imapflow`](https://imapflow.com), [`nodemailer`](https://nodemailer.com),
 [`tsdav`](https://github.com/natelindev/tsdav), and
 [`ical.js`](https://github.com/mozilla-comm/ical.js) behind LangChain
 tool definitions, with a pluggable auth resolver so embedders can
@@ -38,7 +39,7 @@ npm i @circuitwall/icloud-langchain @langchain/core zod
 
 `@langchain/core` and `zod` are peer dependencies — bring whichever
 versions your agent already uses (core ≥ 0.3, zod ≥ 3.23). `imapflow`,
-`tsdav`, and `ical.js` are runtime dependencies and install
+`nodemailer`, `tsdav`, and `ical.js` are runtime dependencies and install
 automatically.
 
 ## Quick start
@@ -86,7 +87,7 @@ HTML is marked for the host to convert to plain text before indexing.
 
 The capability exports follow the same rules as Jarela's Gmail/Outlook tools:
 reads are `read`; drafts, moves, flags, trash, and calendar deletion are `write`.
-`icloudExecuteTools` is empty because sending mail is not supported. Trash and
+`icloudExecuteTools` contains `icloud_mail_send_email`. Trash and
 calendar deletion previously belonged to `execute`; hosts using capability
 approvals should review this alignment before upgrading.
 
@@ -106,9 +107,51 @@ You can revoke the password at any time from the same page — it
 immediately invalidates this package's access without affecting any
 other client.
 
-## What's included (16 tools)
+## SMTP sending
 
-### Mail (7)
+`icloud_mail_send_email` sends immediately and belongs to the `execute`
+capability bucket. In Jarela, explicitly enable the tool for the agent; it is
+not a Basic-default tool. Like Gmail/Outlook sending, it must only be used when
+the user asks to send now; use `icloud_mail_create_draft` for review instead.
+Capability classification and tool permissions do not add a per-send
+confirmation dialog. Standalone package hosts must enforce their own approvals.
+
+Reuse the existing Apple ID/app-specific password resolver. SMTP authenticates
+with a **full iCloud Mail address**, not the IMAP short username. When the Apple
+ID is not the mail address, set optional `ICloudAuth.mailAddress` (Jarela:
+Credentials → iCloud → iCloud Mail address) or `ICLOUD_MAIL_ADDRESS` alongside
+the environment credentials. Otherwise `@icloud.com`, `@me.com`, or `@mac.com`
+Apple IDs are used directly. Custom-domain mail addresses must be configured
+explicitly and authorized on the account. The configured SMTP address is also
+the sender; tool callers cannot override it.
+
+Inputs: `to`, optional `cc`/`bcc`, `subject`, `body`, optional `content_type`
+(`text` or `html`), and optional `in_reply_to` (the parent's RFC Message-ID,
+including angle brackets). Bodies are limited to 100,000 characters.
+Nodemailer handles MIME, Unicode headers, and BCC envelope delivery; no custom
+SMTP or MIME encoder is added. Attachments, URL/file content loading, and
+arbitrary transport settings are not exposed.
+
+Output: `ok: true`, `status: accepted_by_smtp`, `message_id`, and
+`accepted_count` mean SMTP acceptance, **not confirmed delivery**. Partial
+acceptance returns an error plus accepted/rejected recipients so callers avoid
+resending to accepted recipients. Network failures may occur after acceptance:
+never automatically retry without checking delivery. Authentication failures
+provide reconnect guidance without returning server responses or credentials.
+The IMAP folder setup probe and CalDAV health probe do not verify SMTP access.
+The tool does not append a separate Sent-folder copy; verify your account's
+server-side Sent behavior if you need archival copies.
+
+Provider/protocol references reviewed 2026-10-26:
+[Apple server settings](https://support.apple.com/en-us/102525),
+[app-specific passwords](https://support.apple.com/en-us/102654), and
+[Nodemailer SMTP](https://nodemailer.com/smtp),
+[message configuration](https://nodemailer.com/message), and
+[send results](https://nodemailer.com/#response-object).
+
+## What's included (18 tools)
+
+### Mail (8)
 
 - `icloud_mail_list_folders` — folder tree with message and unread
   counts, plus the IMAP SPECIAL-USE flag (`\Drafts`, `\Sent`,
@@ -119,9 +162,9 @@ other client.
 - `icloud_mail_get_message` — full envelope, plain-text body
   (HTML opt-in via `include_html`), and an attachments index.
 - `icloud_mail_create_draft` — IMAP `APPEND` into the Drafts
-  folder. **Drafts only** — this package intentionally does not
-  send mail on the user's behalf. Open the draft in Apple Mail to
-  review and send.
+  folder. Open the draft in Apple Mail to review and send.
+- `icloud_mail_send_email` — explicitly requested immediate SMTP sending
+  (text/HTML, CC/BCC, and RFC reply threading).
 - `icloud_mail_move_message`, `icloud_mail_flag_message`,
   `icloud_mail_delete_message` — standard mailbox operations.
   `delete_message` resolves the localised Trash folder via the
@@ -180,10 +223,8 @@ before use, so you can store the value either as Apple presents it
 
 ## Known limitations
 
-- **No SMTP / send-mail tool in this release** — by design. iCloud
-  drafts are written via IMAP `APPEND` and reviewed by the user in
-  Apple Mail before they go out. If you need send-on-behalf, layer
-  a separate `nodemailer` transport on top.
+- **No SMTP attachments or automatic Sent-folder append.** Use drafts for
+  review; check account-side Sent behavior if you need a saved copy.
 - **No push notifications.** iCloud does not advertise CalDAV
   WebPush or APNS for mail. Poll on whatever interval suits your
   agent (every 5–15 minutes is the standard pattern).
