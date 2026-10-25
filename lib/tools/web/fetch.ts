@@ -7,6 +7,12 @@ import { registerLangChainPackage } from "../packages/langchain-package";
 import { getConfig } from "@/lib/env/config";
 import { errorMessage } from "@/lib/utils/error";
 import { readResponseTextCapped } from "@/lib/utils/http-json";
+import { getDeepSeekWebApiKey, postDeepSeekWebTool } from "./deepseek";
+
+const DeepSeekFetchResponseSchema = z.object({
+  title: z.string(),
+  content: z.string(),
+});
 
 // Whether the SSRF refusal for a private/loopback host should be
 // overridden because the user explicitly approved this host (with
@@ -180,6 +186,45 @@ export const webFetchTool = tool(
         });
       }
 
+      const deepSeekApiKey = getDeepSeekWebApiKey();
+      // Preserve local authentication, HTML, and private-fetch behavior.
+      if (
+        deepSeekApiKey &&
+        mode !== "html" &&
+        !getConfig().allowPrivateFetch &&
+        !isHostAllowed(new URL(url).hostname).allowed
+      ) {
+        if (Array.from(url).length > 8192) {
+          return JSON.stringify({ url, error: "DeepSeek Fetch URLs must be at most 8192 characters." });
+        }
+        const parsedUrl = new URL(url);
+        if (parsedUrl.username || parsedUrl.password) {
+          return JSON.stringify({ url, error: "DeepSeek Fetch does not accept URLs containing a username or password." });
+        }
+        const payload = await postDeepSeekWebTool("fetch", deepSeekApiKey, { url }, ctrl.signal, TIMEOUT_MS);
+        const parsed = DeepSeekFetchResponseSchema.safeParse(payload);
+        if (!parsed.success) throw new Error("DeepSeek Fetch returned an invalid response.");
+        const encodedContent = new TextEncoder().encode(parsed.data.content);
+        if (encodedContent.length === 0) throw new Error("DeepSeek Fetch returned no page content.");
+        const boundedContent = new TextDecoder().decode(encodedContent.subarray(0, MAX_BYTES));
+        const cap = max_chars ?? 8000;
+        const clipped = boundedContent.length > cap
+          ? boundedContent.slice(0, cap) + "…"
+          : boundedContent;
+        return JSON.stringify({
+          url,
+          status: 200,
+          title: parsed.data.title || null,
+          content_type: "text/markdown",
+          mode: "text",
+          bytes_read: Math.min(encodedContent.length, MAX_BYTES),
+          truncated: encodedContent.length > MAX_BYTES || boundedContent.length > cap,
+          content: clipped,
+          images: { og: null, twitter: null, samples: [] },
+          fetcher: "deepseek",
+        });
+      }
+
       const hopResult = await followRedirectsWithSsrfCheck(url, ctrl.signal);
       if ("error" in hopResult) return hopResult.error;
       const { res, finalUrl } = hopResult;
@@ -215,13 +260,15 @@ export const webFetchTool = tool(
     description:
       "Fetch the content of a URL. Default mode='text' returns extracted plain text (good for summarizing articles). " +
       "mode='html' returns raw HTML if you specifically need markup. Truncates after 200KB. " +
+      "When the separate DeepSeek Search & Fetch integration is configured, public text-mode URLs are fetched through DeepSeek and returned as Markdown without image extraction. " +
+      "HTML requests and hosts in Allowed sites keep using direct fetch, preserving browser-cookie authentication. " +
       "Use this when web_search returns a URL but you need the actual page content, or to fetch a specific known page. " +
       "The response also includes an `images` object with absolute URLs extracted from the page: " +
       "`og` (og:image — usually the best hero image), `twitter` (twitter:image), and `samples` (first few <img> tags). " +
       "Embed these in your reply with markdown `![alt](url)` to produce rich, image-rich answers.",
     schema: z.object({
       url: z.string().describe("Absolute URL starting with http:// or https://"),
-      mode: z.enum(["text", "html"]).optional().describe("'text' (default) extracts readable text; 'html' returns raw markup"),
+      mode: z.enum(["text", "html"]).optional().describe("'text' (default) extracts readable text; 'html' returns raw markup using direct fetch"),
       max_chars: z.number().optional().describe("Max characters to return after extraction (default 8000)"),
     }),
   },

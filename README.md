@@ -101,6 +101,25 @@ and saved credentials stay accessible; **Show all integrations** bypasses discov
 filtering. With no active agent, the catalog shows everything. Global Essential/Full
 mode still controls app configuration panels independently.
 
+### Web search and fetch backends
+
+`web_search` and `web_fetch` are Jarela tools, separate from model-native web-search
+capabilities shown in model badges. Firecrawl Search and Jarela's guarded direct
+page fetch remain the defaults. To opt in to DeepSeek's separate Search and Fetch
+APIs, configure **DeepSeek Search & Fetch** under Settings → Credentials. This
+dedicated encrypted credential is required; configuring a DeepSeek chat-model key
+alone never sends web queries or URLs to DeepSeek. Removing the dedicated credential
+restores the existing backends.
+
+DeepSeek Fetch returns Markdown without image extraction. Raw HTML requests,
+hosts in Allowed sites (including cookie-authenticated pages), and private-fetch
+overrides retain the existing direct-fetch path. Jarela checks URLs against its
+SSRF policy before using DeepSeek Fetch. As documented by
+DeepSeek on 2026-10-25, successful Search and Fetch requests are each priced at
+$0.75 per 1,000 requests; empty searches and failed requests are not billed.
+See the [DeepSeek Search & Fetch guide](https://api-docs.deepseek.com/guides/search)
+for current limits, pricing, and API behavior.
+
 On upgrade, the old user-profile Persona preset is copied once to existing agents,
 without rewriting their tuned personality or citation settings. New agents default
 to Everything. See [ADR-0105](docs/adr/0105-per-agent-usage-profiles.md).

@@ -8,6 +8,7 @@
 // runtime as the Next API routes).
 
 import { atlassianManifest } from "@/lib/integrations/atlassian/manifest";
+import { deepseekWebManifest } from "@/lib/integrations/deepseek-web/manifest";
 import { githubManifest } from "@/lib/integrations/github/manifest";
 import { gmailManifest } from "@/lib/integrations/gmail/manifest";
 import { googleManifest } from "@/lib/integrations/google/manifest";
@@ -20,6 +21,7 @@ import { validateManifest } from "@/lib/integrations/manifest";
 
 const RAW: IntegrationManifest[] = [
   atlassianManifest,
+  deepseekWebManifest,
   githubManifest,
   gmailManifest,
   googleManifest,

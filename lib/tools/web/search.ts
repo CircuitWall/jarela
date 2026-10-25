@@ -3,6 +3,7 @@ import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { errorMessage } from "@/lib/utils/error";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
+import { getDeepSeekWebApiKey, postDeepSeekWebTool } from "./deepseek";
 
 export interface SearchResult {
   title: string;
@@ -31,6 +32,18 @@ class FirecrawlJsonParser implements SearchEngineParser {
 const FIRECRAWL_PARSER = new FirecrawlJsonParser();
 const FIRECRAWL_SEARCH_URL = "https://api.firecrawl.dev/v2/search";
 const SEARCH_TIMEOUT_MS = 30_000;
+const SearchResultUrlSchema = z.string().url().refine((value) => {
+  const url = new URL(value);
+  return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password;
+});
+const DeepSeekSearchResponseSchema = z.object({
+  results: z.array(z.object({
+    title: z.string(),
+    url: SearchResultUrlSchema,
+    snippet: z.string().optional(),
+    summary: z.string().optional(),
+  })),
+});
 
 function resolveFirecrawlApiKey(): string | null {
   try {
@@ -45,6 +58,38 @@ function resolveFirecrawlApiKey(): string | null {
 export const webSearchTool = tool(
   async ({ query, max_results }) => {
     const limit = Math.min(max_results ?? 5, 10);
+    let deepSeekApiKey: string | null;
+    try {
+      deepSeekApiKey = getDeepSeekWebApiKey();
+    } catch (error) {
+      return JSON.stringify({ query, engine: "deepseek", provider: "deepseek", tried: ["deepseek:error"], results: [], total: 0, error: errorMessage(error) });
+    }
+
+    if (deepSeekApiKey) {
+      try {
+        if (!query.trim() || Array.from(query).length > 128) {
+          throw new Error("DeepSeek Search queries must contain 1 to 128 characters.");
+        }
+        const payload = await postDeepSeekWebTool("search", deepSeekApiKey, {
+          query,
+          count: limit,
+          need_content: false,
+        });
+        const parsed = DeepSeekSearchResponseSchema.safeParse(payload);
+        if (!parsed.success) throw new Error("DeepSeek Search returned an invalid response.");
+        const results = parsed.data.results.slice(0, limit).flatMap((item) => {
+          const title = item.title.trim();
+          const url = item.url.trim();
+          return title && url
+            ? [{ title, url, snippet: item.snippet?.trim() || item.summary?.trim() || "" }]
+            : [];
+        });
+        return JSON.stringify({ query, engine: "deepseek", provider: "deepseek", tried: [], results, total: results.length });
+      } catch (error) {
+        return JSON.stringify({ query, engine: "deepseek", provider: "deepseek", tried: ["deepseek:error"], results: [], total: 0, error: errorMessage(error) });
+      }
+    }
+
     try {
       const apiKey = resolveFirecrawlApiKey();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -65,7 +110,9 @@ export const webSearchTool = tool(
   },
   {
     name: "web_search",
-    description: "Search the web with Firecrawl Search and return normalized title, URL, and snippet results.",
+    description:
+      "Search the web and return normalized title, URL, and snippet results. Uses Firecrawl by default; " +
+      "the separately configured DeepSeek Search & Fetch integration opts into DeepSeek's Search API.",
     schema: z.object({
       query: z.string().describe("Search query"),
       max_results: z.number().int().min(1).max(10).optional().describe("Max results to return (default 5, max 10)"),

@@ -261,6 +261,16 @@ export const INTEGRATIONS = {
       responseDetails: { models: { path: "data", count: true } },
     },
   },
+  "deepseek-web": {
+    label: "DeepSeek Search & Fetch",
+    category: "other" as IntegrationCategory,
+    description:
+      "Opt-in backend for the web_search and web_fetch tools. Uses DeepSeek's separate Search and Fetch APIs; " +
+      "configuring a DeepSeek chat-model key does not enable it. Get an API key at platform.deepseek.com → API keys.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "sk-…", secret: true, required: true },
+    ],
+  },
   cohere: {
     label: "Cohere",
     category: "llm" as IntegrationCategory,

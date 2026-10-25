@@ -90,6 +90,14 @@ describe("integrations store (credentials-backed)", () => {
     expect(status.values.api_token).toBe(SECRET_MASK);
   });
 
+  it("keeps DeepSeek web credentials separate from the chat-model integration", () => {
+    saveIntegration("deepseek-web", { api_key: "separate-test-value" });
+    expect(getIntegrationRaw("deepseek-web")?.api_key).toBe("separate-test-value");
+    expect(getIntegrationRaw("deepseek")).toBeNull();
+    expect(getIntegrationStatus("deepseek-web")?.values.api_key).toBe(SECRET_MASK);
+    expect(listIntegrations().find((s) => s.name === "deepseek-web")?.configured).toBe(true);
+  });
+
   it("preserves existing secret when the UI re-saves with SECRET_MASK", () => {
     saveIntegration("anthropic", { api_key: "sk-ant-ORIGINAL" });
     // Simulate the UI round-trip: client received SECRET_MASK, didn't
