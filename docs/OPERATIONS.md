@@ -2,6 +2,14 @@
 
 Jarela's main operational views are available from the app menu. They let you review usage, inspect tool configuration, manage scheduled work, and continue agent conversations.
 
+At viewport widths of 1280px and above, the menu stays open on the right
+without covering the workspace. At 1536px and above, the agent selector also
+expands into a scrollable left sidebar with agent names and unread indicators.
+The sidebars stay fixed at 256px on the left and 320px on the right, while chat
+fills all remaining width, including on ultrawide screens. Other views retain
+their existing content-width limits.
+On narrower screens, use the header's agent selector and Menu button.
+
 ## Manage agents
 
 The Agents view lists configured agents with a short summary of each instruction set. Use **New** to start adding an agent, and review the selected agent's tools and instructions before relying on it for a workflow.

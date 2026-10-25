@@ -56,18 +56,12 @@ for (const viewportWidth of [320, 390]) {
 }
 
 test("menu tray uses position:fixed when open", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 844 });
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
   await waitForAppReady(page);
 
-  // Open the menu via the hamburger in the header. The button doesn't have
-  // a stable aria-label, so locate by its lucide icon's data attr or fall
-  // back to clicking the rightmost header button.
-  const menuToggle = page
-    .locator("header button, [class*='glass'] header button")
-    .filter({ has: page.locator("svg") })
-    .last();
-  await menuToggle.click();
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
 
   // The menu tray is the glass-elevated panel. Assert it's positioned fixed,
   // not absolute (the iOS keyboard-pushup regression).
@@ -78,6 +72,7 @@ test("menu tray uses position:fixed when open", async ({ page }) => {
 });
 
 test("selecting a header agent closes the open menu", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 844 });
   await openIsolatedMockChat(page);
   await page.locator("header button").filter({ has: page.locator("svg") }).last().click();
   const menu = page.getByRole("navigation", { name: "Main navigation" });
@@ -118,27 +113,97 @@ for (const width of [320, 390]) {
   });
 }
 
-test("navigation stays clickable underneath an overlapping error notification", async ({ page }) => {
-  await page.goto("/");
-  await waitForAppReady(page);
-  await page.getByPlaceholder("Message…").fill("Trigger the scripted provider failure.\nMOCK:error=synthetic-navigation-error");
-  await page.getByRole("button", { name: "Send", exact: true }).click();
-  const notification = page.getByRole("button", { name: "Open notification: Chat stream error", exact: true });
-  await expect(notification).toBeVisible({ timeout: 15_000 });
+for (const width of [1024, 1920]) {
+  test(`navigation and error notifications remain accessible at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/");
+    await waitForAppReady(page);
+    await page.getByPlaceholder("Message…").fill("Trigger the scripted provider failure.\nMOCK:error=synthetic-navigation-error");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    const notification = page.getByRole("button", { name: "Open notification: Chat stream error", exact: true });
+    await expect(notification).toBeVisible({ timeout: 15_000 });
 
-  await page.locator("header button").filter({ has: page.locator("svg") }).last().click();
-  const settings = page.getByRole("button", { name: "Settings", exact: true });
-  const settingsBounds = await settings.boundingBox();
-  expect(settingsBounds).not.toBeNull();
-  const center = {
-    x: settingsBounds!.x + settingsBounds!.width / 2,
-    y: settingsBounds!.y + settingsBounds!.height / 2,
-  };
-  expect(await settings.evaluate((el, point) =>
-    el.contains(document.elementFromPoint(point.x, point.y)), center)).toBe(true);
-  await settings.click();
-  await expect(page.getByRole("tab", { name: "Credentials", exact: true })).toBeVisible();
-  await expect(notification).toBeVisible();
+    const menu = page.getByRole("navigation", { name: "Main navigation" });
+    if (width < 1280) await page.getByRole("button", { name: "Menu", exact: true }).click();
+    if (width >= 1280) {
+      const notificationBounds = await notification.boundingBox();
+      const menuBounds = await menu.boundingBox();
+      expect(notificationBounds).not.toBeNull();
+      expect(menuBounds).not.toBeNull();
+      expect(notificationBounds!.x + notificationBounds!.width).toBeLessThanOrEqual(menuBounds!.x);
+      expect(await notification.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+      })).toBe(true);
+    }
+    const settings = page.getByRole("button", { name: "Settings", exact: true });
+    const settingsBounds = await settings.boundingBox();
+    expect(settingsBounds).not.toBeNull();
+    const center = {
+      x: settingsBounds!.x + settingsBounds!.width / 2,
+      y: settingsBounds!.y + settingsBounds!.height / 2,
+    };
+    expect(await settings.evaluate((el, point) =>
+      el.contains(document.elementFromPoint(point.x, point.y)), center)).toBe(true);
+    await settings.click();
+    await expect(page.getByRole("tab", { name: "Credentials", exact: true })).toBeVisible();
+    await expect(notification).toBeVisible();
+  });
+}
+
+test("navigation docks progressively without overlapping the workspace", async ({ page }) => {
+  await dismissOverlayBanners(page);
+  await page.setViewportSize({ width: 1279, height: 900 });
+  await openIsolatedMockChat(page);
+  const menu = page.getByRole("navigation", { name: "Main navigation" });
+  const agents = page.getByRole("complementary", { name: "Agents", exact: true });
+  const content = page.getByTestId("workspace-content");
+  const menuToggle = page.getByRole("button", { name: "Menu", exact: true });
+  await expect(menu).toBeHidden();
+  await expect(agents).toBeHidden();
+  await expect(menuToggle).toBeVisible();
+
+  for (const width of [1280, 1535, 1536, 1920, 2560, 3440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(menu).toBeVisible();
+    await expect(menuToggle).toBeHidden();
+    const menuBounds = await menu.boundingBox();
+    const contentBounds = await content.boundingBox();
+    expect(menuBounds).not.toBeNull();
+    expect(contentBounds).not.toBeNull();
+    expect(contentBounds!.x + contentBounds!.width).toBe(menuBounds!.x);
+    expect(contentBounds!.width).toBeGreaterThanOrEqual(960);
+    expect(menuBounds!.width).toBe(320);
+    expect(contentBounds!.width).toBe(width - 320 - (width >= 1536 ? 256 : 0));
+    expect(menuBounds!.x + menuBounds!.width).toBe(width);
+    if (width >= 1536) {
+      await expect(agents).toBeVisible();
+      const agentBounds = await agents.boundingBox();
+      expect(agentBounds).not.toBeNull();
+      expect(agentBounds!.width).toBe(256);
+      expect(agentBounds!.x + agentBounds!.width).toBe(contentBounds!.x);
+      await expect(page.locator("header").getByRole("group", { name: "Switch agent" })).toBeHidden();
+    } else {
+      await expect(agents).toBeHidden();
+      await expect(page.locator("header").getByRole("group", { name: "Switch agent" })).toBeVisible();
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+
+  await menu.getByRole("button", { name: "Profile", exact: true }).click();
+  await expect(menu).toBeVisible();
+  expect((await content.boundingBox())!.width).toBe(1280);
+  await agents.getByRole("button", { name: /^Current agent:/ }).click();
+  await expect(page.getByPlaceholder("Message…")).toBeVisible();
+  await expect(menu).toBeVisible();
+
+  await page.setViewportSize({ width: 1279, height: 900 });
+  await expect(menu).toBeHidden();
+  await expect(agents).toBeHidden();
+  await menuToggle.click();
+  await expect(menu).toBeVisible();
+  await menu.getByRole("button", { name: "Profile", exact: true }).click();
+  await expect(menu).toBeHidden();
 });
 
 test("update banner (when shown) anchors below the header", async ({ page }) => {

@@ -31,6 +31,21 @@ afterEach(() => {
 });
 
 describe("AgentSwitcher", () => {
+  it("expands every agent name into scrollable, touch-sized sidebar rows", () => {
+    const onSelect = vi.fn();
+    const { container } = render(<AgentSwitcher layout="sidebar" agents={agents} activeAgentId="work" onSelect={onSelect} />);
+    expect(screen.getByRole("heading", { name: "Agents" })).toBeTruthy();
+    expect(container.querySelector(".overflow-y-auto")).toBeTruthy();
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((button) => button.textContent)).toEqual(["Work", "HHome", "DDeveloper"]);
+    for (const button of buttons) {
+      expect(button.className).toContain("min-h-11");
+      expect(button.firstElementChild?.className).not.toContain("opacity-65");
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Switch to: Developer" }));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("dev");
+  });
+
   it("puts the current agent first followed by fading, accessible icon buttons", () => {
     render(<AgentSwitcher agents={agents} activeAgentId="work" onSelect={vi.fn()} />);
     const buttons = within(screen.getByRole("group", { name: "Switch agent" })).getAllByRole("button");
@@ -111,6 +126,15 @@ describe("AgentSwitcher", () => {
     const { rerender } = render(<AgentSwitcher agents={agents} activeAgentId="home" onSelect={vi.fn()} />);
     rerender(<AgentSwitcher agents={agents} activeAgentId="dev" onSelect={vi.fn()} />);
     expect(screen.getAllByRole("button")[0].getAttribute("aria-label")).toBe("Current agent: Developer");
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it("does not animate from hidden sidebar measurements after a resize", () => {
+    const measurements = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
+    measurements.mockReturnValue({ left: 0, top: 0, width: 0, height: 0 } as DOMRect);
+    const { rerender } = render(<AgentSwitcher layout="sidebar" agents={agents} activeAgentId="home" onSelect={vi.fn()} />);
+    measurements.mockReturnValue({ left: 16, top: 100, width: 224, height: 44 } as DOMRect);
+    rerender(<AgentSwitcher layout="sidebar" agents={agents} activeAgentId="work" onSelect={vi.fn()} />);
     expect(animate).not.toHaveBeenCalled();
   });
 

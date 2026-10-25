@@ -28,12 +28,9 @@ test.beforeEach(async ({ request, page }) => {
 });
 
 async function openMenu(page: import("@playwright/test").Page) {
-  const menuToggle = page
-    .locator("header button")
-    .filter({ has: page.locator("svg") })
-    .last();
-  await menuToggle.click();
-  await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "Main navigation" });
+  if (!(await navigation.isVisible())) await page.getByRole("button", { name: "Menu", exact: true }).click();
+  await expect(navigation).toBeVisible();
 }
 
 test("Settings tab exposes Credentials + Networking sub-tabs", async ({ page }) => {

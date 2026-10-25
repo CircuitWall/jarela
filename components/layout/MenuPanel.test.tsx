@@ -21,6 +21,16 @@ beforeEach(() => {
 });
 
 describe("MenuPanel", () => {
+  it("keeps closed drawers available as docked navigation on wide screens", () => {
+    const { container, rerender } = render(<MenuPanel open={false} activeTab="chat" onSetTab={vi.fn()} onClose={vi.fn()} />);
+    const navigation = container.querySelector("nav")!;
+    expect(navigation.id).toBe("main-navigation");
+    expect(navigation.className).toContain("hidden xl:flex");
+    expect(navigation.className).toContain("xl:w-80");
+    rerender(<MenuPanel open activeTab="chat" onSetTab={vi.fn()} onClose={vi.fn()} />);
+    expect(navigation.className).not.toContain("hidden xl:flex");
+  });
+
   it("groups real destinations without another agent picker", () => {
     render(<MenuPanel activeTab="agents" onSetTab={vi.fn()} onClose={vi.fn()} />);
     const workspace = screen.getByRole("region", { name: "Workspace" });

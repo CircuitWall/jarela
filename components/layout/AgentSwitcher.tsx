@@ -9,12 +9,14 @@ interface Props {
   agents: Pick<AgentInfo, "id" | "name" | "icon">[];
   activeAgentId: string | null;
   loading?: boolean;
+  layout?: "header" | "sidebar";
   onSelect: (agentId: string) => void;
 }
 
 const FADE_CLASSES = ["opacity-65", "opacity-50", "opacity-40", "opacity-30"];
 
-export function AgentSwitcher({ agents, activeAgentId, loading = false, onSelect }: Props) {
+export function AgentSwitcher({ agents, activeAgentId, loading = false, layout = "header", onSelect }: Props) {
+  const sidebar = layout === "sidebar";
   const unread = useUnreadByAgent();
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   const positions = useRef(new Map<string, DOMRect>());
@@ -33,14 +35,17 @@ export function AgentSwitcher({ agents, activeAgentId, loading = false, onSelect
     animations.current = [];
     const next = new Map<string, DOMRect>();
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (viewport.current && activeAgent) viewport.current.scrollLeft = 0;
+    if (viewport.current && activeAgent) {
+      viewport.current.scrollLeft = 0;
+      if (sidebar) viewport.current.scrollTop = 0;
+    }
     for (const agent of orderedAgents) {
       const button = buttons.current.get(agent.id);
       if (!button) continue;
       const rect = button.getBoundingClientRect();
       next.set(agent.id, rect);
       const previous = positions.current.get(agent.id);
-      if (!previous || reducedMotion || typeof button.animate !== "function") continue;
+      if (!previous || previous.width === 0 || rect.width === 0 || reducedMotion || typeof button.animate !== "function") continue;
       const x = previous.left - rect.left;
       const y = previous.top - rect.top;
       if (x === 0 && y === 0 && previous.width === rect.width) continue;
@@ -56,19 +61,21 @@ export function AgentSwitcher({ agents, activeAgentId, loading = false, onSelect
     }
     positions.current = next;
     return () => { for (const animation of animations.current) animation.cancel(); };
-  }, [orderedAgents, activeAgent, activeAgentId]);
+  }, [orderedAgents, activeAgent, activeAgentId, sidebar]);
 
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2">
-      {!activeAgent && (
+    <div className={sidebar ? "flex h-full min-h-0 flex-col gap-2 p-3" : "flex min-w-0 flex-1 items-center gap-2"}>
+      {sidebar && <h2 className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">Agents</h2>}
+      {!sidebar && !activeAgent && (
         <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-fg">
           <Logo className="h-6 w-auto" />
           {agents.length === 0 && <span>{getAppName()}</span>}
         </span>
       )}
+      {!sidebar && activeAgent && <span className="hidden truncate text-sm font-semibold 2xl:block">{activeAgent.name}</span>}
       <div ref={viewport} role="group" aria-label="Switch agent" aria-busy={loading}
-        className="no-scrollbar min-w-0 overflow-x-auto py-1">
-        <div className="flex w-max items-center gap-1 px-1">
+        className={sidebar ? "panel-scrollbar min-h-0 overflow-y-auto overscroll-contain py-1" : "no-scrollbar min-w-0 overflow-x-auto py-1 2xl:hidden"}>
+        <div className={sidebar ? "flex flex-col gap-1 px-1" : "flex w-max items-center gap-1 px-1"}>
           {orderedAgents.map((agent, index) => {
             const selected = agent.id === activeAgentId;
             const unreadCount = unread.get(agent.id) ?? 0;
@@ -89,14 +96,14 @@ export function AgentSwitcher({ agents, activeAgentId, loading = false, onSelect
                   for (const [id, button] of buttons.current) positions.current.set(id, button.getBoundingClientRect());
                   onSelect(agent.id);
                 }}
-                className={`control-tap group relative inline-flex h-9 shrink-0 items-center rounded-xl px-1.5 outline-offset-2 transition-[background-color,box-shadow] duration-200 focus-visible:outline-2 focus-visible:outline-accent ${
+                className={`control-tap group relative inline-flex ${sidebar ? "min-h-11 w-full px-3 text-left" : "h-9 shrink-0 px-1.5"} items-center rounded-xl outline-offset-2 transition-[background-color,box-shadow] duration-200 focus-visible:outline-2 focus-visible:outline-accent ${
                   selected
                     ? "z-10 bg-surface-3/70 text-fg ring-1 ring-accent/30"
                     : "text-fg-muted hover:bg-surface-3/60"
                 }`}
               >
-                <span className={`inline-flex items-center gap-2 transition-opacity duration-200 ${
-                  selected ? "" : `${fade} group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100`
+                <span className={`inline-flex min-w-0 items-center gap-2 transition-opacity duration-200 ${
+                  selected || sidebar ? "" : `${fade} group-hover:opacity-100 group-focus-visible:opacity-100 group-active:opacity-100`
                 }`}>
                 {agent.icon ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -108,7 +115,7 @@ export function AgentSwitcher({ agents, activeAgentId, loading = false, onSelect
                     {agent.name.charAt(0).toUpperCase()}
                   </span>
                 )}
-                {selected && <span className="max-w-[7rem] truncate pr-1 text-sm font-semibold tracking-tight sm:max-w-[12rem]">{agent.name}</span>}
+                {(selected || sidebar) && <span className={sidebar ? "truncate pr-1 text-sm font-semibold tracking-tight" : "max-w-[7rem] truncate pr-1 text-sm font-semibold tracking-tight sm:max-w-[12rem]"}>{agent.name}</span>}
                 </span>
                 {unreadCount > 0 && (
                   <span aria-hidden="true" data-unread-dot
