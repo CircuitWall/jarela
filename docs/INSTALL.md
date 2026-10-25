@@ -11,6 +11,11 @@ Four ways to install:
 
 All four end at the same place: a Next.js process on `http://127.0.0.1:4312`, with state persisted under the platform default host data dir (`~/.jarela` on macOS/Linux, `%LOCALAPPDATA%\Jarela` on Windows) or in the `jarela-data` volume mounted at `/data`.
 
+Starting with Jarela 2.7.0, release builds and bundled runtimes use Node 24.15.0,
+and Docker images use Node 24. npm installations also support Node 22.22.2+ on
+22.x and Node 26+. Upgrade older Node installations before updating Jarela;
+the narrower runtime support is a maintainer-approved minor-release exception.
+
 On first launch, Jarela opens a guided setup for your profile, one model
 provider, a model, and your default assistant. See the [first-run guide](FIRST_RUN.md)
 for screenshots and the first-chat personalization flow.
@@ -173,7 +178,7 @@ jarela uninstall-service
 ## Path 4 — Docker (Ubuntu / Linux)
 
 A `Dockerfile` and `docker-compose.yml` ship at the repo root. The image is
-based on `node:22-trixie-slim` (Debian 13) and runs as a non-root user.
+based on `node:24-trixie-slim` (Debian 13) and runs as a non-root user.
 
 ### Quick start (docker compose)
 
