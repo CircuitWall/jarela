@@ -71,6 +71,7 @@ describe("integrations store (credentials-backed)", () => {
     { name: "jira_align", value: { url: "https://r.jiraalign.com", api_token: "eyJ-roundtrip" } },
     { name: "gmail", value: { client_id: "r.apps.googleusercontent.com", client_secret: "GOCSPX-roundtrip", refresh_token: "1//roundtrip" } },
     { name: "outlook", value: { client_id: "00000000-0000-0000-0000-000000000099", client_secret: "abc~roundtrip", refresh_token: "0.AXoA-roundtrip" } },
+    { name: "icloud", value: { apple_id: "apple-account@example.com", app_password: "synthetic-app-password", mail_address: "synthetic@icloud.com" } },
   ];
 
   for (const f of fixtures) {
@@ -104,6 +105,17 @@ describe("integrations store (credentials-backed)", () => {
     // edit it, sent it back. The server must keep ORIGINAL, not blank it.
     saveIntegration("anthropic", { api_key: SECRET_MASK });
     expect(getIntegrationRaw("anthropic")?.api_key).toBe("sk-ant-ORIGINAL");
+  });
+
+  it("adds an iCloud SMTP address without replacing a masked existing app password", () => {
+    saveIntegration("icloud", { apple_id: "apple-account@example.com", app_password: "synthetic-app-password" });
+    expect(getIntegrationStatus("icloud")?.values.app_password).toBe(SECRET_MASK);
+    saveIntegration("icloud", {
+      apple_id: "apple-account@example.com", app_password: SECRET_MASK, mail_address: "synthetic@icloud.com",
+    });
+    expect(getIntegrationRaw("icloud")).toEqual({
+      apple_id: "apple-account@example.com", app_password: "synthetic-app-password", mail_address: "synthetic@icloud.com",
+    });
   });
 
   it("updates fields in place — no duplicate credential rows on re-save", () => {

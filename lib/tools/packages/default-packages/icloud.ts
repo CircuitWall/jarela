@@ -22,7 +22,7 @@ const auth = {
   setAuthResolver,
   resolveAuthFromEnv,
   mapStoreFields: (raw: Record<string, string>) => raw.apple_id && raw.app_password
-    ? { appleId: raw.apple_id, appPassword: raw.app_password }
+    ? { appleId: raw.apple_id, appPassword: raw.app_password, mailAddress: raw.mail_address || undefined }
     : null,
   notConfiguredError:
     "iCloud not configured. Open Settings → Credentials and add your Apple ID + " +
@@ -61,7 +61,7 @@ export const icloudDefaultPackages: readonly DefaultPackageDescriptor[] = [
     "iCloud Mail",
     "Mail",
     mail,
-    "iCloud Mail (IMAP): list folders and messages, read message bodies, draft, move, flag, and trash mail. Drafts only — cannot send mail.",
+    "iCloud Mail (IMAP/SMTP): read, draft, move, flag, and trash mail; send only when explicitly requested.",
   ),
   descriptor(
     "icloud_calendar",

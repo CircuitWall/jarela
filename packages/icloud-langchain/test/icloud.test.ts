@@ -85,7 +85,7 @@ describe("mail and calendar capability alignment", () => {
     const writes = icloudWriteTools.map((tool) => tool.name);
     expect(writes).toContain("icloud_mail_delete_message");
     expect(writes).toContain("icloud_calendar_delete_event");
-    expect(icloudExecuteTools).toEqual([]);
+    expect(icloudExecuteTools.map((tool) => tool.name)).toEqual(["icloud_mail_send_email"]);
     expect(icloudReadTools.every((tool) => /_(list|get)(_|$)/.test(tool.name))).toBe(true);
     const all = [...icloudReadTools, ...icloudWriteTools, ...icloudExecuteTools];
     expect(new Set(all.map((tool) => tool.name)).size).toBe(all.length);

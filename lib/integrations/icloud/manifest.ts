@@ -4,9 +4,8 @@ export const icloudManifest: IntegrationManifest = {
   id: "icloud",
   name: "iCloud Mail + Calendar + Reminders",
   summary:
-    "Lets the agent list/read iCloud Mail, create drafts (never send), move/flag/trash messages, " +
-    "manage calendar events, and create/complete reminders. Drafts-only is a deliberate safety " +
-    "choice — this integration intentionally cannot send mail on the user's behalf.",
+    "Lets the agent list/read iCloud Mail, create drafts, send mail when explicitly asked, " +
+    "move/flag/trash messages, manage calendar events, and create/complete reminders.",
   category: "mail",
   prerequisites: [
     {
@@ -49,12 +48,27 @@ export const icloudManifest: IntegrationManifest = {
       description:
         "Propose enabling the integration. The user pastes their full Apple ID email and the " +
         "16-character app-specific password into the secure form. Both are stored encrypted at " +
-        "rest. Dashes in the password are stripped automatically.",
+        "rest. Dashes in the password are stripped automatically. If your Apple ID is not your " +
+        "iCloud Mail address, also save the full iCloud Mail address for SMTP sending. " +
+        "The folder check verifies IMAP only; it does not prove SMTP sending is authorized.",
       proposes: "enable_integration",
       verify: { tool: "icloud_mail_list_folders" },
     },
   ],
   troubleshooting: [
+    {
+      when: "SMTP authentication or sender is rejected",
+      say:
+        "SMTP uses the full iCloud Mail address, not the IMAP short username. Check the optional " +
+        "mail address field and app-specific password. SMTP requires smtp.mail.me.com port 587 " +
+        "with STARTTLS. An IMAP or CalDAV connection alone does not prove SMTP access.",
+    },
+    {
+      when: "send reports partial acceptance or an unknown delivery status",
+      say:
+        "Do not automatically resend: some recipients may already have received the email. " +
+        "Check the accepted/rejected recipients and confirm delivery before retrying.",
+    },
     {
       when: "tool returns AUTHENTICATIONFAILED / 401 from IMAP or CalDAV",
       say:
@@ -62,7 +76,7 @@ export const icloudManifest: IntegrationManifest = {
         "app-specific password at appleid.apple.com and save it in Settings → Credentials → iCloud.",
     },
     {
-      when: "icloud_mail_* tools return 'NO LOGIN' or 'too many requests'",
+      when: "IMAP mail tools (not SMTP sending) return 'NO LOGIN' or 'too many requests'",
       say:
         "iCloud throttles new IMAP sessions per minute. Wait 60 seconds and retry. If it keeps " +
         "failing, regenerate the app-specific password — Apple sometimes invalidates an old one " +

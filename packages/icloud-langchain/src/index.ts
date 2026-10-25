@@ -1,11 +1,12 @@
 /**
- * Native iCloud tools — IMAP for Mail, CalDAV for Calendar and Reminders.
+ * Native iCloud tools — IMAP/SMTP for Mail, CalDAV for Calendar and Reminders.
  * No MCP. No Apple-specific SDK (none exists for end-user data).
  *
  * Why this exists: Apple does not publish an OAuth-protected REST API for
  * a user's own iCloud Mail / Calendar / Reminders. The only programmatic
  * paths are the standards Apple deliberately supports:
  *   - Mail        → IMAP   (imap.mail.me.com:993, TLS)
+ *   - Sending     → SMTP   (smtp.mail.me.com:587, mandatory STARTTLS)
  *   - Calendar    → CalDAV (caldav.icloud.com, PROPFIND discovery)
  *   - Reminders   → CalDAV (VTODO collections under the same principal)
  * Auth = Apple ID + an app-specific password generated at appleid.apple.com
@@ -25,6 +26,7 @@ import {
   type DAVObject,
 } from "tsdav";
 import ICAL from "ical.js";
+import nodemailer from "nodemailer";
 
 // ── Auth ────────────────────────────────────────────────────────────────
 
@@ -35,6 +37,8 @@ export interface ICloudAuth {
    *  optionally hyphenated as `xxxx-xxxx-xxxx-xxxx`. Hyphens are
    *  stripped before use. */
   appPassword: string;
+  /** Full iCloud Mail address for SMTP, when different from the Apple ID. */
+  mailAddress?: string;
 }
 
 export type AuthResolver = () =>
@@ -52,7 +56,8 @@ export function resolveICloudAuthFromEnv(): ICloudAuth | { error: string } {
   const appleId = process.env.ICLOUD_APPLE_ID?.trim();
   const appPassword = process.env.ICLOUD_APP_PASSWORD?.trim();
   if (appleId && appPassword) {
-    return { appleId, appPassword: stripDashesAndZeroWidth(appPassword) };
+    return { appleId, appPassword: stripDashesAndZeroWidth(appPassword),
+      mailAddress: process.env.ICLOUD_MAIL_ADDRESS?.trim() || undefined };
   }
   return {
     error:
@@ -69,6 +74,7 @@ async function resolveAuth(): Promise<ICloudAuth | { error: string }> {
   return {
     appleId: out.appleId.trim(),
     appPassword: stripDashesAndZeroWidth(out.appPassword),
+    mailAddress: out.mailAddress?.trim() || undefined,
   };
 }
 
@@ -542,7 +548,7 @@ export const icloudMailCreateDraftTool = tool(
     name: "icloud_mail_create_draft",
     description:
       "Save a new draft to the iCloud Drafts folder. This intentionally does " +
-      "not send mail — iCloud SMTP is not wired in this release. The draft " +
+      "not send mail. Use icloud_mail_send_email only when explicitly asked to send. The draft " +
       "can be reviewed and sent from Apple Mail on the user's device.",
     schema: z.object({
       to: z.array(z.string()).min(1),
@@ -553,6 +559,89 @@ export const icloudMailCreateDraftTool = tool(
       body_html: z.string().optional(),
       in_reply_to: z.string().optional().describe("Message-Id of the email being replied to"),
     }),
+  },
+);
+
+const mailAddressSchema = z.string().email().max(254).refine(
+  (address) => !/[\r\n]/.test(address),
+  "Email addresses must not contain line breaks.",
+);
+
+export const icloudMailSendEmailTool = tool(
+  async ({ to, cc, bcc, subject, body, content_type, in_reply_to }) => {
+    const auth = await resolveAuth();
+    if ("error" in auth) return err(auth.error);
+    const sender = auth.mailAddress
+      ?? (/@(?:icloud|me|mac)\.com$/i.test(auth.appleId) ? auth.appleId : undefined);
+    if (!sender || !mailAddressSchema.safeParse(sender).success) {
+      return err("Configure your full iCloud Mail address in Credentials → iCloud (or ICLOUD_MAIL_ADDRESS). SMTP requires a mail address, which may differ from your Apple ID.");
+    }
+    const transport = nodemailer.createTransport({
+      host: "smtp.mail.me.com",
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      tls: { minVersion: "TLSv1.2", rejectUnauthorized: true },
+      auth: { user: sender, pass: auth.appPassword },
+      connectionTimeout: 15_000,
+      greetingTimeout: 15_000,
+      socketTimeout: 30_000,
+      logger: false,
+      debug: false,
+      disableFileAccess: true,
+      disableUrlAccess: true,
+    });
+    try {
+      const result = await transport.sendMail({
+        from: sender, to, cc, bcc, subject,
+        ...(content_type === "html" ? { html: body } : { text: body }),
+        ...(in_reply_to ? { inReplyTo: in_reply_to, references: [in_reply_to] } : {}),
+        disableFileAccess: true,
+        disableUrlAccess: true,
+      });
+      const accepted = result.accepted.length;
+      const rejected = result.rejected.length;
+      if (rejected > 0 || accepted === 0) {
+        return JSON.stringify({
+          error: accepted > 0
+            ? "iCloud SMTP accepted only some recipients. Do not resend to accepted recipients; check the rejected addresses."
+            : "iCloud SMTP did not accept any recipients. Check the recipient addresses.",
+          accepted_count: accepted, rejected_count: rejected,
+          accepted: result.accepted, rejected: result.rejected,
+          message_id: result.messageId,
+        });
+      }
+      return ok({ ok: true, status: "accepted_by_smtp", message_id: result.messageId, accepted_count: accepted });
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
+      if (code === "EAUTH") {
+        return err("iCloud SMTP authentication failed. Check your full iCloud Mail address and app-specific password in Credentials → iCloud.");
+      }
+      if (code === "EENVELOPE") {
+        return err("iCloud SMTP rejected the sender or recipients. Check the configured mail address and recipient addresses.");
+      }
+      return err("iCloud SMTP send failed; delivery status may be unknown. Check Sent mail or confirm with recipients before retrying to avoid duplicates.");
+    } finally {
+      transport.close();
+    }
+  },
+  {
+    name: "icloud_mail_send_email",
+    description:
+      "Send an iCloud email immediately via SMTP. Only use when the user explicitly asks to send now; " +
+      "otherwise use icloud_mail_create_draft. Uses the configured iCloud sender, never an agent-supplied From address. " +
+      "Supports text or HTML, CC/BCC, and an optional parent Message-ID for replies. " +
+      "Success means SMTP acceptance, not confirmed delivery. Never automatically retry an uncertain or partially accepted send.",
+    schema: z.object({
+      to: z.array(mailAddressSchema).min(1).max(100),
+      cc: z.array(mailAddressSchema).max(100).optional(),
+      bcc: z.array(mailAddressSchema).max(100).optional(),
+      subject: z.string().max(998).refine((value) => !/[\r\n]/.test(value), "Subject must not contain line breaks."),
+      body: z.string().max(100_000),
+      content_type: z.enum(["text", "html"]).optional(),
+      in_reply_to: z.string().max(998).regex(/^<[^<>\s@]+@[^<>\s@]+>$/).optional()
+        .describe("Parent RFC Message-ID, including angle brackets; not an IMAP UID"),
+    }).strict(),
   },
 );
 
@@ -1599,6 +1688,7 @@ export const icloudMailTools = [
   icloudMailListMessagesTool,
   icloudMailGetMessageTool,
   icloudMailCreateDraftTool,
+  icloudMailSendEmailTool,
   icloudMailMoveMessageTool,
   icloudMailFlagMessageTool,
   icloudMailDeleteMessageTool,
@@ -1633,7 +1723,7 @@ export const icloudTools = [
 //   read    - inspect-only, no state change on the iCloud side.
 //   write   - modify owned content (drafts, moves, trash, event deletion,
 //             flag toggles, event edits, reminder completion).
-//   execute - external side effects such as sending mail; not supported.
+//   execute - external side effects such as sending mail.
 export const icloudReadTools = [
   icloudMailListFoldersTool,
   icloudMailListMessagesTool,
@@ -1657,4 +1747,4 @@ export const icloudWriteTools = [
   icloudRemindersCompleteTool,
 ];
 
-export const icloudExecuteTools: typeof icloudWriteTools = [];
+export const icloudExecuteTools = [icloudMailSendEmailTool];
