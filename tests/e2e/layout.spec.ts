@@ -69,6 +69,9 @@ test("menu tray uses position:fixed when open", async ({ page }) => {
   await expect(tray).toBeVisible();
   const position = await tray.evaluate((el) => getComputedStyle(el).position);
   expect(position).toBe("fixed");
+  if (await page.evaluate(() => matchMedia("(hover: none) and (pointer: coarse)").matches)) {
+    expect(await tray.evaluate((el) => getComputedStyle(el).backdropFilter)).toBe("none");
+  }
 });
 
 test("selecting a header agent closes the open menu", async ({ page }) => {
@@ -260,7 +263,7 @@ test.describe("mobile PWA chrome", () => {
   test.use({ hasTouch: true, isMobile: true });
 
   for (const width of [320, 390]) {
-    test(`turns scroll under frosted controls but new turns stay clear at ${width}px`, async ({ page }) => {
+    test(`turns scroll under fixed controls but new turns stay clear at ${width}px`, async ({ page }) => {
       await dismissOverlayBanners(page);
       await page.setViewportSize({ width, height: 568 });
       await openIsolatedMockChat(page);
@@ -357,8 +360,17 @@ test.describe("mobile PWA chrome", () => {
           background: css.backgroundColor,
         };
       });
-      expect(frost.backdrop).toBe("blur(12px)");
-      expect(frost.background).toMatch(/(?:0\.6|60%)/);
+      expect(frost.backdrop).toBe("none");
+      expect(frost.background).toMatch(/0\.94|94%/);
+      const bubbleFilters = () => page.locator(".glass-bubble, .glass-bubble-accent").evaluateAll((els) =>
+        els.map((el) => {
+          const css = getComputedStyle(el);
+          return css.getPropertyValue("backdrop-filter") || css.getPropertyValue("-webkit-backdrop-filter");
+        }),
+      );
+      expect((await bubbleFilters()).length).toBeGreaterThan(0);
+      await expect.poll(async () => (await bubbleFilters()).join(", "))
+        .toMatch(/^none(?:, none)*$/);
       await toggle.click();
       const region = banner.getByRole("region", { name: "Message filters and focus" });
       await expect(region).toBeVisible();
@@ -430,7 +442,7 @@ test.describe("mobile PWA chrome", () => {
     });
   }
 
-  test("header stays crisp and composer stays frosted across themes and surface styles", async ({ page }) => {
+  test("header stays crisp and composer stays legible across themes and surface styles", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");
     await waitForAppReady(page);
@@ -460,8 +472,8 @@ test.describe("mobile PWA chrome", () => {
             image: css.backgroundImage,
           };
         });
-        expect(composerStyles.backdrop).toBe("blur(12px)");
-        expect(composerStyles.background).toMatch(/(?:0\.6|60%)/);
+        expect(composerStyles.backdrop).toBe("none");
+        expect(composerStyles.background).toMatch(/0\.94|94%/);
         expect(composerStyles.image).toBe("none");
       }
     }

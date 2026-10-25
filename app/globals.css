@@ -512,6 +512,33 @@ body {
     --app-safe-top: env(safe-area-inset-top);
   }
 
+  /* Stacked backdrop filters can stall touch hit testing. Keep the glass tint without the filter. */
+  :root .glass-elevated,
+  :root .glass-bubble,
+  :root .glass-bubble-accent,
+  :root .chat-composer,
+  :root .chat-filter-banner {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  :root .glass-elevated {
+    background-color: color-mix(in srgb, var(--color-surface-2) 94%, transparent);
+  }
+
+  :root .glass-bubble {
+    background-color: color-mix(in srgb, var(--color-surface-3) 94%, transparent);
+  }
+
+  :root .glass-bubble-accent {
+    background-color: color-mix(in srgb, var(--color-accent) 90%, var(--color-surface-2));
+  }
+
+  :root .chat-composer,
+  :root .chat-filter-banner {
+    background-color: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  }
+
   /* Trade part of the bottom inset for side clearance: the controls stay
    * above the home indicator and inside rounded corners without a tall chin.
    * The shell already accounts for left/right cutouts in landscape. */

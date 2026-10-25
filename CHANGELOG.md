@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - db: Reuse a bounded per-connection cache of prepared statements for repeated thread/history reads, without caching query results.
 - runtime: Drop Node 22 support; require Node 24.15.0+ on 24.x, or Node 26+. CLI and production launchers reject unsupported runtimes before loading the application. Upgrade Node before installing the next version; bundled installers already include Node 24.
 
+### Fixed
+
+- ui: Avoid stacked backdrop filters on touch surfaces to keep mobile interactions responsive.
+
 ## [2.7.0] - 2026-10-25
 
 ### Added
