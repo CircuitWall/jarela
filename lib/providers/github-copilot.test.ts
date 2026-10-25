@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import type AnthropicNS from "@anthropic-ai/sdk";
+import { ANTHROPIC_API_VERSION } from "./anthropic";
 
 // Keep routing tests off the developer's real data directory: no stored OAuth token.
 vi.mock("./github-copilot-auth", () => ({ getStoredOAuthToken: () => null }));
@@ -56,12 +57,12 @@ describe("Claude-via-Copilot routing", () => {
     } = await import("./anthropic");
 
     const client = new Anthropic({
-      apiKey: "",
       authToken: "fake-copilot-session-token",
       baseURL: "https://api.githubcopilot.com",
       maxRetries: 0,
       fetch: stubFetch,
       defaultHeaders: {
+        "anthropic-version": ANTHROPIC_API_VERSION,
         "Editor-Version": "vscode/1.85.0",
         "Copilot-Integration-Id": "vscode-chat",
       },
@@ -90,6 +91,7 @@ describe("Claude-via-Copilot routing", () => {
     expect(captured.length).toBeGreaterThan(0);
     const req = captured[0];
     expect(req.url).toBe("https://api.githubcopilot.com/v1/messages");
+    expect(req.headers["anthropic-version"]).toBe(ANTHROPIC_API_VERSION);
     expect(req.headers["authorization"]).toBe("Bearer fake-copilot-session-token");
     expect(req.headers["editor-version"]).toBe("vscode/1.85.0");
     expect(req.headers["copilot-integration-id"]).toBe("vscode-chat");
@@ -116,6 +118,24 @@ describe("Claude-via-Copilot routing", () => {
       copilot_session_token: "synthetic-session-token",
     }, [])).rejects.toMatchObject({ status: 429 });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("keeps the pre-v1 Anthropic API version on Claude requests to Copilot", async () => {
+    let requestHeaders: Headers | undefined;
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestHeaders = new Headers(init?.headers);
+      return new Response(JSON.stringify({ error: { message: "mock failure" } }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(githubCopilotProvider.invoke!("claude-sonnet-4", [{
+      role: "user",
+      content: "synthetic prompt",
+    }], { copilot_session_token: "synthetic-session-token" }, [])).rejects.toThrow();
+
+    expect(requestHeaders?.get("anthropic-version")).toBe(ANTHROPIC_API_VERSION);
   });
   it.each(["ghp_synthetic", "github_pat_synthetic"])("rejects PAT %s without network access", async (apiKey) => {
     const fetch = vi.fn(async () => new Response("{}", { status: 503 }));

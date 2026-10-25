@@ -124,6 +124,45 @@ describe("MessageBubble image attachments", () => {
   });
 });
 
+describe("MessageBubble Mermaid diagrams", () => {
+  const getBBoxDescriptor = Object.getOwnPropertyDescriptor(SVGElement.prototype, "getBBox");
+
+  beforeEach(() => {
+    // jsdom lacks the browser SVG APIs Mermaid uses to measure labels.
+    vi.stubGlobal("CSSStyleSheet", window.CSSStyleSheet);
+    Object.defineProperty(SVGElement.prototype, "getBBox", {
+      configurable: true,
+      value: () => ({ x: 0, y: 0, width: 40, height: 20 }),
+    });
+  });
+
+  afterEach(() => {
+    if (getBBoxDescriptor) {
+      Object.defineProperty(SVGElement.prototype, "getBBox", getBBoxDescriptor);
+    } else {
+      Reflect.deleteProperty(SVGElement.prototype, "getBBox");
+    }
+  });
+
+  it("renders Mermaid code blocks as sanitized diagram previews", async () => {
+    const message: Message = {
+      id: "mermaid-preview",
+      role: "assistant",
+      content: "```mermaid\nflowchart TD\n  A[Start] --> B[Finish]\n```",
+      created_at: "2026-08-15T12:00:00.000Z",
+      status: "confirmed",
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble message={message} showAvatar={false} />
+      </AppProvider>,
+    );
+
+    expect(await screen.findByRole("img", { name: "Mermaid diagram" }, { timeout: 10000 })).toBeTruthy();
+  });
+});
+
 describe("MessageBubble transcript status", () => {
   it("shows the persisted interruption reason below the partial reply", () => {
     render(

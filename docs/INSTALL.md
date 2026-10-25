@@ -6,7 +6,7 @@ Four ways to install:
 |------|------|--------|
 | **Native package** (this file) | You want the OS package manager / installer UX | Jarela installed into the platform app location with a bundled runtime |
 | **Pre-built archive** (this file) | You don't have Node, or want the simplest install | A native autostart entry on macOS / Windows |
-| **`npm install -g @circuitwall/jarela`** | You have Node 22+ | A `jarela` CLI on your PATH |
+| **`npm install -g @circuitwall/jarela`** | Node 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+ | A `jarela` CLI on your PATH |
 | **Docker** (Ubuntu / any Linux host) | You want a container, headless server, or NAS | A `jarela` container listening on `127.0.0.1:4312` |
 
 All four end at the same place: a Next.js process on `http://127.0.0.1:4312`, with state persisted under the platform default host data dir (`~/.jarela` on macOS/Linux, `%LOCALAPPDATA%\Jarela` on Windows) or in the `jarela-data` volume mounted at `/data`.
