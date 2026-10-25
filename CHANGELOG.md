@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- tools: Add an opt-in DeepSeek Search & Fetch backend for `web_search` and `web_fetch`, using a separately encrypted credential and preserving existing backends by default.
+
 ### Changed
 
 - db: Reuse a bounded per-connection cache of prepared statements for repeated thread/history reads, without caching query results.

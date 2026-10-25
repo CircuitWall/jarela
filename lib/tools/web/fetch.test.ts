@@ -21,6 +21,12 @@ vi.mock("node:dns", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/stores/integrations", () => ({
+  getIntegrationRaw: vi.fn(() => null),
+}));
+
+import { getIntegrationRaw } from "@/lib/stores/integrations";
+
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-fetch-"));
 process.env.HOME = tmpRoot;
 process.env.USERPROFILE = tmpRoot;
@@ -32,6 +38,7 @@ afterAll(() => {
 const { resetConfigCache } = await import("@/lib/env/config");
 const { webFetchTool } = await import("./fetch");
 const allowedSites = await import("@/lib/stores/allowed-sites");
+const integrationLookup = vi.mocked(getIntegrationRaw);
 
 function parse(s: string) { return JSON.parse(s) as Record<string, unknown>; }
 
@@ -45,12 +52,17 @@ function htmlOk(): Response {
 const realFetch = globalThis.fetch;
 beforeEach(() => {
   resetConfigCache();
+  integrationLookup.mockReset();
+  integrationLookup.mockReturnValue(null);
   // Wipe the allow-list before each test so cookie / SSRF state from
   // earlier specs can't leak. The store opens its own DB handle on first
   // import; the table exists by then.
   for (const s of allowedSites.listAllowedSites()) allowedSites.removeAllowedSite(s.hostname);
 });
-afterEach(() => { globalThis.fetch = realFetch; });
+afterEach(() => {
+  globalThis.fetch = realFetch;
+  vi.unstubAllEnvs();
+});
 
 describe("web_fetch timeout reporting", () => {
   it("surfaces a timed_out=true result with an actionable hint when the abort fires", async () => {
@@ -163,6 +175,7 @@ describe("web_fetch SSRF bypass via allow-list", () => {
   });
 
   it("allows a private/loopback URL when the host is allow-listed with SSRF bypass", async () => {
+    integrationLookup.mockImplementation((name) => name === "deepseek-web" ? { api_key: "configured-web-key" } : null);
     allowedSites.addAllowedSite({ hostname: "127.0.0.1", ssrf_bypass: true });
 
     const seen = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => htmlOk());
@@ -170,12 +183,127 @@ describe("web_fetch SSRF bypass via allow-list", () => {
 
     const out = parse(await webFetchTool.invoke({ url: "http://127.0.0.1:9999/intranet" }));
     expect(out.error).toBeUndefined();
-    expect(seen).toHaveBeenCalled();
+    expect(seen).toHaveBeenCalledWith("http://127.0.0.1:9999/intranet", expect.any(Object));
+    expect(seen).not.toHaveBeenCalledWith("https://api.deepseek.com/v1/tools/fetch", expect.any(Object));
   });
 
   it("still refuses private URLs when the host is allow-listed but bypass is off", async () => {
     allowedSites.addAllowedSite({ hostname: "127.0.0.1", ssrf_bypass: false });
     const out = parse(await webFetchTool.invoke({ url: "http://127.0.0.1:9999/secret" }));
     expect(String(out.error)).toMatch(/private\/loopback/i);
+  });
+});
+
+describe("web_fetch DeepSeek backend", () => {
+  it("uses DeepSeek Fetch for public text URLs and bounds normalized Markdown", async () => {
+    integrationLookup.mockImplementation((name) => name === "deepseek-web" ? { api_key: "configured-web-key" } : null);
+    const seen = vi.fn(async () => new Response(JSON.stringify({
+      title: "Article",
+      content: "DeepSeek page content",
+    }), { status: 200 }));
+    globalThis.fetch = seen as unknown as typeof fetch;
+
+    const out = parse(await webFetchTool.invoke({ url: "https://example.com/article", max_chars: 10 }));
+    expect(out).toMatchObject({
+      url: "https://example.com/article",
+      title: "Article",
+      content_type: "text/markdown",
+      mode: "text",
+      truncated: true,
+      content: "DeepSeek p…",
+      fetcher: "deepseek",
+    });
+    expect(seen).toHaveBeenCalledWith(
+      "https://api.deepseek.com/v1/tools/fetch",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer configured-web-key" }),
+        body: JSON.stringify({ url: "https://example.com/article" }),
+      }),
+    );
+  });
+
+  it("keeps HTML mode on direct fetch when DeepSeek is enabled", async () => {
+    integrationLookup.mockImplementation((name) => name === "deepseek-web" ? { api_key: "configured-web-key" } : null);
+    const fetchMock = vi.fn(async () => htmlOk());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const out = parse(await webFetchTool.invoke({ url: "https://example.com/article", mode: "html" }));
+    expect(out).toMatchObject({ mode: "html", status: 200 });
+    expect(out.error).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/article", expect.any(Object));
+  });
+
+  it("preserves cookie-authenticated direct fetch when DeepSeek is enabled", async () => {
+    integrationLookup.mockReturnValue({ api_key: "configured-web-key" });
+    allowedSites.addAllowedSite({ hostname: "example.com" });
+    allowedSites.putCookies("example.com", [
+      { name: "sid", value: "synthetic-session", domain: "example.com", path: "/" },
+    ]);
+    const fetchMock = vi.fn(async () => htmlOk());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const out = parse(await webFetchTool.invoke({ url: "https://example.com/account" }));
+    expect(out.error).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/account", expect.objectContaining({
+      headers: expect.objectContaining({ Cookie: "sid=synthetic-session" }),
+    }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send URL credentials to DeepSeek", async () => {
+    integrationLookup.mockImplementation((name) => name === "deepseek-web" ? { api_key: "configured-web-key" } : null);
+    const fetchMock = vi.fn(async () => htmlOk());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const out = parse(await webFetchTool.invoke({ url: "https://user:pass@example.com/article" }));
+    expect(String(out.error)).toMatch(/username or password/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not send private URLs to DeepSeek even when the backend is enabled", async () => {
+    integrationLookup.mockImplementation((name) => name === "deepseek-web" ? { api_key: "configured-web-key" } : null);
+    const fetchMock = vi.fn(async () => htmlOk());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const out = parse(await webFetchTool.invoke({ url: "http://127.0.0.1:9999/secret" }));
+    expect(String(out.error)).toMatch(/private\/loopback/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects URLs exceeding the documented limit without making a request", async () => {
+    integrationLookup.mockReturnValue({ api_key: "configured-web-key" });
+    const fetchMock = vi.fn(async () => htmlOk());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const out = parse(await webFetchTool.invoke({ url: `https://example.com/${"x".repeat(8192)}` }));
+    expect(out.error).toMatch(/at most 8192/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ title: "Article" }, /invalid response/i],
+    [{ title: "Article", content: "" }, /no page content/i],
+  ])("rejects unusable DeepSeek page responses", async (body, expected) => {
+    integrationLookup.mockReturnValue({ api_key: "configured-web-key" });
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(body)));
+    const out = parse(await webFetchTool.invoke({ url: "https://example.com/" }));
+    expect(out.error).toMatch(expected);
+  });
+
+  it("retains the configured content byte cap", async () => {
+    integrationLookup.mockReturnValue({ api_key: "configured-web-key" });
+    vi.stubEnv("JARELA_FETCH_TOOL_MAX_BYTES", "256");
+    resetConfigCache();
+    const byteLimit = 256;
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      title: "Long article",
+      content: "x".repeat(byteLimit + 1),
+    })));
+    const out = parse(await webFetchTool.invoke({ url: "https://example.com/", max_chars: byteLimit + 100 }));
+    expect(out).toMatchObject({
+      bytes_read: byteLimit,
+      truncated: true,
+      content: "x".repeat(byteLimit),
+    });
   });
 });

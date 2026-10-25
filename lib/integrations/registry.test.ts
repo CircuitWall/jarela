@@ -19,6 +19,14 @@ describe("integration registry", () => {
     expect(getManifest("does-not-exist")).toBeNull();
   });
 
+  it("registers DeepSeek Search & Fetch separately from model capabilities", () => {
+    expect(getManifest("deepseek-web")).toMatchObject({
+      id: "deepseek-web",
+      name: "DeepSeek Search & Fetch",
+      category: "other",
+    });
+  });
+
   it("listManifests returns a fresh array each call (callers can't mutate the cache)", () => {
     const a = listManifests();
     a.push({} as never);
