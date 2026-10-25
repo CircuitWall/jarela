@@ -10,6 +10,7 @@ import {
 import { runCryptoMigration } from "@/lib/crypto/migrate";
 import { applyProxyConfigFromDb } from "@/lib/proxy/dispatcher"; // env-var dispatcher applied at module load; DB layer applied below
 import { runEnvSyncOnce } from "@/lib/env/sync";
+import { clearStatementCache } from "./statement-cache";
 
 export const DB_PATH = join(getDataDir(), "jarela.db");
 
@@ -87,6 +88,7 @@ export function closeDb(): void {
   if (!_db) return;
   const db = _db;
   _db = null;
+  clearStatementCache(db);
   try {
     // PRAGMA optimize is cheap (<1ms typically) and lets SQLite run any
     // pending analyze work it would otherwise defer; safe on shutdown.
