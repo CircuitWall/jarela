@@ -31,6 +31,43 @@ afterEach(() => {
 });
 
 describe("AgentSwitcher", () => {
+  it("enriches sidebar rows with saved configuration but leaves header content unchanged", () => {
+    const detailedAgents = [{
+      ...agents[0], usage_profile: "dev" as const, model_config_name: "Synthetic model",
+      tools: ["web_search"], is_default: true,
+    }, {
+      ...agents[1], usage_profile: "work" as const, model_config_name: null,
+      tools: [], is_default: false,
+    }];
+    const { rerender } = render(<AgentSwitcher layout="sidebar" agents={detailedAgents} activeAgentId="home" onSelect={vi.fn()} />);
+    const home = screen.getByRole("button", { name: "Current agent: Home" });
+    expect(home.textContent).toContain("Developer / 1 selected tool / Default agent");
+    expect(home.textContent).toContain("Model: Synthetic model");
+    expect(screen.getByRole("button", { name: "Switch to: Work" }).textContent).toContain("Work / 0 selected tools");
+    expect(screen.getByText("Automatic routing")).toBeTruthy();
+    rerender(<AgentSwitcher agents={detailedAgents} activeAgentId="home" onSelect={vi.fn()} />);
+    expect(screen.queryByText("Model: Synthetic model")).toBeNull();
+    expect(screen.queryByText("Automatic routing")).toBeNull();
+    expect(screen.queryByText(/selected tool/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Current agent: Home" }).textContent).toBe("HHome");
+  });
+
+  it("shows readable unread counts only in the sidebar", () => {
+    const { rerender } = render(<AgentSwitcher layout="sidebar" agents={agents} activeAgentId="home" onSelect={vi.fn()} />);
+    let toastId = "";
+    act(() => {
+      toastId = pushToast({
+        kind: "info", source: "run", sourceLabel: "Reply", title: "Synthetic reply",
+        body: "", agent_id: "work", thread_id: null, ttl: 0,
+      });
+    });
+    expect(screen.getByText("1 unread notification")).toBeTruthy();
+    rerender(<AgentSwitcher agents={agents} activeAgentId="home" onSelect={vi.fn()} />);
+    expect(screen.queryByText("1 unread notification")).toBeNull();
+    expect(screen.getByRole("button", { name: "Switch to: Work, 1 unread notification" }).querySelector("[data-unread-dot]")).toBeTruthy();
+    act(() => { dismissToast(toastId); });
+  });
+
   it("expands every agent name into scrollable, touch-sized sidebar rows", () => {
     const onSelect = vi.fn();
     const { container } = render(<AgentSwitcher layout="sidebar" agents={agents} activeAgentId="work" onSelect={onSelect} />);

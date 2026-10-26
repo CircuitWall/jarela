@@ -510,7 +510,7 @@ export const api = {
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
       return created;
     },
-    update: async (id: string, data: AgentConfigIn) => {
+    update: async (id: string, data: Partial<AgentConfigIn>) => {
       const updated = await request<AgentConfig>(`/agents/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) });
       if (agentListCache.data) setAgentListCache(agentListCache.data.map((a) => (a.id === id ? updated : a)));
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));

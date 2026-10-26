@@ -100,6 +100,35 @@ describe("agent startup handoff", () => {
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
+  it("saves single-field agent updates, updates cached lists, and notifies consumers", async () => {
+    const { api } = await import("./client");
+    const original = { id: "agent", name: "Synthetic agent", instructions: "Keep these instructions", model_config_name: "old" };
+    const updated = { ...original, model_config_name: null };
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json([original]))
+      .mockResolvedValueOnce(json(original))
+      .mockResolvedValueOnce(json(updated))
+      .mockResolvedValueOnce(json(updated));
+    vi.stubGlobal("fetch", fetch);
+    const changed = vi.fn();
+    window.addEventListener("jarela:agents-changed", changed);
+    try {
+      await api.agents.list();
+      await api.agents.get("agent", { startup: true });
+      changed.mockClear();
+      await expect(api.agents.update("agent", { model_config_name: null })).resolves.toEqual(updated);
+      expect(fetch.mock.calls[2][0]).toBe("/api/v1/agents/agent");
+      expect(fetch.mock.calls[2][1].method).toBe("PUT");
+      expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ model_config_name: null });
+      expect(changed).toHaveBeenCalled();
+      await expect(api.agents.list()).resolves.toEqual([updated]);
+      await expect(api.agents.get("agent", { startup: true })).resolves.toEqual(updated);
+      expect(fetch).toHaveBeenCalledTimes(4);
+    } finally {
+      window.removeEventListener("jarela:agents-changed", changed);
+    }
+  });
+
   it("discards startup data read while a write was still in flight", async () => {
     const { api } = await import("./client");
     let finishWrite!: (response: Response) => void;

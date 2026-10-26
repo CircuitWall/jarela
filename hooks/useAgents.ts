@@ -9,7 +9,7 @@ export function useAgents(): UnifiedHookResult<
   {
     refresh: () => Promise<void>;
     create: (data: AgentConfigIn) => Promise<AgentConfig>;
-    update: (id: string, data: AgentConfigIn) => Promise<AgentConfig>;
+    update: (id: string, data: Partial<AgentConfigIn>) => Promise<AgentConfig>;
     remove: (id: string) => Promise<void>;
     duplicate: (id: string) => Promise<AgentConfig>;
   }
@@ -32,7 +32,7 @@ export function useAgents(): UnifiedHookResult<
     return a;
   }, [setAgents]);
 
-  const update = useCallback(async (id: string, data: AgentConfigIn) => {
+  const update = useCallback(async (id: string, data: Partial<AgentConfigIn>) => {
     const a = await api.agents.update(id, data);
     setAgents((p) => p.map((x) => (x.id === id ? a : x)));
     return a;

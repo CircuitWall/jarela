@@ -32,14 +32,25 @@ export function useUserProfileAndAgent(agentId: string | null): Result {
       setAgentConfigLoading(false);
       return;
     }
+    const id = agentId;
     let cancelled = false;
+    let requestSeq = 0;
     setAgentConfig(null);
     setAgentConfigLoading(true);
-    api.agents.get(agentId, { startup: true })
-      .then((config) => { if (!cancelled) setAgentConfig(config); })
-      .catch((error) => { if (!cancelled) console.error(error); })
-      .finally(() => { if (!cancelled) setAgentConfigLoading(false); });
-    return () => { cancelled = true; };
+    function refresh(startup = false) {
+      const seq = ++requestSeq;
+      api.agents.get(id, startup ? { startup: true } : undefined)
+        .then((config) => { if (!cancelled && seq === requestSeq) setAgentConfig(config); })
+        .catch((error) => { if (!cancelled && seq === requestSeq) console.error(error); })
+        .finally(() => { if (!cancelled && seq === requestSeq) setAgentConfigLoading(false); });
+    }
+    const onChanged = () => refresh();
+    refresh(true);
+    window.addEventListener("jarela:agents-changed", onChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("jarela:agents-changed", onChanged);
+    };
   }, [agentId]);
 
   return { userProfile, profileLoading, agentConfig, agentConfigLoading };

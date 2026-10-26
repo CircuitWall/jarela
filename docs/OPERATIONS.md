@@ -10,6 +10,31 @@ fills all remaining width, including on ultrawide screens. Other views retain
 their existing content-width limits.
 On narrower screens, use the header's agent selector and Menu button.
 
+**Unreleased:** The desktop left sidebar also shows each agent's usage profile,
+selected-tool count, default-agent label, model override or automatic routing,
+and readable unread-notification counts. Above the docked right menu, a
+**Selected agent** card shows the agent's icon (or initial), name, and
+Markdown-rendered identity and instructions. Long descriptions scroll inside
+the card, and empty identity/instruction fields are labeled explicitly.
+Markdown headings, lists, emphasis, code, links, and tables are supported; raw
+HTML is skipped and embedded images appear as their alternative text without
+loading remote content. Configuration metadata stays in the left list rather
+than being repeated in the right card. **Manage agents** opens the existing
+Agents view. Selected tools are not a guarantee of runtime availability;
+unavailable model overrides can fall back to automatic routing. No additional
+API requests are made for the description. The desktop card also offers quick
+**Model** selection (including **Automatic routing**), a **Usage strategy**
+selector in Full mode, and **Enable voice**. Controls load the saved model list
+only while the desktop card is available; disabled or missing model overrides
+are labeled and cannot be newly selected. Each change saves immediately for
+that agent across conversations, preserving other settings. Saving and failure
+states are shown explicitly. Model/strategy changes affect new runs, not a
+reply already in progress. Voice still requires a configured Google AI
+integration for Gemini speech services; enabling it is not a readiness check.
+Chat voice controls refresh after saving without a page reload. The additions
+use the existing desktop breakpoints and sidebar widths; the mobile header and
+small-screen menu drawer are unchanged.
+
 ## Manage agents
 
 The Agents view lists configured agents with a short summary of each instruction set. Use **New** to start adding an agent, and review the selected agent's tools and instructions before relying on it for a workflow.
