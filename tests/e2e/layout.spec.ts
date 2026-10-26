@@ -209,6 +209,113 @@ test("navigation docks progressively without overlapping the workspace", async (
   await expect(menu).toBeHidden();
 });
 
+test("agent details enrich docked sidebars without changing the small-screen drawer", async ({ page }) => {
+  await dismissOverlayBanners(page);
+  await page.addInitScript(() => localStorage.setItem("jarela.experience.mode", "full"));
+  const { model, agent } = await seedMockAgent(page.request);
+  const instructions = `## Sidebar working style\n\n- Verify **evidence**.\n- Use \`tools\`.\n\n| Step | Output |\n| --- | --- |\n| Verify | Evidence |\n\n${"More instructions with a very long reference: " + "x".repeat(400)}\n\n${"Additional instructions.\n\n".repeat(40)}Final instruction.`;
+  const update = await page.request.put(`/api/v1/agents/${encodeURIComponent(agent)}`, {
+    data: { identity: "A **test assistant**.", instructions },
+  });
+  expect(update.ok()).toBe(true);
+  await page.setViewportSize({ width: 1920, height: 900 });
+  await page.goto(`/?agent=${encodeURIComponent(agent)}`);
+  await waitForAppReady(page);
+  const menu = page.getByRole("navigation", { name: "Main navigation" });
+  const summary = menu.getByRole("region", { name: "Selected agent" });
+  const sidebar = page.getByRole("complementary", { name: "Agents", exact: true });
+  await expect(summary).toBeVisible();
+  await expect(summary.getByText("E2E Mock", { exact: true })).toBeVisible();
+  await expect(summary.getByText(model, { exact: true })).toHaveCount(0);
+  await expect(summary.getByText("Selected tools", { exact: true })).toHaveCount(0);
+  const description = summary.getByRole("region", { name: "Agent description" });
+  await expect(description.getByRole("heading", { name: "Sidebar working style" })).toBeVisible();
+  await expect(description.locator("strong").first()).toHaveText("test assistant");
+  await expect(description.getByRole("table")).toBeVisible();
+  expect(await description.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  await description.getByText("Final instruction.", { exact: true }).scrollIntoViewIfNeeded();
+  await expect(description.getByText("Final instruction.", { exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: /^Current agent:/ }).getByText(`Model: ${model}`, { exact: true })).toBeVisible();
+  await expect(sidebar.getByText(/0 selected tools/).first()).toBeVisible();
+  await summary.getByRole("button", { name: "Manage agents" }).click();
+  await expect(page.getByRole("button", { name: "New", exact: true })).toBeVisible();
+
+  for (const width of [320, 390, 1024, 1279, 1280, 1535, 1536, 1920, 2560]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width < 1280) {
+      await page.getByRole("button", { name: "Menu", exact: true }).click();
+      await expect(menu).toBeVisible();
+      await expect(summary).toBeHidden();
+      await expect(sidebar).toBeHidden();
+      await expect(summary.getByRole("combobox", { name: "Model" })).toHaveCount(0);
+      await expect(menu.getByRole("button", { name: "Manage agents" })).toBeHidden();
+      await menu.getByRole("button", { name: "Profile", exact: true }).click();
+      await expect(menu).toBeHidden();
+    } else {
+      await expect(summary).toBeVisible();
+      const bounds = await summary.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      expect(await description.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+});
+
+test("desktop agent card saves quick settings and refreshes chat without losing drafts", async ({ page }) => {
+  await dismissOverlayBanners(page);
+  await page.addInitScript(() => localStorage.setItem("jarela.experience.mode", "full"));
+  const { model } = await seedMockAgent(page.request);
+  const response = await page.request.post("/api/v1/agents", {
+    data: {
+      name: `Quick settings ${Date.now()}`,
+      model_config_name: null,
+      usage_strategy: "balanced",
+      voice_enabled: false,
+      identity: "Synthetic identity",
+      instructions: "Keep these instructions.",
+      tools: [],
+    },
+  });
+  expect(response.ok()).toBe(true);
+  const agent = await response.json() as { id: string };
+  await page.setViewportSize({ width: 1920, height: 900 });
+  await page.goto(`/?agent=${encodeURIComponent(agent.id)}`);
+  await waitForAppReady(page);
+  const card = page.getByRole("region", { name: "Selected agent" });
+  const modelSelect = card.getByRole("combobox", { name: "Model", exact: true });
+  const strategySelect = card.getByRole("combobox", { name: "Usage strategy" });
+  const voice = card.getByRole("checkbox", { name: "Enable voice" });
+  const composer = page.getByPlaceholder("Message…");
+  await composer.fill("Preserve this unsent draft.");
+  await modelSelect.selectOption(model);
+  await expect(card.getByText("Agent settings saved.", { exact: true })).toBeVisible();
+  await expect(modelSelect).toHaveValue(model);
+  await expect(page.getByRole("complementary", { name: "Agents", exact: true }).getByRole("button", { name: /^Current agent:/ })).toContainText(`Model: ${model}`);
+  await strategySelect.selectOption("high_reasoning");
+  await expect(strategySelect).toHaveValue("high_reasoning");
+  await voice.check();
+  await expect(voice).toBeChecked();
+  await expect(page.getByRole("button", { name: "Record voice message", exact: true })).toBeVisible();
+  await expect(composer).toHaveValue("Preserve this unsent draft.");
+  const persisted = await page.request.get(`/api/v1/agents/${encodeURIComponent(agent.id)}`);
+  expect(persisted.ok()).toBe(true);
+  expect(await persisted.json()).toMatchObject({
+    model_config_name: model, usage_strategy: "high_reasoning", voice_enabled: true,
+    identity: "Synthetic identity", instructions: "Keep these instructions.", tools: [],
+  });
+  await modelSelect.selectOption("");
+  await expect(modelSelect).toHaveValue("");
+  await strategySelect.selectOption("");
+  await expect(strategySelect).toHaveValue("");
+  await voice.uncheck();
+  await expect(voice).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Record voice message", exact: true })).toHaveCount(0);
+  await expect(composer).toHaveValue("Preserve this unsent draft.");
+  const reset = await page.request.get(`/api/v1/agents/${encodeURIComponent(agent.id)}`);
+  expect(await reset.json()).toMatchObject({ model_config_name: null, usage_strategy: null, voice_enabled: false });
+});
+
 test("update banner (when shown) anchors below the header", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });

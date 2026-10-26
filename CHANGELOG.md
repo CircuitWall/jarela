@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ui: Enrich desktop agent rows with profile, model configuration, selected-tool
+  counts, and readable unread counts; add a selected-agent card with its icon and
+  Markdown-rendered identity and instructions above the docked right menu,
+  with quick model, usage-strategy, and voice controls, without changes to
+  small-screen layouts. Agent-setting saves refresh chat controls immediately.
+
 - adoption: Publish the per-release changelog in the docs site and ask the
   adoption agent to prefer the schema-versioned JSON changeset feed when web access is
   permitted, retaining bundled changesets and offline operation.

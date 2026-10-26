@@ -79,7 +79,7 @@ export function AppShell() {
   const unreadCount = useUnreadCount();
 
   // Shared agent list for boot picker, menu, and notification titles.
-  const { agents, loading: agentsLoading, refresh: refreshAgents } = useAgents();
+  const { agents, loading: agentsLoading, error: agentsError, refresh: refreshAgents, update: updateAgent } = useAgents();
   const agentsLoaded = !agentsLoading;
   const agentsRef = useRef<AgentConfig[]>([]);
   agentsRef.current = agents;
@@ -505,6 +505,10 @@ export function AppShell() {
       <MenuPanel
         open={showMenu}
         activeTab={state.activeTab}
+        activeAgent={agents.find((agent) => agent.id === state.activeAgentId)}
+        agentsLoading={agentsLoading}
+        agentsError={agentsError}
+        onUpdateAgent={updateAgent}
         onClose={() => setShowMenu(false)}
         onSetTab={(tab) => dispatch({ type: "SET_TAB", tab })}
       />

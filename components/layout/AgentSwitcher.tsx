@@ -1,12 +1,14 @@
 "use client";
 import { useLayoutEffect, useMemo, useRef } from "react";
-import type { AgentInfo } from "@/api/types";
+import type { AgentConfig, AgentInfo } from "@/api/types";
+import { USAGE_PROFILES } from "@/lib/agents/usage-profile";
 import { Logo } from "@/components/ui/Logo";
 import { getAppName } from "@/lib/env/app-config";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
 
 interface Props {
-  agents: Pick<AgentInfo, "id" | "name" | "icon">[];
+  agents: (Pick<AgentInfo, "id" | "name" | "icon"> &
+    Partial<Pick<AgentConfig, "usage_profile" | "model_config_name" | "tools" | "is_default">>)[];
   activeAgentId: string | null;
   loading?: boolean;
   layout?: "header" | "sidebar";
@@ -115,7 +117,30 @@ export function AgentSwitcher({ agents, activeAgentId, loading = false, layout =
                     {agent.name.charAt(0).toUpperCase()}
                   </span>
                 )}
-                {(selected || sidebar) && <span className={sidebar ? "truncate pr-1 text-sm font-semibold tracking-tight" : "max-w-[7rem] truncate pr-1 text-sm font-semibold tracking-tight sm:max-w-[12rem]"}>{agent.name}</span>}
+                {(selected || sidebar) && (
+                  <span className={sidebar ? "min-w-0 flex-1 py-2" : "max-w-[7rem] truncate pr-1 text-sm font-semibold tracking-tight sm:max-w-[12rem]"}>
+                    <span className={sidebar ? "block truncate text-sm font-semibold tracking-tight" : undefined}>{agent.name}</span>
+                    {sidebar && (
+                      <span className="mt-1 block space-y-1 text-[11px] leading-snug text-fg-faint">
+                        {(agent.usage_profile || agent.tools || agent.is_default) && (
+                          <span className="block break-words">
+                            {[
+                              agent.usage_profile ? USAGE_PROFILES[agent.usage_profile].label : null,
+                              agent.tools ? `${agent.tools.length} selected tool${agent.tools.length === 1 ? "" : "s"}` : null,
+                              agent.is_default ? "Default agent" : null,
+                            ].filter(Boolean).join(" / ")}
+                          </span>
+                        )}
+                        {agent.model_config_name !== undefined && (
+                          <span className="block truncate" title={agent.model_config_name ? `Model override: ${agent.model_config_name}` : "Automatic routing"}>
+                            {agent.model_config_name ? `Model: ${agent.model_config_name}` : "Automatic routing"}
+                          </span>
+                        )}
+                        {unreadCount > 0 && <span className="block text-fg-muted">{unreadCount} unread {unreadCount === 1 ? "notification" : "notifications"}</span>}
+                      </span>
+                    )}
+                  </span>
+                )}
                 </span>
                 {unreadCount > 0 && (
                   <span aria-hidden="true" data-unread-dot
