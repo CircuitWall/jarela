@@ -34,9 +34,11 @@ function featureCommit(commit) {
   return /^feat(?:\([^)]+\))?:/i.test(commit.subject);
 }
 
-export function releaseCommitMatchesBase(commit, parentSha) {
+export function releaseCommitMatchesBase(commit, parentSha, resolveTree) {
   const releaseBase = /^Release base: ([0-9a-f]{40})$/m.exec(commit?.body ?? "")?.[1];
-  return Boolean(releaseBase && releaseBase === parentSha);
+  if (!releaseBase) return false;
+  if (releaseBase === parentSha) return true;
+  return Boolean(resolveTree && resolveTree(releaseBase) === resolveTree(parentSha));
 }
 
 export function classifyRelease({ currentVersion, latestTag, commits }) {
@@ -152,7 +154,7 @@ function calculatePlan() {
   if (plan.action === "resume") {
     const releaseCommit = commits.find((commit) => commit.sha === plan.targetSha);
     const releaseParent = git("rev-parse", `${plan.targetSha}^`).split(/\s+/)[0];
-    if (!releaseCommitMatchesBase(releaseCommit, releaseParent)) {
+    if (!releaseCommitMatchesBase(releaseCommit, releaseParent, (ref) => git("rev-parse", `${ref}^{tree}`))) {
       return { action: "manual", reason: "release-base-advanced", version: packageJson.version, latestTag, mainSha };
     }
   }
@@ -185,7 +187,7 @@ function writePlan(plan) {
     const reason = plan.reason === "breaking-change"
       ? "Breaking changes are not released automatically."
       : plan.reason === "release-base-advanced"
-        ? "Main advanced while the release PR was merging; review and prepare a fresh release PR manually."
+        ? "Release base contents changed while the release PR was merging; review and prepare a fresh release PR manually."
         : "The main package version does not match the latest release tag.";
     summary = `### Human release required\n\n${reason}\n${commits}\n`;
   } else {

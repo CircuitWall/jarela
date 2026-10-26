@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { classifyRelease, parseCommitLog, parseVersion, releaseCommitMatchesBase, renderReleaseNotes } from "./nightly-release.mjs";
 
 function commit(subject, body = "", sha = "sha") {
@@ -61,6 +65,20 @@ describe("nightly workflow defaults", () => {
     expect(workflow).toContain('if [ "$completed" != "true" ]; then');
     expect(workflow).not.toContain("gh pr checks");
     expect(workflow).toContain('--match-head-commit "$HEAD_SHA"');
+  });
+
+  it("validates the resumed release at its exact commit with matching dependencies", () => {
+    const step = workflow.split("      - name: ").find((text) => text.startsWith("Verify changeset for a resumed release\n"));
+    expect(step).toContain("TARGET_SHA: ${{ steps.plan.outputs.target_sha }}");
+    expect(step).toMatch(/git switch --detach "\$TARGET_SHA"\n\s+npm ci[^\n]*\n\s+npm run release:changeset -- --check/);
+  });
+
+  it("accepts only content-identical base drift after merging a release", () => {
+    expect(workflow).toContain('"$merge_parent" != "$PLANNED_MAIN_SHA"');
+    expect(workflow).toContain('git rev-parse "$merge_parent^{tree}"');
+    expect(workflow).toContain('git rev-parse "$PLANNED_MAIN_SHA^{tree}"');
+    expect(workflow).not.toContain('name: Hold breaking changes for a human release');
+    expect(workflow).toContain('The release planner held publication ($REASON)');
   });
 
   it("audits the existing OAuth proxy project rather than a missing directory", () => {
@@ -170,6 +188,56 @@ describe("nightly release policy", () => {
     expect(releaseCommitMatchesBase(commitWithBase, base)).toBe(true);
     expect(releaseCommitMatchesBase(commitWithBase, "abcdef0123456789abcdef0123456789abcdef01")).toBe(false);
     expect(releaseCommitMatchesBase(commit("chore(release): bump to 2.5.4"), base)).toBe(false);
+  });
+
+  it("recovers a rebased release only when both base trees are identical", () => {
+    const base = "0123456789abcdef0123456789abcdef01234567";
+    const parent = "abcdef0123456789abcdef0123456789abcdef01";
+    const release = commit("chore(release): bump to 2.5.4", `Release base: ${base}`);
+    const sameTree = () => "identical-tree";
+    const differentTrees = (ref) => ref === base ? "original-tree" : "changed-tree";
+
+    expect(releaseCommitMatchesBase(release, parent, sameTree)).toBe(true);
+    expect(releaseCommitMatchesBase(release, parent, differentTrees)).toBe(false);
+    expect(releaseCommitMatchesBase(commit("chore(release): bump to 2.5.4"), parent, sameTree)).toBe(false);
+    expect(() => releaseCommitMatchesBase(release, parent, () => {
+      throw new Error("Missing release base object");
+    })).toThrow("Missing release base object");
+  });
+
+  it.each([false, true])("checks real Git tree contents before recovery (changed base: %s)", (changedBase) => {
+    const root = mkdtempSync(join(tmpdir(), "jarela-release-recovery-"));
+    const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    try {
+      git("init", "-b", "main");
+      git("config", "user.name", "Release Test");
+      git("config", "user.email", "release-test@example.invalid");
+      writeFileSync(join(root, "package.json"), '{"version":"2.5.3"}\n');
+      git("add", "package.json");
+      git("commit", "-m", "chore(test): initialize release");
+      git("tag", "v2.5.3");
+      const base = git("rev-parse", "HEAD");
+      if (changedBase) {
+        writeFileSync(join(root, "source.txt"), "new source content\n");
+        git("add", "source.txt");
+      }
+      git("commit", "--allow-empty", "-m", "chore(test): advance release base");
+      writeFileSync(join(root, "package.json"), '{"version":"2.5.4"}\n');
+      git("add", "package.json");
+      git("commit", "-m", "chore(release): bump to 2.5.4", "-m", `Release base: ${base}`);
+      const releaseSha = git("rev-parse", "HEAD");
+      git("commit", "--allow-empty", "-m", "fix(test): later main change");
+      git("update-ref", "refs/remotes/origin/main", "HEAD");
+      const output = execFileSync(process.execPath, [fileURLToPath(new URL("./nightly-release.mjs", import.meta.url)), "plan"], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, GITHUB_OUTPUT: "", GITHUB_STEP_SUMMARY: "" },
+      });
+      expect(output).toContain(changedBase ? "action=manual\n" : "action=resume\n");
+      expect(output).toContain(changedBase ? "reason=release-base-advanced\n" : `target_sha=${releaseSha}\n`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("formats conventional commits into release notes", () => {

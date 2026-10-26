@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- release: Automatically recover untagged releases after content-identical
+  base rebases, validating the exact release commit rather than later main.
+
 - dashboard: Show separate input/output spending across summaries and usage
   breakdowns, label model rates explicitly per million tokens, and retain
   unsplittable recorded costs as unattributed.
