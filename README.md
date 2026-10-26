@@ -37,7 +37,7 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 
 Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what to expect in your first chat.
 
-## Dashboard costs
+## Dashboard costs (upcoming after Jarela 2.7.0)
 
 The dashboard shows separate **input** and **output** prices per million tokens
 for each model, and separate input/output spending in the summary, daily
@@ -48,7 +48,7 @@ When no matching rates are available, a recorded cost is shown as **unattributed
 instead of inventing an input/output split. Legacy messages still use
 content-length token estimates.
 
-## Document indexing and recall privacy
+## Document indexing and recall privacy (upcoming after Jarela 2.7.0)
 
 In Documents, use **Opt in to indexing** to choose a local folder or a supported
 connected integration (Gmail, Outlook, iCloud, GitHub, Jira, or Confluence). Scope remote
@@ -111,7 +111,7 @@ references can be missed. Search previews are ranked and limited, not exhaustive
 audits. Exclusions do not delete stored content, prevent external embedding,
 remove excerpts already in chats, or restrict separate live email/file tools.
 
-## Model updates
+## Model updates (upcoming after Jarela 2.7.0)
 
 The built-in pricing-maintenance agent tool also checks official model
 documentation for version and capability changes. It refreshes catalog/badge
@@ -175,7 +175,7 @@ and saved credentials stay accessible; **Show all integrations** bypasses discov
 filtering. With no active agent, the catalog shows everything. Global Essential/Full
 mode still controls app configuration panels independently.
 
-### Web search and fetch backends
+### Web search and fetch backends (upcoming after Jarela 2.7.0)
 
 `web_search` and `web_fetch` are Jarela tools, separate from model-native web-search
 capabilities shown in model badges. Firecrawl Search and Jarela's guarded direct

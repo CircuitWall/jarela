@@ -204,6 +204,14 @@ describe("version adoption state", () => {
     expect(prompt).toContain("tool `workflow_progress`");
     expect(prompt).toContain("params added: validation_evidence");
     expect(prompt).toContain("apply an edit only after the user approves it");
+    expect(prompt).toContain("https://circuitwall.github.io/jarela/CHANGELOG/");
+    expect(prompt).toContain("https://circuitwall.github.io/jarela/adoption/");
+    expect(prompt).toContain("https://circuitwall.github.io/jarela/adoption/changesets.json");
+    expect(prompt).toContain("Require schema_version 1 and complete, untruncated JSON");
+    expect(prompt).toContain("Ignore Unreleased and future versions");
+    expect(prompt).toContain("Bundled changesets remain authoritative");
+    expect(prompt).toContain("Never claim the website was checked without a successful tool result");
+    expect(prompt).not.toContain("Do not independently fetch");
     expect(prompt).not.toContain("partial");
 
     const adoption = recordVersionAdoptionWorkflowProgress({

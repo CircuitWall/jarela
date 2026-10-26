@@ -32,12 +32,20 @@ Advanced settings are grouped into tabs for **Credentials**, **Models**, **Priva
 
 The Dashboard summarizes token use, estimated cost, cache activity, and tool reliability over a selectable time window. It also includes daily trends and model/provider breakdowns. Cost figures are estimates based on the configured pricing data, not billing statements.
 
+**Upcoming after Jarela 2.7.0:** Costs are split into input and output using
+each model's separate rates per
+million tokens. The breakdown appears in summaries and daily, vendor, model, and
+agent reports; prompt-cache read/write charges are included with input. When
+matching rates are unavailable, recorded cost is shown as unattributed rather
+than assigned an unsupported input/output split. Legacy messages use
+content-length token estimates, and historical recorded totals are not rewritten.
+
 Repeated dashboard computations reuse the last result for up to five seconds
 when the database, pricing snapshot, date, and selected window are unchanged.
 Database writes or pricing changes invalidate that server-side result. The
 existing browser response cache can retain metrics for up to 30 seconds.
 
-The built-in `refresh_model_pricing` agent tool and weekly maintenance task also
+**Upcoming after Jarela 2.7.0:** The built-in `refresh_model_pricing` agent tool and weekly maintenance task also
 check official API model documentation for rolling-version and capability
 updates. Accepted observations include source URLs, check times, and supporting
 quotes. Saved-model badges and catalog entries use this display metadata after

@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
@@ -19,6 +19,13 @@ const candidates = [
 ];
 
 mkdirSync(docsAssetsDir, { recursive: true });
+
+const changelog = readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
+const siteChangelog = changelog.replace(
+  /(\]\()(?:\.\/)?((?:docs|lib|scripts|hooks|packages)\/[^)]+)(\))/g,
+  "$1https://github.com/CircuitWall/jarela/blob/main/$2$3",
+);
+writeFileSync(path.join(root, "docs", "CHANGELOG.md"), siteChangelog);
 
 for (const name of candidates) {
   const src = path.join(publicDir, name);
