@@ -4,6 +4,7 @@ import type { DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
 import { convertUsd, formatInt, formatMoney, formatMoneyCompact } from "@/lib/dashboard/format";
 import { TIER_COLORS } from "./dashboard-constants";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { CostBreakdown } from "./CostBreakdown";
 
 interface TokenChartProps {
   series: DashboardMetrics["series"];
@@ -227,6 +228,7 @@ export function InteractiveCostChart({ series, currencyInfo, selectedDay, onSele
   const active = hovered != null ? points[hovered] : null;
   const selectedIdx = selectedDay ? points.findIndex((pt) => pt.p.day === selectedDay) : -1;
   const selected = selectedIdx >= 0 ? points[selectedIdx] : null;
+  const detailPoint = active ?? selected;
   const animationSignature = series.map((s) => `${s.day}:${s.estimated_cost_usd}`).join("|");
 
   useEffect(() => { setLineAnimCycle((v) => v + 1); }, [animationSignature, selectedDay]);
@@ -305,6 +307,9 @@ export function InteractiveCostChart({ series, currencyInfo, selectedDay, onSele
           window total {formatMoney(series.reduce((sum, s) => sum + s.estimated_cost_usd, 0), currencyInfo)}
         </span>
       </div>
+      {detailPoint ? (
+        <CostBreakdown costs={detailPoint.p.cost_breakdown} currencyInfo={currencyInfo} />
+      ) : null}
     </div>
   );
 }

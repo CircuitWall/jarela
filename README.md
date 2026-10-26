@@ -37,6 +37,17 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 
 Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what to expect in your first chat.
 
+## Dashboard costs
+
+The dashboard shows separate **input** and **output** prices per million tokens
+for each model, and separate input/output spending in the summary, daily
+selection, and vendor/model/agent reports. Input spending includes prompt-cache
+read/write charges under the existing provider pricing assumptions. Costs are
+current-rate estimates, not invoices; recorded historical totals remain unchanged.
+When no matching rates are available, a recorded cost is shown as **unattributed**
+instead of inventing an input/output split. Legacy messages still use
+content-length token estimates.
+
 ## Document indexing and recall privacy
 
 In Documents, use **Opt in to indexing** to choose a local folder or a supported

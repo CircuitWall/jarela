@@ -721,11 +721,18 @@ export interface DashboardDataQuality {
   measured_pct: number;
 }
 
+export interface DashboardCostBreakdown {
+  input_cost_usd: number;
+  output_cost_usd: number;
+  unattributed_cost_usd: number;
+}
+
 export interface DashboardSeriesPoint {
   day: string;
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
   tool_calls: number;
   tool_successes: number;
   tool_errors: number;
@@ -751,6 +758,7 @@ export interface DashboardAgentTop {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
 }
 
 export interface DashboardProviderRate {
@@ -816,6 +824,7 @@ export interface DashboardProviderBreakdown {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
 }
 
 export interface DashboardModelBreakdown {
@@ -826,6 +835,7 @@ export interface DashboardModelBreakdown {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
 }
 
 export interface DashboardDayBreakdown {
@@ -834,6 +844,7 @@ export interface DashboardDayBreakdown {
     input_tokens_est: number;
     output_tokens_est: number;
     estimated_cost_usd: number;
+    cost_breakdown: DashboardCostBreakdown;
     tool_calls: number;
     tool_successes: number;
     tool_errors: number;
@@ -853,6 +864,7 @@ export interface DashboardMetrics {
     input_tokens_est: number;
     output_tokens_est: number;
     estimated_cost_usd: number;
+    cost_breakdown: DashboardCostBreakdown;
     recorded_cost_usd: number;
     cache_read_tokens: number;
     cache_hit_rate: number;

@@ -95,5 +95,49 @@ describe("dashboard metrics cache", () => {
       recorded_cost_usd: 0.5, tool_calls: 1, tool_successes: 1,
     });
     expect(data.summary.data_quality.measured_messages).toBe(1);
+    expect(data.summary.cost_breakdown).toEqual({
+      input_cost_usd: 0, output_cost_usd: 0, unattributed_cost_usd: 0.5,
+    });
+  });
+
+  it("aggregates unequal input/output costs consistently across every dashboard scope", async () => {
+    const rates = {
+      inputPer1M: 2, outputPer1M: 8, source: "synthetic", inferred: false,
+      confidence: "high" as const, ok: true, status: 200, error: null,
+    };
+    vi.spyOn(pricing, "getPricingTables").mockReturnValue({
+      byProvider: new Map([["synthetic", rates]]),
+      byProviderModel: new Map([["synthetic::test-model", rates]]),
+      byModel: new Map([["test-model", rates]]),
+      aggregatorSources: [], aggregatorModelRates: [], generatedAt: null,
+    });
+    recordMessageUsage({
+      message_id: "m1", thread_id: "t1", agent_id: "a1", agent_name: "Synthetic",
+      provider: "synthetic", model_id: "test-model", model_config_name: "Synthetic",
+      input_tokens: 1_000_000, output_tokens: 250_000, input_rate_usd_per_mtok: 2,
+      output_rate_usd_per_mtok: 8, cost_usd: 99,
+    });
+    const now = new Date().toISOString();
+    getDb().prepare("INSERT INTO messages(msg_id, thread_id, role, content, created_at) VALUES (?,?,?,?,?)")
+      .run("m2", "t1", "assistant", "synthetic", now);
+    recordMessageUsage({
+      message_id: "m2", thread_id: "t1", agent_id: "a1", agent_name: "Synthetic",
+      provider: "synthetic", model_id: "test-model", model_config_name: "Synthetic",
+      input_tokens: 500_000, output_tokens: 500_000, input_rate_usd_per_mtok: 2,
+      output_rate_usd_per_mtok: 8, cost_usd: 50,
+    });
+    const data = await getDashboardMetrics();
+    const day = data.breakdowns_by_day[now.slice(0, 10)];
+    for (const row of [
+      data.summary, data.by_provider[0], data.by_model[0], data.top_agents[0],
+      data.series.find((point) => point.day === day.day)!,
+      day.summary, day.by_provider[0], day.by_model[0], day.top_agents[0],
+    ]) {
+      expect(row.cost_breakdown).toEqual({ input_cost_usd: 3, output_cost_usd: 6, unattributed_cost_usd: 0 });
+      expect(row.estimated_cost_usd).toBe(9);
+    }
+    expect(data.summary.recorded_cost_usd).toBe(149);
+    expect(data.series.filter((point) => point.day !== day.day).every((point) =>
+      Object.values(point.cost_breakdown).every((cost) => cost === 0))).toBe(true);
   });
 });

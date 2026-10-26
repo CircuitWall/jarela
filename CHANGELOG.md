@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- dashboard: Show separate input/output spending across summaries and usage
+  breakdowns, label model rates explicitly per million tokens, and retain
+  unsplittable recorded costs as unattributed.
+
 - ui: Avoid stacked backdrop filters on touch surfaces to keep mobile interactions responsive.
 
 ## [2.7.0] - 2026-10-25

@@ -26,6 +26,7 @@ export function VendorModelReportSection({ effectiveByProvider, effectiveByModel
             id: row.provider,
             label: row.provider,
             cost: row.estimated_cost_usd,
+            costs: row.cost_breakdown,
             detail: `${formatInt(row.message_count)} msgs · ${formatInt(row.input_tokens_est + row.output_tokens_est)} tokens`,
           }))}
           currencyInfo={currencyInfo}
@@ -38,6 +39,7 @@ export function VendorModelReportSection({ effectiveByProvider, effectiveByModel
             id: `${row.provider}:${row.model_config_name}:${row.model_id}`,
             label: row.model_config_name,
             cost: row.estimated_cost_usd,
+            costs: row.cost_breakdown,
             detail: `${row.provider}/${row.model_id} · ${formatInt(row.message_count)} msgs`,
           }))}
           currencyInfo={currencyInfo}

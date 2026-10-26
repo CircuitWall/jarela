@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useId, useState } from "react";
-import type { DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
+import type { DashboardCostBreakdown, DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
 import { withAlpha } from "@/lib/dashboard/color";
 import { arcPath } from "@/lib/dashboard/geometry";
 import { formatInt, formatMoney, formatMoneyCompact } from "@/lib/dashboard/format";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { CostBreakdown } from "./CostBreakdown";
 
 export type DonutSlice = {
   id: string;
@@ -186,6 +187,7 @@ export function AgentCostPie({ agents, currencyInfo }: AgentCostPieProps) {
             <div className="mt-1 text-xs text-[var(--text-secondary)]">
               {(slice.fraction * 100).toFixed(1)}% · {formatInt(slice.agent.message_count)} msgs · {formatInt(slice.agent.input_tokens_est + slice.agent.output_tokens_est)} tokens
             </div>
+            <CostBreakdown costs={slice.agent.cost_breakdown} currencyInfo={currencyInfo} />
           </div>
         ))}
       </div>
@@ -197,7 +199,7 @@ const BREAKDOWN_PALETTE = ["#14b8a6", "#22c55e", "#3b82f6", "#8b5cf6", "#f59e0b"
 
 interface BreakdownPieProps {
   title: string;
-  items: Array<{ id: string; label: string; cost: number; detail: string }>;
+  items: Array<{ id: string; label: string; cost: number; detail: string; costs: DashboardCostBreakdown }>;
   currencyInfo: DashboardCurrencyInfo;
   emptyLabel: string;
 }
@@ -259,6 +261,7 @@ export function BreakdownPiePanel({ title, items, currencyInfo, emptyLabel }: Br
               <div className="mt-0.5 text-[10px] text-[var(--text-secondary)] truncate">
                 {(slice.fraction * 100).toFixed(1)}% · {slice.detail}
               </div>
+              <CostBreakdown costs={slice.costs} currencyInfo={currencyInfo} />
             </div>
           ))}
         </div>

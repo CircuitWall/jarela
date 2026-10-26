@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import type { DashboardCostBreakdown } from "@/api/types";
 import { listToolStats, toStats } from "@/lib/stores/tool-stats";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
 import {
@@ -46,6 +47,7 @@ export interface DashboardSeriesPoint {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
   tool_calls: number;
   tool_successes: number;
   tool_errors: number;
@@ -75,6 +77,7 @@ export interface DashboardAgentTop {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
 }
 
 export interface DashboardProviderRate {
@@ -108,6 +111,7 @@ export interface DashboardProviderBreakdown {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
 }
 
 export interface DashboardModelBreakdown {
@@ -118,6 +122,7 @@ export interface DashboardModelBreakdown {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
 }
 
 export interface DashboardDayBreakdown {
@@ -126,6 +131,7 @@ export interface DashboardDayBreakdown {
     input_tokens_est: number;
     output_tokens_est: number;
     estimated_cost_usd: number;
+    cost_breakdown: DashboardCostBreakdown;
     tool_calls: number;
     tool_successes: number;
     tool_errors: number;
@@ -145,6 +151,7 @@ export interface DashboardMetrics {
     input_tokens_est: number;
     output_tokens_est: number;
     estimated_cost_usd: number;
+    cost_breakdown: DashboardCostBreakdown;
     recorded_cost_usd: number;
     cache_read_tokens: number;
     cache_hit_rate: number;
@@ -212,6 +219,7 @@ type DayBucket = {
   inputTokens: number;
   outputTokens: number;
   estimatedCost: number;
+  cost_breakdown: DashboardCostBreakdown;
   toolCalls: number;
   toolSuccesses: number;
   toolErrors: number;
@@ -225,6 +233,7 @@ type AgentBucket = {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
 };
 
 type ProviderBucket = {
@@ -233,6 +242,7 @@ type ProviderBucket = {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
 };
 
 type ModelBucket = {
@@ -243,9 +253,10 @@ type ModelBucket = {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
 };
 
-export function recalculateSnapshotCost(input: {
+type SnapshotCostInput = {
   provider: string;
   modelId: string;
   inputTokens: number;
@@ -253,13 +264,27 @@ export function recalculateSnapshotCost(input: {
   cacheCreationTokens: number | null;
   cacheReadTokens: number | null;
   recordedCostUsd: number;
-}, tables: ReturnType<typeof getPricingTables>): number {
+};
+
+export function recalculateSnapshotCostBreakdown(
+  input: SnapshotCostInput, tables: PricingTables,
+): DashboardCostBreakdown {
   const rates = modelRatesFor(tables, input.provider, input.modelId);
-  if (rates.inputPer1M == null && rates.outputPer1M == null) return input.recordedCostUsd;
-  return estimateProviderCostUsd(input.provider, input.inputTokens, input.outputTokens, rates, {
-    cache_creation_input_tokens: input.cacheCreationTokens,
-    cache_read_input_tokens: input.cacheReadTokens,
-  });
+  if (rates.inputPer1M == null && rates.outputPer1M == null) {
+    return { ...emptyCostBreakdown(), unattributed_cost_usd: input.recordedCostUsd };
+  }
+  return {
+    input_cost_usd: estimateProviderCostUsd(input.provider, input.inputTokens, 0, rates, {
+      cache_creation_input_tokens: input.cacheCreationTokens,
+      cache_read_input_tokens: input.cacheReadTokens,
+    }),
+    output_cost_usd: estimateCostUsd(0, input.outputTokens, rates),
+    unattributed_cost_usd: 0,
+  };
+}
+
+export function recalculateSnapshotCost(input: SnapshotCostInput, tables: PricingTables): number {
+  return totalCostBreakdown(recalculateSnapshotCostBreakdown(input, tables));
 }
 
 export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<DashboardMetrics> {
@@ -374,6 +399,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   // user/system rows never carry a message_usage snapshot by design.
   let measuredAssistantMessages = 0;
   let estimatedAssistantMessages = 0;
+  const totalCosts = emptyCostBreakdown();
 
   for (const row of usageRows) {
     const day = row.created_at.slice(0, 10);
@@ -388,6 +414,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     let inputTokens = 0;
     let outputTokens = 0;
     let estCost = 0;
+    let costs = emptyCostBreakdown();
     let attribProvider: string | null = row.provider;
     let attribModelId: string | null = row.model_id;
     let attribModelConfig: string | null = row.model_config_name;
@@ -404,7 +431,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       attribAgentName = row.mu_agent_name ?? attribAgentName;
       const recordedCost = row.mu_cost_usd ?? 0;
       totalRecordedCost += recordedCost;
-      estCost = recalculateSnapshotCost({
+      costs = recalculateSnapshotCostBreakdown({
         provider: attribProvider ?? "",
         modelId: attribModelId ?? "",
         inputTokens,
@@ -413,6 +440,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
         cacheReadTokens: row.mu_cache_read,
         recordedCostUsd: recordedCost,
       }, tables);
+      estCost = totalCostBreakdown(costs);
       if (row.role === "assistant") measuredAssistantMessages += 1;
       // Accumulate tier breakdown — null columns (legacy snapshots
       // before the tier wire-up) contribute zero, which is the right
@@ -441,16 +469,23 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       outputTokens = isInput ? 0 : tokenEstimate;
       const rates = modelRatesFor(tables, row.provider, row.model_id);
       estCost = estimateCostUsd(inputTokens, outputTokens, rates);
+      costs = {
+        input_cost_usd: estimateCostUsd(inputTokens, 0, rates),
+        output_cost_usd: estimateCostUsd(0, outputTokens, rates),
+        unattributed_cost_usd: 0,
+      };
       if (row.role === "assistant") estimatedAssistantMessages += 1;
     }
 
     dayBucket.inputTokens += inputTokens;
     dayBucket.outputTokens += outputTokens;
     dayBucket.estimatedCost += estCost;
+    addCostBreakdown(dayBucket.cost_breakdown, costs);
 
     totalInput += inputTokens;
     totalOutput += outputTokens;
     totalCost += estCost;
+    addCostBreakdown(totalCosts, costs);
 
     const agentName = attribAgentName?.trim() || attribAgentId;
     const agentBucket = agentMap.get(attribAgentId) ?? {
@@ -460,11 +495,13 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: 0,
       output_tokens_est: 0,
       estimated_cost_usd: 0,
+      cost_breakdown: emptyCostBreakdown(),
     };
     agentBucket.message_count += 1;
     agentBucket.input_tokens_est += inputTokens;
     agentBucket.output_tokens_est += outputTokens;
     agentBucket.estimated_cost_usd += estCost;
+    addCostBreakdown(agentBucket.cost_breakdown, costs);
     agentMap.set(attribAgentId, agentBucket);
 
     const providerName = attribProvider?.trim().toLowerCase() || "unassigned";
@@ -474,11 +511,13 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: 0,
       output_tokens_est: 0,
       estimated_cost_usd: 0,
+      cost_breakdown: emptyCostBreakdown(),
     };
     providerBucket.message_count += 1;
     providerBucket.input_tokens_est += inputTokens;
     providerBucket.output_tokens_est += outputTokens;
     providerBucket.estimated_cost_usd += estCost;
+    addCostBreakdown(providerBucket.cost_breakdown, costs);
     providerMap.set(providerName, providerBucket);
 
     const modelConfigName = attribModelConfig?.trim() || "unassigned";
@@ -492,11 +531,13 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: 0,
       output_tokens_est: 0,
       estimated_cost_usd: 0,
+      cost_breakdown: emptyCostBreakdown(),
     };
     modelBucket.message_count += 1;
     modelBucket.input_tokens_est += inputTokens;
     modelBucket.output_tokens_est += outputTokens;
     modelBucket.estimated_cost_usd += estCost;
+    addCostBreakdown(modelBucket.cost_breakdown, costs);
     modelMap.set(modelKey, modelBucket);
 
     const dayBreakdown = ensureDayBreakdown(day);
@@ -507,11 +548,13 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: 0,
       output_tokens_est: 0,
       estimated_cost_usd: 0,
+      cost_breakdown: emptyCostBreakdown(),
     };
     dayAgent.message_count += 1;
     dayAgent.input_tokens_est += inputTokens;
     dayAgent.output_tokens_est += outputTokens;
     dayAgent.estimated_cost_usd += estCost;
+    addCostBreakdown(dayAgent.cost_breakdown, costs);
     dayBreakdown.agents.set(attribAgentId, dayAgent);
 
     const dayProvider = dayBreakdown.providers.get(providerName) ?? {
@@ -520,11 +563,13 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: 0,
       output_tokens_est: 0,
       estimated_cost_usd: 0,
+      cost_breakdown: emptyCostBreakdown(),
     };
     dayProvider.message_count += 1;
     dayProvider.input_tokens_est += inputTokens;
     dayProvider.output_tokens_est += outputTokens;
     dayProvider.estimated_cost_usd += estCost;
+    addCostBreakdown(dayProvider.cost_breakdown, costs);
     dayBreakdown.providers.set(providerName, dayProvider);
 
     const dayModel = dayBreakdown.models.get(modelKey) ?? {
@@ -535,11 +580,13 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: 0,
       output_tokens_est: 0,
       estimated_cost_usd: 0,
+      cost_breakdown: emptyCostBreakdown(),
     };
     dayModel.message_count += 1;
     dayModel.input_tokens_est += inputTokens;
     dayModel.output_tokens_est += outputTokens;
     dayModel.estimated_cost_usd += estCost;
+    addCostBreakdown(dayModel.cost_breakdown, costs);
     dayBreakdown.models.set(modelKey, dayModel);
 
     if (row.tool_events && row.tool_events.length > 1) {
@@ -563,6 +610,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: b.inputTokens,
       output_tokens_est: b.outputTokens,
       estimated_cost_usd: b.estimatedCost,
+      cost_breakdown: b.cost_breakdown,
       tool_calls: b.toolCalls,
       tool_successes: b.toolSuccesses,
       tool_errors: b.toolErrors,
@@ -656,6 +704,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
         input_tokens_est: dayPoint?.input_tokens_est ?? 0,
         output_tokens_est: dayPoint?.output_tokens_est ?? 0,
         estimated_cost_usd: dayPoint?.estimated_cost_usd ?? 0,
+        cost_breakdown: dayPoint?.cost_breakdown ?? emptyCostBreakdown(),
         tool_calls: dayPoint?.tool_calls ?? 0,
         tool_successes: dayPoint?.tool_successes ?? 0,
         tool_errors: dayPoint?.tool_errors ?? 0,
@@ -676,6 +725,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: totalInput,
       output_tokens_est: totalOutput,
       estimated_cost_usd: totalCost,
+      cost_breakdown: totalCosts,
       recorded_cost_usd: totalRecordedCost,
       cache_read_tokens: totalCacheRead,
       cache_hit_rate: round4(totalCacheRead > 0 ? totalCacheRead / (totalInput + totalCacheRead) : 0),
@@ -738,6 +788,7 @@ function seedDayBuckets(now: Date, days: number): Map<string, DayBucket> {
       inputTokens: 0,
       outputTokens: 0,
       estimatedCost: 0,
+      cost_breakdown: emptyCostBreakdown(),
       toolCalls: 0,
       toolSuccesses: 0,
       toolErrors: 0,
@@ -745,6 +796,20 @@ function seedDayBuckets(now: Date, days: number): Map<string, DayBucket> {
     });
   }
   return out;
+}
+
+function emptyCostBreakdown(): DashboardCostBreakdown {
+  return { input_cost_usd: 0, output_cost_usd: 0, unattributed_cost_usd: 0 };
+}
+
+function totalCostBreakdown(costs: DashboardCostBreakdown): number {
+  return costs.input_cost_usd + costs.output_cost_usd + costs.unattributed_cost_usd;
+}
+
+function addCostBreakdown(target: DashboardCostBreakdown, costs: DashboardCostBreakdown): void {
+  target.input_cost_usd += costs.input_cost_usd;
+  target.output_cost_usd += costs.output_cost_usd;
+  target.unattributed_cost_usd += costs.unattributed_cost_usd;
 }
 
 function emptyTierTokens(): DashboardTierTokens {

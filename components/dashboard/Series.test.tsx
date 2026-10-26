@@ -9,6 +9,7 @@ const series: DashboardMetrics["series"] = [{
   input_tokens_est: 1200,
   output_tokens_est: 400,
   estimated_cost_usd: 0.03,
+  cost_breakdown: { input_cost_usd: 0.01, output_cost_usd: 0.02, unattributed_cost_usd: 0 },
   tool_calls: 0,
   tool_successes: 0,
   tool_errors: 0,
