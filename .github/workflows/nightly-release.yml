@@ -54,7 +54,7 @@ jobs:
         id: plan
         run: node scripts/nightly-release.mjs plan
 
-      - name: Hold breaking changes for a human release
+      - name: Hold unsafe release plans for human review
         if: steps.plan.outputs.action == 'manual'
         env:
           REASON: ${{ steps.plan.outputs.reason }}
@@ -63,7 +63,7 @@ jobs:
           {
             echo "### Human release required"
             echo
-            echo "The nightly flow will not publish major or breaking changes. Review the breaking commits in this run summary and prepare a human-owned release PR."
+            echo "The release planner held publication ($REASON). See the plan above for the specific reason and required action."
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
@@ -237,7 +237,13 @@ jobs:
 
       - name: Verify changeset for a resumed release
         if: steps.plan.outputs.action == 'resume' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run)
-        run: npm run release:changeset -- --check
+        env:
+          TARGET_SHA: ${{ steps.plan.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          git switch --detach "$TARGET_SHA"
+          npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
+          npm run release:changeset -- --check
 
       - name: Wait for required CI check
         id: ci
@@ -313,7 +319,7 @@ jobs:
           git fetch origin main --tags
           git merge-base --is-ancestor "$merge_sha" origin/main
           merge_parent="$(git show -s --format=%P "$merge_sha")"
-          if [ "$merge_parent" != "$PLANNED_MAIN_SHA" ]; then
+          if [ "$merge_parent" != "$PLANNED_MAIN_SHA" ] && [ "$(git rev-parse "$merge_parent^{tree}")" != "$(git rev-parse "$PLANNED_MAIN_SHA^{tree}")" ]; then
             echo "::error::Main advanced during release merge; the generated changelog does not cover the new base."
             exit 1
           fi

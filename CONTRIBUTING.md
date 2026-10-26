@@ -251,6 +251,15 @@ The workflow opens its PR with `GITHUB_TOKEN`, so the repository must enable
 pull requests**. If PR creation fails, the workflow deletes the release branch
 it pushed so the next run can start clean.
 
+Nightly recovery automatically resumes a merged, untagged release when its
+recorded `Release base` matches its parent commit or both base commits have
+identical Git file trees. A history-only rebase does not require intervention;
+any actual base-content change still holds publication for review. Recovery
+checks out the exact release commit, installs its locked dependencies, and
+validates that commit's adoption changeset before tagging, even when later
+changes have landed on main. Breaking changes still require a human-owned
+release; recovery does not authorize a major release or relax that policy.
+
 ### On-demand release documentation
 
 Documentation generation is **optional and manual only**. Nightly releases and
