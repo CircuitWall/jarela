@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- adoption: Publish the per-release changelog in the docs site and ask the
+  adoption agent to prefer the schema-versioned JSON changeset feed when web access is
+  permitted, retaining bundled changesets and offline operation.
+
 - mail: Add iCloud SMTP sending with mandatory STARTTLS, explicit execute-tool
   permissions, configured sender identity, and partial/uncertain-delivery errors.
 
@@ -18,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - documents: Add explicit indexing opt-in for supported connected integrations, nonlocal embedding warnings, global semantic topic exclusions, and document-level exclusions with a user-only search preview override.
 
 - tools: Add an opt-in DeepSeek Search & Fetch backend for `web_search` and `web_fetch`, using a separately encrypted credential and preserving existing backends by default.
+
+- models: Add source-backed model version and capability observations to
+  catalog and badge metadata without changing saved models or enabling APIs.
 
 ### Changed
 

@@ -57,6 +57,9 @@ describe("upsertChangeset and renderChangesetsMarkdown", () => {
     const md = renderChangesetsMarkdown(file);
     expect(md.indexOf("## 2.10.0")).toBeLessThan(md.indexOf("## 2.9.0"));
     expect(md).toContain("- new");
+    expect(md).toContain("[changesets.json](changesets.json)");
+    expect(md).toContain("`schema_version: 1`");
+    expect(md).toContain("do not adopt future releases");
   });
 });
 

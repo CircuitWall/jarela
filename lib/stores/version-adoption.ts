@@ -7,6 +7,7 @@ import {
   changesetsBetween,
   formatChangesetsForPrompt,
   summarizeChangesets,
+  RELEASE_DOCUMENTATION_GUIDANCE,
   type ChangesetRange,
 } from "@/lib/lifecycle/changesets";
 import {
@@ -535,8 +536,9 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
     "",
     "Phase 1 — impact radius analysis:",
     plan.source === "changeset"
-      ? "- The change surface (`fetch-changes`) was already read deterministically by the system from the bundled release changesets: prompt text and built-in tool description/schema deltas between the previously adopted version and this one. They are listed under \"Release changesets\" below. Do not independently fetch or guess at what changed; that item is already marked done in the UI."
-      : "- The changed-file surface (`fetch-changes`) was already computed deterministically by the system via git diff against the previously adopted version — see each Phase 2 checklist item below with its affected_files. Do not independently fetch or guess at what changed; that item is already marked done in the UI.",
+      ? "- The change surface (`fetch-changes`) was already read deterministically by the system from the bundled release changesets: prompt text and built-in tool description/schema deltas between the previously adopted version and this one. They are listed under \"Release changesets\" below. Do not guess or re-fetch this computed surface; that item is already marked done in the UI. The published documentation check below is supplementary."
+      : "- The changed-file surface (`fetch-changes`) was already computed deterministically by the system via git diff against the previously adopted version — see each Phase 2 checklist item below with its affected_files. Do not guess or re-fetch this computed surface; that item is already marked done in the UI. The published documentation check below is supplementary.",
+    RELEASE_DOCUMENTATION_GUIDANCE,
     "- Every checklist item provides its input, expected output, and validation criteria. Work from the stated inputs, validate the output using those criteria, and report observed evidence before marking the item done.",
     "- Prefer executable checks for code-verifiable behavior. If a check cannot run, say why and leave the result unverified or mark the item needs_attention.",
     "- Call `workflow_progress` with `workflow_id: \"version_adoption\"`, `phase: \"impact_radius\"`, `item_id: \"build-todo-list\"`, and `status: \"checking\"`.",
@@ -587,6 +589,7 @@ function buildAdoptionStepRetryPrompt(
     `Output: ${entry.output}`,
     `Validation: ${entry.validation}`,
     `Reason: ${entry.reason}`,
+    ...(phase === "impact_radius" ? [RELEASE_DOCUMENTATION_GUIDANCE] : []),
     ...(entry.affected_files.length > 0 ? [`Affected: ${entry.affected_files.join(", ")}.`] : []),
     "",
     `- Call \`workflow_progress\` with \`workflow_id: "version_adoption"\`, \`phase: "${phase}"\`, \`item_id: "${entry.id}"\`, and \`status: "checking"\`.`,

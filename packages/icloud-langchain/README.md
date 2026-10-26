@@ -7,6 +7,11 @@ SDK (there isn't one for end-user data). Extracted from
 LangChain.js agent can give an LLM the same iCloud toolbelt without
 running the full Jarela stack.
 
+**Version scope:** This README describes the repository's current package,
+including the SMTP-send tool and mail-indexing adapter listed under
+[Unreleased](./CHANGELOG.md#unreleased). Those features are not part of the
+published package version `0.3.0`.
+
 Requires Node 24.15.0+ on Node 24.x, or Node 26.0.0+; Node 25 is not supported.
 
 ## Why
@@ -225,9 +230,9 @@ before use, so you can store the value either as Apple presents it
 
 - **No SMTP attachments or automatic Sent-folder append.** Use drafts for
   review; check account-side Sent behavior if you need a saved copy.
-- **No push notifications.** iCloud does not advertise CalDAV
-  WebPush or APNS for mail. Poll on whatever interval suits your
-  agent (every 5–15 minutes is the standard pattern).
+- **No push integration.** This package does not implement iCloud push
+  notifications; poll on an interval appropriate for your agent and respect
+  iCloud server limits.
 - **Recurring-event instance edits are not supported.** Updates
   and deletes apply to the entire series. Per-instance edits
   require `RECURRENCE-ID` + `EXDATE` plumbing that isn't in this

@@ -26,6 +26,7 @@ import { buildFirstRunAgentInstructions, buildFirstRunKickoff } from "./first-ru
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderDocumentationPrompt } from "../../scripts/release-docs.mjs";
+import { RELEASE_DOCUMENTATION_GUIDANCE } from "@/lib/lifecycle/changesets";
 
 export interface StaticPrompt {
   id: string;
@@ -64,6 +65,12 @@ export function listStaticPrompts(): StaticPrompt[] {
   const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
   const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
   const prompts: StaticPrompt[] = [
+    {
+      id: "lifecycle.release-documentation",
+      source: "lib/lifecycle/changesets.ts",
+      purpose: "Checks published release notes as optional, version-scoped adoption input while preserving offline bundled authority.",
+      text: RELEASE_DOCUMENTATION_GUIDANCE,
+    },
     {
       id: "extract.model-updates",
       source: "lib/pricing/model-updates.ts",
