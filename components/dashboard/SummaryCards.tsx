@@ -1,8 +1,9 @@
 "use client";
 import { Activity, BarChart3, Coins, DatabaseZap, ShieldCheck, TrendingUp } from "lucide-react";
-import type { DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
+import type { DashboardCostBreakdown, DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
 import { formatInt, formatMoney } from "@/lib/dashboard/format";
 import { InsightChip, MetricCard } from "./Cards";
+import { CostBreakdown } from "./CostBreakdown";
 
 interface SummaryStripProps {
   data: DashboardMetrics;
@@ -54,6 +55,7 @@ interface EffectiveSummary {
   input_tokens_est: number;
   output_tokens_est: number;
   estimated_cost_usd: number;
+  cost_breakdown: DashboardCostBreakdown;
   success_rate: number;
   error_rate: number;
 }
@@ -66,32 +68,42 @@ interface MetricCardsGridProps {
 
 export function MetricCardsGrid({ effectiveSummary, currencyInfo, selectedDay }: MetricCardsGridProps) {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-      <MetricCard
-        label={selectedDay ? `Input tokens on ${selectedDay}` : "Input tokens (est)"}
-        value={formatInt(effectiveSummary?.input_tokens_est ?? 0)}
-        icon={<BarChart3 size={15} />}
-      />
-      <MetricCard
-        label={selectedDay ? `Output tokens on ${selectedDay}` : "Output tokens (est)"}
-        value={formatInt(effectiveSummary?.output_tokens_est ?? 0)}
-        icon={<TrendingUp size={15} />}
-      />
-      <MetricCard
-        label={selectedDay ? `Cost on ${selectedDay} (${currencyInfo.currency})` : `Estimated cost (${currencyInfo.currency})`}
-        value={formatMoney(effectiveSummary?.estimated_cost_usd ?? 0, currencyInfo)}
-        icon={<Coins size={15} />}
-      />
-      <MetricCard
-        label="Tool success rate"
-        value={`${((effectiveSummary?.success_rate ?? 1) * 100).toFixed(1)}%`}
-        icon={<ShieldCheck size={15} />}
-      />
-      <MetricCard
-        label="Tool error rate"
-        value={`${((effectiveSummary?.error_rate ?? 0) * 100).toFixed(1)}%`}
-        icon={<Activity size={15} />}
-      />
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <MetricCard
+          label={selectedDay ? `Input tokens on ${selectedDay}` : "Input tokens (est)"}
+          value={formatInt(effectiveSummary?.input_tokens_est ?? 0)}
+          icon={<BarChart3 size={15} />}
+        />
+        <MetricCard
+          label={selectedDay ? `Output tokens on ${selectedDay}` : "Output tokens (est)"}
+          value={formatInt(effectiveSummary?.output_tokens_est ?? 0)}
+          icon={<TrendingUp size={15} />}
+        />
+        <MetricCard
+          label={selectedDay ? `Cost on ${selectedDay} (${currencyInfo.currency})` : `Estimated cost (${currencyInfo.currency})`}
+          value={formatMoney(effectiveSummary?.estimated_cost_usd ?? 0, currencyInfo)}
+          icon={<Coins size={15} />}
+        />
+        <MetricCard
+          label="Tool success rate"
+          value={`${((effectiveSummary?.success_rate ?? 1) * 100).toFixed(1)}%`}
+          icon={<ShieldCheck size={15} />}
+        />
+        <MetricCard
+          label="Tool error rate"
+          value={`${((effectiveSummary?.error_rate ?? 0) * 100).toFixed(1)}%`}
+          icon={<Activity size={15} />}
+        />
+      </div>
+      {effectiveSummary ? (
+        <div className="rounded-xl bg-[var(--bg-secondary)]/70 px-3 py-2">
+          <CostBreakdown costs={effectiveSummary.cost_breakdown} currencyInfo={currencyInfo} />
+          <p className="mt-1 text-[10px] text-[var(--text-secondary)]">
+            Input includes prompt-cache charges. Costs use each model&apos;s separate input and output rates.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

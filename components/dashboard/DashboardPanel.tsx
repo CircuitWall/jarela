@@ -143,7 +143,7 @@ export function DashboardPanel() {
             />
 
             <ModelPricingSection
-              data={data}
+              pricing={data.pricing}
               modelVendorFilter={modelVendorFilter}
               onVendorFilterChange={setModelVendorFilter}
               modelFunctionFilter={modelFunctionFilter}

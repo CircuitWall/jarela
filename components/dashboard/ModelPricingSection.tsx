@@ -12,7 +12,7 @@ import {
 import { MODEL_SORT_OPTIONS } from "./dashboard-constants";
 
 interface ModelPricingSectionProps {
-  data: DashboardMetrics;
+  pricing: DashboardMetrics["pricing"];
   modelVendorFilter: string;
   onVendorFilterChange: (v: string) => void;
   modelFunctionFilter: string;
@@ -25,7 +25,7 @@ interface ModelPricingSectionProps {
 }
 
 export function ModelPricingSection({
-  data,
+  pricing,
   modelVendorFilter,
   onVendorFilterChange,
   modelFunctionFilter,
@@ -37,7 +37,7 @@ export function ModelPricingSection({
   currencyInfo,
 }: ModelPricingSectionProps) {
   const filtered = sortModelRates(
-    filterModelRates(data.pricing.model_rates, {
+    filterModelRates(pricing.model_rates, {
       vendor: modelVendorFilter,
       functionality: modelFunctionFilter,
       search: modelSearch,
@@ -45,9 +45,9 @@ export function ModelPricingSection({
     modelSort,
   );
   const grouped = groupModelRatesByVendor(filtered);
-  const vendors = [...new Set(data.pricing.model_rates.map((r) => r.provider))].sort();
-  const functionalities = [...new Set(data.pricing.model_rates.map((r) => detectModelFunctionality(r.model_id)))].sort();
-  const aggregatorRates = data.pricing.aggregator_model_rates
+  const vendors = [...new Set(pricing.model_rates.map((r) => r.provider))].sort();
+  const functionalities = [...new Set(pricing.model_rates.map((r) => detectModelFunctionality(r.model_id)))].sort();
+  const aggregatorRates = pricing.aggregator_model_rates
     .filter((row) => modelVendorFilter === "all" || row.provider === modelVendorFilter)
     .filter((row) => modelFunctionFilter === "all" || detectModelFunctionality(row.model_id) === modelFunctionFilter)
     .filter((row) => !modelSearch.trim()
@@ -57,12 +57,15 @@ export function ModelPricingSection({
     <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 space-y-2 shadow-sm">
       <h3 className="text-sm font-medium text-[var(--text-primary)]">Pricing source and assumptions</h3>
       <p className="text-xs text-[var(--text-secondary)]">
-        Snapshot: {data.pricing.snapshot_generated_at ?? "not found"}
+        Snapshot: {pricing.snapshot_generated_at ?? "not found"}
       </p>
       <div className="rounded-lg bg-[var(--bg-primary)]/25 overflow-hidden">
         <div className="px-3 py-2 text-xs font-medium text-[var(--text-primary)]">
           Model pricing (detected)
         </div>
+        <p className="px-3 pb-2 text-[11px] text-[var(--text-secondary)]">
+          Separate input and output prices per 1 million tokens ({currencyInfo.currency}). Usage costs apply each rate separately.
+        </p>
         <div className="px-3 pb-2">
           <div className="grid gap-2 md:grid-cols-[160px_160px_1fr_190px]">
             <select
@@ -133,7 +136,7 @@ export function ModelPricingSection({
           Route-price signals only. They are not used for direct-provider cost estimates.
         </p>
         <div className="flex flex-wrap gap-1.5 px-3 py-2">
-          {data.pricing.aggregator_sources.map((source) => (
+          {pricing.aggregator_sources.map((source) => (
             <span
               key={source.id}
               title={source.error ?? (source.ok ? `Last checked ${source.fetched_at}` : `Last successful fetch ${source.last_successful_at ?? "never"}`)}
@@ -150,21 +153,21 @@ export function ModelPricingSection({
             <p className="px-3 pb-3 text-xs text-[var(--text-secondary)]">No comparable aggregator rates for these filters.</p>
           ) : (
             aggregatorRates.slice(0, 100).map((row) => {
-              const direct = data.pricing.model_rates.find((rate) => rate.provider === row.provider && rate.model_id === row.model_id);
+              const direct = pricing.model_rates.find((rate) => rate.provider === row.provider && rate.model_id === row.model_id);
               const inputDelta = priceDelta(row.input_per_1m_usd, direct?.input_per_1m_usd ?? null);
               const outputDelta = priceDelta(row.output_per_1m_usd, direct?.output_per_1m_usd ?? null);
               return (
                 <div key={`${row.aggregator_id}:${row.provider}:${row.aggregator_model_id}`} className="border-t border-[var(--border)]/40 px-3 py-2">
                   <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                     <span className="text-xs text-[var(--text-primary)]">{row.provider} / {row.model_id}</span>
-                    <span className="text-[10px] tabular-nums text-[var(--text-secondary)]">
-                      in {row.input_per_1m_usd == null ? "n/a" : formatMoney(row.input_per_1m_usd, currencyInfo)}
-                      {" · "}out {row.output_per_1m_usd == null ? "n/a" : formatMoney(row.output_per_1m_usd, currencyInfo)} / 1M
+                    <span className="flex flex-wrap gap-x-3 text-[11px] tabular-nums text-[var(--text-secondary)]">
+                      <span>Input: {row.input_per_1m_usd == null ? "n/a" : formatMoney(row.input_per_1m_usd, currencyInfo)} / 1M tokens</span>
+                      <span>Output: {row.output_per_1m_usd == null ? "n/a" : formatMoney(row.output_per_1m_usd, currencyInfo)} / 1M tokens</span>
                     </span>
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-secondary)]">
                     <span>{row.aggregator_name} · {row.route}</span>
-                    {inputDelta || outputDelta ? <span>vs direct: in {inputDelta ?? "n/a"}, out {outputDelta ?? "n/a"}</span> : null}
+                    {inputDelta || outputDelta ? <span>vs direct: input {inputDelta ?? "n/a"}, output {outputDelta ?? "n/a"}</span> : null}
                     {row.has_conditional_pricing ? <span className="text-amber-700 dark:text-amber-300">conditional pricing</span> : null}
                     {!row.ok ? <span className="text-amber-700 dark:text-amber-300">stale</span> : null}
                     <a href={row.source_url} target="_blank" rel="noreferrer" className="ml-auto text-cyan-700 hover:underline dark:text-cyan-300">source ↗</a>
@@ -178,7 +181,7 @@ export function ModelPricingSection({
           <p className="px-3 pb-2 text-[10px] text-[var(--text-secondary)]">Showing 100 of {aggregatorRates.length}; narrow the model filter to inspect more.</p>
         ) : null}
       </div>
-      <p className="text-[11px] text-[var(--text-secondary)]">{data.pricing.notes}</p>
+      <p className="text-[11px] text-[var(--text-secondary)]">{pricing.notes}</p>
     </section>
   );
 }
@@ -217,13 +220,12 @@ function ModelPricingRow({ row, currencyInfo }: { row: DashboardMetrics["pricing
     : "n/a";
   return (
     <div className="px-3 py-2 border-t border-[var(--border)]/40 hover:bg-[var(--bg-primary)]/35 transition-colors">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm text-[var(--text-primary)] truncate">{row.model_id}</span>
-        <span className="text-[11px] tabular-nums text-[var(--text-secondary)]" title="Per 1M tokens">
-          in <span className="text-[var(--text-primary)]">{inputLabel}</span>
-          {" · "}out <span className="text-[var(--text-primary)]">{outputLabel}</span>
-          <span className="ml-1 text-[var(--text-secondary)]">/ 1M</span>
-        </span>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="min-w-0 break-all text-sm text-[var(--text-primary)]">{row.model_id}</span>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums text-[var(--text-secondary)]">
+          <span>Input: <span className="text-[var(--text-primary)]">{inputLabel}</span> / 1M tokens</span>
+          <span>Output: <span className="text-[var(--text-primary)]">{outputLabel}</span> / 1M tokens</span>
+        </div>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
         <span className={`rounded-full px-1.5 py-0.5 font-medium ${
