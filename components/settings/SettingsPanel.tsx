@@ -92,7 +92,7 @@ export function SettingsPanel() {
   }));
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full flex-col">
+    <div className="workspace-panel flex h-full min-h-0 flex-col">
       <SubTabBar
         ariaLabel="Settings sub-section"
         tabs={tabItems}

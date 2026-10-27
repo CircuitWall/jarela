@@ -394,7 +394,11 @@ export function AppShell() {
         />
       </aside>
 
-      <div data-testid="workspace-content" className={`mx-auto min-h-0 flex-1 relative w-full overflow-hidden ${FULL_WIDTH_TABS.has(state.activeTab) ? "" : "max-w-7xl"}`}>
+      <div
+        data-testid="workspace-content"
+        data-workspace-width={FULL_WIDTH_TABS.has(state.activeTab) ? "full" : undefined}
+        className="workspace-content mx-auto min-h-0 flex-1 relative w-full overflow-hidden"
+      >
         {/*
           Each tab is wrapped in <Activity> on its first visit, then kept
           mounted so scroll position, expanded rows, and local form/filter
@@ -437,14 +441,14 @@ export function AppShell() {
         )}
         {mountedTabs.has("models") && (
           <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
-            <div className="mx-auto h-full w-full min-w-0">
+            <div className="workspace-panel h-full">
               <ModelsPanel />
             </div>
           </Activity>
         )}
         {mountedTabs.has("credentials") && (
           <Activity mode={state.activeTab === "credentials" ? "visible" : "hidden"}>
-            <div className="mx-auto h-full w-full min-w-0">
+            <div className="workspace-panel h-full">
               <CredentialsPanel />
             </div>
           </Activity>
@@ -483,7 +487,7 @@ export function AppShell() {
         )}
         {isFullMode && mountedTabs.has("env") && (
           <Activity mode={state.activeTab === "env" ? "visible" : "hidden"}>
-            <div className="mx-auto h-full w-full min-w-0">
+            <div className="workspace-panel h-full">
               <EnvVarsPanel />
             </div>
           </Activity>

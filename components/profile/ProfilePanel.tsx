@@ -42,7 +42,7 @@ export function ProfilePanel() {
   }
 
   return (
-    <div className="mx-auto flex h-full w-full flex-col">
+    <div className="workspace-panel flex h-full flex-col">
       <PanelHeader icon={<User size={14} />} title="Profile">
         {isEssential && (
           <button

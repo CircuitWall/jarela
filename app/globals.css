@@ -470,6 +470,20 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
+.workspace-content {
+  --workspace-content-max-width: 80rem;
+  max-width: var(--workspace-content-max-width);
+}
+.workspace-content[data-workspace-width="full"] {
+  --workspace-content-max-width: none;
+}
+.workspace-panel {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--workspace-content-max-width, 100%);
+  margin-inline: auto;
+}
+
 .app-toaster {
   right: max(1rem, calc(env(safe-area-inset-right) + 0.5rem));
 }
