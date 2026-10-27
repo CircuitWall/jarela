@@ -32,3 +32,12 @@ it("provides dashboard colors from the current application theme", () => {
   expect(dashboard.contains(screen.getByRole("heading", { name: "Usage dashboard" }))).toBe(true);
   expect(dashboard.contains(screen.getByText("Loading dashboard metrics..."))).toBe(true);
 });
+
+it("uses the shared workspace width without a dashboard-specific cap", () => {
+  const { container } = render(<DashboardPanel />);
+  const content = container.firstElementChild!.firstElementChild!;
+
+  expect(content.classList.contains("workspace-panel")).toBe(true);
+  expect(Array.from(content.classList).some((name) => name.startsWith("max-w-"))).toBe(false);
+  expect(content.contains(screen.getByRole("heading", { name: "Usage dashboard" }))).toBe(true);
+});

@@ -478,7 +478,7 @@ export function AppShell() {
         )}
         {isFullMode && mountedTabs.has("logs") && (
           <Activity mode={state.activeTab === "logs" ? "visible" : "hidden"}>
-            <div className="mx-auto h-full w-full max-w-5xl min-w-0">
+            <div className="workspace-panel h-full">
               <LogsPanel />
             </div>
           </Activity>
