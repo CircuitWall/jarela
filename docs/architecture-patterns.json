@@ -3,6 +3,24 @@
   "purpose": "Curated review aid for recurring Jarela operations. Entries identify canonical implementations and behavior tests; they are not an exhaustive dependency policy.",
   "patterns": [
     {
+      "id": "workspace-layout",
+      "operation": "Share workspace width, outer horizontal gutters, and docked sidebar dimensions through the workspace CSS tokens.",
+      "canonicalSources": [
+        "app/globals.css",
+        "components/layout/AppShell.tsx",
+        "components/ui/PanelHeader.tsx",
+        "components/ui/SubTabBar.tsx"
+      ],
+      "validationSources": [
+        "tests/e2e/layout.spec.ts",
+        "components/dashboard/DashboardPanel.test.tsx"
+      ],
+      "exceptions": [
+        "Dialogs, chat bubbles, nested cards, and the standalone onboarding wizard retain their content-specific sizing.",
+        "The touch composer retains safe-area-specific horizontal padding for rounded-corner clearance."
+      ]
+    },
+    {
       "id": "api-request-validation",
       "operation": "Validate JSON request bodies at API boundaries with a Zod schema and the shared response contract.",
       "canonicalSources": [

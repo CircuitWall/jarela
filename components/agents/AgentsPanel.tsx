@@ -115,7 +115,7 @@ export function AgentsPanel() {
       </PanelHeader>
 
       {/* List */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-2 pb-2">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-[calc(var(--workspace-gutter)/2)] pb-2">
         {loading && (
           <p className="text-fg-faint text-xs text-center py-4">Loading…</p>
         )}
@@ -129,7 +129,7 @@ export function AgentsPanel() {
             key={a.id}
             data-deep-link-id={a.id}
             onClick={() => setEditing(a)}
-            className="group flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-surface-3 transition-colors cursor-pointer"
+            className="group flex items-center gap-2.5 px-[calc(var(--workspace-gutter)/2)] py-2 rounded-lg hover:bg-surface-3 transition-colors cursor-pointer"
           >
             <AgentAvatar icon={a.icon} name={a.name} id={a.id} />
             <div className="flex-1 min-w-0">

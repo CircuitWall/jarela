@@ -116,7 +116,7 @@ export function BridgesPanel() {
         <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setCreating(true)} />
       </PanelHeader>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-3">
+      <div ref={containerRef} className="workspace-gutter flex-1 overflow-y-auto no-scrollbar py-3">
         {creating && (
           <div className="mb-3 rounded-lg border border-accent/30 bg-surface-2 p-3 space-y-2">
             {bridgeModules.length > 1 && (

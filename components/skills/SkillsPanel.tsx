@@ -40,7 +40,7 @@ export function SkillsPanel() {
         <HeaderAction icon={<RefreshCw size={13} />} label="Refresh" title="Refresh" onClick={() => void load()} />
       </PanelHeader>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-5">
+      <div className="workspace-gutter flex-1 overflow-y-auto no-scrollbar py-3 space-y-5">
         <p className="text-xs text-fg-faint leading-relaxed">
           Skills are markdown playbooks agents load on demand via{" "}
           <code className="font-mono text-fg-muted">read_skill</code>. Built-in skills are read-only — add a repo

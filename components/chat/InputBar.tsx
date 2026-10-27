@@ -260,7 +260,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
 
   return (
     <div
-      className="chat-composer shrink-0 border-t border-border/30 bg-surface/60 backdrop-blur-md px-3 sm:px-4 pt-2"
+      className="workspace-gutter chat-composer shrink-0 border-t border-border/30 bg-surface/60 backdrop-blur-md pt-2"
     >
       {/* Attachment previews */}
       {attachments.length > 0 && (

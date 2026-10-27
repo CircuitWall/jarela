@@ -99,7 +99,7 @@ export function MCPPanel() {
       </PanelHeader>
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
-        <div className="px-4 py-2">
+        <div className="workspace-gutter py-2">
           {loading && servers.length === 0 && (
             <PanelMessage>Loading…</PanelMessage>
           )}

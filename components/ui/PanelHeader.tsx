@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 // right-aligned actions.
 export function PanelHeader({ icon, title, children }: { icon: ReactNode; title: ReactNode; children?: ReactNode }) {
   return (
-    <div className="border-b border-border px-4 py-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+    <div className="workspace-gutter border-b border-border py-3 flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className="text-fg-subtle flex items-center shrink-0" aria-hidden="true">{icon}</span>
       <h2 className="text-sm font-semibold text-fg mr-auto min-w-0 truncate">{title}</h2>
       {children}

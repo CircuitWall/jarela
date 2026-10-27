@@ -92,13 +92,13 @@ export function HarnessPanel() {
         <HeaderAction icon={<Plus size={14} />} label="New" onClick={() => setEditing("new")} />
       </PanelHeader>
 
-      <div className="px-4 py-2 border-b border-border bg-surface-2/50 text-xs text-fg-muted">
+      <div className="workspace-gutter py-2 border-b border-border bg-surface-2/50 text-xs text-fg-muted">
         Harnesses control the behavioral scaffolding (formatting rules, anti-fabrication, citation,
         self-config) wrapped around every agent&apos;s system prompt. Built-in presets are read-only —
         clone one to customize.
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-2">
+      <div className="workspace-gutter flex-1 overflow-y-auto py-2">
         {loading && harnesses.length === 0 && (
           <PanelMessage>Loading…</PanelMessage>
         )}

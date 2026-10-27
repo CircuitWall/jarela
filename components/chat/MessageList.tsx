@@ -892,7 +892,7 @@ export function MessageList({ bottomOverlayHeight = 0, threadId, messages, steer
               onClick={() => setTopControlsOpen((v) => !v)}
               aria-expanded={topControlsOpen}
               aria-controls={topControlsOpen ? topControlsId : undefined}
-              className="min-h-11 sm:min-h-8 w-full flex flex-wrap items-center gap-x-2 gap-y-1 px-3 sm:px-4 py-1.5 text-left text-xs text-fg-subtle hover:text-fg transition-colors"
+              className="workspace-gutter min-h-11 sm:min-h-8 w-full flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5 text-left text-xs text-fg-subtle hover:text-fg transition-colors"
             >
               <CollapseChevron open={topControlsOpen} size={10} />
               <span className="font-medium">Filters & focus</span>
@@ -909,7 +909,7 @@ export function MessageList({ bottomOverlayHeight = 0, threadId, messages, steer
                 id={topControlsId}
                 role="region"
                 aria-label="Message filters and focus"
-                className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 max-h-[35dvh] overflow-y-auto overscroll-contain px-3 sm:px-4 pt-1 pb-2"
+                className="workspace-gutter grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 max-h-[35dvh] overflow-y-auto overscroll-contain pt-1 pb-2"
               >
                 {compactChat && (
                   <button
@@ -978,7 +978,7 @@ export function MessageList({ bottomOverlayHeight = 0, threadId, messages, steer
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="chat-message-scroll flex-1 h-full overflow-y-auto overflow-x-hidden px-4 panel-scrollbar"
+          className="workspace-gutter chat-message-scroll flex-1 h-full overflow-y-auto overflow-x-hidden panel-scrollbar"
           style={{
             // Edge padding travels with the turns; the viewport itself extends
             // behind both overlays so history remains visible through the frost.

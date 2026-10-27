@@ -51,7 +51,7 @@ export function AppearancePanel() {
     <div className="flex flex-col h-full">
       <PanelHeader icon={<Palette size={14} />} title="Appearance" />
 
-      <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-4 space-y-6">
+      <div className="workspace-gutter flex-1 overflow-y-auto no-scrollbar py-4 space-y-6">
         <section>
           <h3 className="text-[11px] uppercase tracking-wide text-fg-faint mb-2 px-1">Accent color</h3>
           <div className="flex flex-wrap gap-2">

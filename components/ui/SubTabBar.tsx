@@ -114,7 +114,7 @@ export function SubTabBar<T extends string>({
         role="tablist"
         aria-label={ariaLabel}
         onKeyDown={onKeyDown}
-        className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] overflow-x-auto overscroll-x-contain no-scrollbar select-none touch-pan-x"
+        className="workspace-gutter flex items-stretch gap-4 border-b border-[var(--border)] overflow-x-auto overscroll-x-contain no-scrollbar select-none touch-pan-x"
       >
         {tabs.map((t, i) => {
           const selected = t.id === active;

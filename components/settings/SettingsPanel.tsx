@@ -120,7 +120,7 @@ export function SettingsPanel() {
 // future change to either panel without touching this file.
 function PrivacySecurityPanel() {
   return (
-    <div className="h-full w-full overflow-y-auto px-4 py-3 no-scrollbar">
+    <div className="workspace-gutter h-full w-full overflow-y-auto py-3 no-scrollbar">
       <SettingsGroup defaultOpenId="pin">
         <SecurityPanel />
         <RedactionPanel />

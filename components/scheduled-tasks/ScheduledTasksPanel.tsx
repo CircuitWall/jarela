@@ -112,7 +112,7 @@ export function ScheduledTasksPanel() {
         )}
       </PanelHeader>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-3">
+      <div ref={containerRef} className="workspace-gutter flex-1 overflow-y-auto no-scrollbar py-3">
         {loading && tasks.length === 0 && (
           <PanelMessage>Loading…</PanelMessage>
         )}

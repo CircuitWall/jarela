@@ -136,7 +136,7 @@ export function UnifiedMemoryPanel() {
   return (
     <div className="flex flex-col h-full min-h-0">
       <PanelHeader icon={<Brain size={14} />} title="Memory" />
-      <div className="px-4 py-3 border-b border-border space-y-2">
+      <div className="workspace-gutter py-3 border-b border-border space-y-2">
         <div className="flex gap-2">
           <div className="relative flex-1 min-w-0">
             <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-faint pointer-events-none" />
@@ -168,7 +168,7 @@ export function UnifiedMemoryPanel() {
 
       <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar">
         {results.length > 0 && (
-          <section aria-label="Search results" className="px-4 py-3 space-y-2">
+          <section aria-label="Search results" className="workspace-gutter py-3 space-y-2">
             {results.map((result, index) => (
               <article key={result.id} className="border-b border-border/60 py-2.5 last:border-b-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -205,7 +205,7 @@ export function UnifiedMemoryPanel() {
         )}
 
         <details className="group border-t border-border">
-          <summary className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none text-sm font-medium text-fg hover:bg-surface-3/30">
+          <summary className="workspace-gutter flex items-center gap-2 py-3 cursor-pointer select-none text-sm font-medium text-fg hover:bg-surface-3/30">
             <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
             <Brain size={14} className="text-fg-faint" />
             Saved facts
@@ -213,7 +213,7 @@ export function UnifiedMemoryPanel() {
           <MemoryPanel embedded />
         </details>
         <details className="group border-t border-border">
-          <summary className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none text-sm font-medium text-fg hover:bg-surface-3/30">
+          <summary className="workspace-gutter flex items-center gap-2 py-3 cursor-pointer select-none text-sm font-medium text-fg hover:bg-surface-3/30">
             <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
             <FolderSearch size={14} className="text-fg-faint" />
             Documents
