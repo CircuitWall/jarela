@@ -176,6 +176,24 @@ them — but they are load-bearing:
 
 Both layers are pure-logic and 100% line-covered by Vitest.
 
+### Review patterns and architecture drift
+
+Before adding or reviewing a runtime operation, compare it with the curated
+[machine-readable architecture pattern catalog](architecture-patterns.json).
+It records common implementations, their behavior tests, and important
+exceptions for request validation, response serialization, tolerant JSON
+parsing, bounded caches, and built-in tool registration. The catalog is
+deliberately small: it guides searches and review decisions; it does not
+replace this module map, define every dependency rule, or prove that a new
+implementation is architecturally sound.
+
+Reviewers should compare behavior and ownership, not just syntax. Reuse an
+existing helper when its contract fits; extract only when implementations
+share a stable invariant; keep distinct behavior separate when validation,
+failure handling, ordering, security, or lifecycle differ. Record which
+decision was made and the evidence in the change review. `npm run lint`
+validates that catalog entries point to existing source and test files.
+
 ### Architecture audit snapshot
 
 The 2026-08 whole-repo audit found four areas that should shape future

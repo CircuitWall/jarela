@@ -6,6 +6,11 @@ import type { InboundMessage } from "./types";
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>();
 const downloadMediaMessage = vi.fn<(...args: unknown[]) => Promise<Buffer>>();
+const sendMessage = vi.fn(async (
+  _jid: string,
+  _content: { text: string },
+  _options?: { getUrlInfo?: undefined },
+) => ({ key: { id: "sent-1" } }));
 const storeCanonicalBridgeAttachment = vi.fn(async (input: { filename: string | null; media_type: string; buffer: Buffer }) => ({
   type: "file_ref" as const,
   media_type: input.media_type,
@@ -20,7 +25,7 @@ const bumpRouteLastSeenTs = vi.fn();
 vi.mock("@whiskeysockets/baileys", () => ({
   default: () => ({
     ev: { on: (event: string, fn: (...args: unknown[]) => unknown) => handlers.set(event, fn) },
-    sendMessage: vi.fn(),
+    sendMessage: (...args: Parameters<typeof sendMessage>) => sendMessage(...args),
   }),
   useMultiFileAuthState: async () => ({ state: {}, saveCreds: async () => {} }),
   fetchLatestBaileysVersion: async () => ({ version: [2, 3000, 0] }),
@@ -73,6 +78,8 @@ describe("WhatsApp inbound pipeline", () => {
     handlers.clear();
     watermarks = new Map();
     downloadMediaMessage.mockReset();
+    sendMessage.mockReset();
+    sendMessage.mockResolvedValue({ key: { id: "sent-1" } });
     storeCanonicalBridgeAttachment.mockClear();
     bumpRouteLastSeenTs.mockReset();
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -140,6 +147,36 @@ describe("WhatsApp inbound pipeline", () => {
     await upsert([msg, msg]);
     await upsert([msg], "append");
     expect(received.map((m) => m.message_id)).toEqual(["dup"]);
+  });
+
+  it("suppresses the sent-message echo", async () => {
+    const { adapter, received } = await connect();
+    await adapter.sendText(BOB, "outbound");
+    await upsert([{
+      key: { remoteJid: BOB, fromMe: true, id: "sent-1" },
+      message: { conversation: "outbound" },
+      messageTimestamp: now(),
+    }]);
+
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(received).toHaveLength(0);
+  });
+
+  it("evicts the oldest received IDs while retaining recent dedupe entries", async () => {
+    const { received } = await connect();
+    const messages = Array.from({ length: 2001 }, (_, index) => ({
+      key: { remoteJid: BOB, id: `m${index}` },
+      message: { conversation: `message ${index}` },
+      messageTimestamp: now(),
+    }));
+
+    await upsert(messages);
+    await upsert([messages[0]]);
+    await upsert([messages[messages.length - 1]]);
+
+    expect(received).toHaveLength(2002);
+    expect(received[0].message_id).toBe("m0");
+    expect(received[2001].message_id).toBe("m0");
   });
 
   it("skips append backlog at or below the watermark but not live notifies", async () => {

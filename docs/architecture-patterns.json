@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Curated review aid for recurring Jarela operations. Entries identify canonical implementations and behavior tests; they are not an exhaustive dependency policy.",
+  "patterns": [
+    {
+      "id": "api-request-validation",
+      "operation": "Validate JSON request bodies at API boundaries with a Zod schema and the shared response contract.",
+      "canonicalSources": [
+        "lib/api/responses.ts"
+      ],
+      "validationSources": [
+        "lib/api/responses.test.ts"
+      ],
+      "exceptions": [
+        "Streaming, multipart, and non-JSON endpoints need their transport-specific parsing, but must still validate input explicitly."
+      ]
+    },
+    {
+      "id": "api-response-serialization",
+      "operation": "Keep resource row-to-response mapping shared between collection and item routes to prevent shape drift.",
+      "canonicalSources": [
+        "lib/api/serializers.ts"
+      ],
+      "validationSources": [
+        "lib/api/serializers.test.ts"
+      ],
+      "exceptions": [
+        "Use a separate serializer when the public resource shapes or privacy rules intentionally differ."
+      ]
+    },
+    {
+      "id": "tolerant-json-decoding",
+      "operation": "Use the shared JSON parser only when malformed or empty JSON has a documented fallback; validate user input separately.",
+      "canonicalSources": [
+        "lib/utils/json.ts"
+      ],
+      "validationSources": [
+        "lib/utils/json.test.ts"
+      ],
+      "exceptions": [
+        "Never use a fallback parser as a substitute for schema validation of a request or persisted value with integrity requirements."
+      ]
+    },
+    {
+      "id": "bounded-keyed-cache",
+      "operation": "Use the keyed TTL cache for recomputable values with explicit invalidation dependencies, or the bounded content cache for stable key/value mappings.",
+      "canonicalSources": [
+        "lib/cache/keyed-cache.ts"
+      ],
+      "validationSources": [
+        "lib/cache/keyed-cache.test.ts"
+      ],
+      "exceptions": [
+        "State requiring durability, cross-process sharing, or security-sensitive retention belongs in the appropriate store, not an in-memory cache."
+      ]
+    },
+    {
+      "id": "built-in-tool-registration",
+      "operation": "Register built-in tools with explicit category and capability metadata through the shared registry.",
+      "canonicalSources": [
+        "lib/tools/runtime/registry.ts"
+      ],
+      "validationSources": [
+        "lib/tools/runtime/registry.test.ts",
+        "lib/tools/runtime/capability-coverage.test.ts"
+      ],
+      "exceptions": [
+        "MCP and external tools have separate loading and policy boundaries; do not force them through the built-in registration lifecycle."
+      ]
+    }
+  ]
+}

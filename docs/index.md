@@ -59,6 +59,7 @@ The built-in documentation skill makes local documentation the first source of t
 | [OPERATIONS.md](OPERATIONS.md) | agents, profile, settings, dashboard, tools, tasks, and chat workflows |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | local dev workflow, repo conventions, build/test commands |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | container, component, and runtime architecture |
+| [architecture-patterns.json](architecture-patterns.json) | machine-readable catalog of canonical operation patterns and their tests |
 | [EXTENDING.md](EXTENDING.md) | extension surfaces for providers, tools, MCP, harnesses, and branding |
 | [api.md](api.md) | API surface for routes and integration points |
 | [PRICING_EXTRACTION_POLICY.md](PRICING_EXTRACTION_POLICY.md) | model pricing extraction and provider policy |

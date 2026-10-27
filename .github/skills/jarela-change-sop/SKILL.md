@@ -30,7 +30,30 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
    - Do not introduce new abstractions unless they remove real complexity or match an established local pattern.
    - Do not mix unrelated cleanups into the same PR.
 
-4. Honor Jarela architecture rules.
+4. Review architecture and similar operations.
+   - Read the relevant module map and dependency direction in
+     [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md), then check
+     [docs/architecture-patterns.json](../../../docs/architecture-patterns.json)
+     for an existing canonical operation pattern.
+   - Search the owning module and its tests for existing functions that perform
+     the same operation. Compare their input/output contracts, validation,
+     error behavior, ordering, concurrency, persistence, security, and lifecycle;
+     similar names or syntax alone do not prove the behavior is interchangeable.
+   - Record the review decision in the change or review summary: reuse the
+     canonical implementation, extract a shared helper, or keep the behavior
+     separate with the reason. Extract only when the implementations share a
+     stable invariant and centralizing it makes behavior or maintenance
+     measurably more consistent; do not refactor merely to reduce line count.
+   - When extracting or changing a shared/public class operation, preserve its
+     contract and test the important callers, edge cases, and failure paths.
+     Update the pattern catalog and its tests when a new reusable operation
+     becomes a repository convention. The catalog is a curated review aid, not
+     an exhaustive inventory or an automated proof of architecture compliance.
+   - For workspace-package changes, also read the package's own README and
+     contribution guidance, if present; package-specific contracts do not
+     automatically inherit app-level implementation details.
+
+5. Honor Jarela architecture rules.
    - Persistent state must go through `lib/db` or `lib/stores`; do not write ad-hoc state outside `JARELA_DB_DIR`.
    - API boundaries require `zod` schemas.
    - Network or external-resource tools must be capability-gated.
@@ -39,14 +62,19 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
    - Open an ADR before changing persistence schema or directory layout, adding a provider, introducing a second process, or adding an online-only feature.
    - For Next.js changes, read the local Next docs under `node_modules/next/dist/docs/` before using changed framework APIs.
 
-5. Validate immediately after editing.
+6. Validate immediately after editing.
    - Run the cheapest behavior-scoped check first: failing test, focused package test, targeted typecheck, or lint for the touched slice.
+   - Run `node scripts/check-architecture-patterns.mjs` when changing the
+     architecture pattern catalog; `npm run lint` also checks that its
+     referenced source and test files exist.
+   - Review the final diff for new copies of existing operations and confirm
+     that the recorded reuse/extract/separate decision matches the code.
    - For non-trivial changes, run `npm run check:impact -- --base origin/main --head HEAD` and address or document any ripple-impact follow-ups it reports.
    - If that passes and risk remains, broaden validation in proportion to the blast radius.
    - Let pre-commit hooks run when committing; do not bypass with `--no-verify`.
    - Record commands and results for the PR body.
 
-6. Commit correctly.
+7. Commit correctly.
    - Use a topic branch based on `origin/main`; never commit directly to `main`.
    - Do not stack meaningless follow-up commits for the same focused topic. If a correction, test fix, wording tweak, or CI repair belongs to the current change, amend the previous commit or use an autosquash fixup before pushing for review.
    - Create a new commit only when it represents a distinct reviewable concern that should remain separate on `main` after the rebase merge.
@@ -56,7 +84,7 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
    - Keep the full subject at 72 characters or less, with no trailing period and no parenthesized asides in the description.
    - Breaking changes need both `!` in the subject and a `BREAKING CHANGE:` footer.
 
-7. Open or update the PR.
+8. Open or update the PR.
    - Push topic branches to upstream `origin` unless the user explicitly says otherwise.
    - Before creating a PR from an existing branch, confirm the intended scope when the branch has mixed commits, already-applied commits, no matching issue/PR, or a compare view that does not clearly describe the desired outcome.
    - If only part of a branch should merge, ask whether to open a clean cherry-picked PR, update the existing branch, or leave it alone.
@@ -64,7 +92,7 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
    - PR body should explain what changed and why, plus validation.
    - Use `Refs #<issue>` for partial fixes and `Closes #<issue>` only when merge should close the issue.
 
-8. Close the loop.
+9. Close the loop.
    - If the user asked for issue follow-up, comment with the confirmed finding, PR link, validation, and expected timing.
    - If a PR should close an issue, prefer an auto-close keyword in the PR body so GitHub closes it on merge.
    - If a PR was merged without auto-close, verify `mergedAt` before manually closing the issue.
