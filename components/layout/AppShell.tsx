@@ -37,6 +37,7 @@ import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 import { AgentSwitcher } from "./AgentSwitcher";
 
 const ADVANCED_TABS = new Set(["dashboard", "tasks", "tools", "memory", "bridges", "logs", "env"]);
+const FULL_WIDTH_TABS = new Set(["chat", "profile", "settings", "models", "credentials", "env"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
@@ -393,7 +394,7 @@ export function AppShell() {
         />
       </aside>
 
-      <div data-testid="workspace-content" className={`mx-auto min-h-0 flex-1 relative w-full overflow-hidden ${state.activeTab === "chat" || state.activeTab === "profile" ? "" : "max-w-7xl"}`}>
+      <div data-testid="workspace-content" className={`mx-auto min-h-0 flex-1 relative w-full overflow-hidden ${FULL_WIDTH_TABS.has(state.activeTab) ? "" : "max-w-7xl"}`}>
         {/*
           Each tab is wrapped in <Activity> on its first visit, then kept
           mounted so scroll position, expanded rows, and local form/filter
@@ -436,14 +437,14 @@ export function AppShell() {
         )}
         {mountedTabs.has("models") && (
           <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
-            <div className="mx-auto h-full w-full max-w-5xl min-w-0">
+            <div className="mx-auto h-full w-full min-w-0">
               <ModelsPanel />
             </div>
           </Activity>
         )}
         {mountedTabs.has("credentials") && (
           <Activity mode={state.activeTab === "credentials" ? "visible" : "hidden"}>
-            <div className="mx-auto h-full w-full max-w-5xl min-w-0">
+            <div className="mx-auto h-full w-full min-w-0">
               <CredentialsPanel />
             </div>
           </Activity>
@@ -482,7 +483,7 @@ export function AppShell() {
         )}
         {isFullMode && mountedTabs.has("env") && (
           <Activity mode={state.activeTab === "env" ? "visible" : "hidden"}>
-            <div className="mx-auto h-full w-full max-w-5xl min-w-0">
+            <div className="mx-auto h-full w-full min-w-0">
               <EnvVarsPanel />
             </div>
           </Activity>
