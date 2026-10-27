@@ -37,7 +37,6 @@ import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 import { AgentSwitcher } from "./AgentSwitcher";
 
 const ADVANCED_TABS = new Set(["dashboard", "tasks", "tools", "memory", "bridges", "logs", "env"]);
-const FULL_WIDTH_TABS = new Set(["chat", "profile", "settings", "models", "credentials", "env"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
@@ -396,7 +395,6 @@ export function AppShell() {
 
       <div
         data-testid="workspace-content"
-        data-workspace-width={FULL_WIDTH_TABS.has(state.activeTab) ? "full" : undefined}
         className="workspace-content mx-auto min-h-0 flex-1 relative w-full overflow-hidden"
       >
         {/*
