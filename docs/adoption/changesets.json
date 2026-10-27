@@ -3721,6 +3721,154 @@
       ],
       "prompts": [],
       "tools": []
+    },
+    {
+      "version": "3.0.0",
+      "previous_version": "2.7.0",
+      "date": "2026-10-27",
+      "hints": [],
+      "commits": [
+        "feat(agents): add task-focused tool history retrieval",
+        "refactor(ui): align workspace layout tokens",
+        "fix(dashboard): use shared workspace width",
+        "fix(layout): remove workspace width cap",
+        "fix(layout): configure shared workspace width",
+        "fix(settings): remove config width caps",
+        "fix(profile): align panel width with chat",
+        "fix(profile): render save failures",
+        "refactor(architecture): codify review patterns",
+        "test(ui): fix navigation checks for scrollable desktop menu",
+        "feat(ui): add desktop agent cards and sidebar controls",
+        "fix(release): allow content-identical release base recovery",
+        "feat(docs): publish release notes for version adoption",
+        "fix(dashboard): add separate input and output cost details",
+        "feat(mail): add standard icloud smtp sending",
+        "feat(mail): align provider indexing and tool classifications",
+        "fix(ui): avoid stacked blur on touch screens",
+        "build(e2e): bump playwright to 1.64.1",
+        "feat(documents): add indexing consent and global recall exclusions",
+        "build(packages)!: require node 24 for published workspaces",
+        "feat(web): add opt-in deepseek search and fetch backend",
+        "chore(runtime)!: require node 24 for the next release",
+        "feat(models): refresh source-backed capabilities and versions",
+        "perf(db): add bounded thread statement caching"
+      ],
+      "prompts": [
+        {
+          "id": "static.extract.model-updates",
+          "source": "lib/pricing/model-updates.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.lifecycle.release-documentation",
+          "source": "lib/lifecycle/changesets.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.scheduled.model-pricing-refresh",
+          "source": "lib/pricing/maintenance-task.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Enabled tools",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "You can execute the 84 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 167 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "removed_lines": [
+            "You can execute the 84 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 166 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "icloud_mail_create_draft",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Save a new draft to the iCloud Drafts folder. This intentionally does not send mail. Use icloud_mail_send_email only when explicitly asked to send. The draft can be reviewed and sent from Apple Mail on the user's device.",
+          "previous_description": "Save a new draft to the iCloud Drafts folder. This intentionally does not send mail — iCloud SMTP is not wired in this release. The draft can be reviewed and sent from Apple Mail on the user's device.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "icloud_mail_send_email",
+          "change": "added",
+          "description_changed": false,
+          "description": "Send an iCloud email immediately via SMTP. Only use when the user explicitly asks to send now; otherwise use icloud_mail_create_draft. Uses the configured iCloud sender, never an agent-supplied From address. Supports text or HTML, CC/BCC, and an optional parent Message-ID for replies. Success means SMTP acceptance, not confirmed delivery. Never automatically retry an uncertain or partially accepted send.",
+          "params_added": [
+            "async_run",
+            "bcc",
+            "body",
+            "cc",
+            "content_type",
+            "deadline_ms",
+            "in_reply_to",
+            "stream",
+            "subject",
+            "to"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "body",
+            "subject",
+            "to"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "refresh_model_pricing",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Refresh provider pricing and official API model documentation, update source-backed version/capability display metadata, and recalculate dashboard estimates using provider-page rates only. Multiple fetches and extractor calls can take several minutes; use deadline_ms=900000 and do not retry a timed-out refresh while it may still be running. Returns rate/model changes, adoption review candidates, source failures, and separate aggregator references. Does not switch saved models or enable native features. Costs are estimates, not invoices.",
+          "previous_description": "Refresh provider pricing pages and separate OpenRouter/LiteLLM reference feeds, then recalculate dashboard estimates using provider-page rates only. Returns rate changes, source health, confidence, and current-versus-recorded dashboard totals. These are estimates, not invoice amounts.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "web_fetch",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Fetch the content of a URL. Default mode='text' returns extracted plain text (good for summarizing articles). mode='html' returns raw HTML if you specifically need markup. Truncates after 200KB. When the separate DeepSeek Search & Fetch integration is configured, public text-mode URLs are fetched through DeepSeek and returned as Markdown without image extraction. HTML requests and hosts in Allowed sites keep using direct fetch, preserving browser-cookie authentication. Use this when web_search returns a URL but you need the actual page content, or to fetch a specific known page. The response …",
+          "previous_description": "Fetch the content of a URL. Default mode='text' returns extracted plain text (good for summarizing articles). mode='html' returns raw HTML if you specifically need markup. Truncates after 200KB. Use this when web_search returns a URL but you need the actual page content, or to fetch a specific known page. The response also includes an `images` object with absolute URLs extracted from the page: `og` (og:image — usually the best hero image), `twitter` (twitter:image), and `samples` (first few <img> tags). Embed these in your reply with markdown `![alt](url)` to produce rich, image-rich answers.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "mode"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "web_search",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Search the web and return normalized title, URL, and snippet results. Uses Firecrawl by default; the separately configured DeepSeek Search & Fetch integration opts into DeepSeek's Search API.",
+          "previous_description": "Search the web with Firecrawl Search and return normalized title, URL, and snippet results.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }

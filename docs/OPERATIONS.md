@@ -10,7 +10,7 @@ fills all remaining width, including on ultrawide screens. Other views retain
 their existing content-width limits.
 On narrower screens, use the header's agent selector and Menu button.
 
-**Unreleased:** The desktop left sidebar also shows each agent's usage profile,
+**Jarela 3.0.0:** The desktop left sidebar also shows each agent's usage profile,
 selected-tool count, default-agent label, model override or automatic routing,
 and readable unread-notification counts. Above the docked right menu, a
 **Selected agent** card shows the agent's icon (or initial), name, and
@@ -35,11 +35,17 @@ Chat voice controls refresh after saving without a page reload. The additions
 use the existing desktop breakpoints and sidebar widths; the mobile header and
 small-screen menu drawer are unchanged.
 
+![Wide-screen studio layout with the agent sidebar, workspace, and selected-agent controls](assets/operations-agents.png)
+
+![Mobile-width Agents view in a simulated iPhone frame](assets/operations-mobile.jpg)
+
+The app view was captured at a 390 CSS-pixel viewport. The device frame, status
+bar, and home indicator are illustrative; this is not a screenshot of a
+verified installed or standalone-mode iOS PWA.
+
 ## Manage agents
 
 The Agents view lists configured agents with a short summary of each instruction set. Use **New** to start adding an agent, and review the selected agent's tools and instructions before relying on it for a workflow.
-
-![Jarela Agents view listing configured agents](assets/operations-agents.png)
 
 ## Configure your profile
 
@@ -57,7 +63,7 @@ Advanced settings are grouped into tabs for **Credentials**, **Models**, **Priva
 
 The Dashboard summarizes token use, estimated cost, cache activity, and tool reliability over a selectable time window. It also includes daily trends and model/provider breakdowns. Cost figures are estimates based on the configured pricing data, not billing statements.
 
-**Upcoming after Jarela 2.7.0:** Costs are split into input and output using
+**Jarela 3.0.0:** Costs are split into input and output using
 each model's separate rates per
 million tokens. The breakdown appears in summaries and daily, vendor, model, and
 agent reports; prompt-cache read/write charges are included with input. When
@@ -70,7 +76,7 @@ when the database, pricing snapshot, date, and selected window are unchanged.
 Database writes or pricing changes invalidate that server-side result. The
 existing browser response cache can retain metrics for up to 30 seconds.
 
-**Upcoming after Jarela 2.7.0:** The built-in `refresh_model_pricing` agent tool and weekly maintenance task also
+**Jarela 3.0.0:** The built-in `refresh_model_pricing` agent tool and weekly maintenance task also
 check official API model documentation for rolling-version and capability
 updates. Accepted observations include source URLs, check times, and supporting
 quotes. Saved-model badges and catalog entries use this display metadata after

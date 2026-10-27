@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-27
+
 ### Added
 
 - ui: Enrich desktop agent rows with profile, model configuration, selected-tool
@@ -43,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Gmail/Outlook send descriptions.
 
 - db: Reuse a bounded per-connection cache of prepared statements for repeated thread/history reads, without caching query results.
-- runtime: Drop Node 22 support; require Node 24.15.0+ on 24.x, or Node 26+. CLI and production launchers reject unsupported runtimes before loading the application. Upgrade Node before installing the next version; bundled installers already include Node 24.
+- runtime: Drop Node 22 support; require Node 24.15.0+ on 24.x, or Node 26+. CLI and production launchers reject unsupported runtimes before loading the application. Upgrade Node before installing 3.0.0; bundled installers already include Node 24.
 
 ### Fixed
 

@@ -6,14 +6,14 @@ Four ways to install:
 |------|------|--------|
 | **Native package** (this file) | You want the OS package manager / installer UX | Jarela installed into the platform app location with a bundled runtime |
 | **Pre-built archive** (this file) | You don't have Node, or want the simplest install | A native autostart entry on macOS / Windows |
-| **`npm install -g @circuitwall/jarela`** | Jarela 2.7.0: Node 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+; next version: Node 24.15.0+ (24.x), or 26+ | A `jarela` CLI on your PATH |
+| **`npm install -g @circuitwall/jarela`** | Jarela 2.7.0: Node 22.22.2+ (22.x), 24.15.0+ (24.x), or 26+; Jarela 3.0.0: Node 24.15.0+ (24.x), or 26+ | A `jarela` CLI on your PATH |
 | **Docker** (Ubuntu / any Linux host) | You want a container, headless server, or NAS | A `jarela` container listening on `127.0.0.1:4312` |
 
 All four end at the same place: a Next.js process on `http://127.0.0.1:4312`, with state persisted under the platform default host data dir (`~/.jarela` on macOS/Linux, `%LOCALAPPDATA%\Jarela` on Windows) or in the `jarela-data` volume mounted at `/data`.
 
 Jarela 2.7.0 supports Node 22.22.2+ on 22.x, Node 24.15.0+ on 24.x, or Node
 26+. Its release builds and bundled runtimes use Node 24.15.0, and Docker
-images use Node 24. The unreleased next version drops Node 22 support and
+images use Node 24. Jarela 3.0.0 drops Node 22 support and
 requires Node 24.15.0+ on 24.x or Node 26+ for npm installations. Node 25 is
 not a supported release line. Native installers bundle their runtime, so no
 separate Node upgrade is needed.
