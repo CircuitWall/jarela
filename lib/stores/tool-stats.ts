@@ -198,6 +198,22 @@ export function listToolFailureSamples(toolName?: string): ToolFailureSampleRow[
     : getDb().prepare(sql).all()) as unknown as ToolFailureSampleRow[];
 }
 
+export function getToolFailurePatterns(
+  names: readonly string[],
+): Pick<ToolFailureSampleRow, "tool_name" | "normalized_reason" | "count">[] {
+  if (names.length === 0) return [];
+  const cutoff = new Date(Date.now() - FAILURE_SAMPLE_TTL_MS).toISOString();
+  return getDb().prepare(`
+    SELECT tool_name, normalized_reason, count
+      FROM tool_failure_samples
+     WHERE tool_name IN (${names.map(() => "?").join(",")})
+       AND count >= 2 AND normalized_reason != 'other'
+       AND failure_class != 'expected_skip' AND last_seen_at >= ?
+     ORDER BY count DESC, last_seen_at DESC, tool_name, normalized_reason
+     LIMIT 3
+  `).all(...names, cutoff) as Pick<ToolFailureSampleRow, "tool_name" | "normalized_reason" | "count">[];
+}
+
 export function pruneToolFailureSamples(referenceIso = now()): number {
   const referenceMs = Date.parse(referenceIso);
   const cutoff = new Date((Number.isFinite(referenceMs) ? referenceMs : Date.now()) - FAILURE_SAMPLE_TTL_MS).toISOString();

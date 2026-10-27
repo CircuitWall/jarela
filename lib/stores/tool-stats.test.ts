@@ -9,6 +9,7 @@ process.env.JARELA_DB_DIR = tmpRoot;
 const {
   defaultToolStats,
   getToolStatsMap,
+  getToolFailurePatterns,
   listToolFailureSamples,
   pruneToolFailureSamples,
   recordToolUsage,
@@ -105,6 +106,36 @@ describe("tool usefulness telemetry", () => {
     expect(rows[0].sample_arg_shape).toContain("path");
     expect(rows[0].sample_arg_shape).not.toContain("raw-2.txt");
     expect(rows[0].sample_arg_shape).not.toContain("secret-2");
+  });
+
+  it("retrieves only bounded, recent, recurring patterns for selected tools without raw samples", () => {
+    const names = ["retrieval_alpha", "retrieval_beta", "retrieval_gamma", "retrieval_delta", "retrieval_stale", "retrieval_once", "retrieval_skip"];
+    for (const name of names) {
+      for (let i = 0; i < (name === "retrieval_once" ? 1 : 2); i++) {
+        recordToolUsage([
+          { id: `${name}-${i}`, phase: "call", name, payload: { path: "private-path" } },
+          { id: `${name}-${i}`, phase: "result", name, payload: { error: "timeout private-error" } },
+        ], "");
+      }
+    }
+    getDb().prepare("UPDATE tool_failure_samples SET last_seen_at = ? WHERE tool_name = ?")
+      .run("2000-01-01T00:00:00.000Z", "retrieval_stale");
+    getDb().prepare("UPDATE tool_failure_samples SET failure_class = 'expected_skip' WHERE tool_name = ?")
+      .run("retrieval_skip");
+
+    expect(getToolFailurePatterns([])).toEqual([]);
+    expect(getToolFailurePatterns(["unknown_tool"])).toEqual([]);
+    expect(getToolFailurePatterns(["retrieval_stale", "retrieval_once", "retrieval_skip"])).toEqual([]);
+    const patterns = getToolFailurePatterns(names);
+    expect(patterns).toHaveLength(3);
+    for (const pattern of patterns) {
+      expect(Object.keys(pattern).sort()).toEqual(["count", "normalized_reason", "tool_name"]);
+      expect(pattern).toMatchObject({ normalized_reason: "timeout", count: 2 });
+      expect(["retrieval_alpha", "retrieval_beta", "retrieval_gamma", "retrieval_delta"]).toContain(pattern.tool_name);
+    }
+    expect(getToolFailurePatterns(["retrieval_beta"])).toEqual([
+      { tool_name: "retrieval_beta", normalized_reason: "timeout", count: 2 },
+    ]);
   });
 
   it("classifies failures for escalation without storing raw arguments", () => {

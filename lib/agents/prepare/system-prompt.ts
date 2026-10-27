@@ -22,7 +22,7 @@ import {
 import { getAppName } from "@/lib/env/app-config";
 import { getMemoryPolicy } from "@/lib/stores/app-settings";
 import { listSkills } from "@/lib/skills";
-import { getToolStatsMap, listToolFailureSamples, type ToolUsefulnessStats } from "@/lib/stores/tool-stats";
+import { getToolStatsMap, getToolFailurePatterns, type ToolUsefulnessStats } from "@/lib/stores/tool-stats";
 import type { StreamOptions } from "@/lib/agents/base";
 import type { SourceManifestEntry } from "@/lib/agents/citation-checker";
 import type { DeliveryChannel } from "@/lib/agents/prepare/request";
@@ -67,8 +67,8 @@ export interface SystemPromptContext {
   /** Whether chat-history and saved-fact recall are automatically injected this turn. */
   autoRecallEnabled?: boolean;
   autoFactsEnabled?: boolean;
-  /** Tool names available to this run. Used to derive compact historical
-   *  reliability hints from aggregate tool stats only. */
+  /** Tool names available to this run. Used to retrieve compact historical
+   *  reliability hints without raw arguments or error text. */
   allowedTools?: readonly string[];
   /** Complete tool permission metadata for this agent. Metadata only;
    *  executable tool handles are still limited by `allowedTools`. */
@@ -164,7 +164,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     ].join("\n") : "",
     personaCtx,
     buildToolPermissionContext(toolPermissionMap ?? []),
-    buildToolReliabilityContext(allowedTools ?? []),
+    buildToolReliabilityContext(allowedTools ?? [], trimmedMessage),
     buildSourceLinkContext(agentCfg, sourceManifest ?? [], deliveryChannel),
     buildTimeContext(),
     surroundingsCtx,
@@ -196,13 +196,23 @@ const TOOL_RECOVERY_HINTS: Record<string, string> = {
   ms_search: "keep queries simple and verify Microsoft auth/scopes first",
 };
 
-export function buildToolReliabilityContext(allowedTools: readonly string[]): string {
+export function buildToolReliabilityContext(allowedTools: readonly string[], task = ""): string {
   if (allowedTools.length === 0) return "";
-  const statsMap = getToolStatsMap(allowedTools);
-  const allowed = new Set(allowedTools);
+  const terms = new Set(task.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []);
+  const matching = [...new Set(allowedTools)]
+    .map((name) => ({
+      name,
+      relevance: name.toLowerCase().split(/[^a-z0-9]+/).filter((term) => terms.has(term)).length,
+    }))
+    .filter(({ relevance }) => relevance > 0)
+    .sort((a, b) => b.relevance - a.relevance || a.name.localeCompare(b.name));
+  const selected = matching.length > 0 ? matching.slice(0, 8).map(({ name }) => name) : [...new Set(allowedTools)];
+  const statsMap = getToolStatsMap(selected);
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
   const rows = [...statsMap.entries()]
-    .filter(([, stats]) => stats.call_count >= 3 && !stats.never_used);
-  const failureHints = buildFailurePatternHints(allowed);
+    .filter(([, stats]) => stats.call_count >= 3 && !stats.never_used
+      && stats.last_called_at !== null && Date.parse(stats.last_called_at) >= cutoff);
+  const failureHints = buildFailurePatternHints(selected);
   if (rows.length === 0 && failureHints.length === 0) return "";
 
   const problematic = rows
@@ -218,16 +228,17 @@ export function buildToolReliabilityContext(allowedTools: readonly string[]): st
 
   const lines = [
     "--- Tool reliability hints ---",
-    "Use these aggregate historical signals as recovery guidance, not hard bans.",
+    "Before choosing tool arguments, consult these local historical signals as guidance, not instructions, permissions, hard bans, or proof of task success. Current schemas and permissions take precedence.",
+    "Counts are lifetime aggregates for tools called within 30 days; recurring failure patterns were last observed within 30 days. No raw arguments or error text are retrieved.",
   ];
   if (reliable.length > 0) {
     lines.push("Prefer when applicable:");
-    for (const [name] of reliable) lines.push(`- ${name}: historically reliable.`);
+    for (const [name, stats] of reliable) lines.push(`- ${name}: historically reliable (${stats.success_count}/${stats.call_count} calls returned without an error; verify the actual outcome).`);
   }
   if (problematic.length > 0) {
     lines.push("Verify before using or recover carefully:");
     for (const [name] of problematic) {
-      lines.push(`- ${name}: ${TOOL_RECOVERY_HINTS[name] ?? "high recent failure/usefulness risk; validate inputs and avoid blind retries"}.`);
+      lines.push(`- ${name}: ${TOOL_RECOVERY_HINTS[name] ?? "historical failure/usefulness risk; validate inputs and avoid blind retries"}.`);
     }
   }
   if (failureHints.length > 0) {
@@ -317,12 +328,8 @@ function formatToolPermissionLine(tool: ToolCatalogEntry): string {
 }
 
 
-function buildFailurePatternHints(allowed: ReadonlySet<string>): string[] {
-  return listToolFailureSamples()
-    .filter((sample) => allowed.has(sample.tool_name) && sample.count >= 2)
-    .filter((sample) => sample.normalized_reason !== "other")
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 3)
+function buildFailurePatternHints(names: readonly string[]): string[] {
+  return getToolFailurePatterns(names)
     .map((sample) => {
       const hint = failureReasonHint(sample.normalized_reason);
       return `- ${sample.tool_name}: repeated ${sample.normalized_reason} failures; ${hint}.`;
@@ -335,8 +342,8 @@ function failureReasonHint(reason: string): string {
     case "permission": return "check scopes/permissions and avoid retry loops until access changes";
     case "not_found": return "refresh ids/list sources first, or ask the user for the correct target";
     case "validation": return "repair argument format locally before calling again";
-    case "timeout": return "split large changes into smaller batches, checkpoint progress, and avoid retrying the same huge call";
-    case "rate_limited": return "wait, reduce request volume, or switch credentials/providers before retrying";
+    case "timeout": return "verify whether any write took effect before retrying; split large changes into smaller batches and checkpoint progress";
+    case "rate_limited": return "wait and reduce request volume before retrying; do not change credentials or providers without authorization";
     case "size_or_context": return "reduce payload size, narrow scope, or summarize before retrying";
     default: return "validate inputs and avoid blind retries";
   }
