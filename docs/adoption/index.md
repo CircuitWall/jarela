@@ -17,6 +17,57 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.0.0
+
+From 2.7.0 · 2026-10-27
+
+### Tools
+
+- `icloud_mail_create_draft` — changed; description changed
+- `icloud_mail_send_email` — added; params added: `async_run`, `bcc`, `body`, `cc`, `content_type`, `deadline_ms`, `in_reply_to`, `stream`, `subject`, `to`; now required: `body`, `subject`, `to`
+- `refresh_model_pricing` — changed; description changed
+- `web_fetch` — changed; description changed; params changed: `mode`
+- `web_search` — changed; description changed
+
+### Prompts
+
+- `static.extract.model-updates` — added (`lib/pricing/model-updates.ts`)
+- `static.lifecycle.release-documentation` — added (`lib/lifecycle/changesets.ts`)
+- `static.scheduled.model-pricing-refresh` — added (`lib/pricing/maintenance-task.ts`)
+- `system.Enabled tools` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + You can execute the 84 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 167 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    - You can execute the 84 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 166 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    ```
+
+### Commits
+
+- feat(agents): add task-focused tool history retrieval
+- refactor(ui): align workspace layout tokens
+- fix(dashboard): use shared workspace width
+- fix(layout): remove workspace width cap
+- fix(layout): configure shared workspace width
+- fix(settings): remove config width caps
+- fix(profile): align panel width with chat
+- fix(profile): render save failures
+- refactor(architecture): codify review patterns
+- test(ui): fix navigation checks for scrollable desktop menu
+- feat(ui): add desktop agent cards and sidebar controls
+- fix(release): allow content-identical release base recovery
+- feat(docs): publish release notes for version adoption
+- fix(dashboard): add separate input and output cost details
+- feat(mail): add standard icloud smtp sending
+- feat(mail): align provider indexing and tool classifications
+- fix(ui): avoid stacked blur on touch screens
+- build(e2e): bump playwright to 1.64.1
+- feat(documents): add indexing consent and global recall exclusions
+- build(packages)!: require node 24 for published workspaces
+- feat(web): add opt-in deepseek search and fetch backend
+- chore(runtime)!: require node 24 for the next release
+- feat(models): refresh source-backed capabilities and versions
+- perf(db): add bounded thread statement caching
+
 ## 2.7.0
 
 From 2.6.1 · 2026-10-25

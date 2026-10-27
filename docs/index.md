@@ -4,12 +4,12 @@
 
 Jarela is a local-first desktop chat UI for LangGraph agents. It runs as a single Next.js process on your machine, keeps state in SQLite, and exposes a structured tool ecosystem for agents, integrations, document indexing, and provider-backed workflows.
 
-**Version scope:** This documentation snapshot is based on Jarela `2.7.0` and
-the repository's unreleased changes through commit `7434a9e5` (2026-10-26).
-Features listed under [Unreleased](CHANGELOG.md#unreleased) are not part of
-2.7.0; user guides label those features where they are described. Workspace
-package documentation follows that package's version and identifies unreleased
-behavior separately. Update this baseline after each full documentation review.
+**Version scope:** This documentation snapshot targets Jarela `3.0.0` and
+covers repository changes through commit
+`50f0be5ce99917e2f580ad74716cc4169be14e71` (2026-10-27). Features listed under
+[Unreleased](CHANGELOG.md#unreleased) are not part of 3.0.0. Workspace package
+documentation follows that package's version and identifies unreleased behavior
+separately. Update this baseline after each full documentation review.
 
 ## Find your path
 

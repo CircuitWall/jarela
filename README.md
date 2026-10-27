@@ -9,6 +9,7 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 - Local-first, single-process Next.js app
 - Multi-provider LLM support: Anthropic, OpenAI, Google GenAI, Cohere, DeepSeek, GitHub Copilot
 - Per-agent tool policy, identity, memory, and harness configuration
+- Wide-screen agent sidebar with per-agent model, usage strategy, and voice controls
 - Per-agent Home, Work, Developer, and Everything usage profiles for response style, chat diagnostics, and credential discovery
 - SQLite-backed checkpoints, memory, schedules, proposals, and local integrations
 - Durable, agent-targeted lifecycle signals for restarts, approvals, configuration changes, and background work
@@ -20,8 +21,11 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 ## Jarela in action
 
 <p align="center">
+	<img src="docs/assets/operations-agents.png" alt="Wide-screen studio layout with the agent sidebar, workspace, and selected-agent controls" width="49%">
+	<img src="docs/assets/operations-mobile.jpg" alt="Mobile-width Agents view in a simulated iPhone frame; device frame and system indicators are illustrative" width="49%">
+</p>
+<p align="center">
 	<img src="docs/assets/operations-dashboard.png" alt="Usage dashboard showing Jarela token and cost summaries" width="49%">
-	<img src="docs/assets/operations-tools.png" alt="Tools view showing installed packages and runtime controls" width="49%">
 </p>
 
 ## First launch
@@ -37,7 +41,7 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 
 Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what to expect in your first chat.
 
-## Dashboard costs (upcoming after Jarela 2.7.0)
+## Dashboard costs (Jarela 3.0.0)
 
 The dashboard shows separate **input** and **output** prices per million tokens
 for each model, and separate input/output spending in the summary, daily
@@ -48,7 +52,7 @@ When no matching rates are available, a recorded cost is shown as **unattributed
 instead of inventing an input/output split. Legacy messages still use
 content-length token estimates.
 
-## Document indexing and recall privacy (upcoming after Jarela 2.7.0)
+## Document indexing and recall privacy (Jarela 3.0.0)
 
 In Documents, use **Opt in to indexing** to choose a local folder or a supported
 connected integration (Gmail, Outlook, iCloud, GitHub, Jira, or Confluence). Scope remote
@@ -111,7 +115,7 @@ references can be missed. Search previews are ranked and limited, not exhaustive
 audits. Exclusions do not delete stored content, prevent external embedding,
 remove excerpts already in chats, or restrict separate live email/file tools.
 
-## Model updates (upcoming after Jarela 2.7.0)
+## Model updates (Jarela 3.0.0)
 
 The built-in pricing-maintenance agent tool also checks official model
 documentation for version and capability changes. It refreshes catalog/badge
@@ -120,6 +124,15 @@ gaps are escalated through deduplicated GitHub issues when access and approval
 are available. See [model-update operations](docs/OPERATIONS.md#review-usage).
 
 ## Agent usage profiles
+
+**Jarela 3.0.0:** On wide screens, the scrollable left sidebar
+shows agent names, unread counts, usage profiles, selected-tool counts, and
+model routing. The selected-agent card above the right menu provides quick
+model, usage-strategy, and voice controls. These settings save immediately;
+model and strategy changes apply to new runs. Narrow screens use the mobile
+header and menu drawer instead of docked sidebars. The phone image above uses
+an illustrative device frame around a mobile-width capture, not a verified
+installed iOS PWA screenshot. See [desktop agent controls](docs/OPERATIONS.md#operating-jarela).
 
 The top-left agent switcher keeps the current agent first, followed by agent
 icons that fade with distance. Hover or keyboard focus restores their opacity;
@@ -175,7 +188,7 @@ and saved credentials stay accessible; **Show all integrations** bypasses discov
 filtering. With no active agent, the catalog shows everything. Global Essential/Full
 mode still controls app configuration panels independently.
 
-### Web search and fetch backends (upcoming after Jarela 2.7.0)
+### Web search and fetch backends (Jarela 3.0.0)
 
 `web_search` and `web_fetch` are Jarela tools, separate from model-native web-search
 capabilities shown in model badges. Firecrawl Search and Jarela's guarded direct
