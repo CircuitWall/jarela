@@ -140,6 +140,8 @@ for (const width of [1024, 1920]) {
       })).toBe(true);
     }
     const settings = page.getByRole("button", { name: "Settings", exact: true });
+    await settings.scrollIntoViewIfNeeded();
+    await expect(settings).toBeInViewport();
     const settingsBounds = await settings.boundingBox();
     expect(settingsBounds).not.toBeNull();
     const center = {
