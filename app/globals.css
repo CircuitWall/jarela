@@ -471,11 +471,8 @@ body {
 }
 
 .workspace-content {
-  --workspace-content-max-width: 80rem;
-  max-width: var(--workspace-content-max-width);
-}
-.workspace-content[data-workspace-width="full"] {
   --workspace-content-max-width: none;
+  max-width: var(--workspace-content-max-width);
 }
 .workspace-panel {
   width: 100%;
