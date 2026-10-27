@@ -1,6 +1,7 @@
 import { BaseStore } from "@langchain/langgraph-checkpoint";
 import type { Operation, OperationResults, Item } from "@langchain/langgraph-checkpoint";
 import { getMemory, putMemory, deleteMemory, listMemory } from "@/lib/stores/memory";
+import { parseJsonSafe } from "@/lib/utils/json";
 
 export class SqliteMemoryStore extends BaseStore {
   async batch<Op extends Operation[]>(operations: Op): Promise<OperationResults<Op>> {
@@ -11,12 +12,7 @@ export class SqliteMemoryStore extends BaseStore {
           const ns = op.namespace.join("/");
           const row = getMemory(ns, op.key);
           if (!row) return null;
-          let value: Record<string, unknown>;
-          try {
-            value = JSON.parse(row.value) as Record<string, unknown>;
-          } catch {
-            value = { _raw: row.value };
-          }
+          const value = parseJsonSafe<Record<string, unknown>>(row.value, { _raw: row.value });
           return {
             namespace: op.namespace,
             key: op.key,
@@ -42,21 +38,13 @@ export class SqliteMemoryStore extends BaseStore {
           const prefix = (op.namespacePrefix as string[]).join("/");
           const limit = "limit" in op && typeof op.limit === "number" ? op.limit : 10;
           const rows = listMemory(prefix || undefined, undefined, limit);
-          return rows.map((r) => {
-            let value: Record<string, unknown>;
-            try {
-              value = JSON.parse(r.value) as Record<string, unknown>;
-            } catch {
-              value = { _raw: r.value };
-            }
-            return {
-              namespace: r.namespace.split("/"),
-              key: r.key,
-              value,
-              createdAt: new Date(r.created_at),
-              updatedAt: new Date(r.updated_at),
-            };
-          });
+          return rows.map((r) => ({
+            namespace: r.namespace.split("/"),
+            key: r.key,
+            value: parseJsonSafe<Record<string, unknown>>(r.value, { _raw: r.value }),
+            createdAt: new Date(r.created_at),
+            updatedAt: new Date(r.updated_at),
+          }));
         }
 
         return undefined;

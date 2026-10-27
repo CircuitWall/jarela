@@ -37,6 +37,7 @@ import type { ContentPart } from "@/lib/tools/runtime/types";
 import { storeCanonicalBridgeAttachment } from "./attachment-store";
 import { whatsappChatLink } from "./whatsapp-link";
 import { errorMessage } from "@/lib/utils/error";
+import { createContentCache } from "@/lib/cache/keyed-cache";
 
 // Baileys + qrcode are dev-time-installed peer libs. We never import their
 // types directly — both modules are loaded via dynamic `import()` inside
@@ -98,18 +99,16 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   // IDs of messages we sent via sendText. WhatsApp echoes these back as
   // `fromMe` upserts; we suppress only those IDs so user-authored `fromMe`
   // messages still flow through for context. Bounded ring (most recent N).
-  private sentIds: string[] = [];
-  private sentIdsSet = new Set<string>();
   private static readonly SENT_IDS_MAX = 500;
+  private sentIds = createContentCache<boolean>(WhatsAppBridgeAdapter.SENT_IDS_MAX);
   // Dedupe ring for INBOUND message ids. WhatsApp replays the queued
   // backlog after a reconnect (delivered as `messages.upsert` with type
   // `append` rather than `notify`), and on a same-process reconnect we
   // also get re-fired live `notify` events for messages we already
   // processed. Tracking the last N message ids in memory lets us accept
   // both notify+append without delivering duplicates to the agent.
-  private recvIds: string[] = [];
-  private recvIdsSet = new Set<string>();
   private static readonly RECV_IDS_MAX = 2000;
+  private recvIds = createContentCache<boolean>(WhatsAppBridgeAdapter.RECV_IDS_MAX);
   // Synthetic event replay guard. WhatsApp/Baileys can emit a burst of
   // group metadata / participant updates right after reconnect. Suppress
   // those during a short warm-up window, then dedupe exact repeats for a
@@ -304,12 +303,12 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           // Include user-authored `fromMe` traffic so the agent receives full
           // chat context (including the user's own replies), but suppress
           // bridge-authored echoes to prevent bot loopbacks.
-          if (m.key.id && this.sentIdsSet.has(m.key.id)) continue;
+          if (m.key.id && this.sentIds.has(m.key.id)) continue;
         }
         // Inbound dedupe — covers (a) the `notify` that fires for the same
         // message we already delivered on an earlier `notify`/`append`,
         // and (b) duplicate entries inside a single `append` batch.
-        if (m.key.id && this.recvIdsSet.has(m.key.id)) continue;
+        if (m.key.id && this.recvIds.has(m.key.id)) continue;
         // Baileys 7 / modern WhatsApp delivers many personal chats with a
         // `@lid` ("Local IDentifier") remoteJid instead of `@s.whatsapp.net`.
         // The chat picker filters those out (they aren't valid sendMessage
@@ -352,7 +351,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // Mark as seen before invoking the handler so a re-fired upsert
         // during the same tick (or a sync handler that itself triggers more
         // events) can't slip a duplicate through.
-        if (m.key.id) this.rememberRecvId(m.key.id);
+        if (m.key.id) this.recvIds.set(m.key.id, true);
         // In group chats `key.participant` is the actual sender's JID
         // (the chat-level remote_jid is the group, not the person). In 1:1
         // chats it's undefined — the sender == remote_jid. Normalize so the
@@ -382,7 +381,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           message_id: m.key.id ?? null,
           is_group,
           participant_jid,
-          // sentIdsSet filtering above means agent echoes never reach this
+          // sent-ID filtering above means agent echoes never reach this
           // construction site, so "user" vs "counterpart" is the only live
           // distinction here.
           role: m.key.fromMe ? "user" : "counterpart",
@@ -579,10 +578,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     this.sock = null;
     this.chats.clear();
     this.selfJid = null;
-    this.sentIds = [];
-    this.sentIdsSet.clear();
-    this.recvIds = [];
-    this.recvIdsSet.clear();
+    this.sentIds.clear();
+    this.recvIds.clear();
     this.syntheticEventSeen.clear();
     this.syntheticEventOrder = [];
     this.suppressSyntheticUntilTs = 0;
@@ -634,27 +631,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     // Record the outgoing message ID so the matching `fromMe` echo from
     // messages.upsert doesn't re-enter the routing pipeline in the self-chat.
     const sentId = (result as { key?: { id?: string } } | null | undefined)?.key?.id;
-    if (sentId) this.rememberSentId(sentId);
-  }
-
-  private rememberSentId(id: string): void {
-    if (this.sentIdsSet.has(id)) return;
-    this.sentIds.push(id);
-    this.sentIdsSet.add(id);
-    while (this.sentIds.length > WhatsAppBridgeAdapter.SENT_IDS_MAX) {
-      const evict = this.sentIds.shift();
-      if (evict) this.sentIdsSet.delete(evict);
-    }
-  }
-
-  private rememberRecvId(id: string): void {
-    if (this.recvIdsSet.has(id)) return;
-    this.recvIds.push(id);
-    this.recvIdsSet.add(id);
-    while (this.recvIds.length > WhatsAppBridgeAdapter.RECV_IDS_MAX) {
-      const evict = this.recvIds.shift();
-      if (evict) this.recvIdsSet.delete(evict);
-    }
+    if (sentId && !this.sentIds.has(sentId)) this.sentIds.set(sentId, true);
   }
 
   private displayNameForJid(jid: string): string {
