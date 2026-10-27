@@ -189,6 +189,30 @@ When adding a new folder, keep its direct file count readable. Split a domain
 again when it starts mixing unrelated responsibilities, rather than allowing
 another large flat directory to form.
 
+## Tool-history retrieval (unreleased)
+
+The dynamic system-prompt suffix retrieves local tool history before the model
+chooses calls for a turn. It reuses `lib/stores/tool-stats.ts`; no embeddings,
+new schema, external service, or extra model call is required.
+
+Exact keyword overlap between the task and allowed tool names selects up to
+eight tools, ranked by matching word count. Without a match, retrieval falls
+back to the allowed tools. The prompt includes at most three reliable-tool
+summaries, five recovery hints, and three recurring failure patterns. Tools
+must have been called within 30 days; their success counts are lifetime
+aggregates, not a rolling success rate. Failure patterns require at least two
+observations and a last observation within 30 days; expected skips are excluded.
+The SQL lookup returns only tool names, normalized categories, and counts,
+never stored error samples or argument shapes.
+
+These are advisory signals, not verified correction examples or permission
+changes. Current tool schemas and permissions remain authoritative; successful
+execution does not establish task completion, and timed-out writes need outcome
+verification before retrying. Retrieval runs once during turn preparation, not
+again before every call in a multi-call turn.
+
+Validate with `npx vitest run lib/stores/tool-stats.test.ts lib/agents/prepare/system-prompt.test.ts`.
+
 ## Safe migration pattern
 
 1. Add `state` + `commands` without removing old flat fields.

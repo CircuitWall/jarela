@@ -11,6 +11,7 @@ process.env.JARELA_DB_DIR = tmpRoot;
 
 const { CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL, buildSystemPrompt, buildToolPermissionContext, buildSharedToolCatalogContext, buildToolReliabilityContext, formatLocalDateTime } = await import("./system-prompt");
 const { recordToolUsage } = await import("@/lib/stores/tool-stats");
+const { getDb } = await import("@/lib/db");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ContextBudget } from "@/lib/agents/context-budget";
 
@@ -672,5 +673,69 @@ describe("buildToolReliabilityContext", () => {
     expect(ctx).toContain("file_multi_edit: repeated timeout failures");
     expect(ctx).toContain("split large changes into smaller batches");
     expect(ctx).not.toContain("huge change");
+  });
+
+  it("retrieves name-matched tool history before the model chooses a call", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(), trimmedMessage: "search documents", budget,
+      recallCtx: "", warmSummaryCtx: "", factsCtx: "", experienceMode: "full",
+      delegateRosterLines: [], allowedTools: ["file_read", "documents_search"],
+    });
+    const [stable, dynamic] = prompt.split(CACHE_SPLIT_SENTINEL);
+    expect(stable).not.toContain("--- Tool reliability hints ---");
+    expect(dynamic).toContain("documents_search: repeated not_found failures");
+    expect(dynamic).not.toContain("file_read: historically reliable");
+    expect(dynamic).toContain("Current schemas and permissions take precedence");
+    expect(dynamic).not.toContain("source missing");
+  });
+
+  it("falls back to allowed-tool history when no tool name matches", () => {
+    const ctx = buildToolReliabilityContext(["file_read"], "hello");
+    expect(ctx).toContain("file_read: historically reliable (3/3");
+    expect(ctx).toContain("not instructions, permissions");
+    expect(ctx).toContain("verify the actual outcome");
+    expect(buildToolReliabilityContext([], "search documents")).toBe("");
+  });
+
+  it("bounds retrieved hints even when many tool names match", () => {
+    const names = Array.from({ length: 12 }, (_, i) => `bounded_lookup_${i}`);
+    for (const name of names) {
+      for (let i = 0; i < 3; i++) {
+        recordToolUsage([
+          { id: `${name}-${i}`, phase: "call", name, payload: {} },
+          { id: `${name}-${i}`, phase: "result", name, payload: { error: "timeout" } },
+        ], "");
+      }
+    }
+    const ctx = buildToolReliabilityContext(names, "bounded lookup");
+    expect(ctx.match(/^- bounded_lookup_/gm)).toHaveLength(8);
+    expect(ctx.length).toBeLessThan(3000);
+    expect(ctx).toContain("verify whether any write took effect before retrying");
+  });
+
+  it("ranks stronger keyword matches ahead of the eight-tool cutoff", () => {
+    const target = "zz_lookup_target";
+    for (let i = 0; i < 2; i++) {
+      recordToolUsage([
+        { id: `ranked-${i}`, phase: "call", name: target, payload: {} },
+        { id: `ranked-${i}`, phase: "result", name: target, payload: { error: "schema validation failed" } },
+      ], "");
+    }
+    const weaker = Array.from({ length: 10 }, (_, i) => `aa_lookup_${i}`);
+    const ctx = buildToolReliabilityContext([...weaker, target], "LOOKUP TARGET");
+    expect(ctx).toContain(`${target}: repeated validation failures`);
+    expect(buildToolReliabilityContext(weaker, "LOOKUP TARGET")).not.toContain(target);
+  });
+
+  it("ignores stale history even when no new tool usage has triggered pruning", () => {
+    recordToolUsage([
+      { id: "stale", phase: "call", name: "stale_lookup", payload: {} },
+      { id: "stale", phase: "result", name: "stale_lookup", payload: { error: "timeout" } },
+    ], "");
+    getDb().prepare("UPDATE tool_stats SET call_count = 3, error_count = 3, last_called_at = ? WHERE tool_name = ?")
+      .run("2000-01-01T00:00:00.000Z", "stale_lookup");
+    getDb().prepare("UPDATE tool_failure_samples SET count = 3, last_seen_at = ? WHERE tool_name = ?")
+      .run("2000-01-01T00:00:00.000Z", "stale_lookup");
+    expect(buildToolReliabilityContext(["stale_lookup"], "stale lookup")).toBe("");
   });
 });

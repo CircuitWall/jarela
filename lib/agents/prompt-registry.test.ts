@@ -27,6 +27,15 @@ afterAll(() => {
 
 const { agentCfg, budget, buildVariants } = await import("./prompt-variants");
 
+const { recordToolUsage } = await import("@/lib/stores/tool-stats");
+for (let i = 0; i < 3; i++) {
+  recordToolUsage([
+    { id: `lookup-${i}`, phase: "call", name: "list_tools", payload: { query: "example" } },
+    { id: `lookup-${i}`, phase: "result", name: "list_tools", payload: { content: "Example tool catalog" } },
+    { id: `invoke-${i}`, phase: "call", name: "invoke_tool", payload: { args_json: "invalid-example" } },
+    { id: `invoke-${i}`, phase: "result", name: "invoke_tool", payload: { error: "schema validation failed: synthetic fixture" } },
+  ], "Example tool catalog");
+}
 const variants = await buildVariants();
 const staticPrompts = listStaticPrompts();
 
@@ -316,6 +325,22 @@ describe("assembled agent system prompt", () => {
         expect(dynamic, `${id}: tool state must not sit in the cached block`).toContain("--- Enabled tools ---");
         expect(stable).not.toContain("--- Enabled tools ---");
       }
+    }
+  });
+
+  it("assembles bounded, advisory tool-history retrieval only in the dynamic suffix", () => {
+    const populated = variants.filter(({ prompt }) => prompt.includes("--- Tool reliability hints ---"));
+    expect(populated.length).toBeGreaterThan(0);
+    for (const { id, prompt } of populated) {
+      const [stable, dynamic] = prompt.split(CACHE_SPLIT_SENTINEL);
+      expect(stable, id).not.toContain("--- Tool reliability hints ---");
+      expect(dynamic, id).toContain("list_tools: historically reliable (3/3");
+      expect(dynamic, id).toContain("invoke_tool: repeated validation failures");
+      expect(dynamic, id).toContain("Current schemas and permissions take precedence");
+      expect(prompt, id).not.toContain("invalid-example");
+      expect(prompt, id).not.toContain("synthetic fixture");
+      const hints = dynamic.split("--- Tool reliability hints ---")[1].split("\n\n")[0];
+      expect(hints.length, id).toBeLessThan(3000);
     }
   });
 

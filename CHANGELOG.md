@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- agents: Focus local tool-history hints on task-matching allowed tool names,
+  retrieve only bounded recent failure categories, and distinguish execution
+  success from verified task completion without embeddings or extra model calls.
+
 - tools: Align iCloud mail trash and calendar deletion with Gmail/Outlook's `write`
   capability, preserve Mail/Calendar categories after package reload, and correct
   Gmail/Outlook send descriptions.
