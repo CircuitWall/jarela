@@ -87,3 +87,6 @@ lint_output.txt
 
 # Generated documentation changelog (copied from the root during docs builds).
 docs/CHANGELOG.md
+# Generated from Git history during documentation builds.
+docs/assets/project-history.html
+site/

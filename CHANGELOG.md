@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- docs: Add an automatically generated interactive project-history chart with
+  commit-type stacks, time and version grouping, accumulated net text lines,
+  date and lockfile filters, and CSV export, without an editorial storyline.
+
 ## [3.0.0] - 2026-10-27
 
 ### Added

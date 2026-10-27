@@ -17,6 +17,8 @@ separately. Update this baseline after each full documentation review.
 
 Read the [per-release changelog](CHANGELOG.md) for user-visible changes and
 [agent upgrade details](adoption/index.md) for prompt/tool schema deltas.
+The [project history chart](PROJECT_HISTORY.md) shows automatically generated
+commit statistics and accumulated net text lines without an editorial storyline.
 Machines should use the [JSON changeset feed](adoption/changesets.json), not scrape
 the HTML preview. The schema-versioned feed includes each release's predecessor,
 adoption hints, prompt deltas, and tool parameter changes.
