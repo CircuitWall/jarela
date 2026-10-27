@@ -11,6 +11,30 @@ This guide focuses on developer experience for UI/state work.
 - Test hooks only: `npm run test:hooks`
 - Watch hook tests: `npm run test:hooks:watch`
 
+## Documentation history chart
+
+`npm run docs:build` regenerates the [project history chart](PROJECT_HISTORY.md)
+before building the Zensical site. `npm run docs:dev` generates the same snapshot
+before serving; restart it or run `npm run docs:history` to refresh after commits.
+The standalone generator uses Node and Git only and writes the ignored
+`docs/assets/project-history.html`; do not commit generated history snapshots.
+The source is `scripts/generate-project-history.mjs` with
+`scripts/project-history.template.html`.
+
+Use a full Git checkout with tags. For a shallow clone, run
+`git fetch --unshallow --tags`; otherwise fetch missing tags with `git fetch --tags`.
+The generator rejects shallow history, validates line totals against Git
+shortstats, and publishes only numeric statistics, types, dates, abbreviated
+hashes and reachable app version tags. It does not publish commit subjects,
+author details, file paths or editorial interpretation. The deployment workflow
+checks out full history and tags and rebuilds on main pushes or manual dispatch.
+Tag-only pushes do not trigger deployment.
+
+Validate changes with
+`npx vitest run scripts/generate-project-history.test.mjs` and
+`npm run docs:build`. The chart is a static build artifact, separate from app
+runtime state; it adds no provider or network dependency.
+
 ## Shared workspace layout (unreleased)
 
 Workspace sizing is owned by the CSS tokens in
