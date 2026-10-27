@@ -393,7 +393,7 @@ export function AppShell() {
         />
       </aside>
 
-      <div data-testid="workspace-content" className={`mx-auto min-h-0 flex-1 relative w-full overflow-hidden ${state.activeTab === "chat" ? "" : "max-w-7xl"}`}>
+      <div data-testid="workspace-content" className={`mx-auto min-h-0 flex-1 relative w-full overflow-hidden ${state.activeTab === "chat" || state.activeTab === "profile" ? "" : "max-w-7xl"}`}>
         {/*
           Each tab is wrapped in <Activity> on its first visit, then kept
           mounted so scroll position, expanded rows, and local form/filter

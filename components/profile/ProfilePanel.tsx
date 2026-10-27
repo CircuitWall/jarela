@@ -42,7 +42,7 @@ export function ProfilePanel() {
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col">
+    <div className="mx-auto flex h-full w-full flex-col">
       <PanelHeader icon={<User size={14} />} title="Profile">
         {isEssential && (
           <button

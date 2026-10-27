@@ -26,3 +26,9 @@ it("lets users exit a setup rerun without finishing it", () => {
   expect(screen.queryByTestId("wizard")).toBeNull();
   expect(screen.getByTestId("profile-editor")).toBeTruthy();
 });
+
+it("lets the profile editor use the full workspace width", () => {
+  render(<ProfilePanel />);
+
+  expect(screen.getByTestId("profile-editor").closest(".max-w-5xl")).toBeNull();
+});
