@@ -118,7 +118,7 @@ export function MenuPanel({ activeTab, open = true, onClose, onSetTab, activeAge
     <nav
       id="main-navigation"
       aria-label="Main navigation"
-      className={`glass-elevated fixed right-0 bottom-0 w-full sm:w-[26rem] xl:w-80 max-w-full border-l border-border/60 z-[60] ${open ? "flex" : "hidden xl:flex"} flex-col pb-safe`}
+      className={`glass-elevated fixed right-0 bottom-0 w-full sm:w-[26rem] xl:w-[var(--workspace-navigation-width)] max-w-full border-l border-border/60 z-[60] ${open ? "flex" : "hidden xl:flex"} flex-col pb-safe`}
       style={{ top: "calc(3rem + var(--app-safe-top))" }}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain panel-scrollbar px-3 py-3 space-y-4">

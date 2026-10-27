@@ -149,7 +149,7 @@ describe("MenuPanel", () => {
     const navigation = container.querySelector("nav")!;
     expect(navigation.id).toBe("main-navigation");
     expect(navigation.className).toContain("hidden xl:flex");
-    expect(navigation.className).toContain("xl:w-80");
+    expect(navigation.className).toContain("xl:w-[var(--workspace-navigation-width)]");
     rerender(<MenuPanel open activeTab="chat" onSetTab={vi.fn()} onClose={vi.fn()} />);
     expect(navigation.className).not.toContain("hidden xl:flex");
   });

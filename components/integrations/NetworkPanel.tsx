@@ -36,7 +36,7 @@ export function NetworkPanel() {
         <EnvSyncButton env={envSync} />
       </PanelHeader>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-3">
+      <div ref={containerRef} className="workspace-gutter flex-1 overflow-y-auto no-scrollbar py-3 space-y-3">
         <EnvSyncNotice env={envSync} />
         {aliasEditorOpen && (
           <EnvAliasEditor

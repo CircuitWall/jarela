@@ -143,7 +143,7 @@ export function LogsPanel() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 p-4">
+    <div className="workspace-gutter flex flex-col h-full min-h-0 py-4">
       <div className="mb-2 flex items-center gap-2 flex-wrap">
         <h2 className="text-sm font-medium text-fg">Server logs</h2>
         <span

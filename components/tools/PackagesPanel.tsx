@@ -18,7 +18,7 @@ export function PackagesPanel() {
   return (
     <div>
       <PanelHeader icon={<Package size={14} />} title="Packages" />
-      <div className="p-4 space-y-4">
+      <div className="workspace-gutter py-4 space-y-4">
         <p className="text-xs text-fg-faint">
           Built-in tools ship with Jarela; everything else is added at runtime and can be
           enabled, disabled, or removed. Drop-in tools show their credentials inline.

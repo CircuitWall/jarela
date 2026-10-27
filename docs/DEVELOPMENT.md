@@ -11,6 +11,30 @@ This guide focuses on developer experience for UI/state work.
 - Test hooks only: `npm run test:hooks`
 - Watch hook tests: `npm run test:hooks:watch`
 
+## Shared workspace layout (unreleased)
+
+Workspace sizing is owned by the CSS tokens in
+[`app/globals.css`](../app/globals.css):
+
+- `--workspace-content-max-width`: `none` by default, shared by
+  `.workspace-content` and `.workspace-panel`.
+- `--workspace-gutter`: `1rem`, applied by `.workspace-gutter` to outer
+  content, panel headers, and sub-tab strips. Keep vertical spacing local.
+- `--workspace-navigation-width`: `20rem`, shared by the docked right menu,
+  shell reservation, and toast offset.
+- `--workspace-agents-width`: `16rem`, shared by the docked left agent
+  sidebar and shell reservation.
+
+Use the shared classes rather than adding panel-specific maximum widths or
+outer horizontal padding. Nested cards, dialogs, chat bubbles, and standalone
+onboarding content retain their own sizing. The touch composer retains its
+safe-area-specific inset for rounded-corner clearance.
+
+[`tests/e2e/layout.spec.ts`](../tests/e2e/layout.spec.ts) checks mobile bounds,
+wide-screen panel widths and gutters, progressive sidebar docking, and token
+overrides. Its server uses an isolated database; never run fixture-writing
+tests against a contributor's regular instance.
+
 ## SQLite statement reuse
 
 Repeated thread/history reads use `cachedRead(db, sql)` from

@@ -213,7 +213,7 @@ export function ModelsPanel() {
       </PanelHeader>
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
-        <div className="px-4 pt-3">
+        <div className="workspace-gutter pt-3">
           <SettingsGroup>
           <SettingsCard
             id="routing"
@@ -288,7 +288,7 @@ export function ModelsPanel() {
         </div>
 
         {/* Model list */}
-        <div className="px-4 py-2">
+        <div className="workspace-gutter py-2">
           {loading && models.length === 0 && <PanelMessage>Loading…</PanelMessage>}
           {!loading && models.length === 0 && <PanelMessage>No model configs yet</PanelMessage>}
           {deleteError && (

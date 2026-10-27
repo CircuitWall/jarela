@@ -351,8 +351,8 @@ export function AppShell() {
           // Top safe-area is mobile-scoped via --app-safe-top so desktop
           // windows stay flush to the edge.
           paddingTop: "var(--app-safe-top)",
-          paddingLeft: "calc(env(safe-area-inset-left) + 1rem)",
-          paddingRight: "calc(env(safe-area-inset-right) + 1rem)",
+          paddingLeft: "calc(env(safe-area-inset-left) + var(--workspace-gutter))",
+          paddingRight: "calc(env(safe-area-inset-right) + var(--workspace-gutter))",
           height: "calc(3rem + var(--app-safe-top))",
         }}
       >
@@ -381,7 +381,7 @@ export function AppShell() {
       </header>
       <aside
         aria-label="Agents"
-        className="glass fixed bottom-0 left-0 z-40 hidden w-64 border-r border-border/60 pb-safe 2xl:block"
+        className="glass fixed bottom-0 left-0 z-40 hidden w-[var(--workspace-agents-width)] border-r border-border/60 pb-safe 2xl:block"
         style={{ top: "calc(3rem + var(--app-safe-top))" }}
       >
         <AgentSwitcher

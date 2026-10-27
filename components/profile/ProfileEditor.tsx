@@ -71,7 +71,7 @@ export function ProfileEditor() {
     setAbout(profile.about);
   }
   return (
-    <div className="p-4 space-y-4">
+    <div className="workspace-gutter py-4 space-y-4">
       {/* Icon + name row */}
       <div className="flex items-end gap-3">
         <div className="shrink-0">

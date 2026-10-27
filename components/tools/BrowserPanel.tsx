@@ -167,7 +167,7 @@ export function BrowserPanel() {
         </button>
       </PanelHeader>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-3">
+      <div className="workspace-gutter flex-1 overflow-y-auto no-scrollbar py-3 space-y-3">
         <div className="rounded-lg border border-border bg-surface-2 p-3">
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div>

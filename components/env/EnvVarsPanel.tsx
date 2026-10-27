@@ -163,7 +163,7 @@ export function EnvVarsPanel() {
   }, [load]);
 
   return (
-    <div className="flex flex-col h-full min-h-0 p-4 gap-3">
+    <div className="workspace-gutter flex flex-col h-full min-h-0 py-4 gap-3">
       <div className="flex items-center gap-2 flex-wrap">
         <h2 className="text-sm font-medium text-fg">Runtime settings</h2>
         <span className="text-[10px] text-fg-faint">{rows.length} settings</span>

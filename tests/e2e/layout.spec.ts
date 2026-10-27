@@ -44,7 +44,7 @@ for (const viewportWidth of [320, 390]) {
       await page.goto(route);
       await waitForAppReady(page);
 
-      const rail = page.locator(".max-w-5xl").first();
+      const rail = page.getByTestId("workspace-content");
       await expect(rail).toBeVisible();
       const bounds = await rail.boundingBox();
       expect(bounds).not.toBeNull();
@@ -54,6 +54,110 @@ for (const viewportWidth of [320, 390]) {
     });
   }
 }
+
+for (const width of [1920, 3440]) {
+  test(`workspace panels share the available width and gutters at ${width}px`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await dismissOverlayBanners(page);
+    await page.addInitScript(() => localStorage.setItem("jarela.experience.mode", "full"));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await waitForAppReady(page);
+    const menu = page.getByRole("navigation", { name: "Main navigation" });
+    const destinations = [
+      { tab: "chat", label: null },
+      { tab: "agents", label: "Agents" },
+      { tab: "memory", label: "Knowledge" },
+      { tab: "tasks", label: "Automations" },
+      { tab: "dashboard", label: "Usage" },
+      { tab: "profile", label: "Profile" },
+      { tab: "settings", label: "Settings" },
+      { tab: "tools", label: "Capabilities" },
+    ];
+
+    async function checkLayout(tab: string) {
+      const workspace = page.getByTestId("workspace-content");
+      await expect(workspace).toBeVisible();
+      const bounds = await workspace.boundingBox();
+      expect(bounds, tab).not.toBeNull();
+      expect(bounds!.x, tab).toBe(256);
+      expect(bounds!.width, tab).toBe(width - 320 - 256);
+
+      for (const panel of await workspace.locator(".workspace-panel:visible").all()) {
+        const layout = await panel.evaluate((el) => {
+          const parent = el.parentElement!;
+          const parentStyle = getComputedStyle(parent);
+          return {
+            width: el.getBoundingClientRect().width,
+            available: parent.clientWidth - parseFloat(parentStyle.paddingLeft) - parseFloat(parentStyle.paddingRight),
+          };
+        });
+        expect(Math.abs(layout.width - layout.available), tab).toBeLessThanOrEqual(1);
+      }
+
+      const gutters = workspace.locator(".workspace-gutter:visible:not(.chat-composer)");
+      await expect(gutters.first()).toBeVisible();
+      for (const gutter of await gutters.all()) {
+        expect(await gutter.evaluate((el) => [
+          getComputedStyle(el).paddingLeft,
+          getComputedStyle(el).paddingRight,
+        ]), tab).toEqual(["16px", "16px"]);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth), tab).toBeLessThanOrEqual(width);
+    }
+
+    for (const { tab, label } of destinations) {
+      if (label) {
+        const destination = menu.getByRole("button", { name: label, exact: true });
+        if (label === "Capabilities" && !(await destination.isVisible())) {
+          await menu.locator("summary").click();
+        }
+        await destination.click();
+        await expect(page).toHaveURL(new RegExp(`[?&]tab=${tab}(?:&|$)`));
+      }
+      await checkLayout(tab);
+      if (tab === "settings" || tab === "tools") {
+        const tabs = page.getByRole("tablist", { name: tab === "settings" ? "Settings sub-section" : "Tools sub-section" });
+        for (const subTab of await tabs.getByRole("tab").all()) {
+          await subTab.click();
+          await expect(subTab).toHaveAttribute("aria-selected", "true");
+          await checkLayout(`${tab}: ${await subTab.innerText()}`);
+        }
+      }
+    }
+  });
+}
+
+test("workspace dimensions respond to shared token overrides", async ({ page }) => {
+  await dismissOverlayBanners(page);
+  await page.setViewportSize({ width: 1920, height: 900 });
+  await page.goto("/?tab=profile");
+  await waitForAppReady(page);
+  await page.evaluate(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--workspace-gutter", "24px");
+    root.style.setProperty("--workspace-navigation-width", "288px");
+    root.style.setProperty("--workspace-agents-width", "224px");
+    root.style.setProperty("--workspace-content-max-width", "1000px");
+  });
+
+  const workspace = page.getByTestId("workspace-content");
+  const menu = page.getByRole("navigation", { name: "Main navigation" });
+  const agents = page.getByRole("complementary", { name: "Agents", exact: true });
+  expect((await menu.boundingBox())!.width).toBe(288);
+  expect((await agents.boundingBox())!.width).toBe(224);
+  expect((await workspace.boundingBox())!.width).toBe(1000);
+  expect((await workspace.locator(".workspace-panel:visible").boundingBox())!.width).toBe(1000);
+  expect(await workspace.locator(".workspace-gutter:visible").first().evaluate((el) => [
+    getComputedStyle(el).paddingLeft,
+    getComputedStyle(el).paddingRight,
+  ])).toEqual(["24px", "24px"]);
+
+  await page.evaluate(() => document.documentElement.style.setProperty("--workspace-content-max-width", "none"));
+  const bounds = (await workspace.boundingBox())!;
+  expect(bounds.x).toBe(224);
+  expect(bounds.x + bounds.width).toBe((await menu.boundingBox())!.x);
+});
 
 test("menu tray uses position:fixed when open", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 844 });
@@ -197,7 +301,7 @@ test("navigation docks progressively without overlapping the workspace", async (
 
   await menu.getByRole("button", { name: "Profile", exact: true }).click();
   await expect(menu).toBeVisible();
-  expect((await content.boundingBox())!.width).toBe(1280);
+  expect((await content.boundingBox())!.width).toBe(3440 - 320 - 256);
   await agents.getByRole("button", { name: /^Current agent:/ }).click();
   await expect(page.getByPlaceholder("Message…")).toBeVisible();
   await expect(menu).toBeVisible();

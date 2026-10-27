@@ -36,7 +36,7 @@ export function DocumentsPanel({ embedded = false }: { embedded?: boolean } = {}
         </PanelHeader>
       )}
 
-      <div ref={containerRef} className={embedded ? "px-4 py-3 space-y-5" : "flex-1 overflow-y-auto no-scrollbar px-4 py-3 space-y-5"}>
+      <div ref={containerRef} className={embedded ? "workspace-gutter py-3 space-y-5" : "workspace-gutter flex-1 overflow-y-auto no-scrollbar py-3 space-y-5"}>
         <p className="text-xs text-fg-faint leading-relaxed">
           Sources listed here are indexed in the background. Text files in folders are chunked, embedded, and
           made available to agents via the <code className="font-mono text-fg-muted">documents_search</code> tool.
