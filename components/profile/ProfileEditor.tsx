@@ -10,6 +10,7 @@ import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { TextInput, FIELD_CLASS } from "@/components/ui/TextField";
 import { Button } from "@/components/ui/Button";
 import { StickyActionBar } from "@/components/ui/StickyActionBar";
+import { DialogError } from "@/components/ui/DialogFooter";
 import { errorMessage } from "@/lib/utils/error";
 
 export function ProfileEditor() {
@@ -22,6 +23,7 @@ export function ProfileEditor() {
   const [about, setAbout] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     api.profile.get().then((p) => {
@@ -43,13 +45,14 @@ export function ProfileEditor() {
   async function handleSave() {
     setSaving(true);
     setSaved(false);
+    setSaveError(null);
     try {
       const updated = await api.profile.update({ name, icon, about });
       setProfile(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (err) {
-      console.error(err);
+      setSaveError(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -166,6 +169,7 @@ export function ProfileEditor() {
         </div>
       </div>
 
+      <DialogError message={saveError} />
       <StickyActionBar
         dirty={isDirty}
         saving={saving}
