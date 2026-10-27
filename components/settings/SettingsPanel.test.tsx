@@ -19,5 +19,5 @@ vi.mock("@/components/credentials/CredentialsPanel", () => ({
 it("lets settings content use the full workspace width", () => {
   render(<SettingsPanel />);
 
-  expect(screen.getByTestId("settings-content").closest(".max-w-5xl")).toBeNull();
+  expect(screen.getByTestId("settings-content").closest(".workspace-panel")).toBeTruthy();
 });

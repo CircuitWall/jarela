@@ -30,5 +30,5 @@ it("lets users exit a setup rerun without finishing it", () => {
 it("lets the profile editor use the full workspace width", () => {
   render(<ProfilePanel />);
 
-  expect(screen.getByTestId("profile-editor").closest(".max-w-5xl")).toBeNull();
+  expect(screen.getByTestId("profile-editor").closest(".workspace-panel")).toBeTruthy();
 });
