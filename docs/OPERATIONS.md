@@ -61,6 +61,32 @@ Advanced settings are grouped into tabs for **Credentials**, **Models**, **Priva
 
 ## Review usage
 
+### Adaptive output budgets (Unreleased)
+
+New turns use a text-size heuristic for output allocation: estimate the current
+user text at roughly four characters per token, multiply that estimate by four
+for headroom, and keep at least the strategy baseline (2,048 tokens for Fast
+and Cost-saving; 4,096 for Balanced and High reasoning). Thinking models retain
+a 32,768-token baseline outside Cost-saving, subject to hard limits. Explicit
+thinking budgets also reserve room for output.
+
+An explicit model `max_tokens` setting remains a ceiling, not a minimum.
+Known model output limits and the run's context allocation can lower the
+result. The selected amount is reserved before assembling conversation history.
+Fast and Cost-saving output baselines can now grow for larger user turns;
+these strategies are not hard spending limits.
+
+This is an estimate based on text size, not a prediction of the requested
+document length. Short requests can require long output; binary attachments,
+earlier conversation, and later tool results do not increase the estimate.
+The cap is selected once per turn, not recalculated for each tool step.
+If the provider reports output-token truncation while generating tool calls,
+the model step fails before those calls execute. Jarela reports an actionable
+error instead of attempting a partial write; earlier completed tool steps are
+not rolled back.
+
+### Dashboard metrics
+
 The Dashboard summarizes token use, estimated cost, cache activity, and tool reliability over a selectable time window. It also includes daily trends and model/provider breakdowns. Cost figures are estimates based on the configured pricing data, not billing statements.
 
 **Jarela 3.0.0:** Costs are split into input and output using

@@ -136,6 +136,62 @@ describe("JarelaChatModel — empty stream handling", () => {
     expect(last.additional_kwargs?.stop_reason).toBe("length");
   });
 
+  it("rejects a tool call truncated by the provider output-token limit", async () => {
+    const provider = makeProvider([
+      { type: "tool_call_chunk", index: 0, id: "t1", name: "file_write", args_delta: "{\"path\":\"notes.md\",\"content\":\"partial" },
+      { type: "stop", reason: "length" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {} });
+
+    await expect(collectChunks(model)).rejects.toThrow(
+      /truncated a tool call at max_tokens.*incomplete tool call was not executed/i,
+    );
+  });
+
+  it("rejects truncation when aggregating a streamed model invocation", async () => {
+    const provider = makeProvider([
+      { type: "tool_call_chunk", index: 0, id: "t1", name: "tool_1", args_delta: "{\"value\":\"partial" },
+      { type: "stop", reason: "length" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {}, boundTools: [makeTool(1)] });
+
+    await expect(model.invoke([new HumanMessage("write a file")]))
+      .rejects.toThrow(/incomplete tool call was not executed/i);
+  });
+
+  it("rejects truncation from a non-streaming provider", async () => {
+    const provider: ModelProvider = {
+      name: "test",
+      async chat() { throw new Error("unused"); },
+      async invoke() {
+        return {
+          text: null,
+          tool_calls: [{ id: "t1", name: "tool_1", arguments: {} }],
+          stop_reason: "length",
+        };
+      },
+    };
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {}, boundTools: [makeTool(1)] });
+
+    await expect(model.invoke([new HumanMessage("write a file")]))
+      .rejects.toThrow(/incomplete tool call was not executed/i);
+  });
+
+  it("preserves a complete large tool argument assembled from fragments", async () => {
+    const args = { value: "<p>Example document body.</p>\n".repeat(1_000) };
+    const serialized = JSON.stringify(args);
+    const provider = makeProvider([
+      { type: "tool_call_chunk", index: 0, id: "t1", name: "tool_1", args_delta: serialized.slice(0, 5_000) },
+      { type: "tool_call_chunk", index: 0, args_delta: serialized.slice(5_000) },
+      { type: "stop", reason: "tool_use" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {}, boundTools: [makeTool(1)] });
+
+    const message = await model.invoke([new HumanMessage("write a file")]);
+
+    expect(message.tool_calls).toEqual([{ id: "t1", name: "tool_1", args, type: "tool_call" }]);
+  });
+
   it("does NOT inject a sentinel when only tool_call_chunk events were seen", async () => {
     const provider = makeProvider([
       { type: "tool_call_chunk", index: 0, id: "t1", name: "ping", args_delta: "{}" },

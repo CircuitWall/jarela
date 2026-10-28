@@ -25,6 +25,10 @@ interface Fields {
   boundTools?: StructuredToolInterface[];
 }
 
+const TRUNCATED_TOOL_CALL_MESSAGE =
+  "Model truncated a tool call at max_tokens. Increase the model output-token limit and retry; " +
+  "the incomplete tool call was not executed.";
+
 export class JarelaChatModel extends BaseChatModel {
   lc_namespace = ["jarela", "chat_models"];
   lc_serializable = false;
@@ -95,6 +99,9 @@ export class JarelaChatModel extends BaseChatModel {
 
     if (this._provider.invoke && openaiTools.length > 0) {
       const result = await this._provider.invoke(this._modelId, invokeMessages, this._params, openaiTools, options.signal);
+      if (result.stop_reason === "length" && result.tool_calls.length > 0) {
+        throw new Error(TRUNCATED_TOOL_CALL_MESSAGE);
+      }
       const aiMsg = new AIMessage({
         content: result.text ?? "",
         tool_calls: result.tool_calls.map((tc) => ({
@@ -169,6 +176,7 @@ export class JarelaChatModel extends BaseChatModel {
   ): AsyncGenerator<ChatGenerationChunk> {
     if (!this._provider.streamInvoke) return;
     let emittedAny = false;
+    let sawToolCallChunk = false;
     let stopReason: "stop" | "tool_use" | "length" | undefined;
     for await (const event of this._provider.streamInvoke(this._modelId, invokeMessages, this._params, openaiTools, signal)) {
       if (event.type === "text") {
@@ -189,6 +197,7 @@ export class JarelaChatModel extends BaseChatModel {
         });
       } else if (event.type === "tool_call_chunk") {
         emittedAny = true;
+        sawToolCallChunk = true;
         // Provider-specific metadata (e.g. Gemini `thoughtSignature`) rides
         // on the same AIMessageChunk via `additional_kwargs` keyed by tool
         // call id. LangChain's chunk-concat merges additional_kwargs across
@@ -276,6 +285,9 @@ export class JarelaChatModel extends BaseChatModel {
         text: "",
       });
       return;
+    }
+    if (stopReason === "length" && sawToolCallChunk) {
+      throw new Error(TRUNCATED_TOOL_CALL_MESSAGE);
     }
     // Mid-stream truncation: provider produced content then stopped because of
     // max_tokens (or a length-equivalent). The aggregated message is partial

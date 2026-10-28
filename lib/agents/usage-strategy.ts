@@ -87,6 +87,9 @@ export function getUsageStrategyProfile(strategy: UsageStrategy): UsageStrategyP
 // Reasoning tokens share the output budget; below this a thinking model can
 // spend the whole cap on its chain of thought and return nothing.
 export const THINKING_OUTPUT_FLOOR_TOKENS = 32_768;
+// Turn text length is only a size proxy, not a semantic output prediction.
+export const OUTPUT_TOKEN_HEADROOM_MULTIPLIER = 4;
+export const DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP = 4_096;
 
 export function resolveOutputTokenCap(
   profileCap: number | null,
@@ -98,4 +101,22 @@ export function resolveOutputTokenCap(
     return Math.max(profileCap, THINKING_OUTPUT_FLOOR_TOKENS);
   }
   return profileCap;
+}
+
+export function resolveAdaptiveOutputTokenCap(
+  inputTokenEstimate: number,
+  baselineCap: number,
+  hardCap: number,
+  thinkingBudgetTokens = 0,
+): number {
+  if (!Number.isFinite(inputTokenEstimate) || inputTokenEstimate < 0
+    || !Number.isFinite(baselineCap) || baselineCap < 1
+    || !Number.isFinite(hardCap) || hardCap < 1
+    || !Number.isFinite(thinkingBudgetTokens) || thinkingBudgetTokens < 0) {
+    throw new RangeError("Adaptive output budget requires a nonnegative estimate and positive finite caps");
+  }
+  const estimatedOutputCap = Math.ceil(inputTokenEstimate * OUTPUT_TOKEN_HEADROOM_MULTIPLIER);
+  const baseline = Math.max(1, Math.floor(baselineCap));
+  const ceiling = Math.max(1, Math.floor(hardCap));
+  return Math.min(Math.max(baseline, estimatedOutputCap) + Math.ceil(thinkingBudgetTokens), ceiling);
 }

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { getUsageStrategyProfile, parseUsageStrategy, resolveOutputTokenCap, resolveUsageStrategy, shouldAutoRecall } from "./usage-strategy";
+import {
+  DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
+  getUsageStrategyProfile,
+  parseUsageStrategy,
+  resolveAdaptiveOutputTokenCap,
+  resolveOutputTokenCap,
+  resolveUsageStrategy,
+  shouldAutoRecall,
+} from "./usage-strategy";
 
 describe("usage strategy profiles", () => {
   it("automatically recalls only for high reasoning, with profile opt-out", () => {
@@ -58,5 +66,27 @@ describe("usage strategy profiles", () => {
     expect(resolveOutputTokenCap(2_048, true, "cost_saving")).toBe(2_048);
     expect(resolveOutputTokenCap(2_048, true, "fast")).toBe(32_768);
     expect(resolveOutputTokenCap(null, true, "balanced")).toBeNull();
+  });
+
+  it("scales the output cap from the turn estimate and adds headroom", () => {
+    expect(resolveAdaptiveOutputTokenCap(100, 2_048, 32_768)).toBe(2_048);
+    expect(resolveAdaptiveOutputTokenCap(1_000, 2_048, 32_768)).toBe(4_000);
+    expect(resolveAdaptiveOutputTokenCap(1_000, DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP, 32_768)).toBe(4_096);
+  });
+
+  it("does not exceed a hard model, user, or context ceiling", () => {
+    expect(resolveAdaptiveOutputTokenCap(10_000, 2_048, 8_192)).toBe(8_192);
+    expect(resolveAdaptiveOutputTokenCap(10_000, 2_048, 1_024)).toBe(1_024);
+  });
+
+  it("adds explicit thinking tokens without spending the content allocation", () => {
+    expect(resolveAdaptiveOutputTokenCap(2_000, 4_096, 64_000, 10_000)).toBe(18_000);
+    expect(resolveAdaptiveOutputTokenCap(2_000, 4_096, 12_000, 10_000)).toBe(12_000);
+  });
+
+  it("rejects invalid budget inputs instead of producing an unusable provider limit", () => {
+    expect(() => resolveAdaptiveOutputTokenCap(NaN, 2_048, 8_192)).toThrow(RangeError);
+    expect(() => resolveAdaptiveOutputTokenCap(100, Infinity, 8_192)).toThrow(RangeError);
+    expect(() => resolveAdaptiveOutputTokenCap(100, 2_048, 0)).toThrow(RangeError);
   });
 });
