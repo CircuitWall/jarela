@@ -65,6 +65,8 @@ nav:
       - Development: DEVELOPMENT.md
   - Architecture:
       - Overview: ARCHITECTURE.md
+      - Post-3.0 direction (proposal): POST_3_DIRECTION.md
+      - Core and extensions (proposed ADR): adr/0111-dependable-core-user-owned-extensions.md
       - API: api.md
   - Extending:
       - Extension surfaces: EXTENDING.md

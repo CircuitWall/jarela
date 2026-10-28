@@ -39,6 +39,11 @@ Set up the repository, run the checks, and use the architecture docs before chan
 
 [Set up development](DEVELOPMENT.md) · [Explore extension surfaces](EXTENDING.md)
 
+For proposed future-work priorities, read the
+[post-3.0 product direction](POST_3_DIRECTION.md) and
+[ADR-0111](adr/0111-dependable-core-user-owned-extensions.md).
+These proposals do not change the released feature or permission contract.
+
 ### Teaching the agent
 
 The built-in documentation skill makes local documentation the first source of truth and uses the public site only as a fallback.
@@ -63,6 +68,7 @@ The built-in documentation skill makes local documentation the first source of t
 | [ARCHITECTURE.md](ARCHITECTURE.md) | container, component, and runtime architecture |
 | [architecture-patterns.json](architecture-patterns.json) | machine-readable catalog of canonical operation patterns and their tests |
 | [EXTENDING.md](EXTENDING.md) | extension surfaces for providers, tools, MCP, harnesses, and branding |
+| [POST_3_DIRECTION.md](POST_3_DIRECTION.md) | proposed post-3.0 priorities, core/extension scope, and evidence-gated requirements |
 | [api.md](api.md) | API surface for routes and integration points |
 | [PRICING_EXTRACTION_POLICY.md](PRICING_EXTRACTION_POLICY.md) | model pricing extraction and provider policy |
 | [DEMO_GMAIL_CONNECT.md](DEMO_GMAIL_CONNECT.md) | example integration flow for Gmail |

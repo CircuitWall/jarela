@@ -6,6 +6,12 @@ Inside the running app, the agent-callable
 [`describe_extension_surfaces`](#agent-introspection-tools) tool returns the
 same map this document is built around.
 
+For the proposed boundary between shared core work and user-owned
+specialization, see the [post-3.0 direction](POST_3_DIRECTION.md) and
+[ADR-0111](adr/0111-dependable-core-user-owned-extensions.md).
+They define future-work criteria, not new runtime protections. External code
+still executes with the trust of its host; capability labels are not a sandbox.
+
 > **Public surface contract.** Plugin authors should rely only on the type
 > exports listed in [CONTRIBUTING.md → Public API surface](../CONTRIBUTING.md#public-api-surface).
 > Anything else is internal and may change between minor versions.
