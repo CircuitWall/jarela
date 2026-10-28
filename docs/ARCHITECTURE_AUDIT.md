@@ -134,12 +134,14 @@ state/lifecycle semantics.
    membership cache; instantiate it separately for sent and received IDs with
    their existing capacities. Both rings now use bounded caches; focused tests
    verify sent-echo suppression, FIFO eviction, and retained-ID deduplication.
-3. **Optional consistency extraction for checkpoint parent config.**
+3. **Optional consistency extraction for checkpoint parent config — implemented.**
    `NodeSqliteSaver.getTuple()` and `NodeSqliteSaver.list()` each construct the
    same `parentConfig` shape from a row. A small private mapper could centralize
-   that repeated shape. Keep this low priority: the surrounding `config`
-   objects differ by operation, so a broader config-builder abstraction would
-   be misleading.
+   that repeated shape. `NodeSqliteSaver.parentConfig()` now owns that mapping;
+   focused tests verify both operations return the same parent config and
+   preserve checkpoint namespaces. The surrounding `config` objects still
+   differ by operation, so a broader config-builder abstraction remains
+   unnecessary.
 
 Not recommended as extractions:
 
@@ -153,8 +155,7 @@ Not recommended as extractions:
 - `TerminalSession`, `StreamRehydrator`, and `ToolOutcomes` each own focused,
   stateful behavior rather than duplicate class functionality.
 
-The low-priority checkpoint config mapping remains a recommendation only. The
-previously recorded findings about browser preference persistence, route
+The previously recorded findings about browser preference persistence, route
 validation conventions, plugin trust/capabilities, and chat composition remain
 open follow-ups and were not claimed as exhaustively verified by this
 class-focused pass.

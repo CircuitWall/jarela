@@ -190,17 +190,27 @@ describe("NodeSqliteSaver edge cases", () => {
     expect(latest?.checkpoint.id).toBe(second);
     expect(latest?.parentConfig?.configurable?.checkpoint_id).toBe(first);
     expect((await saver.getTuple(cfg("t-parent", first)))?.parentConfig).toBeUndefined();
+
+    const listed = [];
+    for await (const tuple of saver.list(cfg("t-parent"))) listed.push(tuple);
+    expect(listed.find((tuple) => tuple.checkpoint.id === second)?.parentConfig).toEqual(latest?.parentConfig);
+    expect(listed.find((tuple) => tuple.checkpoint.id === first)?.parentConfig).toBeUndefined();
   });
 
   it("keeps checkpoint namespaces (subgraphs) isolated within one thread", async () => {
     const saver = newSaver();
     const [root] = await chain(saver, "t-ns", 1, "");
-    const [child] = await chain(saver, "t-ns", 1, "sub:1");
+    const [child, childNext] = await chain(saver, "t-ns", 2, "sub:1");
     const rootLatest = await saver.getTuple({ configurable: { thread_id: "t-ns", checkpoint_ns: "" } });
     const childLatest = await saver.getTuple({ configurable: { thread_id: "t-ns", checkpoint_ns: "sub:1" } });
     expect(rootLatest?.checkpoint.id).toBe(root);
-    expect(childLatest?.checkpoint.id).toBe(child);
+    expect(childLatest?.checkpoint.id).toBe(childNext);
     expect(childLatest?.config.configurable?.checkpoint_ns).toBe("sub:1");
+    expect(childLatest?.parentConfig?.configurable).toEqual({
+      thread_id: "t-ns",
+      checkpoint_ns: "sub:1",
+      checkpoint_id: child,
+    });
   });
 
   it("pages list() with before, newest first, without repeating the cursor", async () => {

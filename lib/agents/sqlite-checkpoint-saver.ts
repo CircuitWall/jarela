@@ -88,6 +88,17 @@ export class NodeSqliteSaver extends BaseCheckpointSaver {
     this.db = db;
   }
 
+  private parentConfig(row: Row): CheckpointTuple["parentConfig"] {
+    if (!row.parent_checkpoint_id) return undefined;
+    return {
+      configurable: {
+        thread_id: row.thread_id as string,
+        checkpoint_ns: row.checkpoint_ns as string,
+        checkpoint_id: row.parent_checkpoint_id as string,
+      },
+    };
+  }
+
   static fromConnString(connStringOrLocalPath: string): NodeSqliteSaver {
     return new NodeSqliteSaver(new DatabaseSync(connStringOrLocalPath));
   }
@@ -210,15 +221,7 @@ CREATE TABLE IF NOT EXISTS writes (
       checkpoint,
       config: finalConfig,
       metadata,
-      parentConfig: row.parent_checkpoint_id
-        ? {
-            configurable: {
-              thread_id: row.thread_id,
-              checkpoint_ns,
-              checkpoint_id: row.parent_checkpoint_id,
-            },
-          }
-        : undefined,
+      parentConfig: this.parentConfig(row),
       pendingWrites,
     };
   }
@@ -316,15 +319,7 @@ CREATE TABLE IF NOT EXISTS writes (
         },
         checkpoint,
         metadata,
-        parentConfig: row.parent_checkpoint_id
-          ? {
-              configurable: {
-                thread_id: row.thread_id,
-                checkpoint_ns: row.checkpoint_ns,
-                checkpoint_id: row.parent_checkpoint_id,
-              },
-            }
-          : undefined,
+        parentConfig: this.parentConfig(row),
         pendingWrites,
       };
     }
