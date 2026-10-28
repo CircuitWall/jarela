@@ -68,6 +68,35 @@ The eventual consent UI must separately show the exact arguments, artifact,
 workspace, limits and full-trust warning. This module is not a sandbox or an
 independent authorization boundary.
 
+### Security-settings consent policy amendment (2026-10-28)
+
+The maintainer approved managing script consent in Security settings. Persist
+the selected policy and up to 64 exact revision trust scopes in the existing
+`memory_store` app-settings namespace (`skill_execution_policy`); no new tables,
+data-directory layout or runnable snapshots are introduced.
+
+- Default to **Ask each time**. **Blocked** denies scripts; **Approve a workflow
+  run** requires an independently verified, bounded plan and run-scoped consent,
+  never a blanket session grant. Missing workflow authorization must not execute.
+- **Trust selected revisions** may waive repeated consent only for an exact
+  verified artifact revision, agent and resolved workspace, within explicit
+  timeout/output ceilings. Unmatched/changed revisions require invocation consent.
+  Trust intentionally covers different valid inputs within that scope; it is
+  durable across restart, unlike a pending or one-use run consent.
+- The local unlocked user manages this policy through the Security UI/API.
+  No agent tool or skill metadata can write it. The route uses the existing
+  loopback guard, lock checks and request-origin proxy; this is not isolation
+  from arbitrary code already running as the same OS user.
+- Safe mode and execute capability are checked independently for every launch.
+  Neither `mostly_safe` nor `bypass` implies consent. Policy is read again
+  before launch so removal/blocking takes effect for future launches. This
+  setting cannot stop an already running full-trust script; cancellation and
+  process ownership remain runner responsibilities.
+- The initial settings increment persists/revokes trust and evaluates consent
+  requirements only. It adds no runner, verified workflow plan, snapshot capture
+  or human-approval endpoint. The UI must explicitly say execution is unavailable.
+  Trust is not a filesystem/network sandbox; scripts run as the app's OS user.
+
 ### Unreleased inspection-only increment
 
 The opt-in `read_skill` execution inspection implements inert structural

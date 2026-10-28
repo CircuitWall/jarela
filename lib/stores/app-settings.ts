@@ -1,4 +1,8 @@
 import { getDb } from "@/lib/db";
+import { isAbsolute, normalize } from "node:path";
+import {
+  defaultSkillExecutionPolicy, SkillExecutionPolicySchema, SKILL_EXECUTION_POLICY_KEY, type SkillExecutionPolicy,
+} from "@/lib/skills/execution-policy";
 import {
   defaultDocumentRecallPolicy, DocumentRecallPolicySchema, type DocumentRecallPolicy,
 } from "@/lib/documents/recall-policy";
@@ -15,6 +19,32 @@ const AMBIENT_CONTEXT_KEY = "ambient_context_enabled";
 const ARTIFACT_LIFECYCLE_KEY = "artifact_lifecycle";
 const MEMORY_POLICY_KEY = "memory_policy";
 const DOCUMENT_RECALL_POLICY_KEY = "document_recall_policy";
+
+export function getSkillExecutionPolicy(): SkillExecutionPolicy {
+  const row = getDb().prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
+    .get(NS, SKILL_EXECUTION_POLICY_KEY) as { value: string } | undefined;
+  if (!row) return defaultSkillExecutionPolicy();
+  const checked = SkillExecutionPolicySchema.parse(JSON.parse(row.value));
+  if (checked.trusted_revisions.some((grant) => !isSkillTrustWorkspace(grant.workspace))) {
+    throw new Error("Stored skill trust contains an invalid workspace");
+  }
+  return checked;
+}
+
+export function isSkillTrustWorkspace(workspace: string): boolean {
+  return isAbsolute(workspace) && normalize(workspace) === workspace && !workspace.includes("\0");
+}
+
+export function setSkillExecutionPolicy(policy: SkillExecutionPolicy): SkillExecutionPolicy {
+  const checked = SkillExecutionPolicySchema.parse(policy);
+  for (const grant of checked.trusted_revisions) {
+    if (!isSkillTrustWorkspace(grant.workspace)) {
+      throw new Error("Trusted workspace must be an absolute normalized host path");
+    }
+  }
+  writeJsonSetting(SKILL_EXECUTION_POLICY_KEY, checked);
+  return checked;
+}
 
 export function getDocumentRecallPolicy(): DocumentRecallPolicy {
   const row = getDb().prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Lock, Shield } from "lucide-react";
 import { SettingsCard } from "@/components/ui/SettingsCard";
 import { errorMessage } from "@/lib/utils/error";
+import { SkillExecutionSettings } from "./SkillExecutionSettings";
 
 // SecurityPanel — UI for enabling, changing, or disabling the at-rest
 // PIN (ADR-0063). Talks to /api/v1/security/{state,pin}. The unlock
@@ -108,6 +109,7 @@ export function SecurityPanel() {
   }
 
   return (
+    <div className="space-y-4">
     <SettingsCard
       id="pin"
       icon={<Shield size={14} />}
@@ -185,6 +187,8 @@ export function SecurityPanel() {
         </div>
       )}
     </SettingsCard>
+    <SkillExecutionSettings />
+    </div>
   );
 }
 

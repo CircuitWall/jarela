@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { listMemory, putMemory, searchMemoryRows } from "@/lib/stores/memory";
-import { createdResponse, validateBody } from "@/lib/api/responses";
+import { createdResponse, errorResponse, validateBody } from "@/lib/api/responses";
+import { isSkillExecutionPolicySetting } from "@/lib/skills/execution-policy";
 import { parseJsonSafe } from "@/lib/utils/json";
 
 const PutBody = z.object({
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await validateBody(req, PutBody);
   if (body instanceof NextResponse) return body;
+  if (isSkillExecutionPolicySetting(body.namespace, body.key)) return errorResponse("Use Security settings to change skill execution policy", 403);
   const r = putMemory(body.namespace, body.key, body.value);
   return createdResponse({ ...r, value: body.value });
 }

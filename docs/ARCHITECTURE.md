@@ -136,6 +136,16 @@ and bounded regular-file reads between resource access and execution-manifest
 inspection. These are read-only operations, not a script runner or immutable
 snapshot boundary; see [the extension guide](EXTENDING.md#reading-shared-skill-bundles-unreleased).
 
+Unreleased skill execution consent policy is managed by the Security UI through
+`app/api/v1/security/skill-execution/route.ts`, restricted to unlocked loopback
+requests. `lib/stores/app-settings.ts` validates and persists it in the existing
+`memory_store` namespace; generic memory mutation paths reject this reserved key.
+`lib/skills/execution-policy-server.ts` reads current settings/safety mode on each
+evaluation, while the pure policy module distinguishes blocking, invocation or
+workflow consent requirements, and exact scoped revision trust. No runner calls
+this policy yet: it grants neither sandboxing nor execution by itself. See
+[ADR-0112](adr/0112-checked-javascript-skill-execution.md).
+
 Document retrieval applies the global recall policy from `lib/stores/app-settings.ts`
 inside `lib/documents/search.ts`, before returning chunks to tools. Exact
 source/path exclusions and semantic topic exclusions cover existing and future

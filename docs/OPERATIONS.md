@@ -59,6 +59,36 @@ Advanced settings are grouped into tabs for **Credentials**, **Models**, **Priva
 
 ![Jarela advanced settings with credential and settings categories](assets/operations-advanced-settings.png)
 
+### Skill execution consent policy (Unreleased)
+
+In **Advanced settings > Privacy & security > Skill execution**, choose:
+
+- **Blocked**: refuse skill scripts.
+- **Ask each time** (default): require consent for each invocation.
+- **Approve a workflow run**: require consent for a verified plan's declared steps
+  and bounded repetitions, not arbitrary future work.
+- **Trust selected revisions**: waive repeated invocation prompts only for an
+  exact verified snapshot SHA-256 revision, agent ID and resolved absolute host
+  workspace path, within the grant's timeout/output ceilings. Other revisions or
+  scopes still require invocation consent.
+
+Add/remove trust scopes in the draft, then save. Enabling listed trust requires
+acknowledging that scripts have full host-file/network access as the app's OS user
+and may receive different valid inputs. Trust persists across app restarts.
+Changing code invalidates a revision match; removing trust or selecting Blocked
+affects future launches, not code already running. A skill name or source-file
+hash is not a verified snapshot identity.
+
+Policy management is restricted to the local, unlocked app. Agents cannot change
+it through memory tools or generic memory APIs. Safe mode always blocks scripts,
+and execute capability remains required; neither mostly-safe nor bypass mode
+implicitly approves a skill.
+
+**Script execution is not available yet.** These settings persist consent policy
+and evaluate requirements; they do not capture snapshots, execute code or supply
+workflow approval. The checked runner and bounded workflow approval integration
+remain pending under [ADR-0112](adr/0112-checked-javascript-skill-execution.md).
+
 ## Review usage
 
 ### Adaptive output budgets (Unreleased)
