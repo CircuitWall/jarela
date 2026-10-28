@@ -3869,6 +3869,17 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "3.0.1",
+      "previous_version": "3.0.0",
+      "date": "2026-10-28",
+      "hints": [],
+      "commits": [
+        "feat(docs): add generated interactive project history"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }
