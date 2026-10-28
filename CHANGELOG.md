@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source relative to the selected skill. Parse discovery metadata with YAML
   semantics, preserving original files and reporting unsupported host fields.
   This does not execute scripts or certify cross-host compatibility.
+- security: Add persistent skill execution consent policy in Privacy & security:
+  block, ask each time, approve a workflow run, or trust exact revisions scoped
+  to agent/workspace and limits. Safe mode remains authoritative; generic memory
+  writes cannot change policy. This configures future consent requirements,
+  not an enabled script runner or workflow approval engine.
 - skills: Add opt-in, inert `read_skill` inspection of experimental
   `execution.json` declarations, bounded schemas and declared file metadata.
   Invalid metadata produces explicit issues; prompt-only skills and default

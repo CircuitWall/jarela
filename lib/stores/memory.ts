@@ -3,6 +3,7 @@ import { embedOne, searchMemory, upsertMemoryEmbedCache, evictMemoryEmbedCache }
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 import { isSensitiveMemoryNamespace } from "@/lib/crypto/sensitive";
 import { isLegacyStructuredMemoryRaw, memorySearchText, parseStructuredMemory, type StructuredMemoryRecord } from "@/lib/memory/record";
+import { isSkillExecutionPolicySetting } from "@/lib/skills/execution-policy";
 
 // Older writes' history entries won't grow past this before the oldest
 // snapshot is dropped, so a long-lived key can't bloat the row forever.
@@ -103,6 +104,7 @@ function normalizeStructuredMemoryValue(value: unknown, previous: StructuredMemo
 }
 
 export function putMemory(namespace: string, key: string, value: unknown): MemoryRow {
+  if (isSkillExecutionPolicySetting(namespace, key)) throw new Error("Skill execution policy must be changed in Security settings");
   const t = now();
   // Only the original created_at is needed to preserve insertion time on
   // upsert; reading the full row would force an unnecessary AES-GCM
@@ -136,6 +138,7 @@ export function putMemory(namespace: string, key: string, value: unknown): Memor
 }
 
 export function deleteMemory(namespace: string, key: string): boolean {
+  if (isSkillExecutionPolicySetting(namespace, key)) throw new Error("Skill execution policy must be changed in Security settings");
   const removed = (getDb().prepare("DELETE FROM memory_store WHERE namespace=? AND key=?").run(namespace, key) as { changes: number }).changes > 0;
   evictMemoryEmbedCache(namespace, key);
   return removed;
