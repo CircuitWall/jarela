@@ -858,6 +858,14 @@ W0 work is to assign accountable owners, select/reset their complete fixtures,
 run the assisted-user walkthrough, review ADR-0112, and resolve the workflow
 schema/budgets and interaction-state ADR. No release gate is marked complete.
 
+### Unreleased W1 inspection increment
+
+Work toward W1 includes opt-in inert manifest inspection through `read_skill`;
+see the [experimental inspection contract](EXTENDING.md#inspecting-skill-execution-metadata-unreleased).
+It checks the selected bundle's declarations and file metadata without importing
+or running code. It always reports execution unavailable. This does not complete
+W0, deliver a JavaScript runner, or satisfy W1's execution/approval gates.
+
 ### Journey traceability and cut lines
 
 | Journey | Owning requirement/work | Earliest slice | Explicit cut line |
