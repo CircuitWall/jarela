@@ -70,7 +70,7 @@ The built-in documentation skill makes local documentation the first source of t
 | [ARCHITECTURE.md](ARCHITECTURE.md) | container, component, and runtime architecture |
 | [architecture-patterns.json](architecture-patterns.json) | machine-readable catalog of canonical operation patterns and their tests |
 | [EXTENDING.md](EXTENDING.md) | extension surfaces for providers, tools, MCP, harnesses, and branding |
-| [POST_3_DIRECTION.md](POST_3_DIRECTION.md) | planned 3.1-3.6 upgrades, core/extension scope, W0 baseline and evidence-gated requirements |
+| [POST_3_DIRECTION.md](POST_3_DIRECTION.md) | planned 3.1-3.3 grouped upgrades, core/extension scope, W0 baseline and evidence-gated requirements |
 | [api.md](api.md) | API surface for routes and integration points |
 | [PRICING_EXTRACTION_POLICY.md](PRICING_EXTRACTION_POLICY.md) | model pricing extraction and provider policy |
 | [DEMO_GMAIL_CONNECT.md](DEMO_GMAIL_CONNECT.md) | example integration flow for Gmail |
