@@ -11,3 +11,9 @@ describe("parseHref legacy Knowledge routes", () => {
     expect(parseHref(href)).toMatchObject({ tab: "memory", item: undefined, external: false });
   });
 });
+
+describe("parseHref tab routes", () => {
+  it.each(["logs", "env"])("recognizes the %s tab", (tab) => {
+    expect(parseHref(`/?tab=${tab}`)).toMatchObject({ tab, external: false });
+  });
+});

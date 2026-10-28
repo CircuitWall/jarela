@@ -1,5 +1,8 @@
 "use client";
 import { createContext, useContext, useEffect, useReducer, type ReactNode } from "react";
+import type { Tab } from "@/lib/ui/tabs";
+
+export type { Tab } from "@/lib/ui/tabs";
 
 export type ExperienceMode = "essential" | "full";
 
@@ -12,8 +15,6 @@ function parseStoredMode(raw: string | null): ExperienceMode | null {
   if (raw === "full" || raw === "advanced") return "full";
   return null;
 }
-
-export type Tab = "chat" | "dashboard" | "agents" | "memory" | "documents" | "models" | "credentials" | "mcp" | "extensions" | "tools" | "tasks" | "bridges" | "profile" | "harness" | "logs" | "env" | "settings";
 
 export interface FirstRunChatKickoff {
   id: string;
