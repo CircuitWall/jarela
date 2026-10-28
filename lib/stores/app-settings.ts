@@ -1,7 +1,10 @@
 import { getDb } from "@/lib/db";
+import { withDbTransaction } from "@/lib/db/transaction";
 import { isAbsolute, normalize } from "node:path";
+import { randomUUID } from "node:crypto";
 import {
-  defaultSkillExecutionPolicy, SkillExecutionPolicySchema, SKILL_EXECUTION_POLICY_KEY, type SkillExecutionPolicy,
+  defaultSkillExecutionPolicy, SkillExecutionPolicySchema, SkillRevisionScopeSchema,
+  SKILL_EXECUTION_POLICY_KEY, type SkillExecutionPolicy,
 } from "@/lib/skills/execution-policy";
 import {
   defaultDocumentRecallPolicy, DocumentRecallPolicySchema, type DocumentRecallPolicy,
@@ -42,8 +45,24 @@ export function setSkillExecutionPolicy(policy: SkillExecutionPolicy): SkillExec
       throw new Error("Trusted workspace must be an absolute normalized host path");
     }
   }
-  writeJsonSetting(SKILL_EXECUTION_POLICY_KEY, checked);
-  return checked;
+  return withDbTransaction(() => {
+    const previous = getSkillExecutionPolicy();
+    const recorded: SkillExecutionPolicy = {
+      ...checked,
+      trusted_revisions: checked.trusted_revisions.map((grant) => {
+        // Receipt identity and time belong to the server, never the submitted draft.
+        const scope = SkillRevisionScopeSchema.strip().parse(grant);
+        const existing = previous.trusted_revisions.find((prior) =>
+          prior.revision === scope.revision && prior.agent_id === scope.agent_id && prior.workspace === scope.workspace
+          && prior.max_timeout_ms === scope.max_timeout_ms && prior.max_output_bytes === scope.max_output_bytes);
+        const approval = existing?.approval ?? (checked.mode === "trusted_revisions"
+          ? { id: randomUUID(), approved_at: now() } : undefined);
+        return approval ? { ...scope, approval } : scope;
+      }),
+    };
+    writeJsonSetting(SKILL_EXECUTION_POLICY_KEY, recorded);
+    return recorded;
+  });
 }
 
 export function getDocumentRecallPolicy(): DocumentRecallPolicy {

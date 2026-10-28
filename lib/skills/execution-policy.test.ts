@@ -11,6 +11,7 @@ const target: SkillExecutionTarget = {
 const grant = {
   revision: target.revision, agent_id: target.agent_id, workspace: target.workspace,
   max_timeout_ms: 60_000, max_output_bytes: 65_536,
+  approval: { id: "00000000-0000-4000-8000-000000000001", approved_at: "2026-10-28T00:00:00.000Z" },
 };
 const policy = (): SkillExecutionPolicy => ({ mode: "trusted_revisions", trusted_revisions: [grant] });
 const context = { safetyMode: "mostly_safe" as const, executeAllowed: true };
@@ -57,6 +58,11 @@ describe("skill execution consent policy", () => {
 
   it("ignores retained trust entries in other modes", () => {
     expect(evaluateSkillExecutionPolicy({ ...policy(), mode: "ask_each_time" }, target, context))
+      .toEqual({ kind: "require_invocation_consent" });
+  });
+
+  it("does not treat a draft or legacy entry without an approval record as approved", () => {
+    expect(evaluateSkillExecutionPolicy({ mode: "trusted_revisions", trusted_revisions: [{ ...grant, approval: undefined }] }, target, context))
       .toEqual({ kind: "require_invocation_consent" });
   });
 

@@ -126,6 +126,9 @@ export function SkillExecutionSettings() {
                 <p className="break-all font-mono">{grant.revision}</p>
                 <p className="break-all">{grant.agent_id} | {grant.workspace}</p>
                 <p>Timeout &lt;= {grant.max_timeout_ms} ms; output &lt;= {grant.max_output_bytes} bytes</p>
+                <p>{grant.approval
+                  ? `Approved ${grant.approval.approved_at} | Record ${grant.approval.id}`
+                  : "Not approved yet. Select Trust selected revisions, acknowledge and save to approve."}</p>
                 <button type="button" className="text-red-400" aria-label={`Remove trusted revision ${index + 1}`}
                   onClick={() => changePolicy({ ...policy, trusted_revisions: policy.trusted_revisions.filter((_, i) => i !== index) })}>Remove</button>
               </div>

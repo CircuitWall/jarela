@@ -48,9 +48,14 @@ describe("skill execution Security settings API and store", () => {
 
   it("persists exact trust across database reopen, then revokes it immediately", async () => {
     const policy = { mode: "trusted_revisions", trusted_revisions: [trust] };
-    expect((await route.PUT(req(policy))).status).toBe(200);
+    const savedResponse = await route.PUT(req(policy));
+    expect(savedResponse.status).toBe(200);
+    const saved = await savedResponse.json();
+    expect(saved.policy.trusted_revisions[0]).toMatchObject({
+      ...trust, approval: { id: expect.any(String), approved_at: expect.any(String) },
+    });
     closeDb();
-    expect(settings.getSkillExecutionPolicy()).toEqual(policy);
+    expect(settings.getSkillExecutionPolicy()).toEqual(saved.policy);
     expect(resolveSkillExecutionConsentRequirement(target, true)).toEqual({ kind: "trusted_revision" });
     await route.PUT(req({ ...policy, trusted_revisions: [] }));
     expect(resolveSkillExecutionConsentRequirement(target, true)).toEqual({ kind: "require_invocation_consent" });
@@ -143,5 +148,47 @@ describe("skill execution Security settings API and store", () => {
       },
     })).rejects.toThrow(/Security settings/);
     expect(settings.getSkillExecutionPolicy().mode).toBe("blocked");
+  });
+
+  it("preserves a checksum approval record across repeated saves and mode switches", () => {
+    const first = settings.setSkillExecutionPolicy({ mode: "trusted_revisions", trusted_revisions: [trust] });
+    const receipt = first.trusted_revisions[0].approval;
+    expect(receipt?.id).toMatch(/^[a-f0-9-]{36}$/);
+    expect(Number.isFinite(Date.parse(receipt!.approved_at))).toBe(true);
+    const repeated = settings.setSkillExecutionPolicy(first);
+    expect(repeated.trusted_revisions[0].approval).toEqual(receipt);
+    const blocked = settings.setSkillExecutionPolicy({ ...first, mode: "blocked" });
+    expect(blocked.trusted_revisions[0].approval).toEqual(receipt);
+    expect(settings.setSkillExecutionPolicy({ ...blocked, mode: "trusted_revisions" }).trusted_revisions[0].approval).toEqual(receipt);
+  });
+
+  it("does not accept forged receipt metadata or recover a revoked approval", () => {
+    const forged = { id: "00000000-0000-4000-8000-000000000001", approved_at: "2000-01-01T00:00:00.000Z" };
+    const first = settings.setSkillExecutionPolicy({
+      mode: "trusted_revisions", trusted_revisions: [{ ...trust, approval: forged }],
+    });
+    expect(first.trusted_revisions[0].approval).not.toEqual(forged);
+    settings.setSkillExecutionPolicy({ mode: "trusted_revisions", trusted_revisions: [] });
+    const renewed = settings.setSkillExecutionPolicy(first);
+    expect(renewed.trusted_revisions[0].approval?.id).not.toBe(first.trusted_revisions[0].approval?.id);
+  });
+
+  it.each([
+    { revision: "b".repeat(64) }, { agent_id: "another-agent" }, { workspace: resolve("another-workspace") },
+    { max_timeout_ms: 60_001 }, { max_output_bytes: 65_537 },
+  ])("creates a fresh approval for changed identity or grant ceilings: %j", (change) => {
+    const first = settings.setSkillExecutionPolicy({ mode: "trusted_revisions", trusted_revisions: [trust] });
+    const next = settings.setSkillExecutionPolicy({
+      mode: "trusted_revisions", trusted_revisions: [{ ...first.trusted_revisions[0], ...change }],
+    });
+    expect(next.trusted_revisions[0].approval?.id).not.toBe(first.trusted_revisions[0].approval?.id);
+  });
+
+  it("stores inactive draft scopes without an approval and issues it only when explicitly enabling trust", () => {
+    const draft = settings.setSkillExecutionPolicy({ mode: "ask_each_time", trusted_revisions: [trust] });
+    expect(draft.trusted_revisions[0].approval).toBeUndefined();
+    const activated = settings.setSkillExecutionPolicy({ ...draft, mode: "trusted_revisions" });
+    expect(activated.trusted_revisions[0].approval).toBeDefined();
+    expect(resolveSkillExecutionConsentRequirement(target, true).kind).toBe("trusted_revision");
   });
 });

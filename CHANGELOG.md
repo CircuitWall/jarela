@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - security: Add persistent skill execution consent policy in Privacy & security:
   block, ask each time, approve a workflow run, or trust exact revisions scoped
   to agent/workspace and limits. Safe mode remains authoritative; generic memory
-  writes cannot change policy. This configures future consent requirements,
+  writes cannot change policy. Save server-issued approval records once per
+  checksum scope, preserving their IDs/timestamps across restarts and allowing
+  revocation in settings. This configures future consent requirements,
   not an enabled script runner or workflow approval engine.
 - skills: Add opt-in, inert `read_skill` inspection of experimental
   `execution.json` declarations, bounded schemas and declared file metadata.
