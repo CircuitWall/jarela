@@ -8,8 +8,10 @@ Last document review: 2026-10-28
 
 Related product requirements: [Post-3.0 direction](../POST_3_DIRECTION.md)
 
-Accepted for planning: 2026-10-28, with W0-W5 targeting separate minor upgrades
-3.1.0 through 3.6.0. This accepts the direction and sequencing, not the unresolved
+Accepted for planning: 2026-10-28, initially with six minor targets.
+The same-day consolidation supersedes that mapping: 3.1.0 foundations (W0-W2),
+3.2.0 authoring/contribution (W3-W4), and 3.3.0 advertisements (W5).
+This accepts the direction and grouping, not the unresolved
 execution/persistence contracts or any claim of feature delivery.
 
 ## Context

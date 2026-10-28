@@ -5,7 +5,7 @@ Status: **Proposed; implementation blocked on boundary review**
 Date: 2026-10-28
 
 Related work: [W0 / 3.1.0](https://github.com/CircuitWall/jarela/issues/826),
-[W1 / 3.2.0](https://github.com/CircuitWall/jarela/issues/827),
+[W1 / 3.1.0](https://github.com/CircuitWall/jarela/issues/827),
 [R7](../POST_3_DIRECTION.md#r7-script-backed-skills), [ADR-0111](0111-dependable-core-user-owned-extensions.md).
 
 ## Context

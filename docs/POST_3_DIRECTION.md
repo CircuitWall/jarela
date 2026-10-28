@@ -9,8 +9,10 @@ Last document review: 2026-10-28
 Decision record: [ADR-0111](adr/0111-dependable-core-user-owned-extensions.md)
 
 This PRD defines planned priorities for work after Jarela 3.0.0. On 2026-10-28
-the product direction was accepted for planning, with W0-W5 each targeting a
-separate minor upgrade, 3.1.0 through 3.6.0. These are evidence-gated release
+the product direction was accepted for planning. The initial six-release plan
+was consolidated into three related minor upgrades, 3.1.0 through 3.3.0:
+foundations (W0-W2), authoring/contribution (W3-W4), and advertisements (W5).
+These are evidence-gated release
 targets, not release announcements, dates or claims about existing implementation.
 Implementation contracts still require their focused design reviews.
 
@@ -22,8 +24,8 @@ Implementation contracts still require their focused design reviews.
 - Section 6 defines sequencing and gates, not a commitment to ship everything
   together. Section 9 records unresolved design decisions and review findings.
 
-The first runtime capability slice, targeted at 3.2.0 after the 3.1.0 baseline
-and contract milestone, is **one JavaScript-backed skill with checked
+The first runtime capability slice, part of the 3.1.0 foundations milestone
+after its W0 baseline and contract work, is **one JavaScript-backed skill with checked
 input/output and a visible result**. File workflows, interactive forms,
 agent-assisted authoring and contribution build on independently tested slices.
 Agent advertisement work can proceed independently. Optional sharing and richer
@@ -778,13 +780,18 @@ behavior against R11; implement only the demonstrated gaps.
 | Planned version | Work item | Tracking | Current state |
 | --- | --- | --- | --- |
 | 3.1.0 | W0. Baseline and contract design | [#826](https://github.com/CircuitWall/jarela/issues/826) | Started: foundation regressions and source-linked gap inventory below; journey and design gates remain open |
-| 3.2.0 | W1. JavaScript-backed skills | [#827](https://github.com/CircuitWall/jarela/issues/827) | Planned; blocked on W0 and artifact-bound execution authorization |
-| 3.3.0 | W2. File workflow and interaction | [#828](https://github.com/CircuitWall/jarela/issues/828) | Planned; W1 needed only for script steps |
-| 3.4.0 | W3. Extension-development workflow | [#829](https://github.com/CircuitWall/jarela/issues/829) | Planned; depends on W1/W2 |
-| 3.5.0 | W4. Contribution workflow | [#830](https://github.com/CircuitWall/jarela/issues/830) | Planned; depends on W2, and W3 only for new extension authoring |
-| 3.6.0 | W5. Agent advertisements | [#831](https://github.com/CircuitWall/jarela/issues/831) | Planned; routing baseline/design can proceed independently |
+| 3.1.0 | W1. JavaScript-backed skills | [#827](https://github.com/CircuitWall/jarela/issues/827) | Planned; blocked on W0 and artifact-bound execution authorization |
+| 3.1.0 | W2. File workflow and interaction | [#828](https://github.com/CircuitWall/jarela/issues/828) | Planned; W1 needed only for script steps |
+| 3.2.0 | W3. Extension-development workflow | [#829](https://github.com/CircuitWall/jarela/issues/829) | Planned; depends on W1/W2 |
+| 3.2.0 | W4. Contribution workflow | [#830](https://github.com/CircuitWall/jarela/issues/830) | Planned; depends on W2, and W3 only for new extension authoring |
+| 3.3.0 | W5. Agent advertisements | [#831](https://github.com/CircuitWall/jarela/issues/831) | Planned; routing baseline/design can proceed independently |
 
-Each item has its own GitHub milestone with the corresponding version.
+Related items share three GitHub milestones: 3.1.0 foundations (W0-W2),
+3.2.0 authoring and contribution (W3-W4), and 3.3.0 advertisements (W5).
+This consolidation supersedes the earlier one-item-per-minor mapping.
+The empty 3.4.0-3.6.0 milestones are closed as superseded, not delivered.
+Individual issues, dependencies and acceptance gates are preserved; each
+grouped release requires every included work item's applicable gates.
 Version order is the intended release sequence, not an additional technical
 dependency for W4 or W5. Owners remain unassigned in the tracking issues; that
 blocks acceptance of the affected release gate.
