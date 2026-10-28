@@ -254,6 +254,13 @@ See the [C4 architecture and module map](docs/ARCHITECTURE.md) for runtime relat
 
 ## Extension surfaces
 
+**Proposed post-3.0 direction:** maintain a dependable core and let users,
+assisted by their connected agents, own specialized extensions. This is a
+direction proposal, not a feature freeze or a claim that extension code is
+sandboxed. See the [product requirements](docs/POST_3_DIRECTION.md) and
+[ADR-0111](docs/adr/0111-dependable-core-user-owned-extensions.md) for scope,
+trust boundaries, validation gates and future-work criteria.
+
 Jarela supports explicit extension points for:
 
 - built-in LLM providers
