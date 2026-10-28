@@ -170,6 +170,9 @@ them — but they are load-bearing:
 - **`lib/utils/`** — `getOrCreateGlobal` (singleton pinning across HMR),
   `parseJsonSafe`, `stripHtml`, `truncateBytes`, `createOAuthFlowStore`.
   Replaces ~13 duplication patterns surfaced by the audit.
+- **`lib/ui/tabs.ts`** — the canonical tab vocabulary shared by AppContext and
+  the pure deep-link parser, keeping URL recognition aligned with available
+  tabs.
 - **`lib/api/`** — `errorResponse` / `notFoundResponse` / `createdResponse`
   / `validateBody` and the per-resource `*ToResponse` row→JSON serializers
   shared between list and `[id]` route handlers.

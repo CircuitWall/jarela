@@ -3,7 +3,7 @@
 // MessageBubble) call this and dispatch SET_TAB + SET_SELECTION themselves;
 // keeping the parser pure means it works outside React too.
 
-import type { Tab } from "@/contexts/AppContext";
+import { TABS, type Tab } from "./tabs";
 
 export interface ParsedHref {
   tab?: Tab;
@@ -17,8 +17,6 @@ export interface ParsedHref {
   hash?: string;
   external: boolean;
 }
-
-const TABS: Tab[] = ["chat", "dashboard", "agents", "memory", "models", "credentials", "mcp", "extensions", "tools", "tasks", "bridges", "profile", "harness", "documents", "settings"];
 
 export function parseHref(input: string | null | undefined): ParsedHref {
   if (!input) return { external: false };
@@ -40,7 +38,7 @@ export function parseHref(input: string | null | undefined): ParsedHref {
 
   const params = new URLSearchParams(queryStr);
   const tabRaw = params.get("tab");
-  let tab = TABS.includes(tabRaw as Tab) ? (tabRaw as Tab) : undefined;
+  let tab = TABS.find((candidate) => candidate === tabRaw);
   let item = params.get("item") ?? undefined;
   if (
     tab === "documents" ||
