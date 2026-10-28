@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancellation and stale-decision rejection. Record the selected non-resumable
   lifecycle in ADR-0112. This does not enable execution, capture snapshots or
   add a user-facing approval action.
+- skills: Add opt-in shared-bundle metadata diagnostics and a read-only
+  `read_skill_resource` tool for bounded UTF-8 references, text assets and script
+  source relative to the selected skill. Parse discovery metadata with YAML
+  semantics, preserving original files and reporting unsupported host fields.
+  This does not execute scripts or certify cross-host compatibility.
 - skills: Add opt-in, inert `read_skill` inspection of experimental
   `execution.json` declarations, bounded schemas and declared file metadata.
   Invalid metadata produces explicit issues; prompt-only skills and default

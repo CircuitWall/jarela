@@ -225,6 +225,9 @@ export const SYSTEM_PROMPT_SOURCE_PREFIXES = [
   "lib/agents/usage-strategy.ts",
   "lib/agents/usage-profile.ts",
   "lib/agents/prompt-variants.ts",
+  "lib/skills/index.ts",
+  "lib/skills/frontmatter.ts",
+  "lib/tools/system/skills.ts",
 ] as const;
 
 /**

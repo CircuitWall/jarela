@@ -128,6 +128,14 @@ tool. Snapshot capture, human approval UI/API integration and process ownership
 remain blocked work under [ADR-0112](adr/0112-checked-javascript-skill-execution.md).
 The contract is not an immutable snapshot or a standalone authorization boundary.
 
+Unreleased skill-bundle reading reuses the repository resolver in
+`lib/skills/index.ts` for instructions and resources. `lib/skills/frontmatter.ts`
+uses the `yaml` parser for metadata and opt-in compatibility diagnostics;
+it never rewrites source files. `lib/skills/bundle-files.ts` shares portable-path
+and bounded regular-file reads between resource access and execution-manifest
+inspection. These are read-only operations, not a script runner or immutable
+snapshot boundary; see [the extension guide](EXTENDING.md#reading-shared-skill-bundles-unreleased).
+
 Document retrieval applies the global recall policy from `lib/stores/app-settings.ts`
 inside `lib/documents/search.ts`, before returning chunks to tools. Exact
 source/path exclusions and semantic topic exclusions cover existing and future
