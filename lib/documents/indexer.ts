@@ -4,14 +4,14 @@
 // mtime/size differs from the indexed copy, re-chunks + re-embeds them.
 // Files removed on disk are evicted (chunks + document row).
 //
-// Defaults are conservative on purpose: extension allowlist, size cap,
-// directory denylist for VCS / build output. Binary files are skipped via
-// a fast non-printable-byte heuristic on the first 4 KB.
+// Ingestion ceilings are configurable; the extension allowlist and directory
+// denylist keep generated and binary-heavy trees out of the index.
 
 import { randomUUID, createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { getDb } from "@/lib/db";
+import { getConfig } from "@/lib/env/config";
 import { embedBestEffort } from "@/lib/embeddings";
 import {
   listEnabledDocumentSources,
@@ -22,8 +22,7 @@ import { chunkText } from "./chunker";
 import { isRemoteKind, runRemoteSource, type RemoteIndexStats } from "./remote";
 import { errorMessage } from "@/lib/utils/error";
 
-// Conservative defaults; v1 is not configurable per source. ADR-0024
-// documents the rationale and the path to opening these up.
+// ADR-0024 records the allowlist and indexing rationale.
 const ALLOWED_EXT = new Set([
   ".md", ".markdown", ".txt", ".rst", ".log",
   ".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".env",
@@ -43,14 +42,11 @@ const SKIP_DIRS = new Set([
   ".idea", ".vscode", ".vs",
   "coverage", ".nyc_output",
 ]);
-const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MB — bigger files almost always
-                                        // belong in proper RAG, not ad-hoc.
-const MAX_FILES_PER_SOURCE = 5000;
 // Per-call cap so a freshly-added source with thousands of files doesn't
 // block the scheduler tick for minutes. Subsequent ticks pick up the rest.
 const MAX_INDEX_PER_TICK_PER_SOURCE = 50;
 
-export { ALLOWED_EXT, SKIP_DIRS, MAX_FILE_BYTES };
+export { ALLOWED_EXT, SKIP_DIRS };
 
 export function lowerExt(name: string): string {
   const i = name.lastIndexOf(".");
@@ -78,8 +74,10 @@ export interface FileEntry {
   size: number;
 }
 
-async function walk(root: string): Promise<FileEntry[]> {
+async function walk(root: string): Promise<{ files: FileEntry[]; truncated: boolean }> {
   const out: FileEntry[] = [];
+  const { docMaxFileBytes, docMaxFilesPerSource } = getConfig();
+  const walkLimit = docMaxFilesPerSource + 1;
   // Cloud-synced filesystems (OneDrive's macOS file provider in
   // particular) can re-emit the same entry from readdir during sync
   // transitions, sometimes with a different Unicode normalization
@@ -88,7 +86,7 @@ async function walk(root: string): Promise<FileEntry[]> {
   // constraint on `documents`.
   const seen = new Set<string>();
   async function visit(dir: string): Promise<void> {
-    if (out.length >= MAX_FILES_PER_SOURCE) return;
+    if (out.length >= walkLimit) return;
     let entries: import("node:fs").Dirent[];
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
@@ -96,7 +94,7 @@ async function walk(root: string): Promise<FileEntry[]> {
       return;
     }
     for (const e of entries) {
-      if (out.length >= MAX_FILES_PER_SOURCE) return;
+      if (out.length >= walkLimit) return;
       if (e.name.startsWith(".")) {
         // Hide dot-dirs by default. Users who want them indexed should
         // pick a more specific subdirectory as the source.
@@ -116,7 +114,7 @@ async function walk(root: string): Promise<FileEntry[]> {
         seen.add(abs);
         let st;
         try { st = await fs.stat(abs); } catch { continue; }
-        if (st.size > MAX_FILE_BYTES) continue;
+        if (st.size > docMaxFileBytes) continue;
         out.push({
           abs,
           rel: relative(root, abs).split(sep).join("/"),
@@ -127,7 +125,10 @@ async function walk(root: string): Promise<FileEntry[]> {
     }
   }
   await visit(root);
-  return out;
+  return {
+    files: out.slice(0, docMaxFilesPerSource),
+    truncated: out.length > docMaxFilesPerSource,
+  };
 }
 
 interface IndexedDocRow {
@@ -262,7 +263,7 @@ export async function indexSource(
   let embedError: string | null = null;
 
   // Resolve real files on disk.
-  const files = await walk(source.path);
+  const { files, truncated } = await walk(source.path);
   stats.scanned = files.length;
 
   const indexed = listIndexedDocs(source.id);
@@ -270,7 +271,7 @@ export async function indexSource(
 
   // Drop entries whose file is gone.
   for (const [path, row] of indexed.entries()) {
-    if (!onDisk.has(path)) {
+    if (!truncated && !onDisk.has(path)) {
       db.prepare("DELETE FROM documents WHERE id=?").run(row.id);
       stats.removed++;
     }

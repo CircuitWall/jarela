@@ -8,11 +8,11 @@
 import { promises as fs } from "node:fs";
 import { relative, sep } from "node:path";
 import { getDb } from "@/lib/db";
+import { getConfig } from "@/lib/env/config";
 import { getDocumentSource } from "@/lib/stores/document-sources";
 import { registerScript } from "@/lib/triggers/scripts";
 import {
   ALLOWED_EXT,
-  MAX_FILE_BYTES,
   hashContent,
   lowerExt,
   readTextFile,
@@ -59,7 +59,9 @@ export async function reindexLocalFile(args: {
   }
 
   if (!stat.isFile()) return { preview: `skipped: not a regular file (${args.abs})` };
-  if (stat.size > MAX_FILE_BYTES) return { preview: `skipped: file > MAX_FILE_BYTES (${args.abs})` };
+  if (stat.size > getConfig().docMaxFileBytes) {
+    return { preview: `skipped: file exceeds configured document size limit (${args.abs})` };
+  }
 
   // Watchers don't pre-filter by extension as aggressively as the
   // sweep does, so re-check here. Keeps the allowlist as the single

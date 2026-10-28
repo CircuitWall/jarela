@@ -101,6 +101,47 @@ describe("runGithubIndexer — github_pulls", () => {
 });
 
 describe("runGithubIndexer — github_repo", () => {
+  it("uses the configured document file size limit", async () => {
+    const source = createDocumentSource({
+      path: "github-repo://octo/repo",
+      label: "Repo",
+      kind: "github_repo",
+      config: { owner: "octo", repo: "repo", ref: "main" },
+    });
+    const previous = process.env.JARELA_DOC_MAX_FILE_BYTES;
+    process.env.JARELA_DOC_MAX_FILE_BYTES = "1024";
+    const { resetConfigCache } = await import("@/lib/env/config");
+    resetConfigCache();
+    try {
+      ghMock
+        .mockResolvedValueOnce({
+          sha: "tree-sha-limited",
+          tree: [
+            { path: "small.md", type: "blob", size: 1024 },
+            { path: "large.md", type: "blob", size: 1025 },
+          ],
+        })
+        .mockResolvedValueOnce({
+          type: "file",
+          encoding: "base64",
+          content: Buffer.from("# Small\n\nContent").toString("base64"),
+        });
+
+      const stats = await runGithubIndexer(source);
+
+      expect(stats.scanned).toBe(1);
+      expect(ghMock).toHaveBeenCalledTimes(2);
+      expect(upsertMock).toHaveBeenCalledWith(
+        source.id,
+        expect.objectContaining({ title: "small.md" }),
+      );
+    } finally {
+      if (previous === undefined) delete process.env.JARELA_DOC_MAX_FILE_BYTES;
+      else process.env.JARELA_DOC_MAX_FILE_BYTES = previous;
+      resetConfigCache();
+    }
+  });
+
   it("short-circuits when the tree SHA matches the previous cursor", async () => {
     const source = createDocumentSource({
       path: "github-repo://octo/repo",

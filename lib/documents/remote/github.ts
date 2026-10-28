@@ -15,6 +15,7 @@
 
 import { optionalFunction } from "@/lib/tools/packages/optional-package";
 import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
+import { getConfig } from "@/lib/env/config";
 import {
   parseSourceConfig,
   updateDocumentSourceCursor,
@@ -33,7 +34,6 @@ const githubFetch = optionalFunction<(auth: GitHubAuth, path: string, init?: Req
 const PR_PAGE_LIMIT = 50;
 const MAX_PRS_PER_RUN = 200;
 const MAX_FILES_PER_RUN = 500;
-const MAX_FILE_BYTES = 2 * 1024 * 1024; // matches local indexer
 
 interface GhUserLite { login?: string }
 interface GhPull {
@@ -304,9 +304,10 @@ async function runGithubRepoIndexer(source: DocumentSourceRow): Promise<GithubIn
   }
 
   const prefix = (cfg.path_prefix ?? "").replace(/^\/+|\/+$/g, "");
+  const maxFileBytes = getConfig().docMaxFileBytes;
   const blobs = (tree.tree ?? []).filter((e) => {
     if (e.type !== "blob") return false;
-    if (typeof e.size === "number" && e.size > MAX_FILE_BYTES) return false;
+    if (typeof e.size === "number" && e.size > maxFileBytes) return false;
     if (!ALLOWED_EXT.has(lowerExt(e.path))) return false;
     if (prefix && !(e.path === prefix || e.path.startsWith(prefix + "/"))) return false;
     return true;

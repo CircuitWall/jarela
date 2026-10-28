@@ -34,6 +34,7 @@ vi.mock("@/lib/embeddings", () => ({
 
 const { reindexLocalFile } = await import("./reindex-local-file");
 const { upsertLocalDocument, hashContent } = await import("./indexer");
+const { resetConfigCache } = await import("@/lib/env/config");
 const { getDb } = await import("@/lib/db");
 const { createDocumentSource, updateDocumentSource } = await import("@/lib/stores/document-sources");
 
@@ -54,6 +55,26 @@ afterAll(() => {
 });
 
 describe("reindexLocalFile (ADR-0028)", () => {
+  it("uses the configured document file size limit", async () => {
+    const abs = join(sourceRoot, "over-limit.md");
+    const previous = process.env.JARELA_DOC_MAX_FILE_BYTES;
+    process.env.JARELA_DOC_MAX_FILE_BYTES = "1024";
+    resetConfigCache();
+    try {
+      writeFileSync(abs, "x".repeat(1025));
+
+      const result = await reindexLocalFile({ source_id: sourceId, abs });
+
+      expect(result.preview).toMatch(/exceeds configured document size limit/);
+      expect(getDb().prepare("SELECT 1 FROM documents WHERE source_id=? AND path=?").get(sourceId, abs))
+        .toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.JARELA_DOC_MAX_FILE_BYTES;
+      else process.env.JARELA_DOC_MAX_FILE_BYTES = previous;
+      resetConfigCache();
+    }
+  });
+
   it("does not index queued events after the owner disables a source", async () => {
     const abs = join(sourceRoot, "disabled-new.md");
     writeFileSync(abs, "Do not index while disabled.");

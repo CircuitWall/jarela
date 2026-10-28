@@ -201,8 +201,8 @@ function normalizeArtifactLifecycleSettings(input: Partial<ArtifactLifecycleSett
   const retention = Number(input.retention_days);
   const maxMb = Number(input.max_total_mb);
   return {
-    retention_days: Number.isFinite(retention) ? Math.max(1, Math.min(365, Math.floor(retention))) : DEFAULT_ARTIFACT_LIFECYCLE_SETTINGS.retention_days,
-    max_total_mb: Number.isFinite(maxMb) ? Math.max(16, Math.min(10240, Math.floor(maxMb))) : DEFAULT_ARTIFACT_LIFECYCLE_SETTINGS.max_total_mb,
+    retention_days: Number.isFinite(retention) ? Math.max(1, Math.min(3650, Math.floor(retention))) : DEFAULT_ARTIFACT_LIFECYCLE_SETTINGS.retention_days,
+    max_total_mb: Number.isFinite(maxMb) ? Math.max(16, Math.min(102400, Math.floor(maxMb))) : DEFAULT_ARTIFACT_LIFECYCLE_SETTINGS.max_total_mb,
     include_browser_artifacts: input.include_browser_artifacts !== false,
     include_generated_media: input.include_generated_media !== false,
   };

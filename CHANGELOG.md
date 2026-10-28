@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commit-type stacks, time and version grouping, accumulated net text lines,
   date and lockfile filters, and CSV export, without an editorial storyline.
 
+### Changed
+
+- tools: Raise default fetch, exec-output, file-read, and file-write ceilings;
+  document indexing defaults now allow 10 MiB files and 20,000 files per
+  source. Configured document-size limits are consistently honored by local
+  sweeps, file watchers, and GitHub repository indexing. Artifact lifecycle
+  settings now allow up to 10 years of retention and 100 GiB of storage.
+
 ## [3.0.0] - 2026-10-27
 
 ### Added
