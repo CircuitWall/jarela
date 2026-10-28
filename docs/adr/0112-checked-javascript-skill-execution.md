@@ -44,7 +44,83 @@ evaluating code. These are experimental inspection choices, not acceptance
 of the runner contract below. The inspector does not validate invocation/results,
 produce an immutable snapshot, establish process cleanup or authorize code.
 
-### Bundle and protocol
+### Shared-bundle portability requirement
+
+Amendment (2026-10-28): target one shareable
+[Agent Skills](https://agentskills.io/specification) directory for Jarela,
+Claude Code and other hosts implementing that format, rather than a
+Jarela-only skill package. This is a required design target, not a claim that
+the current loader implements the full standard or that cross-host execution
+has been verified.
+
+The portable source layout is:
+
+```text
+example-skill/
+  SKILL.md
+  scripts/
+    run.mjs
+  references/
+    REFERENCE.md
+  assets/
+    template.json
+  execution.json
+```
+
+Only `SKILL.md` is required. Supporting directories are optional conventions;
+`execution.json` is an optional Jarela extension, not part of the shared
+standard. The same source directory must remain usable by another host
+without generating a second instructions file or converting the source.
+
+1. Use standard YAML frontmatter with folder-matching `name` and a descriptive
+   `description`; preserve optional `license`, `compatibility`, `metadata` and
+   `allowed-tools` fields and additional host-specific fields without rewriting
+   the original document. Validate against the published standard, not the
+   current loader's limited frontmatter parser or 200-character catalog preview.
+   Legacy flat Markdown remains a Jarela compatibility path, not a portable
+   standards-conformance claim.
+2. Resolve referenced resources relative to the selected skill root, regardless
+   of the app working directory. Load references/assets on demand. Preserve
+   relative paths and file contents when sharing; do not strip files just
+   because they are not executable-manifest entries. Reject unsafe paths/links
+   explicitly rather than silently dropping content or escaping the bundle.
+3. Keep reusable scripts independent of Jarela internals. Document their
+   runtime, dependencies and invocation in the shared instructions so another
+   host can use them with its own tools. The first Jarela checked-runner slice
+   remains dependency-free `.mjs`/`.cjs` with the JSON protocol below; sharing a
+   Python or shell script does not add support for executing it in that runner.
+4. Treat the optional manifest as a Jarela execution adapter over those same
+   files. Absence or rejection of the manifest must not prevent ordinary
+   prompt-only discovery. Do not generate a manifest, install dependencies or
+   execute scripts merely because a shared skill was found.
+5. Separate format support, resource availability and execution support.
+   Report unsupported runtimes, missing tools and unsupported host behavior
+   explicitly before relying on them. Claude-specific invocation controls,
+   dynamic command injection and subagent settings are not automatically
+   implemented or translated into executable behavior. Preserve their source
+   fields; never claim their semantics are enforced when they are not.
+6. Skill metadata is not authority: `allowed-tools`, compatibility declarations
+   and another host's approvals cannot grant Jarela permissions. An unavailable
+   checked runner is not permission to fall back silently to terminal execution.
+   A Jarela-specific skill may still require Jarela tools; mark that requirement
+   rather than advertising universal behavioral portability.
+
+Acceptance requires a synthetic standard-format bundle with instructions,
+relative references, assets and a dependency-free script. Verify identical
+source files in Jarela and Claude Code (record host versions), reference
+resolution from a different working directory, and the same expected script
+result under each host's own authorized execution path. Also verify Jarela
+prompt-only discovery without a manifest, source preservation with unknown
+host fields, explicit unsupported-feature diagnostics and no metadata-driven
+permission escalation. Other hosts need their own named validation evidence;
+format similarity is not cross-host certification. These checks complement,
+not replace, the runner's failure and authorization tests.
+
+Sources reviewed on 2026-10-28: the
+[Agent Skills specification](https://agentskills.io/specification) and
+[Claude Code skills documentation](https://code.claude.com/docs/en/skills).
+
+### Jarela execution bundle and protocol
 
 - Preserve existing `SKILL.md` discovery, flat Markdown and repo precedence.
   Listing/reading never imports code, runs hooks or installs dependencies.
@@ -156,6 +232,9 @@ a long-lived broker, a sandbox claim and a new plugin platform.
 5. Run deterministic positives 10/10 with reset state and every enumerated
    negative fixture; report the actual OS/Node matrix. No live credentials or
    providers are needed for this slice.
+6. Meet the shared-bundle portability acceptance above. Record any unavailable
+   host validation as outstanding; local parser or runner tests alone do not
+   establish Claude Code or other-host compatibility.
 
 W0 does not finish until these design decisions and its selected baseline
 gates are reviewed. W2 workflow serialization, coordinated run/retry budgets

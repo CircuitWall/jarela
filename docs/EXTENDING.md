@@ -26,10 +26,29 @@ still executes with the trust of its host; capability labels are not a sandbox.
 - [Adding a custom harness](#adding-a-custom-harness)
 - [Adding an integration manifest](#adding-an-integration-manifest)
 - [Inspecting skill execution metadata (Unreleased)](#inspecting-skill-execution-metadata-unreleased)
+- [Sharing skill bundles (design target)](#sharing-skill-bundles-design-target)
 - [Branding the app](#branding-the-app)
 - [Agent introspection tools](#agent-introspection-tools)
 
 ---
+
+## Sharing skill bundles (design target)
+
+[ADR-0112](adr/0112-checked-javascript-skill-execution.md#shared-bundle-portability-requirement)
+targets the open [Agent Skills format](https://agentskills.io/specification):
+one directory containing `SKILL.md` and optional `scripts/`, `references/` and
+`assets/`, shareable with Claude Code and other compatible hosts without
+rewriting its source. Jarela's `execution.json` is optional, host-specific
+execution metadata, not a prerequisite for a portable instruction-only skill.
+
+This is a proposed compatibility requirement, not delivered cross-host
+certification. Script runtimes, tool names, permissions and host-specific
+features can differ. Jarela-specific tools still require Jarela; sharing a
+bundle does not grant execution rights or make every Claude feature work here.
+The first checked-runner design covers dependency-free `.mjs`/`.cjs` only.
+Existing manifest inspection remains inert and always reports execution
+unavailable. The ADR defines source-preservation, relative-resource and
+cross-host fixture checks required before stronger compatibility claims.
 
 ## Inspecting skill execution metadata (Unreleased)
 
