@@ -28,6 +28,10 @@ describe("truncateBytes", () => {
     expect(out.truncated).toBe(true);
   });
 
+  it("does not split a surrogate pair at the byte boundary", () => {
+    expect(truncateBytes("a😀", 4)).toEqual({ text: "a", truncated: true });
+  });
+
   it("handles empty string", () => {
     expect(truncateBytes("", 10)).toEqual({ text: "", truncated: false });
   });

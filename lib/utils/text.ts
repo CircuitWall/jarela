@@ -12,23 +12,27 @@ export function truncateBytes(s: string, maxBytes: number): { text: string; trun
   while (end > 0 && Buffer.byteLength(s.slice(0, end), "utf8") > maxBytes) {
     end--;
   }
+  end = safeUtf16Boundary(s, end);
   return { text: s.slice(0, end), truncated: true };
+}
+
+function safeUtf16Boundary(s: string, end: number): number {
+  const previous = s.charCodeAt(end - 1);
+  const next = s.charCodeAt(end);
+  return end > 0
+    && end < s.length
+    && previous >= 0xD800
+    && previous <= 0xDBFF
+    && next >= 0xDC00
+    && next <= 0xDFFF
+    ? end - 1
+    : end;
 }
 
 export function truncateText(s: string, maxChars: number): string {
   if (s.length <= maxChars) return s;
   if (maxChars <= 0) return "";
 
-  let end = maxChars - 1;
-  if (
-    end > 0
-    && end < s.length
-    && s.charCodeAt(end - 1) >= 0xD800
-    && s.charCodeAt(end - 1) <= 0xDBFF
-    && s.charCodeAt(end) >= 0xDC00
-    && s.charCodeAt(end) <= 0xDFFF
-  ) {
-    end -= 1;
-  }
+  const end = safeUtf16Boundary(s, maxChars - 1);
   return `${s.slice(0, end)}…`;
 }
