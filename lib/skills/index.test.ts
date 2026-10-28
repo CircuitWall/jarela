@@ -126,6 +126,31 @@ describe("multiple skill repos", () => {
     expect(ids).not.toContain("disabled-skill");
   });
 
+  it("discovers and reads prompt skills without loading bundled executable files", async () => {
+    const repo = makeSkillsRepo();
+    const skillDir = join(repo, "inert-bundle");
+    const marker = join(repo, "script-executed");
+    writeSkillFile(repo, "inert-bundle", "Inert Bundle");
+    const script = [
+      `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "executed");`,
+      'throw new Error("Discovery must not execute bundled code");',
+    ].join("\n");
+    writeFileSync(join(skillDir, "index.cjs"), script);
+    writeFileSync(join(skillDir, "entry.mjs"), script.replace('require("node:fs")', '(await import("node:fs"))'));
+    writeFileSync(join(skillDir, "package.json"), JSON.stringify({
+      main: "index.cjs",
+      scripts: { postinstall: "node index.cjs" },
+    }));
+    writeFileSync(join(skillDir, "skill.json"), "{ invalid manifest");
+    createSkillRepo({ path: repo });
+
+    expect(listSkills().find((skill) => skill.id === "inert-bundle"))
+      .toMatchObject({ name: "Inert Bundle", source: "user" });
+    expect(getSkill("inert-bundle")?.content).toBe("# Inert Bundle\n\nDescription.\n");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(existsSync(marker)).toBe(false);
+  });
+
   it("targets writes and deletes at the writable repo only", () => {
     const primary = makeSkillsRepo();
     const secondary = makeSkillsRepo();

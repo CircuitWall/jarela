@@ -1,12 +1,16 @@
 # ADR-0111: Dependable core and user-owned extensions after 3.0
 
-Status: **Proposed**
+Status: **Accepted direction; implementation contracts pending**
 
 Date: 2026-10-27
 
 Last document review: 2026-10-28
 
 Related product requirements: [Post-3.0 direction](../POST_3_DIRECTION.md)
+
+Accepted for planning: 2026-10-28, with W0-W5 targeting separate minor upgrades
+3.1.0 through 3.6.0. This accepts the direction and sequencing, not the unresolved
+execution/persistence contracts or any claim of feature delivery.
 
 ## Context
 
@@ -34,7 +38,7 @@ architecture or sandbox. See the [3.0 changelog](../CHANGELOG.md#300-2026-10-27)
 - Preserve working integrations and compatibility rather than forcing a rewrite.
 - Prefer evidence of task friction over speculative feature accumulation.
 
-## Proposed decision
+## Decision
 
 Adopt **extension-first growth with a maintained, dependable core**:
 
@@ -56,7 +60,7 @@ Adopt **extension-first growth with a maintained, dependable core**:
 
 ### Enabling capabilities under this direction
 
-The proposed direction permits shared foundations needed to make extension
+The accepted direction permits shared foundations needed to make extension
 ownership practical:
 
 - **Script-backed skills:** prompt-compatible bundles with explicit, authorized
@@ -148,7 +152,7 @@ Until then, users must understand the existing full-trust execution boundary.
 | Keep expanding built-in features | Consistent defaults and centralized support | Unbounded service-specific maintenance and a larger core surface |
 | Freeze core and leave all problems to extensions | Small apparent roadmap | Abandons shared reliability, UX, compatibility and first-run needs |
 | Build a marketplace or sandbox platform first | Could improve distribution or isolation | Adds architecture and operational scope before concrete workflow evidence |
-| Dependable core with extension-first growth | Reuses existing boundaries and distributes specialization | Requires good authoring, diagnostics and explicit trust handling; chosen proposal |
+| Dependable core with extension-first growth | Reuses existing boundaries and distributes specialization | Requires good authoring, diagnostics and explicit trust handling; accepted direction |
 
 ## Consequences
 
@@ -169,8 +173,9 @@ Until then, users must understand the existing full-trust execution boundary.
 
 ## Validation and adoption
 
-Before acceptance, review this ADR and the PRD together. Establish the five
-workflow baselines in phase A. Before claiming delivery of each selected slice,
+The direction and planned minor-upgrade sequence were accepted together on
+2026-10-28. Establish the five workflow baselines in phase A; the initial W0
+foundation checks do not complete them. Before claiming delivery of each slice,
 complete its applicable deterministic and negative checks. Phase C must
 demonstrate both existing-extension configuration and new-extension authoring
 without core patches. Record failures and unknowns, not just successes.
