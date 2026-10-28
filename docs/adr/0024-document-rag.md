@@ -3,6 +3,15 @@
 Date: 2026-05-25
 Status: Accepted
 
+### 2026-10-28 amendment — configurable ingestion ceilings
+
+The original 2 MB per-file and 5,000-file-per-source ceilings are superseded
+by the runtime settings `JARELA_DOC_MAX_FILE_BYTES` and
+`JARELA_DOC_MAX_FILES_PER_SOURCE`, defaulting to 10 MiB and 20,000 files.
+Local sweeps, watcher-driven reindexing, and GitHub repository indexing use the
+same configured per-file ceiling. The per-tick indexing budget remains separate
+so increasing source capacity does not make one scheduled tick unbounded.
+
 ## Context
 
 Jarela's agents have rich access to live data (the web, Atlassian, Jira

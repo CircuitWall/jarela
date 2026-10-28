@@ -150,7 +150,7 @@ export function ArtifactLifecyclePanel() {
           <input
             type="number"
             min={1}
-            max={365}
+            max={3650}
             value={draft.retention_days}
             onChange={(event) => setDraft({ ...draft, retention_days: Number(event.target.value) })}
             className="w-24 px-2 py-1 rounded border border-border bg-surface-3 text-fg text-right"
@@ -162,7 +162,7 @@ export function ArtifactLifecyclePanel() {
           <input
             type="number"
             min={16}
-            max={10240}
+            max={102400}
             value={draft.max_total_mb}
             onChange={(event) => setDraft({ ...draft, max_total_mb: Number(event.target.value) })}
             className="w-24 px-2 py-1 rounded border border-border bg-surface-3 text-fg text-right"

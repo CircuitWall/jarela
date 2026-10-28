@@ -63,7 +63,24 @@ describe("/api/v1/artifacts/lifecycle", () => {
     });
   });
 
+  it("accepts the expanded retention and storage ceilings", async () => {
+    const res = await route.PATCH(patchReq({
+      retention_days: 3650,
+      max_total_mb: 102400,
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.settings).toMatchObject({
+      retention_days: 3650,
+      max_total_mb: 102400,
+    });
+  });
+
   it("cleans artifacts using the saved policy", async () => {
+    await route.PATCH(patchReq({
+      retention_days: 7,
+      max_total_mb: 128,
+    }));
     files.writeTextFile("browser-extract-route-old.txt", "old");
     const old = new Date(Date.now() - 20 * 86_400_000);
     utimesSync(join(files.FILES_DIR, "browser-extract-route-old.txt"), old, old);

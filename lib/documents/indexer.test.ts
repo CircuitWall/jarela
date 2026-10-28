@@ -33,6 +33,7 @@ vi.mock("@/lib/embeddings", () => ({
 }));
 
 const { backfillSourceEmbeddings, clearSourceEmbeddings, indexSource } = await import("./indexer");
+const { resetConfigCache } = await import("@/lib/env/config");
 const { getDb } = await import("@/lib/db");
 const { createDocumentSource } = await import("@/lib/stores/document-sources");
 
@@ -75,6 +76,49 @@ function chunkRows(): Array<{ embedding: string | null; embed_failed_at: string 
 }
 
 describe("indexSource — terminal vs transient embedding failures (issue #597)", () => {
+  it("applies configured per-file and per-source limits during walking", async () => {
+    const previousFileLimit = process.env.JARELA_DOC_MAX_FILE_BYTES;
+    const previousSourceLimit = process.env.JARELA_DOC_MAX_FILES_PER_SOURCE;
+    process.env.JARELA_DOC_MAX_FILE_BYTES = "1024";
+    process.env.JARELA_DOC_MAX_FILES_PER_SOURCE = "2";
+    resetConfigCache();
+    try {
+      writeFileSync(join(sourceRoot, "a.txt"), "a".repeat(512));
+      writeFileSync(join(sourceRoot, "b.txt"), "b".repeat(512));
+      writeFileSync(join(sourceRoot, "c.txt"), "c".repeat(512));
+
+      const stats = await indexSource(sourceRow, { maxFiles: Number.MAX_SAFE_INTEGER });
+
+      expect(stats.scanned).toBe(2);
+      expect(getDb().prepare("SELECT COUNT(*) AS count FROM documents WHERE source_id=?").get(sourceId))
+        .toEqual({ count: 2 });
+
+      process.env.JARELA_DOC_MAX_FILES_PER_SOURCE = "10";
+      resetConfigCache();
+      writeFileSync(join(sourceRoot, "large.txt"), "x".repeat(1025));
+      const withFileSizeLimit = await indexSource(sourceRow, { maxFiles: Number.MAX_SAFE_INTEGER });
+
+      expect(withFileSizeLimit.scanned).toBe(3);
+      expect(getDb().prepare("SELECT COUNT(*) AS count FROM documents WHERE source_id=?").get(sourceId))
+        .toEqual({ count: 3 });
+
+      process.env.JARELA_DOC_MAX_FILES_PER_SOURCE = "2";
+      resetConfigCache();
+      const truncated = await indexSource(sourceRow, { maxFiles: Number.MAX_SAFE_INTEGER });
+
+      expect(truncated.scanned).toBe(2);
+      expect(truncated.removed).toBe(0);
+      expect(getDb().prepare("SELECT COUNT(*) AS count FROM documents WHERE source_id=?").get(sourceId))
+        .toEqual({ count: 3 });
+    } finally {
+      if (previousFileLimit === undefined) delete process.env.JARELA_DOC_MAX_FILE_BYTES;
+      else process.env.JARELA_DOC_MAX_FILE_BYTES = previousFileLimit;
+      if (previousSourceLimit === undefined) delete process.env.JARELA_DOC_MAX_FILES_PER_SOURCE;
+      else process.env.JARELA_DOC_MAX_FILES_PER_SOURCE = previousSourceLimit;
+      resetConfigCache();
+    }
+  });
+
   it("persists model provenance on ingestion and backfill, and clears it on reindex", async () => {
     writeFileSync(join(sourceRoot, "provenance.txt"), "synthetic document content");
     await indexSource(sourceRow);

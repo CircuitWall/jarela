@@ -8,8 +8,8 @@ import {
 } from "@/lib/stores/app-settings";
 
 const PatchBody = z.object({
-  retention_days: z.number().int().min(1).max(365).optional(),
-  max_total_mb: z.number().int().min(16).max(10240).optional(),
+  retention_days: z.number().int().min(1).max(3650).optional(),
+  max_total_mb: z.number().int().min(16).max(102400).optional(),
   include_browser_artifacts: z.boolean().optional(),
   include_generated_media: z.boolean().optional(),
 });

@@ -30,6 +30,7 @@ const {
   fileStatTool,
   withFsDeadline,
 } = await import("./files");
+const { resetConfigCache } = await import("@/lib/env/config");
 
 // Per-test scratch dir under HOME so concurrent tests don't collide and so
 // the "bare relative paths resolve under HOME" semantics work cleanly.
@@ -177,12 +178,21 @@ describe("file_read", () => {
     expect(out.line_range).toEqual({ start: 2, end: 4 });
   });
 
-  it("clips to MAX_READ_BYTES (64KB) and flags truncated", async () => {
+  it("clips to the configured read limit and flags truncated", async () => {
     const f = join(scratch, "big.txt");
+    const previous = process.env.JARELA_FILES_MAX_READ_BYTES;
+    process.env.JARELA_FILES_MAX_READ_BYTES = "64000";
+    resetConfigCache();
     writeFileSync(f, "a".repeat(70_000));
-    const out = parse(await fileReadTool.invoke({ path: f }));
-    expect(out.truncated).toBe(true);
-    expect((out.content as string).length).toBe(64_000);
+    try {
+      const out = parse(await fileReadTool.invoke({ path: f }));
+      expect(out.truncated).toBe(true);
+      expect((out.content as string).length).toBe(64_000);
+    } finally {
+      if (previous === undefined) delete process.env.JARELA_FILES_MAX_READ_BYTES;
+      else process.env.JARELA_FILES_MAX_READ_BYTES = previous;
+      resetConfigCache();
+    }
   });
 
   it("returns ok:false with the OS error message for missing files", async () => {
@@ -247,12 +257,21 @@ describe("file_write", () => {
     expect(existsSync(f)).toBe(true);
   });
 
-  it("refuses content over MAX_WRITE_BYTES (2MB)", async () => {
+  it("refuses content over the configured write limit", async () => {
     const f = join(scratch, "huge.txt");
-    const out = parse(await fileWriteTool.invoke({ path: f, content: "x".repeat(2_000_001) }));
-    expect(out.ok).toBe(false);
-    expect(out.error).toMatch(/exceeds 2000000 bytes/);
-    expect(existsSync(f)).toBe(false);
+    const previous = process.env.JARELA_FILES_MAX_WRITE_BYTES;
+    process.env.JARELA_FILES_MAX_WRITE_BYTES = "2000000";
+    resetConfigCache();
+    try {
+      const out = parse(await fileWriteTool.invoke({ path: f, content: "x".repeat(2_000_001) }));
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/exceeds 2000000 bytes/);
+      expect(existsSync(f)).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.JARELA_FILES_MAX_WRITE_BYTES;
+      else process.env.JARELA_FILES_MAX_WRITE_BYTES = previous;
+      resetConfigCache();
+    }
   });
 
   it("gives a clear, actionable error when content is omitted entirely", async () => {
@@ -280,9 +299,18 @@ describe("file_write", () => {
 
   it("measures file_write limits in UTF-8 bytes", async () => {
     const f = join(scratch, "utf8-limit.txt");
-    const out = parse(await fileWriteTool.invoke({ path: f, content: "é".repeat(1_000_001) }));
-    expect(out.ok).toBe(false);
-    expect(out.error).toMatch(/exceeds 2000000 bytes/);
+    const previous = process.env.JARELA_FILES_MAX_WRITE_BYTES;
+    process.env.JARELA_FILES_MAX_WRITE_BYTES = "2000000";
+    resetConfigCache();
+    try {
+      const out = parse(await fileWriteTool.invoke({ path: f, content: "é".repeat(1_000_001) }));
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/exceeds 2000000 bytes/);
+    } finally {
+      if (previous === undefined) delete process.env.JARELA_FILES_MAX_WRITE_BYTES;
+      else process.env.JARELA_FILES_MAX_WRITE_BYTES = previous;
+      resetConfigCache();
+    }
   });
 });
 

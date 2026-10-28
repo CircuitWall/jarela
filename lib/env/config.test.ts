@@ -17,6 +17,12 @@ const KEYS = [
   "JARELA_IMAGE_TIMEOUT_MS",
   "JARELA_PROVIDER_TOOL_LIMIT",
   "JARELA_PROVIDER_RATE_LIMITS",
+  "JARELA_FETCH_TOOL_MAX_BYTES",
+  "JARELA_EXEC_MAX_OUTPUT_BYTES",
+  "JARELA_FILES_MAX_READ_BYTES",
+  "JARELA_FILES_MAX_WRITE_BYTES",
+  "JARELA_DOC_MAX_FILE_BYTES",
+  "JARELA_DOC_MAX_FILES_PER_SOURCE",
   "JARELA_MODEL_ROUTER_MODE",
   "JARELA_MODEL_ROUTER_POLICY",
   "JARELA_USAGE_STRATEGY",
@@ -52,6 +58,12 @@ describe("getConfig", () => {
     expect(c.voiceTimeoutMs).toBe(60_000);
     expect(c.imageTimeoutMs).toBe(60_000);
     expect(c.providerToolLimit).toBe(512);
+    expect(c.fetchToolMaxBytes).toBe(8_000_000);
+    expect(c.execMaxOutputBytes).toBe(64_000);
+    expect(c.filesMaxReadBytes).toBe(1_000_000);
+    expect(c.filesMaxWriteBytes).toBe(16_000_000);
+    expect(c.docMaxFileBytes).toBe(10 * 1024 * 1024);
+    expect(c.docMaxFilesPerSource).toBe(20_000);
     expect(c.providerRateLimits).toBe("");
     expect(c.modelRouterMode).toBe("off");
     expect(c.modelRouterPolicy).toBe("balanced");
@@ -78,6 +90,24 @@ describe("getConfig", () => {
     process.env.NEXT_PUBLIC_APP_ISSUE_URL = "https://example.com/issues/new";
     resetConfigCache();
     expect(getConfig().issueUrl).toBe("https://example.com/issues/new");
+  });
+
+  it("honours configured tool and document limits", () => {
+    process.env.JARELA_FETCH_TOOL_MAX_BYTES = "9000000";
+    process.env.JARELA_EXEC_MAX_OUTPUT_BYTES = "96000";
+    process.env.JARELA_FILES_MAX_READ_BYTES = "2000000";
+    process.env.JARELA_FILES_MAX_WRITE_BYTES = "32000000";
+    process.env.JARELA_DOC_MAX_FILE_BYTES = "12000000";
+    process.env.JARELA_DOC_MAX_FILES_PER_SOURCE = "25000";
+    resetConfigCache();
+
+    const c = getConfig();
+    expect(c.fetchToolMaxBytes).toBe(9_000_000);
+    expect(c.execMaxOutputBytes).toBe(96_000);
+    expect(c.filesMaxReadBytes).toBe(2_000_000);
+    expect(c.filesMaxWriteBytes).toBe(32_000_000);
+    expect(c.docMaxFileBytes).toBe(12_000_000);
+    expect(c.docMaxFilesPerSource).toBe(25_000);
   });
 
   it("prefers JARELA_PORT over PORT", () => {
