@@ -8,7 +8,7 @@
  * for human review: `npm run prompts:dump`.
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -165,6 +165,112 @@ describe("prompt registry coverage", () => {
   it("includes skill discovery and tool catalog changes in assembled prompt review", () => {
     for (const source of ["lib/skills/index.ts", "lib/skills/frontmatter.ts", "lib/tools/system/skills.ts"]) {
       expect(promptsAffectedBy([source]).systemPrompt).toBe(true);
+    }
+  });
+
+  it("keeps every built-in procedure explicit about contracts, stopping and secret handling", () => {
+    const skills = staticPrompts.filter((prompt) => prompt.id.startsWith("skill."));
+    for (const { id, text } of skills) {
+      for (const section of ["Input", "Output", "Validation"]) {
+        expect(text.match(new RegExp(`^## ${section}$`, "gm")), `${id}: ${section}`).toHaveLength(1);
+      }
+      expect(text, id).toMatch(/deni(?:al|ed)/i);
+      expect(text, id).toMatch(/cancell?ation/i);
+      expect(text, id).toMatch(/secret|credential/i);
+      expect(text, id).not.toMatch(/\{\{[^}]+\}\}|\[object Object\]/);
+    }
+  });
+
+  it("keeps assembled memory recovery consistent with the skill's uncertain-write guard", () => {
+    for (const { id, prompt } of variants) {
+      expect(prompt, id).toContain("read back before retrying");
+      expect(prompt, id).toContain("Never retry denied or cancelled writes");
+      expect(prompt, id).toContain("never claim it was saved or not saved without evidence");
+      expect(prompt, id).not.toContain("If it failed, correct the arguments and retry once");
+    }
+  });
+
+  it("uses registered tools in each packaged procedure", async () => {
+    const references: Record<string, string[]> = {
+      "browser-navigation": [
+        "list_tools", "browser_tabs", "browser_activate_tab", "browser_snapshot", "browser_extract",
+        "browser_screenshot", "browser_click", "browser_fill_many", "browser_fill", "tool_result_get",
+        "memory_list", "memory_read", "memory_write",
+      ],
+      "jarela-configuration": [
+        "read_agent_instruction", "update_agent_instruction", "list_tools", "list_skills",
+        "read_skill", "write_skill", "describe_extension_surfaces", "propose_config_change",
+        "set_env_var", "restart_server", "workflow_progress",
+      ],
+      "jarela-documentation": ["describe_extension_surfaces"],
+      "jarela-integrations": ["describe_extension_surfaces", "list_integrations", "get_integration_setup", "propose_config_change", "list_tools", "workflow_progress"],
+      "jarela-operations": ["list_tools", "list_skills", "read_skill", "schedule_task", "schedule_watcher", "workflow_progress"],
+      "memory-organization": ["memory_upsert", "memory_read", "memory_list", "memory_delete"],
+      "personal-briefing": ["list_tools", "validate_personal_briefing"],
+    };
+    const known = new Set((await getAllToolCatalogAsync()).map((tool) => tool.name));
+    const skills = staticPrompts.filter((prompt) => prompt.id.startsWith("skill."));
+    expect(Object.keys(references).sort()).toEqual(skills.map((prompt) => prompt.id.slice("skill.".length)).sort());
+    for (const [name, tools] of Object.entries(references)) {
+      const text = skills.find((prompt) => prompt.id === `skill.${name}`)!.text;
+      for (const tool of tools) {
+        expect(text, `${name}: missing guidance for ${tool}`).toContain(tool);
+        expect(known, `${name}: unregistered ${tool}`).toContain(tool);
+      }
+    }
+  });
+
+  it("keeps documented memory and briefing JSON examples valid against actual contracts", async () => {
+    const { StructuredMemoryInputSchema } = await import("@/lib/memory/record");
+    const { memoryWriteTool, memoryUpsertTool } = await import("@/lib/tools/general/memory");
+    const { validatePersonalBriefing } = await import("@/lib/tools/general/validate-personal-briefing");
+    function examples(id: string): unknown[] {
+      const text = staticPrompts.find((prompt) => prompt.id === `skill.${id}`)!.text;
+      return [...text.matchAll(/```json\r?\n([\s\S]*?)```/g)].map((match) => JSON.parse(match[1]));
+    }
+    const memoryExamples = examples("memory-organization");
+    expect(memoryExamples).toHaveLength(1);
+    expect(StructuredMemoryInputSchema.safeParse(memoryExamples[0]).success).toBe(true);
+    expect(memoryUpsertTool.schema.safeParse({
+      namespace: "facts", key: "example-preference", record: memoryExamples[0],
+    }).success).toBe(true);
+    const browserExamples = examples("browser-navigation");
+    expect(browserExamples).toHaveLength(2);
+    expect(memoryWriteTool.schema.safeParse(browserExamples[1]).success).toBe(true);
+    const briefingExamples = examples("personal-briefing");
+    expect(briefingExamples).toHaveLength(1);
+    expect(validatePersonalBriefing(briefingExamples[0]).ok).toBe(true);
+  });
+
+  it("removes obsolete installation assumptions and distinguishes pending approvals from completion", () => {
+    const operations = staticPrompts.find((p) => p.id === "skill.jarela-operations")!.text;
+    expect(operations).toContain("%LOCALAPPDATA%\\Jarela");
+    expect(operations).toContain("/api/v1/skills/repos");
+    expect(operations).not.toContain("JARELA_SKILLS_DIR");
+    const docs = staticPrompts.find((p) => p.id === "skill.jarela-documentation")!.text;
+    expect(docs).not.toContain("always available");
+    expect(docs).toContain("lib/providers/builtins.ts");
+    for (const name of ["jarela-configuration", "jarela-integrations", "jarela-operations"]) {
+      const text = staticPrompts.find((p) => p.id === `skill.${name}`)!.text;
+      for (const field of ["input", "output", "validation", "validation_evidence", "needs_user: true"]) {
+        expect(text, `${name}: missing ${field}`).toContain(field);
+      }
+    }
+  });
+
+  it("registers every packaged skill's actual prompt text and changed-file mapping", () => {
+    const root = join(process.cwd(), "lib", "skills", "builtins");
+    const folders = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+    const skills = staticPrompts.filter((prompt) => prompt.id.startsWith("skill."));
+    expect(skills.map((prompt) => prompt.id.slice("skill.".length)).sort()).toEqual(folders);
+    for (const name of folders) {
+      const source = `lib/skills/builtins/${name}/SKILL.md`;
+      const entry = skills.find((prompt) => prompt.id === `skill.${name}`);
+      expect(entry?.text).toBe(readFileSync(join(root, name, "SKILL.md"), "utf8"));
+      expect(entry?.source).toBe(source);
+      expect(promptsAffectedBy([source]).staticPromptIds).toContain(`skill.${name}`);
+      expect(promptsAffectedBy([source.replace(/\//g, "\\")]).systemPrompt).toBe(true);
     }
   });
 

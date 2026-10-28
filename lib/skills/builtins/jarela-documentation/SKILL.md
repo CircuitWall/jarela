@@ -1,10 +1,37 @@
+---
+name: jarela-documentation
+description: "Use when: answering Jarela usage questions, finding version-scoped documentation, or choosing a supported extension surface."
+---
+
 # Jarela Documentation
 
 Use this skill whenever the user needs to understand Jarela, locate architecture docs, or decide which extension surface matches a requested change.
 
+## Input
+
+The user's question, installed app/package version when observable, available
+local documentation/source and permitted retrieval tools.
+
+## Output
+
+A source-backed answer or extension recommendation with file/section or URL
+references, applicable version and explicit unknowns. Keep released behavior,
+Unreleased changes and roadmap proposals separate.
+
+## Validation
+
+Read the cited material and check it answers the question for the relevant
+version. A source path is not evidence that the file exists in this installation.
+When material is absent, stale or inaccessible, state the gap; do not invent
+local docs or claim a proposed capability exists. Reading documentation is not
+runtime testing. Report denied retrieval or cancellation without bypassing it.
+Do not upload private source, logs or credentials to a public documentation site
+or include secrets in external search queries.
+
 ## Default workflow
 
-1. Prefer the local installed docs bundle first. The app ships the docs locally, so they are always available and predictable.
+1. Check for local documentation first. A source checkout and an installed
+   package can ship different subsets; do not assume the full bundle exists.
 2. Use the repo-local docs and source files before proposing code changes.
 3. Use `describe_extension_surfaces` for any extension or customization request.
 4. Read the narrowest relevant documents, then act.
@@ -16,14 +43,16 @@ The local app is the preferred documentation source because it is stable, offlin
 
 Use this order:
 
-1. Local docs shipped with the app (`docs/` in the current install or repo checkout)
+1. Available local docs (`docs/` in the current install or repo checkout)
 2. Local app routes or embedded help pages if available
 3. The project README for quick orientation
 4. Only then use the public GitHub Pages site as a secondary mirror for broader context
 
 ## Required references
 
-When the task concerns architecture or extension points, read these first:
+When the task concerns architecture or extension points, read the relevant
+references below when available; identify missing/version-mismatched material
+instead of assuming an installed package contains a source checkout:
 
 - `docs/index.md` for the docs landing page
 - `docs/EXTENDING.md` for extension surfaces and registration entrypoints
@@ -35,7 +64,7 @@ When the task concerns architecture or extension points, read these first:
 
 Use the extension catalog to map the ask to the correct layer:
 
-- Built-in LLM provider -> `describe_extension_surfaces` + `lib/providers/index.ts`
+- Built-in LLM provider -> `describe_extension_surfaces` + `lib/providers/builtins.ts` and `lib/providers/registry.ts`
 - New tool -> `describe_extension_surfaces` + `lib/tools/` + `lib/tools/runtime/registry.ts`
 - MCP server -> `describe_extension_surfaces` + `lib/stores/mcp-servers.ts`
 - Agent harness -> `describe_extension_surfaces` + `lib/agents/harness/presets.ts`

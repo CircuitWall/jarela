@@ -93,12 +93,20 @@ export function listStaticPrompts(): StaticPrompt[] {
         reviewedSha: "0123456789abcdef0123456789abcdef01234567",
       }),
     },
-    {
-      id: "skill.personal-briefing",
-      source: "lib/skills/builtins/personal-briefing/SKILL.md",
-      purpose: "Pairs read-only personal briefing retrieval and drafting with executable structural checks and explicit validation limits.",
-      text: readFileSync(join(process.cwd(), "lib", "skills", "builtins", "personal-briefing", "SKILL.md"), "utf8"),
-    },
+    ...[
+      { name: "browser-navigation", purpose: "Guides checked browser actions and privacy-preserving navigation hints." },
+      { name: "jarela-configuration", purpose: "Guides scoped configuration edits, approval waiting and verified read-back." },
+      { name: "jarela-documentation", purpose: "Finds available, version-scoped documentation without inventing installed content." },
+      { name: "jarela-integrations", purpose: "Guides authorized setup, credential handling and narrowly scoped integration checks." },
+      { name: "jarela-operations", purpose: "Guides operational checks, supported state access and explicit restart consent." },
+      { name: "memory-organization", purpose: "Guides structured memory retrieval, verified saves and bounded recovery." },
+      { name: "personal-briefing", purpose: "Pairs read-only briefing retrieval and drafting with structural checks and explicit limits." },
+    ].map(({ name, purpose }) => ({
+      id: `skill.${name}`,
+      source: `lib/skills/builtins/${name}/SKILL.md`,
+      purpose,
+      text: readFileSync(join(process.cwd(), "lib", "skills", "builtins", name, "SKILL.md"), "utf8"),
+    })),
     {
       id: "agent.retry-fabrication",
       source: "lib/agents/retry-prompts.ts",
@@ -228,6 +236,7 @@ export const SYSTEM_PROMPT_SOURCE_PREFIXES = [
   "lib/skills/index.ts",
   "lib/skills/frontmatter.ts",
   "lib/tools/system/skills.ts",
+  "lib/skills/builtins/",
 ] as const;
 
 /**

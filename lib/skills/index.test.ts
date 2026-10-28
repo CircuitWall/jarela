@@ -42,6 +42,19 @@ describe("built-in skills", () => {
     expect(skill?.content).toContain("describe_extension_surfaces");
   });
 
+  it("discovers every built-in through matching frontmatter and task-specific descriptions", () => {
+    const builtins = listSkills().filter((skill) => skill.source === "builtin");
+    expect(builtins).toHaveLength(7);
+    for (const skill of builtins) {
+      expect(skill.name).toBe(skill.id);
+      expect(skill.description).toMatch(/^Use when: .+\.$/);
+      expect(skill.description.length).toBeLessThanOrEqual(200);
+      const content = getSkill(skill.id)!.content;
+      expect(content).toMatch(new RegExp(`^---\\r?\\nname: ${skill.id}\\r?\\ndescription: "[^"\\n]+"\\r?\\n---`));
+    }
+    expect(new Set(builtins.map((skill) => skill.description)).size).toBe(builtins.length);
+  });
+
   it("pairs the personal briefing skill with bounded validation and explicit limits", () => {
     const skill = getSkill("personal-briefing");
     expect(skill?.source).toBe("builtin");
