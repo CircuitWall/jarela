@@ -28,7 +28,7 @@ export interface AgentRunConfig {
    *  when the model config does not explicitly set one, so the provider never
    *  over-allocates output tokens beyond what the context budget reserved. */
   output_reserve_tokens?: number;
-  /** Hard per-run output cap imposed by the resolved usage strategy. */
+  /** Adaptive per-turn output ceiling, bounded by explicit model and context limits. */
   max_output_tokens?: number;
   /** Provider params that lower reasoning for this run (usage strategy); never overrides explicit model config. */
   thinking_params?: Record<string, unknown>;

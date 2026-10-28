@@ -24,9 +24,16 @@ import { getDefaultModelConfig, getModelConfig, getModelParams, isModelConfigEna
 import { buildHistoryWindow, buildSystemPrompt, buildSurroundingsContext, buildConversationGapContext, resolveExperienceMode, warmSummaryMessageLimit, type ThreadRunRequest } from "@/lib/agents/prepare";
 import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateProviderCostUsd } from "@/lib/stores/pricing";
-import { DEFAULT_CONTEXT_WINDOW_TOKENS, estimateTokens } from "@/lib/agents/context-budget";
-import { getUsageStrategyProfile, resolveOutputTokenCap, resolveUsageStrategy, shouldAutoRecall } from "@/lib/agents/usage-strategy";
-import { getKnownContextLength } from "@/lib/providers/known-context-windows";
+import { computeContextBudget, DEFAULT_CONTEXT_WINDOW_TOKENS, estimateTokens } from "@/lib/agents/context-budget";
+import {
+  DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
+  getUsageStrategyProfile,
+  resolveAdaptiveOutputTokenCap,
+  resolveOutputTokenCap,
+  resolveUsageStrategy,
+  shouldAutoRecall,
+} from "@/lib/agents/usage-strategy";
+import { getKnownContextLength, getKnownMaxOutputTokens } from "@/lib/providers/known-context-windows";
 import { modelThinksByDefault, thinkingReductionParams } from "@/lib/providers/capabilities";
 import { routeTurnModel, type RouteDecisionMetadata } from "@/lib/agents/model-router";
 import { buildCombinedManifest, classifyCitations, extractCitedMarkers, extractDeclaredReferences, mergeDeclaredReferences, type SourceManifestEntry } from "@/lib/agents/citation-checker";
@@ -672,9 +679,12 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     && baseProviderParams.reasoning_effort === undefined
     ? thinkingReductionParams(modelCfg.provider, modelCfg.model_id)
     : null;
-  const outputTokenCap = resolveOutputTokenCap(
-    usageProfile.outputTokenCap,
-    !!modelCfg && modelThinksByDefault(modelCfg.provider, modelCfg.model_id) && !thinkingReduction?.off,
+  const modelThinks = baseProviderParams.thinking?.type === "enabled"
+    || (!!modelCfg && modelThinksByDefault(modelCfg.provider, modelCfg.model_id)
+      && !thinkingReduction?.off);
+  const strategyOutputTokenCap = resolveOutputTokenCap(
+    usageProfile.outputTokenCap ?? DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
+    modelThinks,
     usageStrategy,
   );
   // Strategy caps must apply to the model's real window, not the 8k fallback,
@@ -691,19 +701,29 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const contextWindowCap = req.attachments?.length
     ? null
     : usageProfile.contextWindowCapTokens;
+  const runContextWindow = contextWindowCap !== null
+    ? Math.min(configuredContextWindow, contextWindowCap)
+    : configuredContextWindow;
+  // The current user-turn size is a deterministic proxy for expected output;
+  // the adaptive resolver applies headroom and the model/context hard limits.
+  const inputTokenEstimate = estimateTokens(contentText(content));
+  const { overheadTokens: outputBudgetOverhead } = computeContextBudget({ context_window_tokens: runContextWindow, max_tokens: 256 });
+  const contextOutputCeiling = Math.max(1, runContextWindow - inputTokenEstimate - outputBudgetOverhead);
+  const hardOutputCeilings = [
+    contextOutputCeiling,
+    tierProviderParams.max_tokens,
+    modelCfg ? getKnownMaxOutputTokens(modelCfg.provider, modelCfg.model_id) : null,
+  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  const adaptiveOutputTokenCap = resolveAdaptiveOutputTokenCap(
+    inputTokenEstimate,
+    strategyOutputTokenCap ?? DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
+    Math.min(...hardOutputCeilings),
+    baseProviderParams.thinking?.budget_tokens ?? 0,
+  );
   const providerParams = {
     ...tierProviderParams,
-    ...(contextWindowCap !== null
-      ? {
-          context_window_tokens: Math.min(
-            configuredContextWindow,
-            contextWindowCap,
-          ),
-        }
-      : {}),
-    ...(outputTokenCap !== null
-      ? { max_tokens: Math.min(tierProviderParams.max_tokens ?? outputTokenCap, outputTokenCap) }
-      : {}),
+    context_window_tokens: runContextWindow,
+    max_tokens: adaptiveOutputTokenCap,
   };
 
   // New non-null pins are deferred until their warm summary is ready. A clear
@@ -877,7 +897,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       model_config_name: modelConfigName,
       route_decision: routeDecision,
       output_reserve_tokens: historyWindow.budget.outputReserveTokens,
-      max_output_tokens: outputTokenCap ?? undefined,
+      max_output_tokens: adaptiveOutputTokenCap,
       thinking_params: thinkingReduction?.params,
       tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
       delegation: delegationDepth > 0 || delegationAncestors.length > 0

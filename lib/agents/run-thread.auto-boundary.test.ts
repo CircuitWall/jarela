@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { StreamChunk } from "@/lib/agents/base";
+import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-auto-boundary-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -98,6 +98,63 @@ describe("prepareThreadRun auto context boundary", () => {
     expect(isHotContextNearBudget(85, 100)).toBe(true);
     expect(isHotContextNearBudget(100, 100)).toBe(true);
     expect(isHotContextNearBudget(100, 0)).toBe(false);
+  });
+
+  it.each([
+    { name: "short balanced turn", model: "gpt-4o-mini", strategy: "balanced", chars: 100, max: undefined, expected: 4_096 },
+    { name: "long balanced turn", model: "gpt-4o-mini", strategy: "balanced", chars: 6_000, max: undefined, expected: 6_000 },
+    { name: "explicit ceiling", model: "gpt-4o-mini", strategy: "balanced", chars: 6_000, max: 1_024, expected: 1_024 },
+    { name: "ceiling is not a baseline", model: "gpt-4o-mini", strategy: "balanced", chars: 100, max: 8_192, expected: 4_096 },
+    { name: "known model ceiling", model: "gpt-4o-mini", strategy: "balanced", chars: 20_000, max: undefined, expected: 16_384 },
+    { name: "balanced reasoning floor", model: "gpt-5", strategy: "balanced", chars: 100, max: undefined, expected: 32_768 },
+    { name: "high reasoning floor", model: "gpt-5", strategy: "high_reasoning", chars: 100, max: undefined, expected: 32_768 },
+    { name: "cost-saving baseline", model: "gpt-4o-mini", strategy: "cost_saving", chars: 100, max: undefined, expected: 2_048 },
+  ] as const)("reserves and forwards an adaptive budget for $name", async ({ model, strategy, chars, max, expected }) => {
+    const configName = `adaptive-${model}-${strategy}-${chars}-${max ?? "auto"}`;
+    upsertModelConfig(configName, "openai", model, max === undefined ? {} : { max_tokens: max }, false);
+    upsertAgentConfig({
+      id: "adaptive-budget",
+      name: "Adaptive budget",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: configName,
+      usage_strategy: strategy,
+    });
+    const thread = createThread("adaptive-budget");
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "x".repeat(chars),
+      context_profile: { include_warm: false, include_facts: false, include_recall: false },
+    });
+
+    const options = streamWithConfigMock.mock.calls[0][2] as StreamOptions;
+    expect(options.agent_run_config?.max_output_tokens).toBe(expected);
+    expect(options.agent_run_config?.output_reserve_tokens).toBe(expected);
+  });
+
+  it("bounds and reserves the output budget within an explicitly smaller context window", async () => {
+    upsertModelConfig("adaptive-small-context", "openai", "gpt-4o-mini", { context_window_tokens: 2_048 }, false);
+    upsertAgentConfig({
+      id: "adaptive-small-context",
+      name: "Small context",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: "adaptive-small-context",
+      usage_strategy: "balanced",
+    });
+    const thread = createThread("adaptive-small-context");
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "x".repeat(100),
+      context_profile: { include_warm: false, include_facts: false, include_recall: false },
+    });
+
+    const options = streamWithConfigMock.mock.calls[0][2] as StreamOptions;
+    expect(options.agent_run_config?.max_output_tokens).toBe(823);
+    expect(options.agent_run_config?.output_reserve_tokens).toBe(823);
   });
 
   async function runAfterIdle(agentId: string, hoursAgo: number, message: string): Promise<string> {

@@ -45,3 +45,13 @@ An explicit agent model remains pinned. An explicit per-agent router enable or p
 ## More Information
 
 The global setting is `JARELA_USAGE_STRATEGY`. Per-agent overrides are stored in `agent_configs.usage_strategy`; NULL inherits the global setting. Existing harnesses remain unchanged and receive the strategy instruction as dynamic prompt content.
+
+### Unreleased amendment: adaptive output allocation
+
+The fixed output allocations above are superseded by a per-turn text-size
+estimate with 4x headroom, strategy baselines, and explicit model/context
+ceilings. Thinking models retain reasoning headroom outside Cost-saving;
+explicit thinking budgets are added before applying ceilings. See the
+[current operating guide](../OPERATIONS.md#adaptive-output-budgets-unreleased)
+for the formula and its limitations. Routing, prompt guidance, and retry
+policy remain unchanged.
