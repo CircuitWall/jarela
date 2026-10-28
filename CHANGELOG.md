@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- skills: Add an internal, tested run-scoped consent contract binding one-use
+  decisions to artifact/input/workspace/runtime identity and limits, with expiry,
+  cancellation and stale-decision rejection. Record the selected non-resumable
+  lifecycle in ADR-0112. This does not enable execution, capture snapshots or
+  add a user-facing approval action.
 - skills: Add opt-in, inert `read_skill` inspection of experimental
   `execution.json` declarations, bounded schemas and declared file metadata.
   Invalid metadata produces explicit issues; prompt-only skills and default

@@ -91,13 +91,16 @@ export type SkillExecutionInspection =
     files: Array<{ path: string; bytes: number }>; total_bytes: number;
   };
 
-function assertBoundedJson(value: unknown): void {
+export function assertBoundedSkillJson(value: unknown, label = "Manifest"): void {
   const pending = [{ value, depth: 0 }];
   let nodes = 0;
   while (pending.length > 0) {
     const entry = pending.pop()!;
     if (++nodes > SKILL_INSPECTION_LIMITS.jsonNodes || entry.depth > SKILL_INSPECTION_LIMITS.jsonDepth) {
-      throw new Error("Manifest JSON exceeds depth or node limits");
+      throw new Error(`${label} JSON exceeds depth or node limits`);
+    }
+    if (typeof entry.value === "number" && !Number.isFinite(entry.value)) {
+      throw new Error(`${label} JSON must contain finite numbers`);
     }
     if (entry.value && typeof entry.value === "object") {
       for (const child of Object.values(entry.value)) {
@@ -112,7 +115,7 @@ export function parseSkillExecutionManifest(text: string): SkillExecutionManifes
     throw new Error("Manifest exceeds 64 KiB");
   }
   const raw: unknown = JSON.parse(text);
-  assertBoundedJson(raw);
+  assertBoundedSkillJson(raw);
   return manifestSchema.parse(raw);
 }
 

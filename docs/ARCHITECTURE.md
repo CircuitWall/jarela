@@ -120,6 +120,14 @@ and the boundaries new code should use.
 **Dependency direction:** UI → API routes → runtime modules → registries,
 adapters, and stores → local persistence or configured external services.
 
+The unreleased internal skill-consent contract in
+`lib/skills/execution-consent.ts` owns run-local, bounded one-use decision state.
+It reuses the manifest JSON complexity guard; it does not modify
+`lib/stores/pending-actions.ts`, introduce persistence, or register an execution
+tool. Snapshot capture, human approval UI/API integration and process ownership
+remain blocked work under [ADR-0112](adr/0112-checked-javascript-skill-execution.md).
+The contract is not an immutable snapshot or a standalone authorization boundary.
+
 Document retrieval applies the global recall policy from `lib/stores/app-settings.ts`
 inside `lib/documents/search.ts`, before returning chunks to tools. Exact
 source/path exclusions and semantic topic exclusions cover existing and future

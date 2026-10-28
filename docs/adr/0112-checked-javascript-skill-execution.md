@@ -26,6 +26,48 @@ user-authored skill code.
 This is a review proposal, not a supported file format or execution permission.
 No loader, tool, approval action or database change is introduced by this ADR.
 
+### Run-scoped lifecycle decision (2026-10-28)
+
+The maintainer selected **run-scoped snapshots and one-use consent** for the
+first runner, rather than durable snapshots or resumable approvals. This selects
+the lifecycle direction; it does not accept the entire runner proposal or
+remove the process-cleanup and approval-integration gates below.
+
+- A live run owns one consent instance. Bind every proposal to the exact agent,
+  run, resolved workspace, verified artifact revision, invocation bytes, runtime
+  version and execution/output limits. Every change requires fresh consent.
+- Use a five-minute consent window, measured against a monotonic clock. The
+  displayed creation/expiry timestamps use wall time; clock changes must not
+  extend consent. Bound retained metadata to 64 proposals per run and reject
+  excess explicitly. A replacement proposal stales pending/approved predecessors.
+- Decisions are pending -> approved/denied; only approved consent can be consumed,
+  synchronously and once. Expiry, changed binding or policy refusal are terminal
+  for that proposal. Duplicate/conflicting decisions are errors, not approval.
+- Aborting or completing the run cancels outstanding consent. Recreated run
+  instances, including after app restart, cannot recover old grants. There is
+  no automatic retry or resume. An already consumed grant does not prove that
+  the script started, completed, or had its side effects rolled back.
+- Snapshot bytes must ultimately be staged in a private run-owned location
+  under the configured data directory through the appropriate lifecycle owner.
+  Do not persist/recover runnable grants in SQLite or execute a surviving
+  staging directory on startup. Actual placement, protection, source capture,
+  crash-leftover cleanup and retention remain implementation gates; this
+  increment creates no directories or database schema.
+
+The internal `lib/skills/execution-consent.ts` primitive implements the in-memory
+binding/state transitions and bounded invocation digest, with deterministic
+tests. It is **not wired to a tool, approval endpoint or runner**. A supplied
+artifact hash does not establish a verified immutable snapshot; an absolute
+workspace string does not establish filesystem identity. The future caller must
+capture/verify the snapshot, resolve/recheck workspace identity, validate input
+against the manifest schema, obtain the human decision through the existing
+approval lifecycle, and recheck policy immediately before spawn.
+
+Consent metadata stores only the invocation digest, not raw arguments or code.
+The eventual consent UI must separately show the exact arguments, artifact,
+workspace, limits and full-trust warning. This module is not a sandbox or an
+independent authorization boundary.
+
 ### Unreleased inspection-only increment
 
 The opt-in `read_skill` execution inspection implements inert structural
@@ -145,8 +187,9 @@ a long-lived broker, a sandbox claim and a new plugin platform.
 
 1. Assign an accountable execution/approval owner and review the proposed
    fields, schema subset and numeric bounds against dependency-free fixtures.
-2. Resolve snapshot persistence/immutability and artifact-bound approval
-   transitions, including denied/expired/stale/duplicate responses and restart.
+2. Implement and verify the selected run-scoped snapshot lifecycle and integrate
+   artifact-bound approval transitions with the existing approval endpoints,
+   including denied/expired/stale/duplicate responses and restart.
    Record a focused persistence decision before changing tables/layout.
 3. Prove process-tree termination on each supported platform, including
    cancellation before spawn, descendant output and timeout during cleanup.
