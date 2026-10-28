@@ -1,7 +1,32 @@
+---
+name: jarela-configuration
+description: "Use when: inspecting or changing Jarela agent instructions, tool access, models, skills, harnesses, or runtime settings."
+---
+
 # Jarela Configuration
 
 Use this skill when the user wants to configure agents, models, tools,
 harnesses, skills, memory, documents, or runtime settings.
+
+## Input
+
+The requested setting, target agent/surface, current non-secret configuration
+and authority for persistent changes. Read current state before drafting a
+change; a skill or tool being available does not grant permission.
+
+## Output
+
+A scoped change and verified read-back, a pending proposal, or a specific
+blocker. Distinguish saved configuration, effective runtime behavior and a
+restart still required; none implies the others.
+
+## Validation
+
+Check tool results for errors and read the changed state back through the
+relevant supported surface. A dry run is a preview, not a save; a submitted
+proposal is pending, not applied. Stop on denied access or cancellation.
+If a mutation's result is unknown, inspect saved state before considering a
+retry. Never broaden permissions or restart the host to bypass a blocker.
 
 ## First Step
 
@@ -15,9 +40,10 @@ Inspect before changing:
 Default behavior:
 
 - Use an instruction-and-skill-first approach.
-- For complex or repeated tasks, proactively improve persistent behavior first
-  (instruction edits and/or skill updates), then execute the task.
-- Keep proactive edits small and specific to the active task family.
+- For complex or repeated tasks, identify useful instruction/skill improvements
+  within the user's authorized scope; do not make unrelated persistent changes
+  a prerequisite to executing the task.
+- Keep any authorized proactive edits small and specific to the active task family.
 
 ## Agent Configuration
 
@@ -97,4 +123,7 @@ For reusable workflows, persist them as skills:
 
 - For multi-step configuration work with dependencies, approval, or verification, use `workflow_progress` with a concise inspect → configure → verify checklist. Skip single-setting changes and read-only questions.
 - Keep a stable task-specific `workflow_id` and send the complete current item list on each update. Keep credentials and private values out of checklist fields.
-- Mark approval-dependent steps `needs_attention` while waiting. Mark steps done only after the approval or configuration tool returns success and the result is verified.
+- Give each checklist item explicit `input`, `output` and `validation`.
+  Mark approval-dependent items `needs_attention` with `needs_user: true` so
+  waiting is not automatically retried. Mark items `done` only with observed
+  `validation_evidence`; a populated evidence string alone is not proof a check ran.

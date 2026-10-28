@@ -16,6 +16,35 @@ still executes with the trust of its host; capability labels are not a sandbox.
 > exports listed in [CONTRIBUTING.md → Public API surface](../CONTRIBUTING.md#public-api-surface).
 > Anything else is internal and may change between minor versions.
 
+## Built-in skill maintenance (Unreleased)
+
+The seven packaged playbooks under `lib/skills/builtins/` now share
+`name`/`description` frontmatter and explicit Input, Output and Validation
+contracts. Browser Navigation, Configuration, Documentation, Integrations,
+Operations, Memory Organization and Personal Briefing remain prompt-only
+guidance. They neither grant permissions nor automatically execute a workflow.
+User repositories and built-in read-only/override behavior are unchanged.
+
+All seven are inventoried in `lib/agents/prompt-registry.ts`. Changing a packaged
+skill triggers review of its complete static prompt and every assembled system
+variant, because its discovery metadata appears in the skill catalog. Use
+`npm run prompts:dump -- --changed` for uncommitted changes or
+`npm run prompts:dump -- --since origin/main` for a branch.
+
+Focused checks:
+
+```shell
+npx vitest run lib/skills lib/agents/prompt-registry.test.ts lib/agents/prepare
+```
+
+Tests check discovery, contracts, named tools, JSON examples against real
+schemas, and Personal Briefing's six deterministic fixtures. They do not prove
+that a model follows the procedure or that a live account/provider works.
+Only Personal Briefing currently has executable validator fixtures; adding
+fictional success fixtures for the other procedural skills would not establish
+workflow correctness. No JavaScript runner, artifact approval or milestone
+completion is introduced by this maintenance work.
+
 ## Table of contents
 
 - [Adding an LLM provider (built-in)](#adding-an-llm-provider-built-in)
