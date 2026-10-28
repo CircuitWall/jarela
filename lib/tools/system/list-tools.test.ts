@@ -87,6 +87,19 @@ describe("list_tools", () => {
       permission: "unavailable",
       permission_reason: "category_disabled",
     });
+
+  });
+
+  it("discovers the typed skill resource reader with its schema and no execute capability", async () => {
+    const out = parse(await listToolsTool.invoke({ names: ["read_skill_resource"], include_schema: true }));
+    expect(out.tools).toHaveLength(1);
+    expect(out.tools[0]).toMatchObject({
+      name: "read_skill_resource", category: "Skills", capability: "read", source: "builtin",
+      permission: "enabled",
+      input_schema: { properties: { id: { type: "string" }, path: { type: "string" } }, required: ["id", "path"] },
+    });
+    expect(out.tools[0].description).toContain("Never executes code");
+    expect(getDefaultAgentToolNames()).toContain("read_skill_resource");
   });
 
   it("marks known non-Basic tools disabled for the current agent by default", async () => {

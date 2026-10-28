@@ -27,6 +27,7 @@ still executes with the trust of its host; capability labels are not a sandbox.
 - [Adding an integration manifest](#adding-an-integration-manifest)
 - [Inspecting skill execution metadata (Unreleased)](#inspecting-skill-execution-metadata-unreleased)
 - [Sharing skill bundles (design target)](#sharing-skill-bundles-design-target)
+- [Reading shared skill bundles (Unreleased)](#reading-shared-skill-bundles-unreleased)
 - [Branding the app](#branding-the-app)
 - [Agent introspection tools](#agent-introspection-tools)
 
@@ -49,6 +50,63 @@ The first checked-runner design covers dependency-free `.mjs`/`.cjs` only.
 Existing manifest inspection remains inert and always reports execution
 unavailable. The ADR defines source-preservation, relative-resource and
 cross-host fixture checks required before stronger compatibility claims.
+
+## Reading shared skill bundles (Unreleased)
+
+Jarela can read the standard YAML metadata and relative text resources of an
+[Agent Skills](https://agentskills.io/specification) directory without converting
+its source. Use `read_skill` with `inspect_bundle: true` for metadata diagnostics:
+
+```json
+{ "id": "example-skill", "inspect_bundle": true }
+```
+
+The additional `bundle` object reports `standard`, `extended`, `legacy` or `invalid`;
+full metadata, field issues and compatibility notices; and
+`execution_available: false`. `standard` means the checked metadata fields
+meet the supported format constraints, not that another host or runtime was
+tested. YAML aliases/custom tags, non-string mapping keys, non-finite numbers,
+frontmatter above 64 KiB, depth above 32 or more than 4,096 value nodes produce
+explicit issues. Name, description and optional standard fields are checked;
+unknown host fields are retained and reported as unsupported behavior with
+`extended` status rather than claiming standard-only metadata. Unicode names
+and character counts follow the reference validator's naming rules.
+
+Discovery still uses a 200-character description preview; inspection returns
+the complete standard description (up to 1,024 characters). Nested metadata
+does not replace top-level discovery fields. Legacy heading-only and flat
+Markdown remain readable. Default `read_skill` responses are unchanged;
+format diagnostics are opt-in and do not rewrite or reject legacy instructions.
+The [specification](https://agentskills.io/specification) and
+[reference validator](https://github.com/agentskills/agentskills/blob/main/skills-ref/src/skills_ref/validator.py)
+were reviewed on 2026-10-28; the reported checks are not a complete conformance
+suite or proof of another host's behavior.
+
+Read a referenced file with:
+
+```json
+{ "id": "example-skill", "path": "references/REFERENCE.md" }
+```
+
+Call `read_skill_resource` with that object. It returns `id`, `path`, `source`,
+`content`, UTF-8 `bytes` and `execution_available: false`. Paths use `/`
+relative to the selected skill root, regardless of the app working directory.
+The same mechanism reads text assets or script source, including files absent
+from an execution manifest. Each read is limited to 1 MiB and rejects missing,
+nonregular, linked, nonportable, invalid UTF-8 or NUL-containing binary files.
+Flat Markdown has no resource directory. Repository override order is shared
+with `read_skill`; a missing resource in the winning bundle is an error, not
+permission to read a different repo's copy.
+
+No manifest is needed for either operation. Files stay untouched; script source
+is data, never imported or executed. `allowed-tools` does not grant Jarela
+permissions, and `compatibility` is an author declaration, not a verified
+environment. Host-specific controls such as Claude's `context: fork` are
+preserved but not enforced. Binary assets, import/export packaging, automatic
+runtime/tool adaptation and cross-host execution certification are not added.
+Concurrent-edit checks are best-effort read consistency, not an immutable
+execution snapshot or host-code sandbox. The checked runner remains proposed
+in [ADR-0112](adr/0112-checked-javascript-skill-execution.md).
 
 ## Inspecting skill execution metadata (Unreleased)
 

@@ -1,6 +1,7 @@
-import { closeSync, fstatSync, lstatSync, openSync, readSync, constants } from "node:fs";
+import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { portableSkillPath, regularSkillFile, readSkillTextFile, SkillFileSizeError } from "./bundle-files";
 
 export const SKILL_INSPECTION_LIMITS = {
   manifestBytes: 64 * 1024,
@@ -57,17 +58,10 @@ const valueSchema: z.ZodType<ValueSchema> = z.lazy(() => z.discriminatedUnion("t
   z.strictObject({ type: z.literal("null") }),
 ]));
 
-const portablePath = z.string().min(1).max(240).refine((value) => value.split("/").every((segment) =>
-  segment !== "." && segment !== ".." && segment.length > 0
-  && !/[<>:"\\|?*\x00-\x1f]/.test(segment)
-  && !/[. ]$/.test(segment)
-  && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9]|conin\$|conout\$)(\.|$)/i.test(segment),
-), "Use a portable relative file path with no traversal, device names or backslashes");
-
 const manifestSchema = z.strictObject({
   schemaVersion: z.literal(1),
-  entrypoint: portablePath.refine((value) => /\.(mjs|cjs)$/.test(value), "Only .mjs and .cjs entry points are supported"),
-  files: z.array(portablePath).min(1).max(SKILL_INSPECTION_LIMITS.files),
+  entrypoint: portableSkillPath.refine((value) => /\.(mjs|cjs)$/.test(value), "Only .mjs and .cjs entry points are supported"),
+  files: z.array(portableSkillPath).min(1).max(SKILL_INSPECTION_LIMITS.files),
   inputSchema: valueSchema.refine((schema) => schema.type === "object", "Input must use an object schema"),
   outputSchema: valueSchema,
   timeoutMs: z.number().int().min(1000).max(120_000).default(60_000),
@@ -124,39 +118,12 @@ function errorCode(error: unknown): string | undefined {
     ? error.code : undefined;
 }
 
-function regularFile(root: string, relative: string) {
-  const segments = relative.split("/");
-  let current = root;
-  for (const [index, segment] of segments.entries()) {
-    current = join(current, segment);
-    const stat = lstatSync(current);
-    if (stat.isSymbolicLink() || (index < segments.length - 1 ? !stat.isDirectory() : !stat.isFile())) {
-      throw new Error("Expected regular files and directories, without symbolic links");
-    }
-  }
-  return lstatSync(current);
-}
-
 function readManifest(root: string): string {
-  const stat = regularFile(root, "execution.json");
-  if (stat.size > SKILL_INSPECTION_LIMITS.manifestBytes) throw new Error("Manifest exceeds 64 KiB");
-  const fd = openSync(join(root, "execution.json"), constants.O_RDONLY | constants.O_NONBLOCK);
   try {
-    const opened = fstatSync(fd);
-    if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino) {
-      throw new Error("Manifest changed during inspection");
-    }
-    const buffer = Buffer.alloc(SKILL_INSPECTION_LIMITS.manifestBytes + 1);
-    let bytes = 0;
-    while (bytes < buffer.length) {
-      const read = readSync(fd, buffer, bytes, buffer.length - bytes, null);
-      if (read === 0) break;
-      bytes += read;
-    }
-    if (bytes > SKILL_INSPECTION_LIMITS.manifestBytes) throw new Error("Manifest exceeds 64 KiB");
-    return new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, bytes));
-  } finally {
-    closeSync(fd);
+    return readSkillTextFile(root, "execution.json", SKILL_INSPECTION_LIMITS.manifestBytes).content.replace(/^\uFEFF/, "");
+  } catch (error) {
+    if (error instanceof SkillFileSizeError) throw new Error("Manifest exceeds 64 KiB");
+    throw error;
   }
 }
 
@@ -177,7 +144,7 @@ export function inspectSkillExecution(directory: string | null): SkillExecutionI
     let total = 0;
     for (const file of manifest.files) {
       field = file;
-      const stat = regularFile(directory, file);
+      const stat = regularSkillFile(directory, file);
       if (stat.size > SKILL_INSPECTION_LIMITS.fileBytes) throw new Error("Declared file exceeds 1 MiB");
       total += stat.size;
       if (total > SKILL_INSPECTION_LIMITS.totalBytes) throw new Error("Declared files exceed 4 MiB total");

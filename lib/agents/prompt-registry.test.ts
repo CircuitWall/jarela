@@ -162,6 +162,12 @@ describe("runtime ownership", () => {
 });
 
 describe("prompt registry coverage", () => {
+  it("includes skill discovery and tool catalog changes in assembled prompt review", () => {
+    for (const source of ["lib/skills/index.ts", "lib/skills/frontmatter.ts", "lib/tools/system/skills.ts"]) {
+      expect(promptsAffectedBy([source]).systemPrompt).toBe(true);
+    }
+  });
+
   it("registers the personal briefing skill with a usable example and honest validation limits", async () => {
     const prompt = staticPrompts.find((entry) => entry.id === "skill.personal-briefing");
     expect(prompt?.source).toBe("lib/skills/builtins/personal-briefing/SKILL.md");

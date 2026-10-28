@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { listEnabledSkillRepos, getWritableSkillRepo } from "@/lib/stores/skill-repos";
 import { createKeyedCache } from "@/lib/cache/keyed-cache";
+import { parseSkillFrontmatter } from "./frontmatter";
 
 export interface Skill {
   id: string;
@@ -49,45 +50,9 @@ export function getBuiltinSkillsDir(): string {
   return path.join(process.cwd(), "lib", "skills", "builtins");
 }
 
-function unquoteYaml(value: string): string {
-  const v = value.trim();
-  if (v.length >= 2 && ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))) {
-    return v.slice(1, -1).trim();
-  }
-  return v;
-}
-
-// SKILL.md files in the VS Code/Claude format carry name/description in YAML frontmatter.
-function parseFrontmatter(lines: string[]): { fields: Record<string, string>; bodyStart: number } {
-  if (lines[0]?.trim() !== "---") return { fields: {}, bodyStart: 0 };
-  const end = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
-  if (end < 0) return { fields: {}, bodyStart: 0 };
-  const fields: Record<string, string> = {};
-  const body = lines.slice(1, end);
-  for (let i = 0; i < body.length; i++) {
-    const match = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(body[i]);
-    if (!match) continue;
-    const key = match[1].toLowerCase();
-    const value = match[2].trim();
-    const block = /^([|>])[+-]?\d?$/.exec(value);
-    if (!block) {
-      fields[key] = unquoteYaml(value);
-      continue;
-    }
-    // Block scalar: collect the following indented (or blank) lines.
-    const parts: string[] = [];
-    while (i + 1 < body.length && (body[i + 1].trim() === "" || /^\s/.test(body[i + 1]))) {
-      parts.push(body[++i].trim());
-    }
-    // Agents see descriptions as one line, so both folded and literal styles are joined.
-    fields[key] = parts.filter(Boolean).join(" ");
-  }
-  return { fields, bodyStart: end + 1 };
-}
-
 function parseSkill(id: string, content: string, source: Skill["source"]): Skill {
   const lines = content.split(/\r?\n/);
-  const { fields, bodyStart } = parseFrontmatter(lines);
+  const { fields, bodyStart } = parseSkillFrontmatter(content);
   let name = id;
   const descParts: string[] = [];
   let headingFound = false;
@@ -107,8 +72,9 @@ function parseSkill(id: string, content: string, source: Skill["source"]): Skill
 
   return {
     id,
-    name: fields.name || name,
-    description: (fields.description || descParts.join(" ")).slice(0, 200),
+    name: typeof fields.name === "string" && fields.name ? fields.name : name,
+    description: (typeof fields.description === "string" && fields.description
+      ? fields.description.trim().replace(/\s*\n\s*/g, " ") : descParts.join(" ")).slice(0, 200),
     source,
   };
 }
@@ -267,5 +233,5 @@ export function deleteSkill(id: string): boolean {
 }
 
 function sanitizeId(id: string): boolean {
-  return Boolean(id) && /^[\w-]+$/.test(id) && !id.includes("..") && !id.includes("/") && !id.includes("\\");
+  return Boolean(id) && /^[\p{L}\p{N}\p{M}_-]+$/u.test(id) && !id.includes("..") && !id.includes("/") && !id.includes("\\");
 }
