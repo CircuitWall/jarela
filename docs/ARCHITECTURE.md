@@ -140,6 +140,10 @@ Unreleased skill execution consent policy is managed by the Security UI through
 `app/api/v1/security/skill-execution/route.ts`, restricted to unlocked loopback
 requests. `lib/stores/app-settings.ts` validates and persists it in the existing
 `memory_store` namespace; generic memory mutation paths reject this reserved key.
+Server-issued approval IDs/timestamps persist beside checksum-scoped trust;
+unchanged records survive restart, while revocation removes the grant. Receipt
+updates use the canonical `lib/db/transaction.ts` helper and ignore caller-supplied
+receipt metadata. Draft scopes without a receipt cannot waive consent.
 `lib/skills/execution-policy-server.ts` reads current settings/safety mode on each
 evaluation, while the pure policy module distinguishes blocking, invocation or
 workflow consent requirements, and exact scoped revision trust. No runner calls

@@ -7,12 +7,18 @@ export function isSkillExecutionPolicySetting(namespace: string, key: string): b
 }
 
 const identity = z.string().min(1).max(240).refine((value) => value === value.trim(), "Remove surrounding whitespace");
-export const SkillRevisionTrustSchema = z.strictObject({
+export const SkillRevisionScopeSchema = z.strictObject({
   revision: z.string().regex(/^[a-f0-9]{64}$/, "Revision must be a SHA-256 digest"),
   agent_id: identity,
   workspace: z.string().min(1).max(4096),
   max_timeout_ms: z.number().int().min(1000).max(120_000),
   max_output_bytes: z.number().int().min(1).max(256 * 1024),
+});
+export const SkillRevisionTrustSchema = SkillRevisionScopeSchema.extend({
+  approval: z.strictObject({
+    id: z.uuid(),
+    approved_at: z.iso.datetime(),
+  }).optional(),
 });
 export const SkillExecutionPolicySchema = z.strictObject({
   mode: z.enum(["blocked", "ask_each_time", "approve_workflow", "trusted_revisions"]),
@@ -58,7 +64,7 @@ export function evaluateSkillExecutionPolicy(
   if (checkedPolicy.mode === "blocked") return { kind: "blocked", reason: "Skill execution is blocked in Security settings" };
   if (checkedPolicy.mode === "approve_workflow") return { kind: "require_workflow_consent" };
   if (checkedPolicy.mode === "trusted_revisions" && checkedPolicy.trusted_revisions.some((grant) =>
-    grant.revision === checkedTarget.revision && grant.agent_id === checkedTarget.agent_id
+    grant.approval !== undefined && grant.revision === checkedTarget.revision && grant.agent_id === checkedTarget.agent_id
     && grant.workspace === checkedTarget.workspace && checkedTarget.timeout_ms <= grant.max_timeout_ms
     && checkedTarget.max_output_bytes <= grant.max_output_bytes)) {
     return { kind: "trusted_revision" };

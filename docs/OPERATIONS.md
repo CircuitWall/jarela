@@ -79,6 +79,15 @@ Changing code invalidates a revision match; removing trust or selecting Blocked
 affects future launches, not code already running. A skill name or source-file
 hash is not a verified snapshot identity.
 
+Saving acknowledged trust creates an approval record with a server-issued ID
+and UTC timestamp, shown beside the revision. The same checksum/agent/workspace
+and grant ceilings reuse that record across saves and restarts; different valid
+inputs do not require repeated prompts in trusted-revision mode. Declared version
+labels alone are not sufficient. Changed code, scope or ceilings require a new
+record. Entries saved outside trusted-revision mode remain drafts unless already
+approved. Remove an entry and save to revoke it; re-adding needs fresh approval.
+This list contains active approvals, not a retained history of revoked records.
+
 Policy management is restricted to the local, unlocked app. Agents cannot change
 it through memory tools or generic memory APIs. Safe mode always blocks scripts,
 and execute capability remains required; neither mostly-safe nor bypass mode

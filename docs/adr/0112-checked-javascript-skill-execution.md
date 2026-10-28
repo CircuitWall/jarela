@@ -83,6 +83,15 @@ data-directory layout or runnable snapshots are introduced.
   timeout/output ceilings. Unmatched/changed revisions require invocation consent.
   Trust intentionally covers different valid inputs within that scope; it is
   durable across restart, unlike a pending or one-use run consent.
+- Record each approved checksum scope with a server-issued UUID and UTC approval
+  timestamp. Preserve the receipt for unchanged scope/ceilings across saves and
+  restarts. Ignore submitted receipt identity/time; callers cannot mint them.
+  Changed revision, agent, workspace or ceilings gets a new receipt when the
+  local user explicitly saves trusted-revision mode. Entries saved in other
+  modes without a receipt remain unapproved drafts. A version label is not an
+  authorization identity; the verified bundle checksum is authoritative.
+  Removing an entry revokes it; re-adding creates a new approval record.
+  These are active approval records, not an immutable historical audit ledger.
 - The local unlocked user manages this policy through the Security UI/API.
   No agent tool or skill metadata can write it. The route uses the existing
   loopback guard, lock checks and request-origin proxy; this is not isolation

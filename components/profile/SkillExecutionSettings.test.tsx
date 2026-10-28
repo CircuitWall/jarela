@@ -97,6 +97,25 @@ describe("skill execution Security settings", () => {
     expect(screen.getByLabelText("Consent policy").closest("fieldset")?.disabled).toBe(true);
   });
 
+  it("shows a durable approval record and allows it to be removed", async () => {
+    fetchMock.mockResolvedValue(response({
+      mode: "trusted_revisions", trusted_revisions: [{
+        revision: "a".repeat(64), agent_id: "test-agent", workspace: "/workspace",
+        max_timeout_ms: 60_000, max_output_bytes: 65_536,
+        approval: { id: "00000000-0000-4000-8000-000000000001", approved_at: "2026-10-28T00:00:00.000Z" },
+      }],
+    }));
+    render(<SkillExecutionSettings />);
+    expect(await screen.findByText(/Approved 2026-10-28T00:00:00.000Z/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove trusted revision 1" }));
+    fetchMock.mockResolvedValueOnce(response({ mode: "trusted_revisions", trusted_revisions: [] }));
+    fireEvent.click(screen.getByRole("button", { name: "Save skill execution policy" }));
+    await screen.findByRole("status");
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/v1/security/skill-execution", expect.objectContaining({
+      body: JSON.stringify({ mode: "trusted_revisions", trusted_revisions: [] }),
+    }));
+  });
+
   it("keeps saving disabled on load failure and exposes the error", async () => {
     fetchMock.mockRejectedValue(new Error("Cannot load security settings"));
     render(<SkillExecutionSettings />);
