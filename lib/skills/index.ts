@@ -186,6 +186,10 @@ function readSkillsFromDir(dir: string, source: Skill["source"]): Skill[] {
 }
 
 export function getSkill(id: string): SkillWithContent | null {
+  return resolveSkill(id)?.skill ?? null;
+}
+
+export function resolveSkill(id: string): { skill: SkillWithContent; directory: string | null } | null {
   if (!sanitizeId(id)) return null;
 
   // Later directories override earlier ones, so search in reverse.
@@ -197,7 +201,7 @@ export function getSkill(id: string): SkillWithContent | null {
   return readSkillFromDir(getBuiltinSkillsDir(), id, "builtin");
 }
 
-function readSkillFromDir(dir: string, id: string, source: Skill["source"]): SkillWithContent | null {
+function readSkillFromDir(dir: string, id: string, source: Skill["source"]): ReturnType<typeof resolveSkill> {
   if (!dir) return null;
 
   // Claude-style first
@@ -205,7 +209,7 @@ function readSkillFromDir(dir: string, id: string, source: Skill["source"]): Ski
   if (existsSync(claudeFile)) {
     try {
       const content = readFileSync(claudeFile, "utf8");
-      return { ...parseSkill(id, content, source), content };
+      return { skill: { ...parseSkill(id, content, source), content }, directory: path.join(dir, id) };
     } catch { /* fall through */ }
   }
 
@@ -214,7 +218,7 @@ function readSkillFromDir(dir: string, id: string, source: Skill["source"]): Ski
   if (existsSync(flatFile)) {
     try {
       const content = readFileSync(flatFile, "utf8");
-      return { ...parseSkill(id, content, source), content };
+      return { skill: { ...parseSkill(id, content, source), content }, directory: null };
     } catch { /* not found */ }
   }
 

@@ -26,6 +26,24 @@ user-authored skill code.
 This is a review proposal, not a supported file format or execution permission.
 No loader, tool, approval action or database change is introduced by this ADR.
 
+### Unreleased inspection-only increment
+
+The opt-in `read_skill` execution inspection implements inert structural
+checks from this proposal, not execution or approval. See the
+[extension guide](../EXTENDING.md#inspecting-skill-execution-metadata-unreleased).
+The selected Markdown source and repo precedence remain authoritative;
+flat skills do not acquire a neighboring folder's manifest. Every inspection
+result says `execution_available: false`.
+
+The inspector uses strict Zod schemas, a 64 KiB bounded UTF-8 manifest reader,
+32-level/4,096-node JSON limits and metadata checks for up to 64 declared files
+(1 MiB each, 4 MiB total). Its schema subset requires explicit object property
+maps and array items; scalar enums and boolean `additionalProperties` are
+supported. It rejects unknown keywords rather than resolving references or
+evaluating code. These are experimental inspection choices, not acceptance
+of the runner contract below. The inspector does not validate invocation/results,
+produce an immutable snapshot, establish process cleanup or authorize code.
+
 ### Bundle and protocol
 
 - Preserve existing `SKILL.md` discovery, flat Markdown and repo precedence.

@@ -25,8 +25,82 @@ still executes with the trust of its host; capability labels are not a sandbox.
 - [Adding an MCP server](#adding-an-mcp-server)
 - [Adding a custom harness](#adding-a-custom-harness)
 - [Adding an integration manifest](#adding-an-integration-manifest)
+- [Inspecting skill execution metadata (Unreleased)](#inspecting-skill-execution-metadata-unreleased)
 - [Branding the app](#branding-the-app)
 - [Agent introspection tools](#agent-introspection-tools)
+
+---
+
+## Inspecting skill execution metadata (Unreleased)
+
+The experimental `read_skill` option `inspect_execution: true` reads the
+selected skill's `execution.json` and reports its declared files without
+importing code, running package hooks, installing dependencies or granting
+execution authority. Omitting the option preserves the existing response.
+Prompt-only and flat Markdown skills still work without a manifest.
+
+```json
+{ "id": "example-skill", "inspect_execution": true }
+```
+
+The normal skill content is returned with an additional `execution` object:
+
+- `status: "not_declared"`: the selected folder has no manifest, or the skill
+  uses a flat Markdown file.
+- `status: "invalid"`: `issues` contains field/file paths and explicit errors.
+  Malformed metadata does not cause fallback to another repository.
+- `status: "inspected"`: `manifest`, declared `files` with byte sizes and
+  `total_bytes` passed this structural inspection.
+
+**Every status includes `execution_available: false`.** An inspected manifest
+is not an approved, installed, executable or trustworthy skill. There is no
+script runner in this slice. Inspection is a current filesystem observation,
+not an immutable revision, dependency/import audit, sandbox or authorization.
+It cannot establish that files remain unchanged after inspection.
+
+Example folder manifest (experimental; not a public plugin contract):
+
+```json
+{
+  "schemaVersion": 1,
+  "entrypoint": "scripts/main.mjs",
+  "files": ["scripts/main.mjs"],
+  "inputSchema": {
+    "type": "object",
+    "properties": { "name": { "type": "string", "maxLength": 100 } },
+    "required": ["name"],
+    "additionalProperties": false
+  },
+  "outputSchema": { "type": "string" },
+  "timeoutMs": 60000,
+  "maxOutputBytes": 65536
+}
+```
+
+Only explicit `.mjs` and `.cjs` entry points are recognized; the entry point
+must appear in `files`. Paths use portable relative `/` separators; absolute,
+traversal, backslash, Windows-device and case-colliding paths are rejected.
+The inspected skill directory, manifest and declared paths cannot be symbolic
+links; declared leaves must be regular files. This is not a race-free snapshot.
+
+Bounds are 64 KiB of UTF-8 manifest text, 64 declared files, 1 MiB per declared
+file and 4 MiB across declared files. File totals exclude undeclared files and
+the manifest/instructions unless explicitly listed. JSON is bounded to 32
+levels and 4,096 value nodes before recursive schema checking. Timeout metadata
+defaults to 60,000 ms (allowed 1,000-120,000); output metadata defaults to 64 KiB
+(allowed 1-256 KiB). Both must be integers; invalid values are rejected, not
+clamped. These limits validate declarations; no execution budgets run here.
+
+Schemas use explicit `type`: object (with a `properties` map), array (with
+`items`), string, number, integer, boolean or null. Supported optional fields
+are unique declared `required` properties, boolean `additionalProperties`,
+`minItems`/`maxItems`, `minLength`/`maxLength`, `minimum`/`maximum`, and nonempty
+scalar enums for string/number/integer/boolean. Unknown fields, `$ref`, patterns,
+combinators and executable validators are rejected. Inspection validates schema
+structure, not actual invocation/results or satisfiability of all constraints.
+
+See [ADR-0112](adr/0112-checked-javascript-skill-execution.md) for the remaining
+artifact-approval, immutable-snapshot, process-cleanup and execution design gates.
 
 ---
 

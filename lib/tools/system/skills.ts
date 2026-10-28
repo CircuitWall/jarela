@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { getSkill, writeSkill, listSkills, getSkillsDir } from "@/lib/skills";
+import { resolveSkill, writeSkill, listSkills, getSkillsDir } from "@/lib/skills";
+import { inspectSkillExecution } from "@/lib/skills/execution-manifest";
 import { registerLangChainPackage } from "../packages/langchain-package";
 
 const NOT_CONFIGURED = JSON.stringify({ error: "No writable skill repo is configured; built-in skills are read-only" });
@@ -9,10 +10,14 @@ const CONTENT_REQUIRED_MESSAGE =
   "content is required — pass the full markdown file body, not a patch or diff.";
 
 export const readSkillTool = tool(
-  async ({ id }) => {
-    const skill = getSkill(id);
-    if (!skill) return JSON.stringify({ error: `Skill "${id}" not found` });
-    return JSON.stringify({ id: skill.id, name: skill.name, source: skill.source, content: skill.content });
+  async ({ id, inspect_execution }) => {
+    const resolved = resolveSkill(id);
+    if (!resolved) return JSON.stringify({ error: `Skill "${id}" not found` });
+    const { skill, directory } = resolved;
+    return JSON.stringify({
+      id: skill.id, name: skill.name, source: skill.source, content: skill.content,
+      ...(inspect_execution ? { execution: inspectSkillExecution(directory) } : {}),
+    });
   },
   {
     name: "read_skill",
@@ -20,6 +25,9 @@ export const readSkillTool = tool(
       "Load the full content of a named skill from the skills directory. The system prompt lists available skill IDs and descriptions — use those to pick which skill to load.",
     schema: z.object({
       id: z.string().describe("Skill ID shown in the system prompt (e.g. 'code-review')"),
+      inspect_execution: z.boolean().optional().describe(
+        "Opt in to experimental, inert execution.json inspection. Returns not_declared, invalid with issues, or inspected metadata. Never runs code or grants approval; execution_available is always false.",
+      ),
     }),
   },
 );

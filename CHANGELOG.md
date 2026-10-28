@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- skills: Add opt-in, inert `read_skill` inspection of experimental
+  `execution.json` declarations, bounded schemas and declared file metadata.
+  Invalid metadata produces explicit issues; prompt-only skills and default
+  reads are unchanged. Inspection never executes code or grants approval and
+  always reports execution unavailable.
+
 ### Changed
 
 - agents: Allocate turn output tokens from the current user-text size estimate
