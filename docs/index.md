@@ -39,10 +39,12 @@ Set up the repository, run the checks, and use the architecture docs before chan
 
 [Set up development](DEVELOPMENT.md) · [Explore extension surfaces](EXTENDING.md)
 
-For proposed future-work priorities, read the
+For planned future-work priorities and minor-upgrade tracking, read the
 [post-3.0 product direction](POST_3_DIRECTION.md) and
 [ADR-0111](adr/0111-dependable-core-user-owned-extensions.md).
-These proposals do not change the released feature or permission contract.
+The direction is accepted for planning; implementation contracts and release
+gates remain pending. These plans do not change the released feature or
+permission contract.
 
 ### Teaching the agent
 
@@ -68,7 +70,7 @@ The built-in documentation skill makes local documentation the first source of t
 | [ARCHITECTURE.md](ARCHITECTURE.md) | container, component, and runtime architecture |
 | [architecture-patterns.json](architecture-patterns.json) | machine-readable catalog of canonical operation patterns and their tests |
 | [EXTENDING.md](EXTENDING.md) | extension surfaces for providers, tools, MCP, harnesses, and branding |
-| [POST_3_DIRECTION.md](POST_3_DIRECTION.md) | proposed post-3.0 priorities, core/extension scope, and evidence-gated requirements |
+| [POST_3_DIRECTION.md](POST_3_DIRECTION.md) | planned 3.1-3.6 upgrades, core/extension scope, W0 baseline and evidence-gated requirements |
 | [api.md](api.md) | API surface for routes and integration points |
 | [PRICING_EXTRACTION_POLICY.md](PRICING_EXTRACTION_POLICY.md) | model pricing extraction and provider policy |
 | [DEMO_GMAIL_CONNECT.md](DEMO_GMAIL_CONNECT.md) | example integration flow for Gmail |

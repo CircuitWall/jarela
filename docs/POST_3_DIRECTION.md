@@ -1,6 +1,6 @@
 # Post-3.0 product direction: dependable core, user-owned extensions
 
-Status: **Proposed**
+Status: **Planned; W0 started, no capability release gate complete**
 
 Date: 2026-10-27
 
@@ -8,10 +8,11 @@ Last document review: 2026-10-28
 
 Decision record: [ADR-0111](adr/0111-dependable-core-user-owned-extensions.md)
 
-This PRD proposes priorities for work after Jarela 3.0.0. It is not a release
-announcement, a feature freeze, or a promise of dates or a particular version.
-Requirements below are proposed acceptance criteria, not claims about existing
-implementation.
+This PRD defines planned priorities for work after Jarela 3.0.0. On 2026-10-28
+the product direction was accepted for planning, with W0-W5 each targeting a
+separate minor upgrade, 3.1.0 through 3.6.0. These are evidence-gated release
+targets, not release announcements, dates or claims about existing implementation.
+Implementation contracts still require their focused design reviews.
 
 ### Reading and delivery scope
 
@@ -21,7 +22,8 @@ implementation.
 - Section 6 defines sequencing and gates, not a commitment to ship everything
   together. Section 9 records unresolved design decisions and review findings.
 
-The first useful release slice is **one JavaScript-backed skill with checked
+The first runtime capability slice, targeted at 3.2.0 after the 3.1.0 baseline
+and contract milestone, is **one JavaScript-backed skill with checked
 input/output and a visible result**. File workflows, interactive forms,
 agent-assisted authoring and contribution build on independently tested slices.
 Agent advertisement work can proceed independently. Optional sharing and richer
@@ -749,7 +751,7 @@ evidence before expanding scope. Failed gates generate scoped follow-up work.
 | C. Prove extension-first use | One existing extension configured and one minimal new extension authored through supported paths | End-to-end evidence covers discovery, authorization, validation, failed update and disable/removal without core patches |
 | D. Make repetition cheap | Refined templates, docs and focused compatibility checks | A second author can repeat the fixtures from documentation without undocumented steps; reused helpers replace duplicated plumbing where appropriate |
 
-### Proposed capability roadmap
+### Planned minor upgrades
 
 This is the bounded feature work that enables extension-first growth, not an
 exception to it. R7/R8 are shared foundations; R9/R10 should primarily be reusable
@@ -772,6 +774,82 @@ prompt-only prototype is not delivery of an enforced runtime contract.
 W5 is independent of W1-W4 and can be evaluated without waiting for a file
 workflow runner. First compare the current delegate descriptions and selection
 behavior against R11; implement only the demonstrated gaps.
+
+| Planned version | Work item | Tracking | Current state |
+| --- | --- | --- | --- |
+| 3.1.0 | W0. Baseline and contract design | [#826](https://github.com/CircuitWall/jarela/issues/826) | Started: foundation regressions and source-linked gap inventory below; journey and design gates remain open |
+| 3.2.0 | W1. JavaScript-backed skills | [#827](https://github.com/CircuitWall/jarela/issues/827) | Planned; blocked on W0 and artifact-bound execution authorization |
+| 3.3.0 | W2. File workflow and interaction | [#828](https://github.com/CircuitWall/jarela/issues/828) | Planned; W1 needed only for script steps |
+| 3.4.0 | W3. Extension-development workflow | [#829](https://github.com/CircuitWall/jarela/issues/829) | Planned; depends on W1/W2 |
+| 3.5.0 | W4. Contribution workflow | [#830](https://github.com/CircuitWall/jarela/issues/830) | Planned; depends on W2, and W3 only for new extension authoring |
+| 3.6.0 | W5. Agent advertisements | [#831](https://github.com/CircuitWall/jarela/issues/831) | Planned; routing baseline/design can proceed independently |
+
+Each item has its own GitHub milestone with the corresponding version.
+Version order is the intended release sequence, not an additional technical
+dependency for W4 or W5. Owners remain unassigned in the tracking issues; that
+blocks acceptance of the affected release gate.
+
+Planning does not bump the app/package manifests, tag releases or change
+[release policy](https://github.com/CircuitWall/jarela/blob/04c47e876b3cc7f634d927fd0b0fb12acb0fc309/CONTRIBUTING.md#versioning).
+In particular, nightly releases
+still select minor versus patch by feature-commit count, not GitHub milestones.
+A reviewed release-preparation PR must reconcile each planned minor with that
+policy before publication; W0 documentation/tests alone do not trigger a minor.
+If another release consumes a target version first, explicitly revise the
+milestone mapping rather than silently treating that release as delivery.
+
+### W0 initial baseline: 2026-10-28
+
+Scope: source at `04c47e876b3cc7f634d927fd0b0fb12acb0fc309` (app manifest
+3.0.1), plus the inert-discovery regression introduced with this baseline.
+Observed runtime: Windows, Node 24.22.1, Vitest 5.0.5. This is a focused
+foundation check, not a full release audit or live-provider evaluation.
+
+The local hypothesis was that skill discovery and reading remain inert even
+when a folder contains JavaScript, package hooks and malformed execution
+metadata. The new synthetic test puts write-marker/throwing `.cjs` and `.mjs`
+files beside Markdown and asserts unchanged prompt discovery/read behavior
+with no marker created.
+
+| Surface | Existing implementation and tests | Observed behavior / gap |
+| --- | --- | --- |
+| Skill assets and lifecycle | [loader](../lib/skills/index.ts), [loader tests](../lib/skills/index.test.ts), [agent tools/tests](../lib/tools/system/skills.test.ts) | Markdown discovery, repo precedence and writable-repo round trips pass; executable sidecars are inert. No explicit executable-bundle invocation contract |
+| Deterministic skill checks | [fixtures](../lib/skills/fixtures.ts), [tests](../lib/skills/fixtures.test.ts) | Verdict/path assertions and rejection of non-read tools pass. Capability labels select tools; they do not sandbox their host code |
+| Execution and environment | [one-shot wrapper](../lib/tools/general/exec.ts), [terminal session](../lib/terminal/session.ts), [environment](../lib/tools/security/subprocess-env.ts), [safety/tests](../lib/tools/security/safety.test.ts) | Safety classification tests pass. Existing execution accepts shell commands, inherits process/shell/injected environment, and session timeout returns a result without establishing descendant termination. Not a checked JSON skill runner |
+| Progress and retry | [progress](../lib/tools/general/workflow-progress.ts), [progress tests](../lib/tools/general/workflow-progress.test.ts), [retry coordinator/tests](../lib/agents/workflow-step-retry.test.ts) | Checklist validation, rejected/mid-flight steps and bounded retry decisions pass. Existing limits are 3 attempts per step and 6 automatic retries per turn. Evidence text is not an executed validator or safe-write replay contract |
+| Approval and interaction | [pending actions](../lib/stores/pending-actions.ts), [application](../lib/agents/proposals.ts), [application tests](../lib/agents/proposals.test.ts) | Existing configuration-action application tests pass. No reviewed artifact-bound skill action or typed durable workflow-question contract; application tests do not certify approval UI/race/restart behavior |
+| Delegation and runtime compatibility | [delegate/tests](../lib/tools/delegation/delegate.test.ts), [runtime check/tests](../scripts/runtime-version.test.mjs) | Roster/cycle/depth/error fixtures and supported/unsupported version checks pass. Delegated runs are mocked; no semantic-selection or interrupted-write recovery claim |
+
+Reuse decision: retain the skill loader/repo model, capability registry, safety
+policy, progress reporting and existing approval lifecycle. Do not copy the
+shell-command wrapper or credential-inheriting environment into a script
+runner: its direct-argv, structured-output and explicit-environment invariants
+are different. [ADR-0112](adr/0112-checked-javascript-skill-execution.md)
+records a proposed boundary and numeric limits for review, not implemented
+runtime behavior.
+
+Reproduce the selected check using the installed runner:
+
+```powershell
+node node_modules\vitest\vitest.mjs run `
+  lib\skills\index.test.ts lib\skills\fixtures.test.ts `
+  lib\tools\system\skills.test.ts lib\tools\security\safety.test.ts `
+  lib\tools\general\workflow-progress.test.ts `
+  lib\agents\workflow-step-retry.test.ts lib\agents\proposals.test.ts `
+  lib\tools\delegation\delegate.test.ts scripts\runtime-version.test.mjs
+```
+
+Observed result: **9 test files / 142 tests passed on each of 10 fresh-process
+runs** (1,420 passing test executions). Each process used the existing isolated
+test data-directory setup and per-suite synthetic fixtures. This repetition
+applies only to these foundation tests, not to the full journey gates. It does
+not prove host isolation, process-tree cleanup, privacy of arbitrary extensions,
+other operating systems, Node 26 execution or live model reliability.
+
+All five full workflow cards below remain **not run end-to-end**. Outstanding
+W0 work is to assign accountable owners, select/reset their complete fixtures,
+run the assisted-user walkthrough, review ADR-0112, and resolve the workflow
+schema/budgets and interaction-state ADR. No release gate is marked complete.
 
 ### Journey traceability and cut lines
 
@@ -858,10 +936,10 @@ counts, a model's self-assessment or a successful tool exit code alone.
 
 ## 9. Adoption and follow-up
 
-1. Maintainer reviews this proposal and ADR-0111 together; acceptance is a
-   deliberate status change, not implied by document creation.
-2. Create bounded work items for phase A, referencing requirement IDs. Assign
-   owners and capture current results before estimating implementation.
+1. Direction accepted for planning on 2026-10-28; implementation contracts and
+   release gates remain subject to focused review, not accepted by implication.
+2. Track W0-W5 in the planned minor-upgrade issues above, referencing requirement
+   IDs. Assign owners and complete the phase A observations before accepting W0.
 3. Implement demonstrated gaps in separate PRs with explicit regression checks.
    Reuse current registries, stores, proposal paths and tests; do not launch a
    rewrite to satisfy this document.
