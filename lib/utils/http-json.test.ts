@@ -32,3 +32,18 @@ describe("readJsonResponse", () => {
     expect(result).toEqual({ text: "decoded", bytesRead: 7, truncated: true });
   });
 });
+
+describe("readResponseTextCapped limits", () => {
+  it("reports zero bytes for a bodyless response with a negative limit", async () => {
+    await expect(readResponseTextCapped(new Response(null), -1)).resolves.toEqual({
+      text: "",
+      bytesRead: 0,
+      truncated: false,
+    });
+  });
+
+  it("rejects non-finite byte limits", async () => {
+    await expect(readResponseTextCapped(new Response(null), Number.NaN))
+      .rejects.toThrow(RangeError);
+  });
+});

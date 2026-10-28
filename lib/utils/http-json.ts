@@ -10,13 +10,18 @@ export async function readResponseTextCapped(
   res: Response,
   maxBytes: number,
 ): Promise<CappedResponseText> {
+  if (!Number.isFinite(maxBytes)) {
+    throw new RangeError("maxBytes must be finite.");
+  }
+  const limit = Math.max(0, Math.floor(maxBytes));
+
   if (!res.body) {
     const text = await res.text();
     const bytes = new TextEncoder().encode(text);
     return {
-      text: new TextDecoder().decode(bytes.subarray(0, maxBytes)),
-      bytesRead: Math.min(bytes.length, maxBytes),
-      truncated: bytes.length > maxBytes,
+      text: new TextDecoder().decode(bytes.subarray(0, limit)),
+      bytesRead: Math.min(bytes.length, limit),
+      truncated: bytes.length > limit,
     };
   }
 
@@ -61,7 +66,6 @@ export async function readResponseTextCapped(
   const gunzip = new DecompressionStream("gzip") as unknown as TransformStream<Uint8Array, Uint8Array>;
   const decoded = isGzip ? source.pipeThrough(gunzip) : source;
   const reader = decoded.getReader();
-  const limit = Math.max(0, Math.floor(maxBytes));
   const chunks: Uint8Array[] = [];
   let bytesRead = 0;
   let truncated = false;
