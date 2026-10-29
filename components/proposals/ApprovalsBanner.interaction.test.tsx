@@ -62,6 +62,27 @@ describe("shared choice and approval review card", () => {
     await waitFor(() => expect(pending.approve).toHaveBeenCalledWith(action.id, { selected_values: ["brief", "full"] }));
   });
 
+  it("preserves an unanswered choice and its draft through chat rerenders and polling", async () => {
+    const onResolved = vi.fn().mockResolvedValue(undefined);
+    const view = render(<ApprovalsBanner agentId={action.agent_id} onResolved={onResolved} />);
+    fireEvent.click(await screen.findByRole("button", { name: /awaiting your response/ }));
+    fireEvent.click(screen.getByRole("radio", { name: "Full" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "For the earlier report" } });
+    view.rerender(<ApprovalsBanner agentId={action.agent_id} onResolved={onResolved} />);
+    fireEvent(document, new Event("visibilitychange"));
+    await waitFor(() => expect(pending.list).toHaveBeenCalledTimes(2));
+    expect((screen.getByRole("radio", { name: "Full" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("For the earlier report");
+    expect(pending.approve).not.toHaveBeenCalled();
+    expect(pending.deny).not.toHaveBeenCalled();
+    expect(onResolved).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Submit response" }));
+    await waitFor(() => expect(pending.approve).toHaveBeenCalledWith(action.id, {
+      selected_values: ["full"], text: "For the earlier report",
+    }));
+    await waitFor(() => expect(onResolved).toHaveBeenCalledTimes(1));
+  });
+
   it("keeps Approve/Deny for artifact edits and displays their before/after payload", async () => {
     pending.list.mockResolvedValue([{
       ...action, kind: "write_skill",
