@@ -244,6 +244,36 @@ scalar enums for string/number/integer/boolean. Unknown fields, `$ref`, patterns
 combinators and executable validators are rejected. Inspection validates schema
 structure, not actual invocation/results or satisfiability of all constraints.
 
+### Internal invocation/result validation (Unreleased)
+
+The internal execution protocol helpers now check actual JSON against this
+schema subset without spawning a process, reading a bundle or granting consent.
+They require a manifest from the strict parser; they are not public plugin APIs
+or a callable execution tool. Existing `read_skill` inspection remains inert.
+
+- Invocation transport is exactly one JSON object, at most 64 KiB of UTF-8 text;
+  results are exactly one JSON value within the manifest's `maxOutputBytes`.
+  Whitespace counts toward the byte limit. Reject excess rather than parsing
+  clipped text. The future runner must bound raw stdout bytes while streaming
+  and decode valid UTF-8 before calling the string-based validator.
+- Both values use the existing depth-32 / 4,096-value-node bounds, including
+  undeclared properties. Non-finite parsed numbers are rejected.
+- Check types, required own properties, enums, nested values, inclusive numeric
+  and item/length bounds without coercion, defaults, stripping or mutation.
+  String lengths count Unicode code points. Omitted `additionalProperties`
+  permits undeclared values, as does explicit `true`; `false` rejects them.
+- Validation reports up to 20 path-specific issues without echoing invalid
+  values. Property paths are still caller data, not sanitized display text.
+  The manifest parser explicitly rejects the reserved `__proto__` schema
+  property name rather than silently dropping it in the underlying validator.
+- Consent digest calculation reuses the bounded invocation-object parser and
+  continues hashing exact original UTF-8 bytes, not a normalized serialization.
+  A digest alone does not establish schema-valid input, a snapshot or consent.
+
+This closes only the pure validation portion of the proposed protocol. It does
+not verify exit status, runtime identity, snapshots, authorization, cancellation,
+process cleanup or cross-host execution. Execution remains unavailable.
+
 See [ADR-0112](adr/0112-checked-javascript-skill-execution.md) for the remaining
 artifact-approval, immutable-snapshot, process-cleanup and execution design gates.
 

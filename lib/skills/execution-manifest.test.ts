@@ -56,6 +56,7 @@ describe("execution manifest contract", () => {
     { outputSchema: { type: "number", minimum: 2, maximum: 1 } },
     { outputSchema: { type: "integer", enum: [1.5] } },
     { outputSchema: { type: "boolean", enum: [] } },
+    { outputSchema: { type: "object", properties: JSON.parse('{"__proto__":{"type":"string"}}') } },
   ])("rejects unsupported or invalid fields: %j", (override) => {
     expect(() => parseSkillExecutionManifest(JSON.stringify({ ...manifest(), ...override }))).toThrow();
   });

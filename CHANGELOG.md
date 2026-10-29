@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add internal bounded skill invocation/result schema validation without
+  enabling execution; share invocation parsing with exact-byte consent digests.
+  Reject reserved manifest property names rather than silently dropping them.
+
+### Added
+
 - Unified skill and scheduled-task/watcher prompt approvals under
   `propose_config_change`, with stale-content checks and verified application.
   Version adoption now queues real approval controls rather than chat-only
