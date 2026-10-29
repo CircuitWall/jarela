@@ -3,6 +3,7 @@ import type { ContentPart, PendingAction } from "@/api/types";
 import type { AgentConfig } from "@/api/types";
 import { type ChatQueueApi } from "./useChatQueue";
 import { buildProposalResponseMessage } from "@/lib/proposals/response-message";
+import type { ChatRunOptions } from "./chat-helpers";
 
 interface Params {
   agentId: string | null;
@@ -12,7 +13,7 @@ interface Params {
   attachments: ContentPart[];
   setAttachments: React.Dispatch<React.SetStateAction<ContentPart[]>>;
   queue: ChatQueueApi;
-  launchRun: (text: string, atts: ContentPart[]) => Promise<void>;
+  launchRun: (text: string, atts: ContentPart[], options?: ChatRunOptions) => Promise<void>;
   stopStreaming: () => void;
   streaming: boolean;
   onCompact: () => Promise<void>;
@@ -87,14 +88,19 @@ export function useChatSubmitHandlers({
   const handleProposalResolved = useCallback(async (action: PendingAction) => {
     if (!agentId || action.agent_id !== agentId) throw new Error("Proposal belongs to a different agent");
     const message = buildProposalResponseMessage(action);
-    if (queue.isReady()) { await launchRun(message, []); return; }
-    queue.enqueue(message, []);
+    const options: ChatRunOptions = { messageMetadata: { hidden_from_chat: true } };
+    if (queue.isReady()) { await launchRun(message, [], options); return; }
+    queue.enqueue(message, [], options);
   }, [agentId, launchRun, queue]);
 
   // Shallow projection so the queued-bubble subtree doesn't re-reconcile
   // on every streaming delta.
   const queuedMessages = useMemo(
-    () => queue.queue.map((q) => ({ id: q.id, text: q.text, attachmentCount: q.attachments.length })),
+    () => queue.queue.map((q) => ({
+      id: q.id,
+      text: q.options?.messageMetadata?.hidden_from_chat ? "Continue after your response" : q.text,
+      attachmentCount: q.attachments.length,
+    })),
     [queue.queue],
   );
 

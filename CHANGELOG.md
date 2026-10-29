@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Hide internal proposal-continuation instructions from chat, preserving their
+  visibility metadata through queueing and retries without hiding user messages.
 - Keep delayed choice answers tied to their original questions and reconcile
   them with newer chat instructions rather than blindly resuming obsolete work.
 - Route agent interaction guidance through chat or the shared review UI, with

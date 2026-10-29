@@ -1,13 +1,13 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ContentPart } from "@/api/types";
-import { makeQueuedId, type QueuedMessage } from "./chat-helpers";
+import { makeQueuedId, type ChatRunOptions, type QueuedMessage } from "./chat-helpers";
 
 interface Params {
   threadId: string | null;
   streaming: boolean;
   compacting: boolean;
-  launchRun: (text: string, atts: ContentPart[]) => Promise<void>;
+  launchRun: (text: string, atts: ContentPart[], options?: ChatRunOptions) => Promise<void>;
 }
 
 export interface ChatQueueApi {
@@ -15,19 +15,18 @@ export interface ChatQueueApi {
   queueRef: React.MutableRefObject<QueuedMessage[]>;
   drainQueueRef: React.MutableRefObject<() => void>;
   isReady: () => boolean;
-  enqueue: (text: string, atts: ContentPart[]) => void;
-  prepend: (text: string, atts: ContentPart[]) => void;
+  enqueue: (text: string, atts: ContentPart[], options?: ChatRunOptions) => void;
+  prepend: (text: string, atts: ContentPart[], options?: ChatRunOptions) => void;
   removeQueued: (id: string) => void;
   retry: (text: string, atts: ContentPart[]) => void;
 }
 
 // Owns the FIFO queue of messages typed while a run was already streaming
 // or the session wasn't ready. The chat input stays unblocked; we drain
-// this queue after each run finishes. Multiple queued user messages get
-// merged into one prompt (joined by a blank line) with all attachments
-// concatenated, so the agent sees one coherent turn instead of N
-// round-trips. The readiness guard makes out-of-band invocations safe
-// no-ops.
+// this queue after each run finishes. Consecutive ordinary user messages
+// merge into one prompt with attachments concatenated; turns with explicit
+// options stay separate to preserve their visibility. The readiness guard
+// makes out-of-band invocations safe no-ops.
 export function useChatQueue({ threadId, streaming, compacting, launchRun }: Params): ChatQueueApi {
   const [queue, setQueue] = useState<QueuedMessage[]>([]);
   const queueRef = useRef<QueuedMessage[]>([]);
@@ -47,19 +46,31 @@ export function useChatQueue({ threadId, streaming, compacting, launchRun }: Par
   threadIdRef.current = threadId;
 
   const drainQueueRef = useRef<() => void>(() => {});
+  const drainingRef = useRef(false);
   // `launchRun` is plain function re-created each render; read through ref
   // to keep drain stable.
   const launchRunRef = useRef(launchRun);
   launchRunRef.current = launchRun;
 
   drainQueueRef.current = () => {
-    if (streamingRef.current || compactingRef.current || !threadIdRef.current) return;
-    setQueue((q) => {
-      if (q.length === 0) return q;
-      const text = q.map((m) => m.text).join("\n\n");
-      const atts = q.flatMap((m) => m.attachments);
-      Promise.resolve().then(() => { void launchRunRef.current(text, atts); });
-      return [];
+    if (drainingRef.current || streamingRef.current || compactingRef.current || !threadIdRef.current) return;
+    const queued = queueRef.current;
+    if (queued.length === 0) return;
+    // Keep internal turns separate so their visibility cannot hide user text.
+    const boundary = queued[0].options ? 1 : queued.findIndex((message) => message.options);
+    const batch = queued.slice(0, boundary < 0 ? queued.length : boundary);
+    const remaining = queued.slice(batch.length);
+    queueRef.current = remaining;
+    setQueue(remaining);
+    drainingRef.current = true;
+    const text = batch.map((message) => message.text).join("\n\n");
+    const atts = batch.flatMap((message) => message.attachments);
+    const run = batch[0].options
+      ? launchRunRef.current(text, atts, batch[0].options)
+      : launchRunRef.current(text, atts);
+    void run.catch((error) => console.error("Queued chat submission failed", error)).finally(() => {
+      drainingRef.current = false;
+      drainQueueRef.current();
     });
   };
 
@@ -74,16 +85,16 @@ export function useChatQueue({ threadId, streaming, compacting, launchRun }: Par
   }, [streaming, compacting, threadId, queue.length]);
 
   const isReady = useCallback(
-    () => !streaming && !compacting && !!threadId && queueRef.current.length === 0,
+    () => !drainingRef.current && !streaming && !compacting && !!threadId && queueRef.current.length === 0,
     [streaming, compacting, threadId],
   );
 
-  const enqueue = useCallback((text: string, atts: ContentPart[]) => {
-    setQueue((q) => [...q, { id: makeQueuedId(), text, attachments: atts }]);
+  const enqueue = useCallback((text: string, atts: ContentPart[], options?: ChatRunOptions) => {
+    setQueue((q) => [...q, { id: makeQueuedId(), text, attachments: atts, ...(options ? { options } : {}) }]);
   }, []);
 
-  const prepend = useCallback((text: string, atts: ContentPart[]) => {
-    setQueue((q) => [{ id: makeQueuedId(), text, attachments: atts }, ...q]);
+  const prepend = useCallback((text: string, atts: ContentPart[], options?: ChatRunOptions) => {
+    setQueue((q) => [{ id: makeQueuedId(), text, attachments: atts, ...(options ? { options } : {}) }, ...q]);
   }, []);
 
   const removeQueued = useCallback((id: string) => {
