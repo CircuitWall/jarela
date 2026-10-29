@@ -337,6 +337,24 @@ a long-lived broker, a sandbox claim and a new plugin platform.
 
 ## Evidence required before acceptance and implementation
 
+### Existing policy HTTP regression coverage
+
+The [policy acceptance suite](../../tests/e2e/skill-execution-policy.spec.ts)
+uses the existing isolated Playwright production server and synthetic workspace.
+It checks mode persistence, rejected malformed policies without state changes,
+server-issued receipts, unchanged-scope receipt preservation, changed/revoked
+scope renewal, unapproved drafts and refusal of generic memory write/delete
+bypasses. Every settings response must continue to report execution unavailable.
+Run it with `npx playwright test skill-execution-policy.spec.ts --project=chromium-desktop`.
+Each Playwright invocation creates a fresh database and production server;
+repeating tests within one invocation does not reset the database.
+
+These are API lifecycle regressions, not script execution, browser consent UX,
+process-restart recovery or process-tree cleanup acceptance. They do not remove
+the boundary-review gate or complete the requirements below.
+
+### Remaining acceptance gates
+
 1. Assign an accountable execution/approval owner and review the proposed
    fields, schema subset and numeric bounds against dependency-free fixtures.
 2. Implement and verify the selected run-scoped snapshot lifecycle and integrate
