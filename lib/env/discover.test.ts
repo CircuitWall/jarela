@@ -32,7 +32,8 @@ describe("discoverAllShellEnv", () => {
     Object.defineProperty(process, "platform", { value: originalPlatform });
   });
 
-  it.skipIf(process.platform === "win32")("parses a full env -0 dump framed by sentinels, including multi-'=' values", async () => {
+  it("parses a full env -0 dump framed by sentinels, including multi-'=' values", async () => {
+    Object.defineProperty(process, "platform", { value: "darwin" });
     const child = fakeChild();
     mockedSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
 
@@ -50,7 +51,8 @@ describe("discoverAllShellEnv", () => {
     expect(result.values.MULTI).toBe("a=b");
   });
 
-  it.skipIf(process.platform === "win32")("falls back to process.env when the shell probe errors", async () => {
+  it("falls back to process.env when the shell probe errors", async () => {
+    Object.defineProperty(process, "platform", { value: "darwin" });
     const child = fakeChild();
     mockedSpawn.mockReturnValue(child as unknown as ReturnType<typeof spawn>);
     process.env.CUSTOM_VAR = "from-process-env";

@@ -32,6 +32,7 @@ function mockSpawnOk(stdout: string) {
 
 describe("resolveSubprocessEnv", () => {
   const originalEnv = { ...process.env };
+  const originalPlatform = process.platform;
 
   beforeEach(() => {
     process.env = {
@@ -44,13 +45,15 @@ describe("resolveSubprocessEnv", () => {
     mockedGetInjectedSubprocessEnv.mockReset();
     mockedGetInjectedSubprocessEnv.mockReturnValue({});
     vi.resetModules();
+    Object.defineProperty(process, "platform", { value: "darwin" });
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    Object.defineProperty(process, "platform", { value: originalPlatform });
   });
 
-  it.skipIf(process.platform === "win32")("probes the user's interactive shell path and merges it into subprocess env", async () => {
+  it("probes the user's interactive shell path and merges it into subprocess env", async () => {
     const { resolveSubprocessEnv } = await import("./subprocess-env");
 
     const result = resolveSubprocessEnv({ cwd: "/tmp" });
@@ -68,7 +71,7 @@ describe("resolveSubprocessEnv", () => {
     expect(result.env.PATH).toBe("/opt/homebrew/bin:/usr/bin:/bin");
   });
 
-  it.skipIf(process.platform === "win32")("passes SHELL value with metacharacters as the executable — not interpreted by a shell", async () => {
+  it("passes SHELL value with metacharacters as the executable — not interpreted by a shell", async () => {
     process.env.SHELL = "/bin/sh; echo injected";
     mockedSpawnSync.mockReturnValue({
       stdout: "",
@@ -93,7 +96,7 @@ describe("resolveSubprocessEnv", () => {
     );
   });
 
-  it.skipIf(process.platform === "win32")("falls back to process.env.PATH when spawnSync errors", async () => {
+  it("falls back to process.env.PATH when spawnSync errors", async () => {
     mockedSpawnSync.mockReturnValue({
       stdout: null,
       stderr: "",
