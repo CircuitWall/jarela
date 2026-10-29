@@ -16,7 +16,7 @@ import path from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
-import { currentWorkspace, type ToolConfig } from "./workspace-context";
+import type { ToolConfig } from "./workspace-context";
 import { pathResolverFor, assertSafePath, withFsDeadline } from "./files";
 import { buildOutline, shouldOutline } from "./file-outline";
 import {
@@ -101,10 +101,6 @@ function compileGlob(pattern: string): RegExp {
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function toPosix(p: string): string {
-  return p.split(path.sep).join("/");
 }
 
 interface WalkResult {

@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retain visible outcomes across polling, expose complete artifact previews,
   and return consistent decoded proposal payloads/results from API endpoints.
 
+### Changed
+
+- Remove unreachable task-editor and notification-test remnants, obsolete chat
+  geometry helpers, unused credential-picker calculations, and stale tool-runtime
+  imports without changing active workflows or registered tools.
+
 ## [3.1.0] - 2026-10-29
 
 ### Added

@@ -10,12 +10,10 @@ import {
   registeredGroup,
   registeredIntegration,
   groupForCategory,
-  type Capability,
   type ToolCategory,
-  type ToolGroup,
 } from "./registry";
 import { getMcpTools, getMcpToolMeta } from "@/lib/mcp/client";
-import { getToolsDir, loadExternalTools, type ExtensionLoadError } from "./external";
+import { getToolsDir, type ExtensionLoadError } from "./external";
 import { loadLangChainPackages } from "../packages/langchain-packages";
 import { wrapWithWallclock } from "../support/wallclock";
 import { wrapToolForCredentialRouting } from "../security/wrap-credentials";
@@ -23,26 +21,13 @@ import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 import { disabledCategories } from "@/lib/stores/builtin-tools";
 import { isDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
-import { getAgentTools, type AgentConfigRow } from "@/lib/stores/agent-configs";
-import { isBasicToolCategory, normalizeToolCategory } from "./categories";
+import { normalizeToolCategory } from "./categories";
 import { isAlwaysOnTool } from "./always-on";
-import { getIntegrationReadiness } from "@/lib/health/probe-cache";
-import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import {
   allBuiltins,
-  builtinNames,
   loadExternal,
-  getToolCategory,
-  getToolCredentialsRequired,
-  getToolIntegration,
-  getToolSource,
   toCatalogEntry,
   type ToolCatalogEntry,
-  type ToolStatus,
-  type ToolSource,
-  applyAgentPermissionsToCatalog,
-  allowedToolNamesFromPermissionMap,
-  applyProviderToolLimitToCatalog,
 } from "./catalog";
 
 export * from "./catalog";

@@ -1,5 +1,5 @@
 "use client";
-import { AlertCircle, Calendar, CheckCircle2, Clock, EyeOff, Loader2, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
+import { Calendar, Clock, EyeOff, Loader2, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
 import { PanelHeader } from "@/components/ui/PanelHeader";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
@@ -12,7 +12,6 @@ import { pushToast } from "@/lib/ui/toasts";
 import { agentModelStatus } from "@/lib/agents/effective-model";
 import { AgentModelBadge } from "./AgentModelBadge";
 import { WatchersSection } from "./WatchersSection";
-import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 
 import { PanelMessage } from "@/components/ui/PanelMessage";
@@ -275,92 +274,6 @@ function TaskCard({
         <div className="px-3 py-2 border-t border-border/60 text-[11px] text-fg-subtle space-y-2">
           <TaskEditor task={task} agents={agents} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} />
         </div>
-      )}
-    </div>
-  );
-}
-
-// ADR-0032 — kind toggle + script editor for a scheduled task. The
-// agent_prompt branch is the existing `prompt` column on the task,
-// which is rendered above (or via TaskEditor); when the user switches to
-// 'script' the prompt becomes a "(running script: …)" stub.
-function TaskReactionEditor({
-  task, onChanged,
-}: {
-  task: ScheduledTask;
-  onChanged: () => void;
-}) {
-  const [switching, setSwitching] = useState(false);
-
-  async function switchKind(next: "agent_prompt" | "script") {
-    if (next === task.reaction_kind) return;
-    setSwitching(true);
-    try {
-      if (next === "script") {
-        await api.scheduledTasks.update(task.id, {
-          reaction_kind: "script",
-          reaction_script: null,
-          reaction_script_args: null,
-        });
-      } else {
-        await api.scheduledTasks.update(task.id, {
-          reaction_kind: "agent_prompt",
-          // Restore a non-empty prompt sentinel so the NOT NULL column
-          // stays populated; the user can then edit it via the TaskEditor.
-          prompt: task.prompt && task.prompt.trim() ? task.prompt : "(edit me)",
-        });
-      }
-      onChanged();
-    } catch (e) {
-      pushErrorToast({
-        title: "Couldn't switch reaction kind",
-        error: e,
-        context: { panel: "scheduled-tasks", action: "task.reaction_kind", task_id: task.id, target_kind: next },
-      });
-    } finally {
-      setSwitching(false);
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-1">
-        <KindPill
-          active={task.reaction_kind === "agent_prompt"}
-          onClick={() => void switchKind("agent_prompt")}
-          disabled={switching}
-          title="On firing, run this task's agent with the prompt above (default)."
-        >
-          Agent prompt
-        </KindPill>
-        <KindPill
-          active={task.reaction_kind === "script"}
-          onClick={() => void switchKind("script")}
-          disabled={switching}
-          title="On firing, run a built-in reaction.* script with no LLM round-trip."
-        >
-          Script
-        </KindPill>
-      </div>
-      <p className="text-[10px] text-fg-faint leading-snug">
-        Reaction mode controls what happens when this task fires:
-        <span className="text-fg-subtle"> Agent prompt</span> runs the task&apos;s agent prompt;
-        <span className="text-fg-subtle"> Script</span> runs a built-in reaction script with no LLM chat turn.
-      </p>
-      {task.reaction_kind === "script" && (
-        <ReactionScriptEditor
-          initialScript={task.reaction_script}
-          initialArgs={task.reaction_script_args}
-          onSave={async ({ script, args }) => {
-            await api.scheduledTasks.update(task.id, {
-              reaction_script: script,
-              reaction_script_args: args,
-            });
-            onChanged();
-          }}
-          errorContext={{ panel: "scheduled-tasks", action: "task.reaction_script", task_id: task.id }}
-          diffContext={false}
-        />
       )}
     </div>
   );
