@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
-import { assertBoundedSkillJson } from "./execution-manifest";
+import { parseSkillInvocationJson } from "./execution-protocol";
 
 export const SKILL_CONSENT_TTL_MS = 5 * 60 * 1000;
 export const SKILL_CONSENT_MAX_PROPOSALS = 64;
@@ -34,10 +34,7 @@ type ConsentEntry = { proposal: SkillConsentProposal; status: SkillConsentStatus
 
 // Hash exact transport bytes: even semantically equivalent edits require fresh consent.
 export function skillInvocationDigest(inputJson: string): string {
-  if (Buffer.byteLength(inputJson, "utf8") > 64 * 1024) throw new Error("Invocation exceeds 64 KiB");
-  const raw: unknown = JSON.parse(inputJson);
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invocation must be a JSON object");
-  assertBoundedSkillJson(raw, "Invocation");
+  parseSkillInvocationJson(inputJson);
   return createHash("sha256").update(inputJson, "utf8").digest("hex");
 }
 

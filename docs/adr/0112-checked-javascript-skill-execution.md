@@ -249,6 +249,26 @@ Raw stdout/stderr must remain bounded while streaming, not just clipped after
 the child finishes. Errors/cancellation/timeouts/nonzero exit remain non-success
 even if a partial JSON value was emitted.
 
+### Internal protocol-validation increment (2026-10-29)
+
+`lib/skills/execution-protocol.ts` implements pure, bounded invocation/result
+validation against the inspected schema subset, with no runner, new approval
+kind, snapshot storage or automatic execution. It reuses the existing JSON
+depth/node limits and is shared by consent's exact-byte invocation digest.
+Input is capped at 64 KiB; result text uses the parsed manifest's output limit.
+Values are not coerced or stripped; undeclared properties are allowed unless
+explicitly forbidden, and string bounds count Unicode code points. The manifest
+parser rejects reserved `__proto__` schema keys explicitly instead of accepting
+a silently altered definition. Tests cover each constraint, exact size/depth/node
+boundaries, multiple JSON values, non-finite numbers and prototype-looking keys.
+
+This is an internal contract increment, not acceptance of the full proposed
+execution boundary or proof of any script journey. The future transport still
+must enforce byte limits during capture, valid UTF-8, exit/timeout/cancel status,
+immutable artifact identity and authorization before using validated output.
+The [extension guide](../EXTENDING.md#internal-invocationresult-validation-unreleased)
+records the implemented subset and outstanding runtime responsibilities.
+
 ### Identity, authority and lifecycle
 
 - Build a private run snapshot using safe file operations; hash the manifest,

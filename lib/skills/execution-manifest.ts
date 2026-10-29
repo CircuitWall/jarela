@@ -24,7 +24,12 @@ const nonnegativeInteger = z.number().int().nonnegative();
 const valueSchema: z.ZodType<ValueSchema> = z.lazy(() => z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("object"),
-    properties: z.record(z.string(), valueSchema),
+    properties: z.preprocess((value, ctx) => {
+      if (value && typeof value === "object" && Object.hasOwn(value, "__proto__")) {
+        ctx.addIssue({ code: "custom", message: "Reserved schema property name: __proto__" });
+      }
+      return value;
+    }, z.record(z.string(), valueSchema)),
     required: z.array(z.string()).optional(),
     additionalProperties: z.boolean().optional(),
   }).superRefine((schema, ctx) => {
