@@ -47,10 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unavailable execution support or consent.
 - agents: Allocate turn output tokens from the current user-text size estimate
   with 4x headroom and strategy/reasoning baselines, bounded by explicit model
-  settings, known model output limits, and context allocation.
+  settings (or static model-limit fallbacks), and context allocation.
 
 ### Fixed
 
+- agents: Preserve explicit output-token limits over static catalog fallbacks
+  and reject thinking budgets that cannot fit the effective output allocation
+  before requesting a model response.
 - agents: Reject tool calls when the model reports output-token truncation,
   rather than executing potentially incomplete arguments.
 

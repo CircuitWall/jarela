@@ -110,8 +110,12 @@ a 32,768-token baseline outside Cost-saving, subject to hard limits. Explicit
 thinking budgets also reserve room for output.
 
 An explicit model `max_tokens` setting remains a ceiling, not a minimum.
-Known model output limits and the run's context allocation can lower the
-result. The selected amount is reserved before assembling conversation history.
+Static known model output limits apply as a fallback when no explicit
+`max_tokens` is configured; the run's context allocation remains a ceiling.
+The selected amount is reserved before assembling conversation history.
+An enabled thinking budget must remain strictly below the effective output
+limit. Incompatible settings fail preparation with `invalid_thinking_budget`
+before the provider request, rather than silently reducing the thinking budget.
 Fast and Cost-saving output baselines can now grow for larger user turns;
 these strategies are not hard spending limits.
 
