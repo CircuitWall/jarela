@@ -203,7 +203,10 @@ describe("version adoption state", () => {
     expect(prompt).toContain("Release changesets — model-facing prompt and tool description/schema changes from 2.0.5 to 2.2.1:");
     expect(prompt).toContain("tool `workflow_progress`");
     expect(prompt).toContain("params added: validation_evidence");
-    expect(prompt).toContain("apply an edit only after the user approves it");
+    expect(prompt).toContain("call `propose_config_change`");
+    expect(prompt).toContain("`update_scheduled_task_prompt` / `update_watcher_prompt`");
+    expect(prompt).toContain("Never claim approval is pending without a successful proposal_id");
+    expect(prompt).toContain("leave the workflow open while approval is pending");
     expect(prompt).toContain("https://circuitwall.github.io/jarela/CHANGELOG/");
     expect(prompt).toContain("https://circuitwall.github.io/jarela/adoption/");
     expect(prompt).toContain("https://circuitwall.github.io/jarela/adoption/changesets.json");

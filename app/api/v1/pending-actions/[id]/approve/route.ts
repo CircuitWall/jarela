@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getPendingAction, setActionStatus, reservePendingApproval } from "@/lib/stores/pending-actions";
 import { applyAction } from "@/lib/agents/proposals";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
 
 const ApproveBody = z.object({
   extras: z.record(z.string(), z.unknown()).optional(),
@@ -18,17 +19,28 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: `already ${action.status}` }, { status: 409 });
   }
 
-  // Optional approval-time secret material (ADR-0010). The agent never sees
-  // these — they come from the secret-input modal in the approval banner.
+  // User-entered choice answers or approval-time secrets (ADR-0010).
+  // Only choice answers are returned to the agent.
   let extras: Record<string, unknown> | undefined;
-  if (req.headers.get("content-length") && req.headers.get("content-length") !== "0") {
+  const body = await req.text();
+  if (body.trim()) {
+    let raw: unknown;
     try {
-      const raw: unknown = await req.json();
-      const parsed = ApproveBody.safeParse(raw);
-      if (parsed.success && parsed.data.extras) extras = parsed.data.extras;
+      raw = JSON.parse(body);
     } catch {
-      // Empty / non-JSON body is fine — fall back to extras=undefined.
+      return NextResponse.json({ error: "Invalid JSON approval body" }, { status: 400 });
     }
+    const parsed = ApproveBody.safeParse(raw);
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.message }, { status: 400 });
+    extras = parsed.data.extras;
+  }
+
+  if (action.kind === "ask_choice") {
+    const question = choiceProposalSchema.safeParse(JSON.parse(action.payload));
+    if (!question.success) return NextResponse.json({ error: "Invalid choice proposal" }, { status: 400 });
+    const answer = choiceResponseSchema(question.data).safeParse(extras);
+    if (!answer.success) return NextResponse.json({ error: answer.error.message }, { status: 400 });
+    extras = answer.data;
   }
 
   const reserved = reservePendingApproval(id);
@@ -52,7 +64,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       agent_id: action.agent_id,
       status: result.ok ? "done" : "error",
       preview: result.ok
-        ? `✅ Approved & applied: ${action.kind}`
+        ? action.kind === "ask_choice" ? "Response recorded" : `✅ Approved & applied: ${action.kind}`
         : `⚠️ Approval failed to apply: ${typeof result.detail === "string" ? result.detail : JSON.stringify(result.detail)}`,
       ts: Date.now(),
     });

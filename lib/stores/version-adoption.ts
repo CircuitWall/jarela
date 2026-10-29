@@ -314,7 +314,7 @@ function changesetChecklist(previousVersion: string, range: ChangesetRange): Ver
       reason: "Long-lived task and watcher prompts can reference changed tools or parameters, or repeat built-in guidance that changed.",
       input: "Release changeset tool and prompt deltas, plus every prompt returned by list_scheduled_tasks and list_watchers.",
       output: "For each affected task or watcher: current prompt, proposed prompt, and the changeset delta that motivates it; unaffected ones listed as checked.",
-      validation: "After approved update_scheduled_task / update_watcher calls, re-list and confirm each stored prompt equals the approved text and names only tools present in list_tools.",
+      validation: "After approved prompt proposals, re-list tasks/watchers and confirm each stored prompt equals the approved text and names only tools present in list_tools.",
       action: "review_schedule",
       refs: [...toolRefs, ...promptRefs],
     }));
@@ -324,7 +324,7 @@ function changesetChecklist(previousVersion: string, range: ChangesetRange): Ver
       reason: "Agent instructions and user skills can reference changed tools or parameters, or duplicate or contradict changed built-in prompt guidance.",
       input: "Release changeset prompt and tool deltas, each agent's instructions from read_agent_instruction, and user skills from list_skills / read_skill.",
       output: "For each affected instruction or skill: before and after text and the changeset delta that motivates it; unaffected ones listed as checked.",
-      validation: "After approved update_agent_instruction / write_skill calls, re-read each artifact and confirm the stored text matches and names only tools and parameters present in list_tools and the changed schemas.",
+      validation: "After approved update_agent / write_skill proposals, re-read each artifact and confirm the stored text matches and names only tools and parameters present in list_tools and the changed schemas.",
       action: "read_skill",
       refs: [...promptRefs, ...toolRefs],
     }));
@@ -519,7 +519,7 @@ function buildSummary(state: Pick<VersionAdoptionState, "current_version" | "pre
   return `Version ${state.current_version} has ${checklist.length} adoption check${checklist.length === 1 ? "" : "s"} from ${state.previous_version}.`;
 }
 
-function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version" | "previous_version" | "is_first_adoption" | "summary" | "checklist" | "stale_prompt_risks">): string {
+export function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version" | "previous_version" | "is_first_adoption" | "summary" | "checklist" | "stale_prompt_risks">): string {
   const phaseLabel = state.is_first_adoption
     ? `current-version baseline ${state.current_version}`
     : `upgrade from ${state.previous_version} to ${state.current_version}`;
@@ -549,11 +549,12 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
     "- Start Phase 2 by calling `workflow_progress` with `workflow_id: \"version_adoption\"` and `phase: \"adoption\"`; the UI will swap from the Phase 1 checklist to the generated adoption todo list.",
     "- Before each Phase 2 checklist item, call `workflow_progress` with that `item_id` and `status: \"checking\"`.",
     "- If Phase 1 finds actionable adoption work, complete safe local updates directly when your available tools allow it.",
-    "- For `adapt-*` items, compare each user artifact (agent settings, instructions, skills, scheduled task and watcher prompts) with the release changesets: removed tools, added, removed, or newly required parameters, changed tool descriptions, and built-in prompt guidance the artifact now duplicates or contradicts. Show the before and after text, apply an edit only after the user approves it, then re-read the artifact to validate.",
+    "- For `adapt-*` items, compare user artifacts with release tool/schema and prompt deltas. For edits requiring consent, call `propose_config_change`: `update_agent` / `update_agent_tools` for agents, `write_skill` for skills, `update_scheduled_task_prompt` / `update_watcher_prompt` for prompts. Prompt/skill payload: `{id, expected_content, content}` with exact current and replacement text (null baseline only for new skills or unset watcher prompts). Keep prompt sections clear and concise; remove duplicated guidance.",
+    "- Queue the proposal to show the approval UI; a chat request such as 'say apply it' does not create approval controls. Never claim approval is pending without a successful proposal_id. Set the item `needs_attention` with `needs_user: true`, include the proposal_id, and wait. After approval, use `check_proposal`, re-read the artifact, and validate before marking done; do not repeat the write. Denied/failed proposals are not completed work.",
     "- For risky or external side effects, propose an approval flow instead of acting silently.",
     "- If Phase 1 finds no adoption work, explicitly say that Phase 2 is skipped and why.",
     "- After each Phase 2 item, call `workflow_progress` with `status: \"done\"` and observed `validation_evidence`, or `status: \"skipped\"` / `status: \"needs_attention\"` as appropriate. Add `needs_user: true` only when the user must decide or act; other unfinished or failed steps are retried automatically, up to 3 attempts per step.",
-    "- Before your final response, call `workflow_progress` with `workflow_id: \"version_adoption\"`, `phase: \"complete\"`, and a concise `summary`.",
+    "- Call `workflow_progress` with `workflow_id: \"version_adoption\"`, `phase: \"complete\"`, and a concise `summary` only when every item is validated or skipped; leave the workflow open while approval is pending.",
     "",
     "Constraints:",
     "- Do not create external issues, PRs, scheduled tasks, watcher updates, or credential changes unless the user explicitly approves.",

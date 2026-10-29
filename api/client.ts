@@ -1139,9 +1139,8 @@ export const api = {
   pending: {
     list: (status?: "pending" | "approved" | "denied" | "failed") =>
       request<PendingAction[]>(`/pending-actions${status ? `?status=${status}` : ""}`),
-    // ADR-0010: `extras` carries approval-time secret material (provider keys,
-    // integration credentials) that the agent never sees. The route forwards
-    // it to applyAction; the agent's pending_actions.payload stays clean.
+    // `extras` carries user-entered answers or approval-time secrets. Secrets
+    // remain private; ask_choice answers are returned by check_proposal.
     approve: (id: string, extras?: Record<string, unknown>) =>
       request<PendingAction>(
         `/pending-actions/${encodeURIComponent(id)}/approve`,

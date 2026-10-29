@@ -1263,7 +1263,11 @@ export interface PendingAction {
     | "start_oauth"
     | "set_provider_key"
     | "enable_integration"
-    | "upsert_harness";
+    | "upsert_harness"
+    | "write_skill"
+    | "ask_choice"
+    | "update_scheduled_task_prompt"
+    | "update_watcher_prompt";
   payload: Record<string, unknown>;
   reason: string | null;
   status: "pending" | "approved" | "denied" | "failed";

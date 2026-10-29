@@ -162,6 +162,18 @@ describe("runtime ownership", () => {
 });
 
 describe("prompt registry coverage", () => {
+  it("uses the same proposal tool for choices and approvals without claiming a choice executes changes", () => {
+    for (const { id, prompt } of variants) {
+      expect(prompt, id).toContain("ask_choice for questions");
+      expect(prompt.match(/Choice answers do not execute changes\./g), id).toHaveLength(1);
+    }
+    const adoption = staticPrompts.find((entry) => entry.id === "lifecycle.version-adoption")!;
+    expect(adoption.text).toContain("successful proposal_id");
+    expect(adoption.text).toContain("leave the workflow open while approval is pending");
+    expect(adoption.text).not.toContain("apply an edit only after the user approves it");
+    expect(promptsAffectedBy([adoption.source]).staticPromptIds).toContain(adoption.id);
+  });
+
   it("includes skill discovery and tool catalog changes in assembled prompt review", () => {
     for (const source of ["lib/skills/index.ts", "lib/skills/frontmatter.ts", "lib/tools/system/skills.ts"]) {
       expect(promptsAffectedBy([source]).systemPrompt).toBe(true);
@@ -271,7 +283,8 @@ describe("prompt registry coverage", () => {
     expect(config).toContain("execution_available: false");
     expect(config).toContain("write_skill");
     expect(config).toContain("full Markdown");
-    expect(config).toContain("design proposal");
+    expect(config).toContain("`ask_choice`");
+    expect(config).toContain("an answer alone does not apply or approve a change");
     const ops = text("jarela-operations");
     expect(ops).toContain("Safe mode always blocks scripts");
     expect(ops).toContain("Version text alone is not code identity");

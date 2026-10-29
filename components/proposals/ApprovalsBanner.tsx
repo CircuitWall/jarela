@@ -5,6 +5,8 @@ import { api } from "@/api/client";
 import type { IntegrationDefinition, PendingAction } from "@/api/types";
 import { pushToast } from "@/lib/ui/toasts";
 import { errorMessage } from "@/lib/utils/error";
+import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
+import { ChoiceFields, type ChoiceResponse } from "./ChoiceFields";
 
 const PAYLOAD_PREVIEW_CHARS = 6_000;
 const PAYLOAD_EXPANDED_PREVIEW_CHARS = 20_000;
@@ -168,6 +170,11 @@ function approvalToastTarget(action: PendingAction): { href: string; hrefLabel: 
       const id = resultId ?? str("id");
       return id ? { href: `?tab=harness&item=${encodeURIComponent(id)}`, hrefLabel: "Open in Harness →", title: "Harness saved" } : { href: "?tab=harness", hrefLabel: "Open Harness →", title: "Harness saved" };
     }
+    case "write_skill":
+      return { href: "?tab=skills", hrefLabel: "Open Skills →", title: "Skill saved" };
+    case "update_scheduled_task_prompt":
+    case "update_watcher_prompt":
+      return { href: "?tab=tasks", hrefLabel: "Open Tasks →", title: "Prompt updated" };
     default:
       return null;
   }
@@ -222,6 +229,8 @@ export function ApprovalsBanner({
   const [open, setOpen] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [secretForm, setSecretForm] = useState<SecretFormState | null>(null);
+  const [responses, setResponses] = useState<Record<string, ChoiceResponse>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   async function refresh() {
     try {
@@ -252,11 +261,18 @@ export function ApprovalsBanner({
   async function plainApprove(action: PendingAction) {
     markBusy(action.id, true);
     try {
-      await api.pending.approve(action.id);
+      const result = await api.pending.approve(action.id, action.kind === "ask_choice"
+        ? { ...responses[action.id] }
+        : undefined);
+      if (result.status !== "approved") {
+        throw new Error(typeof result.result === "string" ? result.result : "Proposal failed to apply; check its status.");
+      }
       pushApprovalToast(action);
       await refresh();
       onChange?.();
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      setErrors((previous) => ({ ...previous, [action.id]: errorMessage(e) }));
+    }
     finally { markBusy(action.id, false); }
   }
 
@@ -389,7 +405,9 @@ export function ApprovalsBanner({
           >
             <ShieldAlert size={13} className="text-amber-700 dark:text-amber-400 shrink-0" />
             <span className="font-medium">
-              {pending.length} {pending.length === 1 ? "change" : "changes"} awaiting your approval
+              {pending.some((action) => action.kind === "ask_choice")
+                ? `${pending.length} ${pending.length === 1 ? "request" : "requests"} awaiting your response`
+                : `${pending.length} ${pending.length === 1 ? "change" : "changes"} awaiting your approval`}
             </span>
             <span className="ml-auto opacity-70">{open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</span>
           </button>
@@ -398,27 +416,41 @@ export function ApprovalsBanner({
             <div className="border-t border-amber-700/40 divide-y divide-amber-700/30">
               {pending.map((a) => {
                 const busy = busyIds.has(a.id);
+                const choice = a.kind === "ask_choice" ? choiceProposalSchema.safeParse(a.payload) : null;
+                const response = responses[a.id] ?? { selected_values: [] };
+                const validResponse = choice?.success
+                  ? choiceResponseSchema(choice.data).safeParse(response).success
+                  : a.kind !== "ask_choice";
                 return (
                   <div key={a.id} className="px-3 py-2.5 text-xs">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-mono uppercase tracking-wide text-[10px] text-amber-700 dark:text-amber-400/80">{a.kind}</span>
                       {a.reason && <span className="text-amber-100/90">{a.reason}</span>}
                     </div>
-                    <PayloadPreview payload={a.payload} />
+                    {choice?.success ? (
+                      <ChoiceFields
+                        proposal={choice.data}
+                        response={response}
+                        onChange={(value) => setResponses((previous) => ({ ...previous, [a.id]: value }))}
+                        disabled={busy}
+                      />
+                    ) : <PayloadPreview payload={a.payload} />}
+                    {choice && !choice.success && <p role="alert">Invalid choice proposal. Dismiss it and request a new question.</p>}
+                    {errors[a.id] && <p role="alert" className="text-red-500">{errors[a.id]}</p>}
                     <div className="flex gap-1.5 justify-end">
                       <button
                         onClick={() => deny(a)}
                         disabled={busy}
                         className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-fg hover:border-fg-faint disabled:opacity-50"
                       >
-                        <X size={11} /> Deny
+                        <X size={11} /> {a.kind === "ask_choice" ? "Dismiss" : "Deny"}
                       </button>
                       <button
                         onClick={() => approve(a)}
-                        disabled={busy}
+                        disabled={busy || !validResponse}
                         className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-50"
                       >
-                        <Check size={11} /> {busy ? "Applying…" : "Approve"}
+                        <Check size={11} /> {busy ? "Submitting…" : a.kind === "ask_choice" ? "Submit response" : "Approve"}
                       </button>
                     </div>
                   </div>

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Unified skill and scheduled-task/watcher prompt approvals under
+  `propose_config_change`, with stale-content checks and verified application.
+  Version adoption now queues real approval controls rather than chat-only
+  confirmation requests.
+- Choice questions use the same proposal tool and review UI, with single/multiple
+  selections, optional text responses, and validated persisted answers.
+
 ## [3.1.0] - 2026-10-29
 
 ### Added
