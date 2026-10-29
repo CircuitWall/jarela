@@ -225,6 +225,9 @@ enter a non-secret response, then choose **Submit response**, or **Dismiss**.
 The answer is saved as `selected_values` and optional `text`, readable through
 `check_proposal`. Submitting an answer does not apply or approve a separate
 change. Existing change proposals retain their Approve/Deny controls.
+After a response is successfully saved, its answer inputs and Submit button
+disappear, leaving only a compact outcome card. The main chat input remains
+available. Selecting an option alone does not submit it or hide the form.
 
 After a response is saved in chat, the UI submits a continuation to the current
 agent using the normal chat queue, without consuming composer attachments or
