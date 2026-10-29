@@ -201,6 +201,16 @@ inspect its outcome before manually retrying.
 
 ## Work in chat
 
+**Unreleased interaction guidance:** Agents use chat for answers, progress,
+blockers, and open-ended questions, and the shared review UI for choice questions
+and supported approvals. They should not move the conversation to files, logs,
+notifications, or external messages. Explicitly requested or configured external
+delivery workflows remain supported. If the proposal UI/tool is unavailable or
+an action has no supported proposal kind, the agent explains the limitation and
+asks in chat rather than inventing a control or treating a choice as approval.
+Secrets belong only in credential controls, never chat or choice text. A queued
+request needs no duplicate confirmation in chat.
+
 ### Review proposed changes
 
 **Unreleased:** `propose_config_change` is the single proposal-creation tool for changes that
