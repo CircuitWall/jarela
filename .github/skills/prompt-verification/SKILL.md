@@ -70,7 +70,21 @@ found so far were single-sentence contradictions.
    - Procedures are ordered and numbered; prose lists of "also remember"
      rules get ignored under load.
 
-5. **Respect the cache boundaries.**
+5. **Check structure and size.**
+   - Use clear section headings, explicit instruction priorities, and ordered
+     procedures. Keep instructions distinct from contextual or untrusted data.
+   - Measure the fully assembled text, including injected sections, for every
+     affected variant. Record before/after character counts and token counts
+     when a tokenizer is available; label token estimates as estimates.
+   - Report the largest sections and explain meaningful growth. Enforce any
+     existing prompt-size budget; do not invent a universal token cap.
+   - Remove redundant, obsolete, or conflicting instructions. Prefer concise
+     canonical guidance and load task-specific details only when needed,
+     preserving essential safety rules, tool contracts, and cache boundaries.
+   - Include the structure findings, size delta, and any justified remaining
+     growth in the review summary.
+
+6. **Respect the cache boundaries.**
    The prompt is split by `CACHE_SHARED_SPLIT_SENTINEL` and
    `CACHE_SPLIT_SENTINEL`:
    - **Shared prefix** — identical for every agent. Cross-agent static text
@@ -83,13 +97,13 @@ found so far were single-sentence contradictions.
    Moving text across a sentinel is a performance change, not just a wording
    change. Say so in the PR.
 
-6. **Add an invariant, not a snapshot.**
+7. **Add an invariant, not a snapshot.**
    Snapshot tests on prompts churn on every wording tweak and get blindly
    accepted. Assert the property that must hold — "denied count excludes
    proxy-reachable tools", "every reason string appears somewhere" — so the
    test survives rewording and still catches the bug.
 
-7. **Validate.**
+8. **Validate.**
    ```powershell
    npx vitest run lib/agents/prompt-registry.test.ts
    npx vitest run lib/agents/prepare
