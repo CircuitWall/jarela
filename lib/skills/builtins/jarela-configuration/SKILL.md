@@ -110,6 +110,38 @@ For reusable workflows, persist them as skills:
   storing `skill-id/SKILL.md`. Writes always target the one repo flagged
   `writable`.
 
+## Shared Bundles And Optional Execution
+
+1. Keep a portable source bundle: `skill-id/SKILL.md` with YAML `name` matching
+   the folder, a specific quoted `description`, and explicit Input, Output and
+   Validation sections. Supporting scripts, references and assets stay relative
+   to that skill root, not the current working directory. Unknown host fields
+   must not silently become Jarela permissions.
+2. Discover `read_skill` options through `list_tools` with exact `names` and
+   `include_schema: true`. Use `inspect_execution: true` or `inspect_bundle: true`
+   only when the installed schema supports them. Inspection is not execution,
+   immutable snapshot creation, or proof of cross-host compatibility.
+3. If the catalog exposes `read_skill_resource`, use it to read bounded UTF-8
+   resources from the same selected bundle. It reads script source without
+   running it. Do not merge a missing resource from a lower-precedence repo or
+   use shell execution to bypass an unavailable/denied resource tool.
+4. `write_skill` requires the full Markdown `content`, never a patch or omitted
+   body. It does not write support files or import/export complete bundles.
+   Read the result back; instructions to run a script do not install a runner.
+5. If Privacy & security exposes Skill execution settings, only the local
+   unlocked user manages them. Never write policy or approval records through
+   memory, environment overrides, direct database edits or a configuration
+   proposal. Safe mode and execute capability remain authoritative.
+6. Where supported, persistent approval applies to the verified bundle checksum,
+   exact agent/workspace and grant limits, not a version label or skill name.
+   Different valid inputs may reuse approved code in that scope. Changed code,
+   scope or limits needs fresh approval; removed trust is revoked. Do not invent
+   a checksum or approval receipt. Settings saved is not evidence a runner exists.
+7. Check the actual execution tool and approval state before offering execution.
+   The experimental inspector reports `execution_available: false`; stop rather
+   than falling back to terminal execution. A reusable in-chat interaction panel
+   is a design proposal, not a currently available question/approval tool.
+
 ## Change Discipline
 
 - Explain what will change and why before proposing or applying persistent

@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicit input/output/validation contracts, bounded recovery and current
   configuration/source guidance. Include every built-in in prompt review;
   these remain prompt-only procedures, not an executable skill runtime.
+  Discover optional bundle resources/inspection and Security approval features
+  from installed schemas; distinguish checksum trust, execution and planned
+  interaction panels. Prevent self-approval or memory-based trust workarounds.
 - agents: Allocate turn output tokens from the current user-text size estimate
   with 4x headroom and strategy/reasoning baselines, bounded by explicit model
   settings, known model output limits, and context allocation.

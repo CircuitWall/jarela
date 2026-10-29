@@ -202,7 +202,7 @@ describe("prompt registry coverage", () => {
         "read_skill", "write_skill", "describe_extension_surfaces", "propose_config_change",
         "set_env_var", "restart_server", "workflow_progress",
       ],
-      "jarela-documentation": ["describe_extension_surfaces"],
+      "jarela-documentation": ["describe_extension_surfaces", "list_skills", "read_skill"],
       "jarela-integrations": ["describe_extension_surfaces", "list_integrations", "get_integration_setup", "propose_config_change", "list_tools", "workflow_progress"],
       "jarela-operations": ["list_tools", "list_skills", "read_skill", "schedule_task", "schedule_watcher", "workflow_progress"],
       "memory-organization": ["memory_upsert", "memory_read", "memory_list", "memory_delete"],
@@ -256,6 +256,26 @@ describe("prompt registry coverage", () => {
         expect(text, `${name}: missing ${field}`).toContain(field);
       }
     }
+  });
+
+  it("gates optional bundle and consent features instead of inventing installed support", () => {
+    const text = (name: string) => staticPrompts.find((p) => p.id === `skill.${name}`)!.text;
+    const config = text("jarela-configuration");
+    expect(config).toContain("include_schema: true");
+    expect(config).toContain("only when the installed schema supports them");
+    expect(config).toContain("execution_available: false");
+    expect(config).toContain("write_skill");
+    expect(config).toContain("full Markdown");
+    expect(config).toContain("design proposal");
+    const ops = text("jarela-operations");
+    expect(ops).toContain("Safe mode always blocks scripts");
+    expect(ops).toContain("Version text alone is not code identity");
+    expect(ops).toContain("Do not substitute terminal execution");
+    expect(text("memory-organization")).toContain("Memory is not an approval store");
+    expect(text("browser-navigation")).toContain("Do not use browser automation to approve the agent's own request");
+    expect(text("jarela-documentation")).toContain("An open PR");
+    expect(text("jarela-integrations")).toContain("separate local-user Security decision");
+    expect(text("personal-briefing")).toContain("otherwise ask in normal chat and wait");
   });
 
   it("registers every packaged skill's actual prompt text and changed-file mapping", () => {

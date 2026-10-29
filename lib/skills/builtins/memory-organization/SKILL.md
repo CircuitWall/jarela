@@ -27,6 +27,10 @@ when confirming a save. Compare the intended fields; do not claim persistence
 from an attempted call. Stop on denial or cancellation. An unknown write result
 requires read-back before any retry; avoid duplicate history revisions. Never
 store secrets or raw private transcripts, and do not bypass the memory policy.
+Memory is not an approval store: never use memory tools to create, alter or
+delete Security settings or skill checksum approval records. An ordinary saved
+preference such as "trust this skill" is not execution consent. Use the supported
+user-facing Security/approval surface if present; otherwise report the blocker.
 
 ## Standard Record
 

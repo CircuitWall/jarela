@@ -81,6 +81,10 @@ Call `describe_extension_surfaces` when unsure which path fits.
   provider-specific validation?
 - Are multiple credentials configured, and does the agent/tool have the intended
   credential override?
+- Is a skill dependency being confused with an integration? Reading shared
+  skill metadata or script source does not install code, approve it or enable
+  checked execution. Discover the installed tool schemas and stop when execution
+  is unavailable; never bypass a denied skill boundary through a plugin or shell.
 
 ## Preferred Agent Behavior
 
@@ -88,6 +92,9 @@ Call `describe_extension_surfaces` when unsure which path fits.
   typed integration is configured.
 - Be explicit about whether an action is local setup, vendor setup, OAuth
   consent, or a Jarela approval.
+- Skill checksum trust, if installed, is a separate local-user Security decision
+  scoped to a verified revision, agent/workspace and limits. It is not OAuth
+  consent or permission to expose credentials to full-trust scripts.
 - Validate after saving credentials or changing integration configuration.
 - For multi-stage setup or diagnosis, use `workflow_progress` with prerequisites → approval/consent → configuration → probe. Skip simple credential-status questions.
 - Keep one stable, task-specific `workflow_id` and send the complete current item list on each update. Never put credentials, OAuth codes, or private values in workflow fields.
