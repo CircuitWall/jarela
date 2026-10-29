@@ -709,10 +709,14 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const inputTokenEstimate = estimateTokens(contentText(content));
   const { overheadTokens: outputBudgetOverhead } = computeContextBudget({ context_window_tokens: runContextWindow, max_tokens: 256 });
   const contextOutputCeiling = Math.max(1, runContextWindow - inputTokenEstimate - outputBudgetOverhead);
+  const explicitOutputCeiling = typeof tierProviderParams.max_tokens === "number"
+    && Number.isFinite(tierProviderParams.max_tokens) && tierProviderParams.max_tokens > 0
+    ? tierProviderParams.max_tokens
+    : null;
   const hardOutputCeilings = [
     contextOutputCeiling,
-    tierProviderParams.max_tokens,
-    modelCfg ? getKnownMaxOutputTokens(modelCfg.provider, modelCfg.model_id) : null,
+    // The static catalog is a fallback, not an authority over explicit configuration.
+    explicitOutputCeiling ?? (modelCfg ? getKnownMaxOutputTokens(modelCfg.provider, modelCfg.model_id) : null),
   ].filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
   const adaptiveOutputTokenCap = resolveAdaptiveOutputTokenCap(
     inputTokenEstimate,
@@ -720,6 +724,16 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     Math.min(...hardOutputCeilings),
     baseProviderParams.thinking?.budget_tokens ?? 0,
   );
+  if (baseProviderParams.thinking?.type === "enabled"
+    && baseProviderParams.thinking.budget_tokens >= adaptiveOutputTokenCap) {
+    throw new RunThreadError(
+      400,
+      `The configured thinking budget (${baseProviderParams.thinking.budget_tokens}) must be lower than `
+        + `the effective output-token limit (${adaptiveOutputTokenCap}). Reduce the thinking budget `
+        + "or increase the model output/context limits.",
+      "invalid_thinking_budget",
+    );
+  }
   const providerParams = {
     ...tierProviderParams,
     context_window_tokens: runContextWindow,

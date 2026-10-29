@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
+import { buildAnthropicMessageBody } from "@/lib/providers/anthropic";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-auto-boundary-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -155,6 +156,56 @@ describe("prepareThreadRun auto context boundary", () => {
     const options = streamWithConfigMock.mock.calls[0][2] as StreamOptions;
     expect(options.agent_run_config?.max_output_tokens).toBe(823);
     expect(options.agent_run_config?.output_reserve_tokens).toBe(823);
+  });
+
+  it.each([
+    { name: "explicit output override", max: 16_000, context: 200_000, budget: 10_000, expected: 16_000 },
+    { name: "static fallback", max: undefined, context: 200_000, budget: 1_024, expected: 8_192 },
+    { name: "equal output and thinking limits", max: 10_000, context: 200_000, budget: 10_000, expected: null },
+    { name: "context ceiling below thinking budget", max: 16_000, context: 10_000, budget: 10_000, expected: null },
+    { name: "fallback below thinking budget", max: undefined, context: 200_000, budget: 10_000, expected: null },
+  ])("reconciles thinking allocation with $name", async ({ max, context, budget, expected }) => {
+    const thinking = { type: "enabled" as const, budget_tokens: budget };
+    const configName = `thinking-budget-${max ?? "auto"}-${context}-${budget}`;
+    upsertModelConfig(configName, "anthropic", "claude-sonnet-4-20250514", {
+      ...(max === undefined ? {} : { max_tokens: max }),
+      context_window_tokens: context,
+      thinking,
+    }, false);
+    upsertAgentConfig({
+      id: "thinking-budget",
+      name: "Thinking budget",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: configName,
+      usage_strategy: "balanced",
+    });
+    const thread = createThread("thinking-budget");
+    const preparation = prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "x".repeat(100),
+      context_profile: { include_warm: false, include_facts: false, include_recall: false },
+    });
+    if (expected === null) {
+      await expect(preparation).rejects.toMatchObject({
+        status: 400,
+        code: "invalid_thinking_budget",
+        message: expect.stringContaining("thinking budget"),
+      });
+      expect(streamWithConfigMock).not.toHaveBeenCalled();
+      return;
+    }
+    await preparation;
+    const options = streamWithConfigMock.mock.calls[0][2] as StreamOptions;
+    expect(options.agent_run_config?.max_output_tokens).toBe(expected);
+    expect(options.agent_run_config?.output_reserve_tokens).toBe(expected);
+    const body = buildAnthropicMessageBody("claude-sonnet-4-20250514", [
+      { role: "user", content: "Hello" },
+    ], { max_tokens: options.agent_run_config?.max_output_tokens, thinking }, []);
+    expect(body.max_tokens).toBe(expected);
+    expect(body.thinking).toEqual(thinking);
+    expect(body.max_tokens).toBeGreaterThan(budget);
   });
 
   async function runAfterIdle(agentId: string, hoursAgo: number, message: string): Promise<string> {
