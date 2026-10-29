@@ -231,7 +231,11 @@ available. Selecting an option alone does not submit it or hide the form.
 
 After a response is saved in chat, the UI submits a continuation to the current
 agent using the normal chat queue, without consuming composer attachments or
-interrupting an active run. The agent retrieves the recorded result before
+interrupting an active run. Internal continuation instructions are hidden from
+the transcript using the existing persisted message-visibility flag; the outcome
+card is the visible receipt. Queued continuations show a short friendly label
+and stay separate from ordinary user messages so those messages remain visible.
+The agent retrieves the recorded result before
 continuing the original task. If that chat submission fails, **Retry chat
 continuation** retries only the conversation, never the approved operation.
 Outcome cards remain visible until dismissed, including application failures.

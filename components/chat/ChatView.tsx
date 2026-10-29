@@ -199,7 +199,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       // the optimistic user bubble and re-queue this message so the
       // drain after the in-flight run's `done` resubmits cleanly.
       thread.setMessages((p) => p.filter((m) => m.id !== optId));
-      queueApiRef.current?.prepend(text, atts);
+      queueApiRef.current?.prepend(text, atts, options);
       return;
     }
     // Accepted means the server persisted the user row, so "Sending…" is no

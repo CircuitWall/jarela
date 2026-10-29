@@ -10,6 +10,7 @@ const action: PendingAction = {
   payload: {}, reason: null, status: "approved", result: { selected_values: ["brief"] },
   created_at: "2026-10-29T18:00:00Z", decided_at: "2026-10-29T18:01:00Z",
 };
+const hiddenOptions = { messageMetadata: { hidden_from_chat: true } };
 
 function setup(ready: boolean) {
   const queue: ChatQueueApi = {
@@ -30,8 +31,8 @@ describe("proposal response chat continuation", () => {
   it("starts a user turn when idle without consuming composer attachments", async () => {
     const { result, params } = setup(true);
     await act(() => result.current.handleProposalResolved(action));
-    expect(params.launchRun).toHaveBeenCalledWith(expect.stringContaining(action.id), []);
-    expect(params.launchRun).toHaveBeenCalledWith(expect.stringContaining("does not approve any separate change"), []);
+    expect(params.launchRun).toHaveBeenCalledWith(expect.stringContaining(action.id), [], hiddenOptions);
+    expect(params.launchRun).toHaveBeenCalledWith(expect.stringContaining("does not approve any separate change"), [], hiddenOptions);
     expect(params.setAttachments).not.toHaveBeenCalled();
     expect(params.stopStreaming).not.toHaveBeenCalled();
   });
@@ -39,7 +40,7 @@ describe("proposal response chat continuation", () => {
   it("queues a response without interrupting an active run", async () => {
     const { result, params, queue } = setup(false);
     await act(() => result.current.handleProposalResolved(action));
-    expect(queue.enqueue).toHaveBeenCalledWith(expect.stringContaining("check_proposal"), []);
+    expect(queue.enqueue).toHaveBeenCalledWith(expect.stringContaining("check_proposal"), [], hiddenOptions);
     expect(params.launchRun).not.toHaveBeenCalled();
     expect(params.stopStreaming).not.toHaveBeenCalled();
   });
@@ -50,11 +51,11 @@ describe("proposal response chat continuation", () => {
     expect(params.launchRun).toHaveBeenNthCalledWith(1,
       "Never mind the report; discuss the schedule instead.", params.attachments);
     await act(() => result.current.handleProposalResolved(action));
-    expect(params.launchRun).toHaveBeenNthCalledWith(2, expect.stringContaining(action.id), []);
+    expect(params.launchRun).toHaveBeenNthCalledWith(2, expect.stringContaining(action.id), [], hiddenOptions);
     expect(params.launchRun).toHaveBeenNthCalledWith(2,
-      expect.stringContaining("do not revive cancelled or superseded tasks"), []);
+      expect.stringContaining("do not revive cancelled or superseded tasks"), [], hiddenOptions);
     expect(params.launchRun).toHaveBeenNthCalledWith(2,
-      expect.stringContaining("original question/options, not the most recent question in chat"), []);
+      expect.stringContaining("original question/options, not the most recent question in chat"), [], hiddenOptions);
   });
 
   it("appends a delayed answer after already queued discussion without steering or aborting", async () => {
@@ -62,10 +63,21 @@ describe("proposal response chat continuation", () => {
     await act(() => result.current.handleQueue("Discuss the revised scope first."));
     await act(() => result.current.handleProposalResolved(action));
     expect(queue.enqueue).toHaveBeenNthCalledWith(1, "Discuss the revised scope first.", params.attachments);
-    expect(queue.enqueue).toHaveBeenNthCalledWith(2, expect.stringContaining(action.id), []);
+    expect(queue.enqueue).toHaveBeenNthCalledWith(2, expect.stringContaining(action.id), [], hiddenOptions);
     expect(queue.prepend).not.toHaveBeenCalled();
     expect(params.steerRun).not.toHaveBeenCalled();
     expect(params.stopStreaming).not.toHaveBeenCalled();
+  });
+
+  it("shows a friendly queue label instead of internal continuation instructions", () => {
+    const { result, queue, rerender } = setup(false);
+    queue.queue = [{
+      id: "internal-response", text: "Internal proposal instructions", attachments: [], options: hiddenOptions,
+    }, { id: "user-message", text: "My next question", attachments: [] }];
+    rerender();
+    expect(result.current.queuedMessages.map((message) => message.text)).toEqual([
+      "Continue after your response", "My next question",
+    ]);
   });
 
   it("does not continue the wrong agent's conversation", async () => {

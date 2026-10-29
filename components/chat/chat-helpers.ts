@@ -1,10 +1,16 @@
 "use client";
 import type { ContentPart, Message, SummaryTopicSegment, WarmChannelSummary } from "@/api/types";
 
+export interface ChatRunOptions {
+  quiet?: boolean;
+  messageMetadata?: Record<string, unknown>;
+}
+
 export interface QueuedMessage {
   id: string;
   text: string;
   attachments: ContentPart[];
+  options?: ChatRunOptions;
 }
 
 export interface CompactionOutcome {
