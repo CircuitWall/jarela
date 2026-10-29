@@ -112,6 +112,15 @@ For reusable workflows, persist them as skills:
 
 ## Shared Bundles And Optional Execution
 
+Author skills and workflows code-first: if a step can be done by code, it must
+be done by code, not simulated by the model. Reuse authorized typed tools and
+existing implementations before adding scripts. Put specified calculations,
+transformations, branching, iteration and checks in code; keep model steps for
+intent, ambiguity, judgment and explanation. Give each code step explicit
+inputs, outputs and executable validation. Validate machine-checkable properties
+of model-generated outputs before downstream use. Missing authorized execution
+support is a blocker, not a reason to bypass policy or claim execution occurred.
+
 1. Keep a portable source bundle: `skill-id/SKILL.md` with YAML `name` matching
    the folder, a specific quoted `description`, and explicit Input, Output and
    Validation sections. Supporting scripts, references and assets stay relative

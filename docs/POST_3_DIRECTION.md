@@ -47,6 +47,18 @@ tool, skill, workflow, MCP connection, or extension. An agent may help discover,
 author, test, and maintain that extension within the user's authorization.
 Neither installation nor agent authorship makes code trustworthy.
 
+### Code-first skills and workflows
+
+If a step can be done by code, it must be done by code. This governs execution,
+not just validation: reuse authorized typed tools or existing implementations
+before adding scripts for specified calculations, transformations, branching,
+iteration and checks. Model steps handle intent, ambiguity, judgment and
+explanation; validate their machine-checkable output properties before passing
+them downstream. Every code step needs explicit input, output and executable
+validation. Missing execution support or authorization is an explicit blocker,
+not permission to bypass policy or simulate successful execution in prose.
+This direction does not mean the proposed checked runner is already installed.
+
 This is a product hypothesis: the core is broad enough to support representative
 workflows, and remaining gaps can often be solved outside it. Repository history
 establishes introduced capabilities, not proven usability, reliability, demand,
