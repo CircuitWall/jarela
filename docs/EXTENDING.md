@@ -21,8 +21,9 @@ still executes with the trust of its host; capability labels are not a sandbox.
 The seven packaged playbooks under `lib/skills/builtins/` now share
 `name`/`description` frontmatter and explicit Input, Output and Validation
 contracts. Browser Navigation, Configuration, Documentation, Integrations,
-Operations, Memory Organization and Personal Briefing remain prompt-only
-guidance. They neither grant permissions nor automatically execute a workflow.
+Operations remain tool-guided procedures. Memory Organization and Personal
+Briefing now include portable scripts for deterministic substeps (below).
+None grants permissions or automatically executes a complete workflow.
 User repositories and built-in read-only/override behavior are unchanged.
 
 All seven are inventoried in `lib/agents/prompt-registry.ts`. Changing a packaged
@@ -40,10 +41,48 @@ npx vitest run lib/skills lib/agents/prompt-registry.test.ts lib/agents/prepare
 Tests check discovery, contracts, named tools, JSON examples against real
 schemas, and Personal Briefing's six deterministic fixtures. They do not prove
 that a model follows the procedure or that a live account/provider works.
-Only Personal Briefing currently has executable validator fixtures; adding
-fictional success fixtures for the other procedural skills would not establish
-workflow correctness. No JavaScript runner, artifact approval or milestone
-completion is introduced by this maintenance work.
+Memory Organization also has synthetic cleanup-planning fixtures. Adding
+fictional success fixtures for other procedures would not establish workflow
+correctness. No general JavaScript runner or milestone completion is introduced.
+
+### Script-backed built-in steps
+
+| Skill | Portable implementation | Jarela entry point |
+| --- | --- | --- |
+| Personal Briefing | `personal-briefing/scripts/validate.mjs` validates bounded structure, reference membership and source gaps | Existing read-only `validate_personal_briefing` tool imports the same function |
+| Memory Organization | `memory-organization/scripts/plan-cleanup.mjs` computes expired active facts and exact duplicate candidates at explicit UTC time | New read-only `plan_memory_cleanup` tool imports the same function |
+
+Both bundles include `scripts/run.mjs`: an authorized external host can invoke
+`node <skill-root>/scripts/run.mjs`, send one JSON input on stdin and close stdin.
+No npm dependencies, Jarela-private imports, filesystem scans, network or
+credentials are required. Input is bounded to 64 KiB of valid UTF-8. Stdout is
+one JSON result; exit 0 means `ok: true`, exit 1 means field validation failed
+(`ok: false` with issues) or a transport error (stderr, no result). Copy each
+whole skill directory, not just its Markdown. Tests copy bundles outside the
+app and compare standalone results with typed-tool results; this is portability
+evidence under Node, not Claude Code or other-host certification.
+
+The memory tool accepts at most 100 projections from retrieved `facts` records:
+`key`, `kind`, `subject`, `content`, `status`, `expires_at`, plus explicit UTC
+`now` at the top level. It does not retrieve memory itself. Archived entries are
+excluded; expiry at or before `now` is reported. Duplicate candidates match
+trimmed kind/subject/content and the exact expiry string. Provenance, confidence,
+tags and history may still differ, so review full records before a separately
+authorized archival. No merging, writing, deletion or trust changes occur.
+
+Jarela invokes only these fixed reviewed implementations in-process through
+normal tool permissions. It never imports scripts from a user repository or
+substitutes overridden bundle source into the tool. A user override changes
+instructions, not built-in executable code. The optional checked skill runner
+remains unavailable; do not use terminal execution to bypass that boundary.
+The tiny CLI adapters are intentionally self-contained in each bundle so either
+directory can be shared alone; the substantive algorithm has one implementation
+shared with its Jarela tool, not a second tool-specific copy.
+
+Browser Navigation, Configuration, Documentation, Integrations and Operations
+retain their existing typed tools and model judgment: no wrapper scripts are
+added merely to duplicate browser actions, credential probes, settings writes
+or document retrieval. Neither converted skill is a fully automated workflow.
 
 ## Table of contents
 

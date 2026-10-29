@@ -205,7 +205,7 @@ describe("prompt registry coverage", () => {
       "jarela-documentation": ["describe_extension_surfaces", "list_skills", "read_skill"],
       "jarela-integrations": ["describe_extension_surfaces", "list_integrations", "get_integration_setup", "propose_config_change", "list_tools", "workflow_progress"],
       "jarela-operations": ["list_tools", "list_skills", "read_skill", "schedule_task", "schedule_watcher", "workflow_progress"],
-      "memory-organization": ["memory_upsert", "memory_read", "memory_list", "memory_delete"],
+      "memory-organization": ["memory_upsert", "memory_read", "memory_list", "memory_delete", "list_tools", "plan_memory_cleanup"],
       "personal-briefing": ["list_tools", "validate_personal_briefing"],
     };
     const known = new Set((await getAllToolCatalogAsync()).map((tool) => tool.name));
@@ -229,11 +229,13 @@ describe("prompt registry coverage", () => {
       return [...text.matchAll(/```json\r?\n([\s\S]*?)```/g)].map((match) => JSON.parse(match[1]));
     }
     const memoryExamples = examples("memory-organization");
-    expect(memoryExamples).toHaveLength(1);
+    expect(memoryExamples).toHaveLength(2);
     expect(StructuredMemoryInputSchema.safeParse(memoryExamples[0]).success).toBe(true);
     expect(memoryUpsertTool.schema.safeParse({
       namespace: "facts", key: "example-preference", record: memoryExamples[0],
     }).success).toBe(true);
+    const { planMemoryCleanupTool } = await import("@/lib/tools/general/plan-memory-cleanup");
+    expect(planMemoryCleanupTool.schema.safeParse(memoryExamples[1]).success).toBe(true);
     const browserExamples = examples("browser-navigation");
     expect(browserExamples).toHaveLength(2);
     expect(memoryWriteTool.schema.safeParse(browserExamples[1]).success).toBe(true);

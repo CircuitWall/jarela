@@ -1,0 +1,12 @@
+{
+  "name": "Repeated fact keys cannot identify distinct cleanup candidates",
+  "tool": "plan_memory_cleanup",
+  "input": {
+    "now": "2026-10-29T00:00:00Z",
+    "entries": [
+      { "key": "same", "kind": "fact", "subject": "Project", "content": "Use deterministic checks.", "status": "active", "expires_at": null },
+      { "key": "same", "kind": "fact", "subject": "Project", "content": "Different content.", "status": "active", "expires_at": null }
+    ]
+  },
+  "expect": { "ok": false, "issue_paths": ["entries.1.key"] }
+}

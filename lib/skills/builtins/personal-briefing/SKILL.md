@@ -8,6 +8,8 @@ description: "Use when: preparing a personal daily briefing from the owner's con
 Prepare a personal briefing using read-only retrieval, prompt-based drafting,
 and the deterministic `validate_personal_briefing` tool. This is a pilot, not
 an autonomous workflow engine or a guarantee of factual accuracy.
+Its validation step is backed by the portable, dependency-free
+`scripts/validate.mjs`; the Jarela tool calls that same implementation.
 
 ## Input
 
@@ -75,6 +77,22 @@ permission to broaden access or replay an external write.
    available; otherwise ask in normal chat and wait. Do not invent interactive
    panels, durable pause/resume or approvals. A briefing response does not approve
    a skill revision, a workflow run, or expanded access to another source.
+
+## Portable script
+
+On a host that authorizes Node script execution, run
+`node <skill-root>/scripts/run.mjs`. Send the procedure's JSON object on stdin
+and close stdin. Paths are relative to the bundle, not the current directory.
+The entry point imports only its sibling validator and needs no Jarela packages,
+credentials or network. Input is bounded to 64 KiB of valid UTF-8.
+Stdout contains one JSON result; exit 0 means a structural pass. Exit 1 means
+validation failure (JSON `ok: false` with issues) or malformed/oversized transport
+input (diagnostic on stderr, no success result).
+
+Inside Jarela, use `validate_personal_briefing`; do not launch the script via
+terminal as a substitute for the unavailable checked skill runner. This fixed
+built-in tool executes reviewed code in-process, not arbitrary skill source.
+Reading/copying the bundle grants no execution approval in any host.
 
 ## Validation evidence
 
