@@ -9,6 +9,18 @@ import { githubCopilotProvider, isCopilotClaudeModel } from "./github-copilot";
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("preserves max_tokens termination for non-streamed Copilot Claude tool calls", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    id: "synthetic-message", type: "message", role: "assistant", model: "claude-sonnet-4",
+    content: [{ type: "tool_use", id: "t1", name: "write_skill", input: { id: "example" } }],
+    stop_reason: "max_tokens", stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
+  }), { headers: { "Content-Type": "application/json" } })));
+  const result = await githubCopilotProvider.invoke!("claude-sonnet-4", [{ role: "user", content: "Synthetic" }], {
+    copilot_session_token: "synthetic-session-token",
+  }, []);
+  expect(result.stop_reason).toBe("length");
+});
+
 describe("isCopilotClaudeModel", () => {
   it.each([
     "claude-3.5-sonnet",

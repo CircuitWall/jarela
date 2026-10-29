@@ -13,6 +13,18 @@ import {
 
 afterEach(() => vi.unstubAllGlobals());
 
+it("preserves max_tokens termination for non-streamed tool calls", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    id: "synthetic-message", type: "message", role: "assistant", model: "claude-sonnet-4",
+    content: [{ type: "tool_use", id: "t1", name: "write_skill", input: { id: "example" } }],
+    stop_reason: "max_tokens", stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
+  }), { headers: { "Content-Type": "application/json" } })));
+  const result = await anthropicProvider.invoke!("claude-sonnet-4", [{ role: "user", content: "Synthetic" }], {
+    api_key: "synthetic-key",
+  }, []);
+  expect(result.stop_reason).toBe("length");
+});
+
 describe("withSystemCacheControl", () => {
   it("wraps non-empty text in a TextBlockParam with ephemeral cache_control", () => {
     expect(withSystemCacheControl("you are helpful")).toEqual([

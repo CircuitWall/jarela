@@ -56,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- tools: Prevent incomplete provider tool JSON from being silently repaired
+  into missing `write_skill`/`file_write` content or empty `invoke_tool` arguments.
+  Validate full streamed batches before dispatch, reject malformed non-streamed
+  OpenAI-compatible arguments, and preserve otherwise-lost truncation reasons.
+  Verify large direct and proxied bodies through the actual agent/tool path.
 - agents: Preserve explicit output-token limits over static catalog fallbacks
   and reject thinking budgets that cannot fit the effective output allocation
   before requesting a model response.
