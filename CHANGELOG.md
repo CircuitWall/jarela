@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-29
+
+### Added
+
+- skills: Add inert execution manifest inspection
+- skills: Add run-scoped execution consent contract
+- skills: Add portable bundle metadata and resource reads
+- security: Add skill execution consent settings
+- security: Add persistent skill checksum approval records
+
+### Fixed
+
+- navigation: Add missing tabs to deep-link parser
+- http: Align byte limits across response body paths
+- text: Avoid splitting surrogate pairs when truncating
+- limits: Configure more forgiving resource ceilings
+- agents: Add adaptive budgets and truncated tool call guards
+- skills: Update built-in workflow contracts
+- skills: Align built-in guidance and catalog e2e assertions
+- agents: Require code-first skill and workflow steps
+
+### Changed
+
+- direction: Add post-3 extension-first roadmap
+- checkpoint: Use one parent config mapper
+- direction: Add minor-upgrade plan and w0 baseline
+- direction: Group related work into three milestones
+- skills: Add shared-bundle portability requirements
+
 ### Added
 
 - skills: Add an internal, tested run-scoped consent contract binding one-use
