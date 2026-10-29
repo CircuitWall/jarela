@@ -87,6 +87,16 @@ describe("artifact proposals through the existing approval path", () => {
     }
   });
 
+  it("rejects a disabled writable repo before creating a skill file", async () => {
+    updateSkillRepo(repo.id, { enabled: false });
+    try {
+      expect(await propose("write_skill", {
+        id: "disabled-write", expected_content: null, content: "# Proposed",
+      })).toMatchObject({ error_code: "invalid_proposal_payload", error: expect.stringContaining("disabled") });
+    } finally { updateSkillRepo(repo.id, { enabled: true }); }
+    expect(getSkill("disabled-write")).toBeNull();
+  });
+
   it("changes only the scheduled prompt and preserves schedule, target and enabled state", async () => {
     const before = createScheduledTask({
       agent_id: "artifact-agent", prompt: "Before", kind: "cron", schedule: "0 9 * * *", silent: true,

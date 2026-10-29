@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Choice questions use the same proposal tool and review UI, with single/multiple
   selections, optional text responses, and validated persisted answers.
 
+### Fixed
+
+- Resume chat after proposal responses without repeating approved operations;
+  retain visible outcomes across polling, expose complete artifact previews,
+  and return consistent decoded proposal payloads/results from API endpoints.
+
 ## [3.1.0] - 2026-10-29
 
 ### Added

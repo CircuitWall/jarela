@@ -27,8 +27,8 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-async function openCard() {
-  render(<ApprovalsBanner agentId="agent-example" />);
+async function openCard(onResolved?: (action: PendingAction) => Promise<void>) {
+  render(<ApprovalsBanner agentId="agent-example" onResolved={onResolved} />);
   fireEvent.click(await screen.findByRole("button", { name: /awaiting your (approval|response)/ }));
 }
 
@@ -68,7 +68,8 @@ describe("shared choice and approval review card", () => {
       payload: { id: "example", expected_content: "# Before", content: "# After" },
     }]);
     await openCard();
-    expect(screen.getByText(/# Before/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Review full before/after text"));
+    expect((screen.getByRole("textbox", { name: "Before" }) as HTMLTextAreaElement).value).toBe("# Before");
     expect(screen.getByRole("button", { name: "Deny" })).toBeTruthy();
     expect(screen.queryByRole("radio")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
@@ -81,5 +82,53 @@ describe("shared choice and approval review card", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Brief" }));
     fireEvent.click(screen.getByRole("button", { name: "Submit response" }));
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Content changed");
+  });
+
+  it("retains a terminal error across polls without allowing another approval attempt", async () => {
+    const onResolved = vi.fn();
+    pending.approve.mockResolvedValue({ ...action, status: "failed", result: "Stale content" });
+    await openCard(onResolved);
+    fireEvent.click(screen.getByRole("radio", { name: "Brief" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit response" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Stale content");
+    pending.list.mockResolvedValue([]);
+    fireEvent(document, new Event("visibilitychange"));
+    await waitFor(() => expect(pending.list).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("alert").textContent).toBe("Stale content");
+    expect(screen.queryByRole("button", { name: "Submit response" })).toBeNull();
+    expect(onResolved).not.toHaveBeenCalled();
+  });
+
+  it("continues after saving an answer and retries only chat if continuation fails", async () => {
+    const onResolved = vi.fn().mockRejectedValueOnce(new Error("Chat unavailable")).mockResolvedValue(undefined);
+    await openCard(onResolved);
+    fireEvent.click(screen.getByRole("radio", { name: "Brief" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit response" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("Outcome saved"));
+    expect(onResolved).toHaveBeenCalledWith(expect.objectContaining({ id: action.id, status: "approved" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry chat continuation" }));
+    await waitFor(() => expect(onResolved).toHaveBeenCalledTimes(2));
+    expect(pending.approve).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("surfaces dismiss failures without pretending the question was dismissed", async () => {
+    pending.deny.mockRejectedValue(new Error("Network unavailable"));
+    await openCard();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Network unavailable");
+    expect(screen.queryByText("Question dismissed")).toBeNull();
+  });
+
+  it("lets the user review all long artifact text, including beyond the old preview limits", async () => {
+    const before = "# Before\n" + "b".repeat(22000) + "BEFORE END";
+    const after = "# After\n" + "a".repeat(22000) + "AFTER END";
+    pending.list.mockResolvedValue([{ ...action, kind: "write_skill", payload: {
+      id: "long-skill", expected_content: before, content: after,
+    } }]);
+    await openCard();
+    fireEvent.click(screen.getByText("Review full before/after text"));
+    expect((screen.getByRole("textbox", { name: "Before" }) as HTMLTextAreaElement).value).toBe(before);
+    expect((screen.getByRole("textbox", { name: "After" }) as HTMLTextAreaElement).value).toBe(after);
   });
 });

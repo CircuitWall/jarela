@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPendingAction, setActionStatus } from "@/lib/stores/pending-actions";
 import { getSystemOperation } from "@/lib/stores/system-signals";
+import { pendingActionToResponse } from "@/lib/api/serializers";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,5 +16,5 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "approval application is already in progress; verify its outcome" }, { status: 409 });
   }
   const final = setActionStatus(id, "denied", "user denied");
-  return NextResponse.json(final);
+  return NextResponse.json(final ? pendingActionToResponse(final) : null);
 }

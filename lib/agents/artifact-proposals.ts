@@ -31,6 +31,7 @@ export function validateArtifactProposal(kind: ArtifactProposalKind, payload: un
   if (kind === "write_skill") {
     if (!/^[\p{L}\p{N}\p{M}_-]+$/u.test(id)) return "Invalid skill ID";
     if (!getSkillsDir()) return "No writable skill repo is configured";
+    if (!getWritableSkillRepo()?.enabled) return "Writable skill repository is disabled; enable it before proposing edits";
     if (writable_repo_id !== undefined && writable_repo_id !== getWritableSkillRepo()?.id) {
       return "Writable skill repository changed; create a new proposal";
     }

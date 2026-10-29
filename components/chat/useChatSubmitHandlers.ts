@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from "react";
-import type { ContentPart } from "@/api/types";
+import type { ContentPart, PendingAction } from "@/api/types";
 import type { AgentConfig } from "@/api/types";
 import { type ChatQueueApi } from "./useChatQueue";
+import { buildProposalResponseMessage } from "@/lib/proposals/response-message";
 
 interface Params {
   agentId: string | null;
@@ -83,6 +84,13 @@ export function useChatSubmitHandlers({
     queue.retry(msg, atts);
   }, [agentId, queue]);
 
+  const handleProposalResolved = useCallback(async (action: PendingAction) => {
+    if (!agentId || action.agent_id !== agentId) throw new Error("Proposal belongs to a different agent");
+    const message = buildProposalResponseMessage(action);
+    if (queue.isReady()) { await launchRun(message, []); return; }
+    queue.enqueue(message, []);
+  }, [agentId, launchRun, queue]);
+
   // Shallow projection so the queued-bubble subtree doesn't re-reconcile
   // on every streaming delta.
   const queuedMessages = useMemo(
@@ -95,6 +103,7 @@ export function useChatSubmitHandlers({
     handleQueue,
     handleVoiceTranscript,
     handleRetryMessage,
+    handleProposalResolved,
     queuedMessages,
   };
 }

@@ -300,6 +300,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     handleQueue,
     handleVoiceTranscript,
     handleRetryMessage,
+    handleProposalResolved,
     queuedMessages,
   } = useChatSubmitHandlers({
     agentId,
@@ -406,7 +407,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       />
 
       <div ref={controlsRef} className="chat-controls-overlay absolute inset-x-0 bottom-0 z-30">
-        <ApprovalsBanner agentId={agentId} />
+        <ApprovalsBanner agentId={agentId} onResolved={handleProposalResolved} />
         <AuthErrorBanner authError={sse.authError} onDismiss={sse.dismissAuthError} />
 
         <InputBar

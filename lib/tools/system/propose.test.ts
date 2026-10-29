@@ -49,7 +49,7 @@ describe("propose_config_change", () => {
     expect(out.status).toBe("pending");
     const row = getPendingAction(String(out.proposal_id))!;
     expect(row.kind).toBe("ask_choice");
-    expect(JSON.parse(row.payload)).toEqual(payload);
+    expect(JSON.parse(row.payload)).toEqual({ ...payload, multiple: false, allow_text: false });
     const { applyAction } = await import("@/lib/agents/proposals");
     expect(await applyAction("ask_choice", payload, { selected_values: ["invented"] })).toMatchObject({ ok: false });
     const result = await applyAction("ask_choice", payload, { selected_values: ["full"] });

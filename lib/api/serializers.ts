@@ -10,6 +10,15 @@ import type { McpServerRow } from "@/lib/stores/mcp-servers";
 import type { MessageRow } from "@/lib/stores/threads";
 import type { MessageUsageRow } from "@/lib/stores/message-usage";
 import { parseJsonSafe } from "@/lib/utils/json";
+import type { PendingActionRow } from "@/lib/stores/pending-actions";
+
+export function pendingActionToResponse(row: PendingActionRow) {
+  return {
+    ...row,
+    payload: JSON.parse(row.payload),
+    result: row.result ? parseJsonSafe<unknown>(row.result, row.result) : null,
+  };
+}
 
 export function agentToResponse(a: AgentConfigRow) {
   return {
