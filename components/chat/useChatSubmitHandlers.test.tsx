@@ -44,6 +44,30 @@ describe("proposal response chat continuation", () => {
     expect(params.stopStreaming).not.toHaveBeenCalled();
   });
 
+  it("allows further discussion before a late answer starts a separate contextual turn", async () => {
+    const { result, params } = setup(true);
+    await act(() => result.current.handleSubmit("Never mind the report; discuss the schedule instead."));
+    expect(params.launchRun).toHaveBeenNthCalledWith(1,
+      "Never mind the report; discuss the schedule instead.", params.attachments);
+    await act(() => result.current.handleProposalResolved(action));
+    expect(params.launchRun).toHaveBeenNthCalledWith(2, expect.stringContaining(action.id), []);
+    expect(params.launchRun).toHaveBeenNthCalledWith(2,
+      expect.stringContaining("do not revive cancelled or superseded tasks"), []);
+    expect(params.launchRun).toHaveBeenNthCalledWith(2,
+      expect.stringContaining("original question/options, not the most recent question in chat"), []);
+  });
+
+  it("appends a delayed answer after already queued discussion without steering or aborting", async () => {
+    const { result, params, queue } = setup(false);
+    await act(() => result.current.handleQueue("Discuss the revised scope first."));
+    await act(() => result.current.handleProposalResolved(action));
+    expect(queue.enqueue).toHaveBeenNthCalledWith(1, "Discuss the revised scope first.", params.attachments);
+    expect(queue.enqueue).toHaveBeenNthCalledWith(2, expect.stringContaining(action.id), []);
+    expect(queue.prepend).not.toHaveBeenCalled();
+    expect(params.steerRun).not.toHaveBeenCalled();
+    expect(params.stopStreaming).not.toHaveBeenCalled();
+  });
+
   it("does not continue the wrong agent's conversation", async () => {
     const { result, params, queue } = setup(true);
     await expect(result.current.handleProposalResolved({ ...action, agent_id: "other-agent" })).rejects.toThrow("different agent");

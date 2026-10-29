@@ -175,13 +175,16 @@ export const checkProposalTool = tool(
       kind: row.kind,
       status: row.status,
       result: row.result ? safeParse(row.result) : null,
+      ...(row.kind === "ask_choice"
+        ? { choice: choiceProposalSchema.parse(safeParse(row.payload)), reason: row.reason }
+        : {}),
       created_at: row.created_at,
       decided_at: row.decided_at,
     });
   },
   {
     name: "check_proposal",
-    description: "Check a submitted change or choice proposal by id. Approved ask_choice results contain selected_values and optional text; an answer does not itself execute or approve another change.",
+    description: "Check a submitted change or choice proposal by id. For ask_choice, returns the original choice question/options and reason alongside selected_values and optional text in approved results, even after intervening chat. Reconcile late answers with newer instructions; an answer does not itself execute or approve another change.",
     schema: z.object({
       proposal_id: z.string(),
     }),

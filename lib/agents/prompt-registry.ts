@@ -70,7 +70,7 @@ export function listStaticPrompts(): StaticPrompt[] {
     {
       id: "interaction.proposal-response",
       source: "lib/proposals/response-message.ts",
-      purpose: "Continues the user's original chat task after a saved proposal response, without repeating a change or broadening consent.",
+      purpose: "Reconciles saved proposal responses with original questions and newer chat, without reviving cancelled work, repeating a change or broadening consent.",
       text: buildProposalResponseMessage({ id: "example-proposal", kind: "ask_choice", status: "approved" }),
     },
     {

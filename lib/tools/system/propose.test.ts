@@ -56,7 +56,11 @@ describe("propose_config_change", () => {
     expect(result).toEqual({ ok: true, detail: { selected_values: ["full"] } });
     setActionStatus(row.id, "approved", result.detail);
     const status = parse(await checkProposalTool.invoke({ proposal_id: row.id }));
-    expect(status).toMatchObject({ status: "approved", result: { selected_values: ["full"] } });
+    expect(status).toMatchObject({
+      status: "approved", result: { selected_values: ["full"] },
+      choice: { ...payload, multiple: false, allow_text: false },
+      reason: "A format decision is needed", created_at: row.created_at,
+    });
   });
 
   it("rejects malformed questions without creating a proposal", async () => {
@@ -67,6 +71,35 @@ describe("propose_config_change", () => {
     ));
     expect(out.error_code).toBe("invalid_proposal_payload");
     expect(out.proposal_id).toBeUndefined();
+  });
+
+  it("retrieves a late answer's original question even when a newer question exists", async () => {
+    const thread = createThread("late-choice-agent");
+    const original = {
+      question: "Which report format?",
+      options: [{ value: "brief", label: "Brief report" }, { value: "full", label: "Full report" }],
+    };
+    const later = {
+      question: "Which meeting duration?",
+      options: [{ value: "brief", label: "15 minutes" }, { value: "full", label: "60 minutes" }],
+    };
+    const config = { configurable: { thread_id: thread.thread_id } };
+    const first = parse(await proposeConfigChangeTool.invoke(
+      { kind: "ask_choice", payload: original, reason: "Report formatting" }, config,
+    ));
+    const second = parse(await proposeConfigChangeTool.invoke(
+      { kind: "ask_choice", payload: later, reason: "Meeting duration" }, config,
+    ));
+    setActionStatus(String(first.proposal_id), "approved", { selected_values: ["full"] });
+    const saved = parse(await checkProposalTool.invoke({ proposal_id: String(first.proposal_id) }));
+    expect(saved).toMatchObject({
+      choice: original, reason: "Report formatting", result: { selected_values: ["full"] },
+    });
+    expect(getPendingAction(String(second.proposal_id))?.status).toBe("pending");
+    setActionStatus(String(second.proposal_id), "denied", null);
+    expect(parse(await checkProposalTool.invoke({ proposal_id: String(second.proposal_id) }))).toMatchObject({
+      status: "denied", choice: later, result: null,
+    });
   });
 
   it("queues a proposal, returns proposal_id, and publishes a user-facing notification", async () => {

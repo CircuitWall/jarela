@@ -235,6 +235,17 @@ Outcome cards remain visible until dismissed, including application failures.
 This is not a durable pause/resume engine: closing the page between saving and
 continuing may require a new chat turn; the saved proposal outcome is retained.
 
+Pending questions do not block further chat. An unanswered card remains available
+while the conversation continues; a late response is linked by proposal ID, not
+treated as an answer to the newest chat question. `check_proposal` returns the
+original choice question, options, reason, timestamps and saved answer. The
+continuation instructs the agent to reconcile it with newer instructions, not
+revive cancelled or superseded work, and clarify in chat if relevance is unclear.
+During an active run the response appends to the normal queue without interrupting
+it or jumping ahead of queued discussion. Dismissing a question does not select
+an option or automatically ask it again. These are contextual guidance and queue
+semantics, not automatic detection or cancellation of obsolete proposals.
+
 Alongside agent and integration settings, the tool supports `write_skill`,
 `update_scheduled_task_prompt`, and `update_watcher_prompt`. These accept
 `{id, expected_content, content}`: exact current text and the full replacement.

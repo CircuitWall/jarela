@@ -162,6 +162,15 @@ describe("runtime ownership", () => {
 });
 
 describe("prompt registry coverage", () => {
+  it("reconciles delayed proposal responses with newer instructions rather than blindly resuming", () => {
+    const response = staticPrompts.find((entry) => entry.id === "interaction.proposal-response")!;
+    expect(response.text).toContain("original question/options, not the most recent question in chat");
+    expect(response.text).toContain("intervening chat and the user's latest instructions");
+    expect(response.text).toContain("do not revive cancelled or superseded tasks");
+    expect(response.text).toContain("A denied/dismissed request is not an answer");
+    expect(response.text).toContain("a choice response does not approve any separate change");
+  });
+
   it("uses the same proposal tool for choices and approvals without claiming a choice executes changes", () => {
     for (const { id, prompt } of variants) {
       expect(prompt, id).toContain("ask_choice for questions");
