@@ -36,6 +36,9 @@ or include secrets in external search queries.
 3. Use `describe_extension_surfaces` for any extension or customization request.
 4. Read the narrowest relevant documents, then act.
 5. Prefer configuration, skill, or harness changes over ad-hoc instruction sprawl when a task is reusable.
+6. Verify optional tool schemas and the running installation before using
+   Unreleased documentation. An open PR, approved ADR direction or passing
+   source test does not establish that the user's installation has the feature.
 
 ## Local-first retrieval order
 
@@ -70,6 +73,15 @@ Use the extension catalog to map the ask to the correct layer:
 - Agent harness -> `describe_extension_surfaces` + `lib/agents/harness/presets.ts`
 - Integration manifest -> `describe_extension_surfaces` + `lib/integrations/` and relevant docs
 - App branding -> `describe_extension_surfaces` + env-based app config
+- Shared skill bundle -> `list_skills`, `read_skill` and the installed schemas;
+  inspect optional metadata/resources only where supported. `SKILL.md` source
+  sharing does not certify identical execution semantics in another host.
+- Checked skill execution/consent -> `docs/adr/0112-checked-javascript-skill-execution.md`
+  and installed runtime/Privacy & security surfaces. Separate inert inspection,
+  stored checksum approval and an actual runner; none proves the next exists.
+- In-chat interaction panel -> distinguish a design proposal from implemented
+  approval or question tools. Do not claim arbitrary forms, durable pause/resume
+  or workflow consent are available without an installed validated contract.
 
 ## Good practice
 

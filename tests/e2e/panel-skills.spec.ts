@@ -18,12 +18,18 @@ test("Skills tab mounts under Tools with header + repo add affordance", async ({
   await expect(page.getByPlaceholder("Pick or paste an absolute path")).toBeVisible();
 });
 
-test("built-in skills list with a Clone affordance", async ({ page }) => {
+test("built-in skills list with frontmatter names and a Clone affordance", async ({ page, request }) => {
   // Other spec files (and other projects running this same file in
   // parallel) share one E2E server/DB, so a writable repo may already
   // exist by the time this runs — assert the affordances exist, not their
   // enabled state, which depends on that ambient repo config.
-  await expect(page.getByText("Jarela Configuration")).toBeVisible({ timeout: 15_000 });
+  const res = await request.get("/api/v1/skills");
+  expect(res.ok()).toBe(true);
+  const body = await res.json();
+  expect(body.skills).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: "jarela-configuration", name: "jarela-configuration", source: "builtin" }),
+  ]));
+  await expect(page.getByText("jarela-configuration", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "New", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Clone/ }).first()).toBeVisible();
 });
