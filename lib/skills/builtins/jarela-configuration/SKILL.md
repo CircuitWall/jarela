@@ -57,6 +57,12 @@ Use `propose_config_change` when changing a different agent or changing
 non-instruction configuration such as tools, history window, harness, MCP, or
 provider setup.
 
+For choices or consent, inspect `propose_config_change` once: use `ask_choice`
+for questions and the matching change kind for approvals when its schema
+supports them. Both use the same review UI. Skill and task/watcher prompt
+proposals use `{id, expected_content, content}`. Wait for `check_proposal`,
+then verify the outcome; an answer alone does not apply or approve a change.
+
 For reusable workflows, persist them as skills:
 
 - Read first: `list_skills`, `read_skill`
@@ -148,8 +154,8 @@ support is a blocker, not a reason to bypass policy or claim execution occurred.
    a checksum or approval receipt. Settings saved is not evidence a runner exists.
 7. Check the actual execution tool and approval state before offering execution.
    The experimental inspector reports `execution_available: false`; stop rather
-   than falling back to terminal execution. A reusable in-chat interaction panel
-   is a design proposal, not a currently available question/approval tool.
+   than falling back to terminal execution. Choice/approval UI support does not
+   imply a checked runner or general durable workflow engine is installed.
 
 ## Change Discipline
 

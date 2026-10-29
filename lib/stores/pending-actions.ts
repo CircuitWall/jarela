@@ -18,7 +18,11 @@ export type ActionKind =
   | "set_provider_key"
   | "enable_integration"
   // Added by ADR-0036 (agent-driven harness edits).
-  | "upsert_harness";
+  | "upsert_harness"
+  | "write_skill"
+  | "ask_choice"
+  | "update_scheduled_task_prompt"
+  | "update_watcher_prompt";
 
 export type ActionStatus = "pending" | "approved" | "denied" | "failed";
 

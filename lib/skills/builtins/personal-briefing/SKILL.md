@@ -73,8 +73,8 @@ permission to broaden access or replay an external write.
    is a separate action requiring existing permissions and approval policy.
    Stop on cancellation; never retry an external write with an uncertain result.
 7. If the owner needs to supply missing input or choose priorities, use an
-   installed, authorized question/interaction tool only if its schema is actually
-   available; otherwise ask in normal chat and wait. Do not invent interactive
+   installed, authorized `propose_config_change` with `kind: ask_choice` only if
+   its schema is available; otherwise ask in normal chat and wait. Do not invent interactive
    panels, durable pause/resume or approvals. A briefing response does not approve
    a skill revision, a workflow run, or expanded access to another source.
 

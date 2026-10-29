@@ -1,5 +1,6 @@
 // Executes a previously-approved pending action. Strictly server-side.
-// Each `kind` maps to exactly one mutation site; nothing here touches the
+// Change kinds map to one mutation site; choice kinds only validate answers.
+// Nothing here touches the
 // agent loop directly — approvals just write to the same tables the UI
 // would touch, and the running agent picks up changes on its next turn.
 
@@ -28,6 +29,8 @@ import { applyInstructionEdits } from "@/lib/agents/instruction-edits";
 import { setCategoryEnabled } from "@/lib/stores/builtin-tools";
 import { setDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
 import { BUILTIN_CATEGORIES, type BuiltinCategory } from "@/lib/tools/runtime/registry";
+import { applyArtifactProposal } from "./artifact-proposals";
+import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
 
 export interface ApplyResult {
   ok: boolean;
@@ -44,6 +47,14 @@ export async function applyAction(
   extras?: Record<string, unknown>,
 ): Promise<ApplyResult> {
   switch (kind) {
+    case "ask_choice": {
+      const question = choiceProposalSchema.safeParse(payload);
+      if (!question.success) return { ok: false, detail: question.error.message };
+      const response = choiceResponseSchema(question.data).safeParse(extras);
+      return response.success
+        ? { ok: true, detail: response.data }
+        : { ok: false, detail: response.error.message };
+    }
     case "install_mcp":        return await applyInstallMcp(payload);
     case "toggle_mcp":         return applyToggleMcp(payload);
     case "update_agent_tools": return applyUpdateAgentTools(payload);
@@ -54,6 +65,9 @@ export async function applyAction(
     case "set_provider_key":   return applySetProviderKey(payload, extras);
     case "enable_integration": return applyEnableIntegration(payload, extras);
     case "upsert_harness":     return applyUpsertHarness(payload);
+    case "write_skill":
+    case "update_scheduled_task_prompt":
+    case "update_watcher_prompt": return applyArtifactProposal(kind, payload);
     default:                   return { ok: false, detail: `unknown kind: ${kind}` };
   }
 }

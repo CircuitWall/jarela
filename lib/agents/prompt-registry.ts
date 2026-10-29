@@ -27,6 +27,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderDocumentationPrompt } from "../../scripts/release-docs.mjs";
 import { RELEASE_DOCUMENTATION_GUIDANCE } from "@/lib/lifecycle/changesets";
+import { buildAdoptionPrompt } from "@/lib/stores/version-adoption";
 
 export interface StaticPrompt {
   id: string;
@@ -65,6 +66,16 @@ export function listStaticPrompts(): StaticPrompt[] {
   const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
   const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
   const prompts: StaticPrompt[] = [
+    {
+      id: "lifecycle.version-adoption",
+      source: "lib/stores/version-adoption.ts",
+      purpose: "Guides version adoption with validated steps and real approval proposals; rendered with representative version context.",
+      text: buildAdoptionPrompt({
+        current_version: "3.1.0", previous_version: "3.0.1",
+        is_first_adoption: false, summary: "Review changed prompt and tool surfaces.",
+        checklist: [], stale_prompt_risks: [],
+      }),
+    },
     {
       id: "lifecycle.release-documentation",
       source: "lib/lifecycle/changesets.ts",

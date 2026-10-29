@@ -5,6 +5,8 @@ import { registerLangChainPackage } from "../packages/langchain-package";
 import { createPendingAction, getPendingAction } from "@/lib/stores/pending-actions";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+import { artifactProposalKinds, isArtifactProposalKind, prepareArtifactProposal, validateArtifactProposal } from "@/lib/agents/artifact-proposals";
+import { choiceProposalSchema } from "@/lib/proposals/choice";
 
 function agentIdFromConfig(config?: RunnableConfig): string | null {
   const threadId = config?.configurable?.thread_id as string | undefined;
@@ -13,6 +15,11 @@ function agentIdFromConfig(config?: RunnableConfig): string | null {
 }
 
 function validateProposalPayload(kind: string, payload: Record<string, unknown>): string | null {
+  if (kind === "ask_choice") {
+    const parsed = choiceProposalSchema.safeParse(payload);
+    return parsed.success ? null : parsed.error.message;
+  }
+  if (isArtifactProposalKind(kind)) return validateArtifactProposal(kind, payload);
   const hasString = (key: string) => typeof payload[key] === "string" && String(payload[key]).trim().length > 0;
   const hasObject = (key: string) => !!payload[key] && typeof payload[key] === "object" && !Array.isArray(payload[key]);
 
@@ -69,22 +76,26 @@ export const proposeConfigChangeTool = tool(
         recovery_hint: "Call propose_config_change again with the required payload fields for this proposal kind.",
       });
     }
-    const row = createPendingAction({ agent_id: agentId, kind, payload, reason });
+    const storedPayload = isArtifactProposalKind(kind) ? prepareArtifactProposal(kind, payload) : payload;
+    const row = createPendingAction({ agent_id: agentId, kind, payload: storedPayload, reason });
     // Surface as a browser notification so the user notices even if not on this agent.
     publishNotification({
       type: "run_completed", // reuse channel; UI can branch on preview text
       thread_id: "",
       agent_id: agentId,
       status: "done",
-      preview: `🛠️ Proposed config change (${kind}) — awaiting your approval`,
+      preview: kind === "ask_choice"
+        ? "Question queued — awaiting your response"
+        : `🛠️ Proposed config change (${kind}) — awaiting your approval`,
       ts: Date.now(),
     });
     return JSON.stringify({
       proposal_id: row.id,
       status: "pending",
-      message:
-        "Proposal queued for the user's approval. Tell the user briefly what you proposed and that " +
-        "they need to approve it in the chat. Do not retry; check status later with check_proposal.",
+      message: kind === "ask_choice"
+        ? "Question queued in the shared review UI. Wait for the user's response; retrieve it with check_proposal. Do not invent an answer or treat it as approval for a separate change."
+        : "Proposal queued for the user's approval. Tell the user briefly what you proposed and that " +
+          "they need to approve it in the chat. Do not retry; check status later with check_proposal.",
     });
   },
   {
@@ -93,6 +104,9 @@ export const proposeConfigChangeTool = tool(
       "Propose a configuration change that requires user approval. Use this when you'd benefit from " +
       "installing/toggling an MCP server, or modifying agent settings (tool allowlist, identity, instructions, history window). " +
       "For this agent's own instruction-only updates, prefer update_agent_instruction (no approval). " +
+      "Also use this single proposal tool for skill content and scheduled-task/watcher prompt edits requiring consent. " +
+      "These proposals show before/after content in the approval banner and reject stale edits. " +
+      "For a choice question, use ask_choice in the same UI; it records an answer without applying a change. " +
       "The proposal is queued and shown to the user; they explicitly approve or deny. " +
       "Don't propose changes the user didn't ask for — only when the current task clearly needs it.",
     schema: z.object({
@@ -108,6 +122,8 @@ export const proposeConfigChangeTool = tool(
           "set_provider_key",
           "enable_integration",
           "upsert_harness",
+          ...artifactProposalKinds,
+          "ask_choice",
         ])
         .describe("Type of change being proposed"),
       payload: z.record(z.string(), z.unknown())
@@ -115,6 +131,13 @@ export const proposeConfigChangeTool = tool(
           "Parameters for the change. NEVER put secrets, API keys, OAuth tokens, " +
           "or passwords in this object — those are collected by the approval UI " +
           "directly. Examples by kind:\n" +
+          "- ask_choice: { question, options: [{value, label}, ...], multiple?: boolean, allow_text?: boolean }. " +
+          "Offer 2-12 unique options. Use for decisions or clarifications instead of asking the user to type a choice in chat. " +
+          "Never request secrets here. After submitting any proposal, wait for the user and read check_proposal; do not assume an answer.\n" +
+          "- write_skill / update_scheduled_task_prompt / update_watcher_prompt: { id, expected_content, content }. " +
+          "Read the current artifact first; expected_content is its exact current full text (null only for a new skill or a watcher with no custom prompt). " +
+          "content is the complete replacement text, not a patch. Skill writes target the configured writable repository and may create an override of a built-in skill. " +
+          "Task/watcher proposals edit only the prompt, never schedules, targets, permissions or script reactions.\n" +
           "- install_mcp: { registry_id: 'github', variables: { GITHUB_TOKEN: 'asks-user-for-it' } } " +
           "  OR { name, transport, spec }\n" +
           "- toggle_mcp: { name: 'github', enabled: true }\n" +
@@ -157,7 +180,7 @@ export const checkProposalTool = tool(
   },
   {
     name: "check_proposal",
-    description: "Check the status of a previously-submitted config-change proposal by its id.",
+    description: "Check a submitted change or choice proposal by id. Approved ask_choice results contain selected_values and optional text; an answer does not itself execute or approve another change.",
     schema: z.object({
       proposal_id: z.string(),
     }),

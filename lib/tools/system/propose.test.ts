@@ -36,6 +36,39 @@ beforeEach(() => {
 // ── propose_config_change ───────────────────────────────────────────────────
 
 describe("propose_config_change", () => {
+  it("queues choice questions in the same pending-action store and returns the recorded answer", async () => {
+    const thread = createThread("choice-agent");
+    const payload = {
+      question: "Which output?",
+      options: [{ value: "brief", label: "Brief" }, { value: "full", label: "Full" }],
+    };
+    const out = parse(await proposeConfigChangeTool.invoke(
+      { kind: "ask_choice", payload, reason: "A format decision is needed" },
+      { configurable: { thread_id: thread.thread_id } },
+    ));
+    expect(out.status).toBe("pending");
+    const row = getPendingAction(String(out.proposal_id))!;
+    expect(row.kind).toBe("ask_choice");
+    expect(JSON.parse(row.payload)).toEqual(payload);
+    const { applyAction } = await import("@/lib/agents/proposals");
+    expect(await applyAction("ask_choice", payload, { selected_values: ["invented"] })).toMatchObject({ ok: false });
+    const result = await applyAction("ask_choice", payload, { selected_values: ["full"] });
+    expect(result).toEqual({ ok: true, detail: { selected_values: ["full"] } });
+    setActionStatus(row.id, "approved", result.detail);
+    const status = parse(await checkProposalTool.invoke({ proposal_id: row.id }));
+    expect(status).toMatchObject({ status: "approved", result: { selected_values: ["full"] } });
+  });
+
+  it("rejects malformed questions without creating a proposal", async () => {
+    const thread = createThread("invalid-choice-agent");
+    const out = parse(await proposeConfigChangeTool.invoke(
+      { kind: "ask_choice", payload: { question: "Choose", options: [] }, reason: "Synthetic" },
+      { configurable: { thread_id: thread.thread_id } },
+    ));
+    expect(out.error_code).toBe("invalid_proposal_payload");
+    expect(out.proposal_id).toBeUndefined();
+  });
+
   it("queues a proposal, returns proposal_id, and publishes a user-facing notification", async () => {
     const thread = createThread("agent-1");
     const out = parse(await proposeConfigChangeTool.invoke(

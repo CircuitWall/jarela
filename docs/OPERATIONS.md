@@ -201,6 +201,37 @@ inspect its outcome before manually retrying.
 
 ## Work in chat
 
+### Review proposed changes
+
+**Unreleased:** `propose_config_change` is the single proposal-creation tool for changes that
+need consent. Pending proposals appear in the approval banner above the chat
+input, with Approve/Deny controls and a payload preview. A request written only
+in the assistant's reply does not create an approval.
+
+Choice questions use the same tool with `kind: ask_choice` and the same review
+card. The payload provides `question`, 2-12 unique `{value, label}` options,
+and optional `multiple` / `allow_text` flags. Users select options, optionally
+enter a non-secret response, then choose **Submit response**, or **Dismiss**.
+The answer is saved as `selected_values` and optional `text`, readable through
+`check_proposal`. Submitting an answer does not apply or approve a separate
+change. Existing change proposals retain their Approve/Deny controls.
+
+Alongside agent and integration settings, the tool supports `write_skill`,
+`update_scheduled_task_prompt`, and `update_watcher_prompt`. These accept
+`{id, expected_content, content}`: exact current text and the full replacement.
+Use a null baseline only for a new skill or an unset watcher prompt. The
+server checks the baseline both before queuing and before applying; stale
+proposals fail rather than overwrite newer edits. Skill proposals also pin the
+writable repository so approval cannot redirect a write to a newly selected repo.
+Skill writes use the
+configured writable repository, including user overrides of built-in skills.
+Task and watcher proposals change only agent prompts, not schedules, targets,
+permissions, or script reactions.
+
+Version adoption uses these proposals when consent is needed. It remains open
+while approval is pending and verifies the saved artifact after approval.
+Approving content edits does not approve execution of skill scripts.
+
 ### Personal briefing pilot
 
 The built-in `personal-briefing` skill combines read-only source retrieval and
