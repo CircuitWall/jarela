@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add internal bounded skill invocation/result schema validation without
   enabling execution; share invocation parsing with exact-byte consent digests.
   Reject reserved manifest property names rather than silently dropping them.
+- Add opt-in, inert in-memory skill artifact capture with exact-byte content
+  revisions, defensive copies, bounded assets and source-change detection.
+  No executable staging, runner or authorization is enabled.
 
 ### Added
 

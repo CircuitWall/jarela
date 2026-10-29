@@ -28,7 +28,7 @@ export function regularSkillFile(root: string, relative: string) {
   throw new Error("Missing file path");
 }
 
-export function readSkillTextFile(root: string, relative: string, maxBytes: number): { content: string; bytes: number } {
+export function readSkillFileBytes(root: string, relative: string, maxBytes: number): Buffer {
   const before = regularSkillFile(root, relative);
   if (before.size > maxBytes) throw new SkillFileSizeError(`File exceeds ${maxBytes} bytes`);
   const fd = openSync(join(root, ...relative.split("/")), constants.O_RDONLY | constants.O_NONBLOCK);
@@ -51,10 +51,15 @@ export function readSkillTextFile(root: string, relative: string, maxBytes: numb
       || final.mtimeMs !== opened.mtimeMs || final.ctimeMs !== opened.ctimeMs) {
       throw new Error("File changed during read");
     }
-    const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buffer.subarray(0, bytes));
-    if (content.includes("\0")) throw new Error("Binary resources are unsupported; request a UTF-8 text file");
-    return { content, bytes };
+    return Buffer.from(buffer.subarray(0, bytes));
   } finally {
     closeSync(fd);
   }
+}
+
+export function readSkillTextFile(root: string, relative: string, maxBytes: number): { content: string; bytes: number } {
+  const buffer = readSkillFileBytes(root, relative, maxBytes);
+  const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buffer);
+  if (content.includes("\0")) throw new Error("Binary resources are unsupported; request a UTF-8 text file");
+  return { content, bytes: buffer.length };
 }

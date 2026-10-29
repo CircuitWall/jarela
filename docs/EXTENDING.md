@@ -274,6 +274,37 @@ This closes only the pure validation portion of the proposed protocol. It does
 not verify exit status, runtime identity, snapshots, authorization, cancellation,
 process cleanup or cross-host execution. Execution remains unavailable.
 
+### Internal in-memory artifact capture (Unreleased)
+
+`SkillExecutionArtifact.capture` is an internal, opt-in content-capture helper,
+not discovery, a runnable snapshot, a grant or a public plugin API. It reads
+`execution.json`, `SKILL.md` and the manifest's declared files through the same
+bounded regular-file reader used for skill resources. Declared assets may be
+binary; user-facing text-resource reads still reject binary/invalid UTF-8 data.
+It never imports scripts, follows hooks, writes staging files or launches code.
+
+The capture retains private copies of exact bytes and exposes defensive copies
+and frozen file metadata. Its SHA-256 revision includes a domain/version marker
+and length-framed sorted paths and contents, including the original manifest
+and instructions. Equal contents at different locations have equal revisions;
+later source changes or caller mutations cannot change the captured bytes.
+Manifest formatting changes also change the revision. Unlisted files are not
+included or attested.
+
+The existing limits apply: up to 64 declared files plus automatic metadata,
+1 MiB per file, 64 KiB for the manifest, and 4 MiB total **including** metadata.
+Explicitly declared metadata is counted once; case aliases for reserved metadata
+names are rejected. Symbolic links and special files at/below the selected skill
+root are rejected. A second bounded read detects observed changes during capture,
+and root filesystem identity is rechecked. This is not an atomic filesystem
+snapshot or protection against a hostile same-user process racing path resolution.
+In particular, this does not establish the identity of ancestors above the root.
+
+The eventual run lifecycle must bound retained captures, verify an authorized
+workspace and policy, bind human consent, and privately stage and reverify these
+bytes before any launch. No durable staging location, execution grant, restart
+recovery or process-cleanup guarantee is introduced by this helper.
+
 See [ADR-0112](adr/0112-checked-javascript-skill-execution.md) for the remaining
 artifact-approval, immutable-snapshot, process-cleanup and execution design gates.
 

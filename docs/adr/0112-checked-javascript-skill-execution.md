@@ -305,6 +305,24 @@ records the implemented subset and outstanding runtime responsibilities.
 - Reuse existing tool progress and result events; do not introduce a parallel
   event database or claim rollback of file/network side effects.
 
+### Inert artifact-capture increment (2026-10-29)
+
+The internal `SkillExecutionArtifact` captures manifest, instructions and declared
+binary/text files into bounded private memory, derives a framed content revision,
+and returns defensive byte copies/frozen metadata. It shares the canonical bounded
+file-read operation with text resources, preserving their UTF-8/binary checks.
+The 4 MiB capture limit includes metadata; at most 64 declared files plus automatic
+manifest/instructions are retained. The capture rereads bytes and rechecks root
+identity to detect observed changes; it is not an atomic filesystem snapshot,
+ancestor-path attestation or defense against hostile same-user path races.
+
+This helper is not wired into discovery, a proposal, a trust decision or a runner.
+It chooses no staging layout and creates no child process. The boundary-review
+gate remains in force: private run staging/protection, capture retention and
+disposal, verified workspace identity, policy/consent integration and cleanup
+must be reviewed and implemented before executable staging or launch. Calling
+an internal capture helper is not approval of those outstanding decisions.
+
 ## Reuse and alternatives
 
 Reuse the skill repo/Markdown loader, tool capability registry, safety policy,
