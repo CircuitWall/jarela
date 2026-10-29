@@ -53,6 +53,23 @@ describe("shared choice and approval review card", () => {
     expect(pending.approve).not.toHaveBeenCalled();
   });
 
+  it("hides answered inputs after submission and does not restore them from a stale poll", async () => {
+    await openCard();
+    fireEvent.click(screen.getByRole("radio", { name: "Full" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Include examples" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit response" }));
+    expect(await screen.findByRole("status")).toHaveProperty("textContent", "Response recorded");
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Submit response" })).toBeNull();
+    fireEvent(document, new Event("visibilitychange"));
+    await waitFor(() => expect(pending.list).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Submit response" })).toBeNull();
+    expect(pending.approve).toHaveBeenCalledTimes(1);
+  });
+
   it("supports multiple options in the same card", async () => {
     pending.list.mockResolvedValue([{ ...action, payload: { ...action.payload, multiple: true } }]);
     await openCard();
