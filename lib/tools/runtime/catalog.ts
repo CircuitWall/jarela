@@ -1,5 +1,4 @@
 import type { StructuredToolInterface } from "@langchain/core/tools";
-import type { RunnableConfig } from "@langchain/core/runnables";
 
 import {
   registeredTools,
@@ -10,21 +9,10 @@ import {
   type ToolCategory,
   type ToolGroup,
 } from "./registry";
-import { getMcpTools, getMcpToolMeta } from "@/lib/mcp/client";
-import {
-  loadExternalTools,
-  getToolsDir,
-  type ExtensionLoadError,
-} from "./external";
-import { wrapWithWallclock } from "../support/wallclock";
-import { wrapToolForCredentialRouting } from "../security/wrap-credentials";
-import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
-import type { ToolPolicy } from "@/lib/agents/base";
-import { disabledCategories } from "@/lib/stores/builtin-tools";
-import { isDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
+import { getMcpToolMeta } from "@/lib/mcp/client";
+import { loadExternalTools } from "./external";
 import { getAgentTools, type AgentConfigRow } from "@/lib/stores/agent-configs";
 import { isBasicToolCategory, normalizeToolCategory } from "./categories";
-import { isAlwaysOnTool } from "./always-on";
 import { getIntegrationReadiness } from "@/lib/health/probe-cache";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { getAllTools } from "./runtime";
@@ -376,4 +364,3 @@ export function toCatalogEntry(
     status_reason: meta.status_reason,
   };
 }
-

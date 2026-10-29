@@ -21,16 +21,6 @@ const CATEGORY_ORDER: Category[] = [
   "other",
 ];
 
-const CATEGORY_LABELS: Record<Category, string> = {
-  llm: "Model providers",
-  mail: "Mail & productivity tools",
-  calendar: "Mail & productivity tools",
-  "issue-tracker": "Tool credentials",
-  infrastructure: "Tool credentials",
-  chat: "Tool credentials",
-  other: "Tool credentials",
-};
-
 interface Props {
   usageProfile?: UsageProfile;
   // When set, the picker opens directly on a specific category (e.g.
@@ -130,11 +120,6 @@ export function AddCredentialDialog({ usageProfile = "custom", initialCategory, 
     }
     return groups;
   }, [grouped]);
-
-  const visibleCategories = useMemo(() => {
-    if (category) return [category];
-    return CATEGORY_ORDER.filter((c) => grouped.has(c));
-  }, [category, grouped]);
 
   function openProvider(name: string) {
     setActiveName(name);

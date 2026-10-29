@@ -1,6 +1,6 @@
 "use client";
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Brain, ChevronRight, Hourglass, X, ArrowDown, Eye, EyeOff } from "lucide-react";
+import { Brain, Hourglass, X, ArrowDown, Eye, EyeOff } from "lucide-react";
 import type { AgentConfig, AutomationActivityMetadata, ContentPart, Message, SummaryTopicSegment, UserProfile, WarmChannelSummary } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
@@ -258,76 +258,6 @@ export function MessageList({ bottomOverlayHeight = 0, threadId, messages, steer
     const older = countOlderForHotSince(seq);
     const recent = Math.max(0, visibleMessages.length - older);
     return `recent ${recent} · warm ${older}`;
-  }
-
-  function boundaryTopForHotSince(seq: number | null = effectiveHotSinceSeq): number | null {
-    const root = scrollRef.current;
-    const host = hostRef.current;
-    if (!root || !host || visibleMessages.length === 0) return null;
-    const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1']"));
-    if (candidates.length === 0) return null;
-    const hostTop = host.getBoundingClientRect().top;
-
-    if (seq === null) {
-      return candidates[candidates.length - 1].getBoundingClientRect().bottom - hostTop;
-    }
-
-    const i = boundaryIndexFor(seq);
-    if (i < 0 || i >= visibleMessages.length) {
-      return candidates[candidates.length - 1].getBoundingClientRect().bottom - hostTop;
-    }
-
-    const target = candidates[i];
-    if (!target) return null;
-    return target.getBoundingClientRect().top - hostTop;
-  }
-
-  function committedBoundaryLineTop(): number | null {
-    const root = scrollRef.current;
-    const host = hostRef.current;
-    if (!root || !host) return null;
-    const boundary = root.querySelector<HTMLElement>("[data-focus-boundary='1'] [aria-label='conversation focus boundary']");
-    if (!boundary) return boundaryTopForHotSince(effectiveHotSinceSeq);
-    const hostTop = host.getBoundingClientRect().top;
-    const rect = boundary.getBoundingClientRect();
-    return rect.top + (rect.height / 2) - hostTop;
-  }
-
-  function firstMessageTopForMask(): number | null {
-    const root = scrollRef.current;
-    const region = maskRegionRef.current;
-    if (!root || !region) return null;
-    const first = root.querySelector<HTMLElement>("[data-hot-candidate='1']");
-    if (!first) return null;
-    return first.getBoundingClientRect().top - region.getBoundingClientRect().top;
-  }
-
-  function boundaryLineTopForMask(): number | null {
-    const root = scrollRef.current;
-    const region = maskRegionRef.current;
-    if (!root || !region) return null;
-    const boundary = root.querySelector<HTMLElement>("[data-focus-boundary='1'] [aria-label='conversation focus boundary']");
-    if (boundary) {
-      const rect = boundary.getBoundingClientRect();
-      return rect.top + (rect.height / 2) - region.getBoundingClientRect().top;
-    }
-
-    const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1']"));
-    if (candidates.length === 0 || visibleMessages.length === 0) return null;
-
-    const regionTop = region.getBoundingClientRect().top;
-    if (effectiveHotSinceSeq === null) {
-      return candidates[candidates.length - 1].getBoundingClientRect().bottom - regionTop;
-    }
-
-    const i = boundaryIndexFor(effectiveHotSinceSeq);
-    if (i < 0 || i >= visibleMessages.length) {
-      return candidates[candidates.length - 1].getBoundingClientRect().bottom - regionTop;
-    }
-
-    const target = candidates[i];
-    if (!target) return null;
-    return target.getBoundingClientRect().top - regionTop;
   }
 
   const updateBoundaryMask = useCallback(() => {
@@ -1036,12 +966,6 @@ export function MessageList({ bottomOverlayHeight = 0, threadId, messages, steer
         // later (or be unavailable on an older thread), but hiding the line
         // in that interval makes a valid focus selection look like it vanished.
         const hasBoundary = hasPin && boundaryIndex >= 0;
-        const olderInVisible = pinAfterAll
-          ? visibleMessages.length
-          : hasBoundary ? boundaryIndex : 0;
-        // "+ N more we don't know about yet" — older pages are likely unloaded.
-        const olderCountLabel = olderInVisible + (hasMore ? 1 : 0);
-
         const renderBoundary = (key: string) => (
           <div
             key={key}

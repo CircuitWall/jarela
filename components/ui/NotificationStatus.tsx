@@ -1,13 +1,12 @@
 "use client";
 import { Bell, BellOff, BellRing, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { pushToast } from "@/lib/ui/toasts";
 import { getAppName, getAppIcons } from "@/lib/env/app-config";
 
 // Browsers (Chrome, Safari) require a user gesture for Notification.requestPermission().
 // Calling it from an SSE event handler — like we did originally — silently fails on
 // many setups. This banner gives the user a single click to grant permission, with a
-// "test" action so they can verify the wiring works end-to-end.
+// confirmation notification so they can verify the wiring works end-to-end.
 
 type Status = "unsupported" | "default" | "granted" | "denied";
 
@@ -21,7 +20,6 @@ const DISMISS_KEY = "jarela:notif-banner-dismissed";
 export function NotificationStatus() {
   const [status, setStatus] = useState<Status>("default");
   const [dismissed, setDismissed] = useState(true);
-  const [testFired, setTestFired] = useState(false);
 
   useEffect(() => {
     setStatus(readStatus());
@@ -56,26 +54,14 @@ export function NotificationStatus() {
     }
   }
 
-  function testFire() {
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    new Notification(`${getAppName()} test`, {
-      body: "If you see this, notifications are wired correctly.",
-      icon: getAppIcons().icon192,
-      tag: "jarela-test",
-    });
-    setTestFired(true);
-    setTimeout(() => setTestFired(false), 2000);
-  }
-
   function dismiss() {
     setDismissed(true);
     try { window.localStorage.setItem(DISMISS_KEY, "1"); } catch { /* storage may be unavailable */ }
   }
 
-  // Hide the banner when granted (just show a tiny test affordance) or when user dismissed.
+  // Hide the banner when granted or dismissed.
   if (status === "unsupported") return null;
   if (status === "granted") {
-    // Persistent tiny "test" link in the corner so the user can confirm anytime.
     return null; // suppress entirely once granted; access via the gear settings if needed
   }
   if (dismissed) return null;
@@ -104,9 +90,6 @@ export function NotificationStatus() {
             <BellRing size={11} /> Enable
           </button>
         )}
-        {testFired && (
-          <span className="text-[10px] text-emerald-700 dark:text-emerald-400">test sent</span>
-        )}
         <button type="button" onClick={dismiss} className="control-tap p-1 text-fg-subtle hover:text-fg" title="Dismiss" aria-label="Dismiss notification prompt">
           <X size={12} />
         </button>
@@ -114,5 +97,4 @@ export function NotificationStatus() {
     </div>
   );
 }
-
 
