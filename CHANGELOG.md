@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Route agent interaction guidance through chat or the shared review UI, with
+  explicit chat fallback, credential-only secret entry, and no duplicate
+  confirmation for queued requests.
 - Resume chat after proposal responses without repeating approved operations;
   retain visible outcomes across polling, expose complete artifact previews,
   and return consistent decoded proposal payloads/results from API endpoints.

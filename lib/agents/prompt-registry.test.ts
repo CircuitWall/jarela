@@ -166,6 +166,14 @@ describe("prompt registry coverage", () => {
     for (const { id, prompt } of variants) {
       expect(prompt, id).toContain("ask_choice for questions");
       expect(prompt.match(/Choice answers do not execute changes\./g), id).toHaveLength(1);
+      expect(prompt.match(/USER INTERACTION:/g), id).toHaveLength(1);
+      expect(prompt, id).toContain("Use chat for user-facing answers, progress, blockers, and open-ended questions");
+      expect(prompt, id).toContain("use external delivery only when the user requested it or configured that workflow");
+      expect(prompt, id).toContain("explain the limitation and ask in chat");
+      expect(prompt, id).toContain("never invent a control or use ask_choice to bypass approval");
+      expect(prompt, id).toContain("Collect secrets only through credential UI, never chat or choice text");
+      expect(prompt, id).toContain("do not ask for a duplicate chat confirmation");
+      expect(prompt, id).not.toContain("they need to approve it in the banner");
     }
     const adoption = staticPrompts.find((entry) => entry.id === "lifecycle.version-adoption")!;
     expect(adoption.text).toContain("successful proposal_id");
