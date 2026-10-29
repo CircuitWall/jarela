@@ -262,6 +262,9 @@ describe("prompt registry coverage", () => {
     const text = (name: string) => staticPrompts.find((p) => p.id === `skill.${name}`)!.text;
     const config = text("jarela-configuration");
     expect(config).toContain("include_schema: true");
+    expect(config).toContain("if a step can be done by code, it must");
+    expect(config).toContain("Give each code step explicit");
+    expect(config).toContain("executable validation");
     expect(config).toContain("only when the installed schema supports them");
     expect(config).toContain("execution_available: false");
     expect(config).toContain("write_skill");

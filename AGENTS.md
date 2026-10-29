@@ -58,6 +58,17 @@ scripts/            # Maintenance / live tests
 - This applies to every workflow built into Jarela and every workflow its agents
   create, follow, or document, including workflow tools, skills, and scheduled
   procedures.
+- **Code first:** if a step can be done by code, it must be done by code, not
+  simulated through model reasoning. Reuse an authorized typed tool or existing
+  implementation before authoring a script. Apply this to execution as well as
+  validation: calculations, transformations, branching, iteration and checks
+  belong in code when their rules are specified.
+- Reserve model steps for interpreting intent, resolving ambiguity, judgment
+  and explanation. Label their outputs as model-generated and validate every
+  machine-checkable property before downstream use.
+- Missing execution support or authorization is a blocker, not permission to
+  bypass policy or pretend a prompt-only step executed. This direction does not
+  imply that a checked script runner is already available.
 - Define every building block with explicit **input**, **output**, and
   **validation** criteria. Validate each output before using it as the next
   block's input.

@@ -407,6 +407,13 @@ describe("buildToolPermissionContext", () => {
     const ctx = buildSharedToolCatalogContext();
 
     expect(ctx).toContain("--- Tool usage SOP ---");
+    expect(ctx).toContain("if a step can be done by code, it must be done by code");
+    expect(ctx).toContain("Reuse an authorized typed tool or existing implementation");
+    expect(ctx).toContain("This applies to execution and validation");
+    expect(ctx).toContain("Reserve model steps for interpreting intent, ambiguity, judgment and explanation");
+    expect(ctx).toContain("validate their machine-checkable properties before downstream use");
+    expect(ctx).toContain("Missing execution support or authorization is an explicit blocker");
+    expect(ctx).toContain("substitute shell execution for an unavailable checked runner");
     expect(ctx).toContain("1. Bound first.");
     expect(ctx).toContain("2. Otherwise look it up.");
     expect(ctx).toContain("3. Named target.");
