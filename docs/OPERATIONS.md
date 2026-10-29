@@ -216,6 +216,15 @@ The answer is saved as `selected_values` and optional `text`, readable through
 `check_proposal`. Submitting an answer does not apply or approve a separate
 change. Existing change proposals retain their Approve/Deny controls.
 
+After a response is saved in chat, the UI submits a continuation to the current
+agent using the normal chat queue, without consuming composer attachments or
+interrupting an active run. The agent retrieves the recorded result before
+continuing the original task. If that chat submission fails, **Retry chat
+continuation** retries only the conversation, never the approved operation.
+Outcome cards remain visible until dismissed, including application failures.
+This is not a durable pause/resume engine: closing the page between saving and
+continuing may require a new chat turn; the saved proposal outcome is retained.
+
 Alongside agent and integration settings, the tool supports `write_skill`,
 `update_scheduled_task_prompt`, and `update_watcher_prompt`. These accept
 `{id, expected_content, content}`: exact current text and the full replacement.
@@ -225,6 +234,8 @@ proposals fail rather than overwrite newer edits. Skill proposals also pin the
 writable repository so approval cannot redirect a write to a newly selected repo.
 Skill writes use the
 configured writable repository, including user overrides of built-in skills.
+The review card offers full, read-only before/after text, not just a truncated
+payload preview. A disabled writable repository rejects edits before writing.
 Task and watcher proposals change only agent prompts, not schedules, targets,
 permissions, or script reactions.
 

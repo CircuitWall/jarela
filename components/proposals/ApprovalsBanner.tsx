@@ -1,12 +1,13 @@
 "use client";
 import { Check, ChevronDown, ChevronUp, ShieldAlert, X } from "lucide-react";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef, useId } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, PendingAction } from "@/api/types";
 import { pushToast } from "@/lib/ui/toasts";
 import { errorMessage } from "@/lib/utils/error";
 import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
 import { ChoiceFields, type ChoiceResponse } from "./ChoiceFields";
+import { ArtifactPreview } from "./ArtifactPreview";
 
 const PAYLOAD_PREVIEW_CHARS = 6_000;
 const PAYLOAD_EXPANDED_PREVIEW_CHARS = 20_000;
@@ -221,21 +222,30 @@ type SecretFormState = {
 export function ApprovalsBanner({
   agentId,
   onChange,
+  onResolved,
 }: {
   agentId: string | null;
   onChange?: () => void;
+  onResolved?: (action: PendingAction) => Promise<void>;
 }) {
   const [pending, setPending] = useState<PendingAction[]>([]);
+  const requestsId = useId();
   const [open, setOpen] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [secretForm, setSecretForm] = useState<SecretFormState | null>(null);
   const [responses, setResponses] = useState<Record<string, ChoiceResponse>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [outcomes, setOutcomes] = useState<Record<string, PendingAction>>({});
+  const settledIds = useRef(new Set<string>());
+  const currentAgent = useRef(agentId);
+  currentAgent.current = agentId;
 
   async function refresh() {
     try {
       const all = await api.pending.list("pending");
-      const filtered = agentId ? all.filter((a) => a.agent_id === agentId) : all;
+      if (currentAgent.current !== agentId) return;
+      const filtered = all.filter((action) => !settledIds.current.has(action.id)
+        && (!agentId || action.agent_id === agentId));
       setPending(filtered);
     } catch (e) { console.error(e); }
   }
@@ -257,6 +267,33 @@ export function ApprovalsBanner({
     });
   }
 
+  async function continueConversation(action: PendingAction) {
+    if (!onResolved) return;
+    markBusy(action.id, true);
+    try {
+      await onResolved(action);
+      setErrors((previous) => ({ ...previous, [action.id]: "" }));
+    } catch (error) {
+      setErrors((previous) => ({
+        ...previous, [action.id]: `Outcome saved, but chat could not continue: ${errorMessage(error)}`,
+      }));
+    } finally { markBusy(action.id, false); }
+  }
+
+  async function recordOutcome(action: PendingAction) {
+    settledIds.current.add(action.id);
+    setOutcomes((previous) => ({ ...previous, [action.id]: action }));
+    setPending((previous) => previous.filter((item) => item.id !== action.id));
+    if (action.status === "failed") {
+      setErrors((previous) => ({
+        ...previous, [action.id]: typeof action.result === "string" ? action.result : "Proposal failed to apply; check its status.",
+      }));
+    } else {
+      await continueConversation(action);
+    }
+    onChange?.();
+  }
+
   // Approve flow for kinds whose payload contains no secrets and no follow-up.
   async function plainApprove(action: PendingAction) {
     markBusy(action.id, true);
@@ -264,12 +301,8 @@ export function ApprovalsBanner({
       const result = await api.pending.approve(action.id, action.kind === "ask_choice"
         ? { ...responses[action.id] }
         : undefined);
-      if (result.status !== "approved") {
-        throw new Error(typeof result.result === "string" ? result.result : "Proposal failed to apply; check its status.");
-      }
-      pushApprovalToast(action);
-      await refresh();
-      onChange?.();
+      if (result.status === "approved") pushApprovalToast(result);
+      await recordOutcome(result);
     } catch (e) {
       setErrors((previous) => ({ ...previous, [action.id]: errorMessage(e) }));
     }
@@ -279,10 +312,11 @@ export function ApprovalsBanner({
   async function deny(action: PendingAction) {
     markBusy(action.id, true);
     try {
-      await api.pending.deny(action.id);
-      await refresh();
-      onChange?.();
-    } catch (e) { console.error(e); }
+      const result = await api.pending.deny(action.id);
+      await recordOutcome(result);
+    } catch (error) {
+      setErrors((previous) => ({ ...previous, [action.id]: errorMessage(error) }));
+    }
     finally { markBusy(action.id, false); }
   }
 
@@ -295,15 +329,20 @@ export function ApprovalsBanner({
     const integrationId = (action.payload as { integration_id?: string }).integration_id;
     markBusy(action.id, true);
     try {
-      await api.pending.approve(action.id);
+      const result = await api.pending.approve(action.id);
+      if (result.status !== "approved") {
+        await recordOutcome(result);
+        return;
+      }
       let resp: { authorize_url: string } | null = null;
       if (integrationId === "gmail") resp = await api.integrations.gmailOauthStart({});
       else if (integrationId === "outlook") resp = await api.integrations.outlookOauthStart({});
       if (resp?.authorize_url) window.open(resp.authorize_url, "_blank", "noopener,noreferrer");
-      pushApprovalToast(action);
-      await refresh();
-      onChange?.();
-    } catch (e) { console.error(e); }
+      pushApprovalToast(result);
+      await recordOutcome(result);
+    } catch (error) {
+      setErrors((previous) => ({ ...previous, [action.id]: errorMessage(error) }));
+    }
     finally { markBusy(action.id, false); }
   }
 
@@ -370,11 +409,10 @@ export function ApprovalsBanner({
       for (const [k, v] of Object.entries(secretForm.values)) {
         if (typeof v === "string" && v.trim()) extras[k] = v.trim();
       }
-      await api.pending.approve(secretForm.action.id, extras);
-      pushApprovalToast(secretForm.action);
+      const result = await api.pending.approve(secretForm.action.id, extras);
+      if (result.status === "approved") pushApprovalToast(result);
       setSecretForm(null);
-      await refresh();
-      onChange?.();
+      await recordOutcome(result);
     } catch (e) {
       setSecretForm({
         ...secretForm,
@@ -393,28 +431,51 @@ export function ApprovalsBanner({
     }
   }
 
-  if (pending.length === 0 && !secretForm) return null;
+  const visiblePending = pending.filter((action) => !outcomes[action.id]
+    && (!agentId || action.agent_id === agentId));
+  const visibleOutcomes = Object.values(outcomes).filter((action) => !agentId || action.agent_id === agentId);
+  if (visiblePending.length === 0 && visibleOutcomes.length === 0 && !secretForm) return null;
 
   return (
     <>
-      {pending.length > 0 && (
+      {visibleOutcomes.map((action) => (
+        <div key={action.id} className="mx-4 mb-2 rounded-lg border border-border bg-surface-2 p-3 text-xs text-fg">
+          <p role="status">{action.kind === "ask_choice"
+            ? action.status === "approved" ? "Response recorded" : action.status === "failed" ? "Response failed" : "Question dismissed"
+            : action.status === "approved" ? "Change applied" : action.status === "denied" ? "Change denied" : "Change failed"}</p>
+          {errors[action.id] && <p role="alert" className="my-1 text-red-500">{errors[action.id]}</p>}
+          {errors[action.id] && action.status !== "failed" && onResolved && (
+            <button disabled={busyIds.has(action.id)} onClick={() => void continueConversation(action)} className="mr-3 underline">
+              Retry chat continuation
+            </button>
+          )}
+          <button onClick={() => setOutcomes((previous) => {
+            const next = { ...previous };
+            delete next[action.id];
+            return next;
+          })} className="underline">Dismiss result</button>
+        </div>
+      ))}
+      {visiblePending.length > 0 && (
         <div className="mx-4 mb-2 rounded-lg border border-amber-700/60 bg-amber-950/30 overflow-hidden">
           <button
             onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls={requestsId}
             className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 hover:bg-amber-900/20 transition-colors"
           >
             <ShieldAlert size={13} className="text-amber-700 dark:text-amber-400 shrink-0" />
             <span className="font-medium">
-              {pending.some((action) => action.kind === "ask_choice")
-                ? `${pending.length} ${pending.length === 1 ? "request" : "requests"} awaiting your response`
-                : `${pending.length} ${pending.length === 1 ? "change" : "changes"} awaiting your approval`}
+              {visiblePending.some((action) => action.kind === "ask_choice")
+                ? `${visiblePending.length} ${visiblePending.length === 1 ? "request" : "requests"} awaiting your response`
+                : `${visiblePending.length} ${visiblePending.length === 1 ? "change" : "changes"} awaiting your approval`}
             </span>
             <span className="ml-auto opacity-70">{open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</span>
           </button>
 
           {open && (
-            <div className="border-t border-amber-700/40 divide-y divide-amber-700/30">
-              {pending.map((a) => {
+            <div id={requestsId} className="max-h-[50dvh] overflow-y-auto border-t border-amber-700/40 divide-y divide-amber-700/30">
+              {visiblePending.map((a) => {
                 const busy = busyIds.has(a.id);
                 const choice = a.kind === "ask_choice" ? choiceProposalSchema.safeParse(a.payload) : null;
                 const response = responses[a.id] ?? { selected_values: [] };
@@ -425,7 +486,7 @@ export function ApprovalsBanner({
                   <div key={a.id} className="px-3 py-2.5 text-xs">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="font-mono uppercase tracking-wide text-[10px] text-amber-700 dark:text-amber-400/80">{a.kind}</span>
-                      {a.reason && <span className="text-amber-100/90">{a.reason}</span>}
+                      {a.reason && <span className="text-fg">{a.reason}</span>}
                     </div>
                     {choice?.success ? (
                       <ChoiceFields
@@ -434,7 +495,9 @@ export function ApprovalsBanner({
                         onChange={(value) => setResponses((previous) => ({ ...previous, [a.id]: value }))}
                         disabled={busy}
                       />
-                    ) : <PayloadPreview payload={a.payload} />}
+                    ) : a.kind === "write_skill" || a.kind === "update_scheduled_task_prompt" || a.kind === "update_watcher_prompt"
+                      ? <ArtifactPreview payload={a.payload} />
+                      : <PayloadPreview payload={a.payload} />}
                     {choice && !choice.success && <p role="alert">Invalid choice proposal. Dismiss it and request a new question.</p>}
                     {errors[a.id] && <p role="alert" className="text-red-500">{errors[a.id]}</p>}
                     <div className="flex gap-1.5 justify-end">

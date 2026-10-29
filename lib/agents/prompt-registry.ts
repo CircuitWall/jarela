@@ -28,6 +28,7 @@ import { join } from "node:path";
 import { renderDocumentationPrompt } from "../../scripts/release-docs.mjs";
 import { RELEASE_DOCUMENTATION_GUIDANCE } from "@/lib/lifecycle/changesets";
 import { buildAdoptionPrompt } from "@/lib/stores/version-adoption";
+import { buildProposalResponseMessage } from "@/lib/proposals/response-message";
 
 export interface StaticPrompt {
   id: string;
@@ -66,6 +67,12 @@ export function listStaticPrompts(): StaticPrompt[] {
   const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
   const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
   const prompts: StaticPrompt[] = [
+    {
+      id: "interaction.proposal-response",
+      source: "lib/proposals/response-message.ts",
+      purpose: "Continues the user's original chat task after a saved proposal response, without repeating a change or broadening consent.",
+      text: buildProposalResponseMessage({ id: "example-proposal", kind: "ask_choice", status: "approved" }),
+    },
     {
       id: "lifecycle.version-adoption",
       source: "lib/stores/version-adoption.ts",

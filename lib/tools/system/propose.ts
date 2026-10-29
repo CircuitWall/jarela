@@ -76,7 +76,8 @@ export const proposeConfigChangeTool = tool(
         recovery_hint: "Call propose_config_change again with the required payload fields for this proposal kind.",
       });
     }
-    const storedPayload = isArtifactProposalKind(kind) ? prepareArtifactProposal(kind, payload) : payload;
+    const storedPayload = kind === "ask_choice" ? choiceProposalSchema.parse(payload)
+      : isArtifactProposalKind(kind) ? prepareArtifactProposal(kind, payload) : payload;
     const row = createPendingAction({ agent_id: agentId, kind, payload: storedPayload, reason });
     // Surface as a browser notification so the user notices even if not on this agent.
     publishNotification({
