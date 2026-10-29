@@ -25,10 +25,12 @@ import { join } from "node:path";
 // behaviour is fully covered by the deterministic unit suite at
 // lib/triggers/handlers/fs-watch.test.ts which uses the
 // __pushEventForTest seam — that's where regression coverage lives.
+// Set JARELA_E2E_NATIVE_WATCHER=1 to explicitly test the native pipeline
+// on another platform in an isolated run; failures must remain failures.
 test.describe.configure({ mode: "serial" });
 test.skip(
-  process.platform !== "darwin",
-  "fs-watch e2e is macOS-only — Linux lacks recursive fs.watch, Windows drops events under load; unit tests cover both",
+  process.platform !== "darwin" && process.env.JARELA_E2E_NATIVE_WATCHER !== "1",
+  "Native watcher checks default to macOS; set JARELA_E2E_NATIVE_WATCHER=1 for explicit isolated coverage elsewhere",
 );
 
 let sourceDir: string;

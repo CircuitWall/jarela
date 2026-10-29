@@ -135,11 +135,24 @@ test("top controls stay visible after scrolling the dashboard", async ({ page })
   expect(scrolledBox!.y).toBeLessThan(200);
 });
 
-// Skipped: the pricing rows are rendered grouped by provider, so toggling
-// model_asc <-> model_desc only reorders *within* each provider group and the
-// first visible row (top of the first provider section) often stays the same.
-// Needs a richer fixture or a per-group assertion. Tracked separately.
-test.skip("model rate sort reorders the visible list", async ({ page }) => {
+test("model rate sort reorders rows within each provider group", async ({ page }) => {
+  await page.route("**/api/v1/dashboard/metrics?*", async (route) => {
+    const response = await route.fetch();
+    expect(response.ok()).toBeTruthy();
+    const data: DashboardMetrics = await response.json();
+    const rate = {
+      input_per_1m_usd: 2, output_per_1m_usd: 8, source: "https://example.com/pricing",
+      inferred: false, confidence: "high" as const, ok: true, status: 200, error: null,
+    };
+    data.pricing.model_rates = [
+      { ...rate, provider: "synthetic-a", model_id: "a-zulu" },
+      { ...rate, provider: "synthetic-b", model_id: "b-alpha" },
+      { ...rate, provider: "synthetic-a", model_id: "a-alpha" },
+      { ...rate, provider: "synthetic-b", model_id: "b-zulu" },
+    ];
+    data.pricing.aggregator_model_rates = [];
+    await route.fulfill({ response, json: data });
+  });
   await page.goto("/?tab=dashboard");
 
   const pricingSection = page
@@ -151,25 +164,13 @@ test.skip("model rate sort reorders the visible list", async ({ page }) => {
   const modelSort = pricingSection.locator("select").nth(2);
   const rowList = pricingSection.locator(".max-h-72.overflow-auto").first();
 
-  // Reordering only changes the head element when at least two distinct model
-  // rows are loaded. The mock e2e fixture seeds a single model, so on the bare
-  // CI dataset there is nothing to reorder; skip rather than assert a flake.
-  const rowCount = await rowList.locator("span.truncate").count();
-  test.skip(rowCount < 2, `Need >=2 model rate rows to verify reordering, got ${rowCount}`);
-
-  const firstModelText = async (): Promise<string> => {
-    const handle = rowList.locator("span.truncate").first();
-    await handle.waitFor({ state: "visible" });
-    return (await handle.textContent())?.trim() ?? "";
-  };
-
+  const models = rowList.locator("span").filter({ hasText: /^[ab]-(alpha|zulu)$/ });
   await modelSort.selectOption("model_asc");
-  const ascFirst = await firstModelText();
-
+  await expect(models).toHaveText(["a-alpha", "a-zulu", "b-alpha", "b-zulu"]);
   await modelSort.selectOption("model_desc");
-  await expect
-    .poll(async () => await firstModelText(), { timeout: 5_000 })
-    .not.toBe(ascFirst);
+  await expect(models).toHaveText(["a-zulu", "a-alpha", "b-zulu", "b-alpha"]);
+  await modelSort.selectOption("model_asc");
+  await expect(models).toHaveText(["a-alpha", "a-zulu", "b-alpha", "b-zulu"]);
 });
 
 test("functionality filter narrows the model rate list", async ({ page }) => {

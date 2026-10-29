@@ -55,8 +55,7 @@ async function pinLatestThreadForBoundary(page: import("@playwright/test").Page)
   await expect(page.getByRole("button", { name: /Drag to move conversation focus/i })).toBeEnabled({ timeout: 20_000 });
 }
 
-test("drag boundary confirms before changing the conversation focus", async ({ page, browserName }) => {
-  test.skip(browserName !== "chromium", "Pointer drag simulation is only stable in Chromium for this spec.");
+test("drag boundary confirms before changing the conversation focus", async ({ page }) => {
   const marker = `pw-focus-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   await sendMockReply(page, marker);
 
@@ -146,8 +145,7 @@ test("renders a pinned boundary before warm summary metadata arrives", async ({ 
   await expect(page.getByRole("button", { name: /Drag to move conversation focus/i })).toBeVisible();
 });
 
-test("dragging to bottom edge still opens confirmation", async ({ page, browserName }) => {
-  test.skip(browserName !== "chromium", "Pointer drag simulation is only stable in Chromium for this spec.");
+test("dragging to bottom edge still opens confirmation", async ({ page }) => {
   await sendMockReplies(page, 7, "pw-edge-scroll");
 
   const scroller = page.locator(".chat-message-scroll");

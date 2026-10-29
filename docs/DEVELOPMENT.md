@@ -134,6 +134,27 @@ have no application-seeded agents. Setup errors stop the run before dependent
 checks execute. CI runs this live-test prerequisite before the Playwright suite.
 Production credential import remains opt-in via `JARELA_SEED_FROM_PROD=1`.
 
+### Previously skipped checks
+
+The Playwright configuration starts an isolated production server and database.
+Run `npm run build` first, then `npx playwright test` for the configured desktop
+Chromium and mobile WebKit projects. Dashboard sorting uses synthetic multi-model,
+multi-provider data; focus-boundary pointer checks run in both projects.
+
+Native document-watcher checks default to macOS because event delivery is
+platform/load dependent. To exercise the actual watcher pipeline on Windows
+or another host explicitly, set `JARELA_E2E_NATIVE_WATCHER=1` and run
+`npx playwright test documents-watcher.spec.ts --project=chromium-desktop`.
+This opt-in does not replace failures with skips or certify other operating systems.
+
+The local embedding benchmark is also opt-in: set
+`JARELA_BENCHMARK_EMBEDDINGS=1` and run
+`npx vitest run lib/embeddings/performance.test.ts`.
+It requires the installed local model, forbids remote providers and downloads,
+and measures synthetic latency rather than retrieval quality. The linked-leaf
+skill-resource test remains unavailable on Windows without file-symlink creation
+privileges; directory-junction coverage is separate from that check.
+
 ## Git and PR conventions
 
 [CONTRIBUTING.md](../CONTRIBUTING.md) is the source of truth. Do not drift
