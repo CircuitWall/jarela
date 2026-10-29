@@ -8,6 +8,7 @@ import { loadSkillFixtures, runSkillFixture, type FixtureToolResolver } from "./
 import { getBuiltinSkillsDir } from "./index";
 import { registeredCapability, registeredTools } from "@/lib/tools/runtime/registry";
 import "@/lib/tools/general/validate-personal-briefing";
+import "@/lib/tools/general/plan-memory-cleanup";
 
 const echoValidator = tool(
   async (input: { value: number }) =>

@@ -112,6 +112,53 @@ and can miss details.
 5. Do not turn every chat message into memory. Store information only when it
    will help a later conversation, task, or decision.
 
+## Script-backed Cleanup Planning
+
+1. Retrieve the relevant structured `facts` records with existing memory tools.
+   Do not send protected settings, secrets or raw transcripts. Results cover
+   only supplied entries; a limited search is not a complete memory scan.
+2. Discover `plan_memory_cleanup` with `list_tools` using the exact name and
+   `include_schema: true`. Supply an explicit current UTC `now` and at most
+   100 projections with `key`, `kind`, `subject`, `content`, `status` and
+   `expires_at`. This read-only tool uses `scripts/plan-cleanup.mjs` directly.
+   Example input (projection, not the full stored record):
+
+   ```json
+   {
+     "now": "2026-10-29T00:00:00Z",
+     "entries": [
+       {
+         "key": "project-checks",
+         "kind": "fact",
+         "subject": "Project",
+         "content": "Use deterministic checks.",
+         "status": "active",
+         "expires_at": null
+       }
+     ]
+   }
+   ```
+
+3. Check `ok` and field issues before using the plan. `expired_keys` are active
+   entries whose expiry is at or before `now`; `duplicate_groups` match kind,
+   trimmed subject/content and the exact expiry string, excluding archived and
+   expired entries.
+   Neither is an instruction to delete. Read full candidate records to compare
+   provenance, confidence, tags and history. The model handles semantic
+   conflicts; code does not infer that differently worded facts are duplicates.
+4. Perform only authorized archival/consolidation through existing memory tools,
+   preserve history and read back changes. Stop on denied access or cancellation;
+   never replay uncertain writes. The planner itself never reads the database,
+   merges facts, archives records, deletes entries or changes Security policy.
+
+On another host with authorized Node execution, run
+`node <skill-root>/scripts/run.mjs` with the JSON input on stdin and close stdin.
+It needs only the sibling script, no packages, network or credentials.
+Input is bounded to 64 KiB of valid UTF-8. Stdout is one JSON result; exit 0
+means a valid plan, exit 1 reports `ok: false` field issues or transport errors
+on stderr. Inside Jarela use the typed tool, never terminal execution to bypass
+an unavailable checked runner. Bundle sharing does not grant host permissions.
+
 ## Proactivity Policy
 
 The Memory panel controls the global policy:

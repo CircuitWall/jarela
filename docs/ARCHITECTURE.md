@@ -136,6 +136,16 @@ and bounded regular-file reads between resource access and execution-manifest
 inspection. These are read-only operations, not a script runner or immutable
 snapshot boundary; see [the extension guide](EXTENDING.md#reading-shared-skill-bundles-unreleased).
 
+Unreleased deterministic built-in skill steps live in portable dependency-free
+modules under `lib/skills/builtins/{personal-briefing,memory-organization}/scripts/`.
+The fixed read-only tools `validate_personal_briefing` and `plan_memory_cleanup`
+import those implementations in-process; no user-controlled module resolution
+or subprocess is introduced. Their standalone JSON CLI adapters are for hosts
+that independently authorize Node execution, not a checked-runner workaround.
+The memory planner consumes supplied fact projections only and never accesses
+the store or mutates it. Bundle files are included in standalone build tracing.
+See [script-backed built-ins](EXTENDING.md#script-backed-built-in-steps).
+
 Unreleased skill execution consent policy is managed by the Security UI through
 `app/api/v1/security/skill-execution/route.ts`, restricted to unlocked loopback
 requests. `lib/stores/app-settings.ts` validates and persists it in the existing

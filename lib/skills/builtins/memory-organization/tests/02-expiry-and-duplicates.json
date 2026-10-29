@@ -1,0 +1,13 @@
+{
+  "name": "Exact duplicate and expired fact projections are valid planning input",
+  "tool": "plan_memory_cleanup",
+  "input": {
+    "now": "2026-10-29T00:00:00Z",
+    "entries": [
+      { "key": "a", "kind": "fact", "subject": "Project", "content": "Use deterministic checks.", "status": "active", "expires_at": null },
+      { "key": "b", "kind": "fact", "subject": "Project", "content": "Use deterministic checks.", "status": "active", "expires_at": null },
+      { "key": "c", "kind": "task", "subject": "Deadline", "content": "Review the plan.", "status": "active", "expires_at": "2026-10-28T00:00:00Z" }
+    ]
+  },
+  "expect": { "ok": true }
+}

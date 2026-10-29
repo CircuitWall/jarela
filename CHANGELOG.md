@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- skills: Back Personal Briefing validation and Memory Organization cleanup
+  planning with portable dependency-free scripts, used by fixed read-only tools.
+  Add `plan_memory_cleanup` for explicit-time expiry and exact duplicate
+  candidates; it never scans or mutates memory. Include standalone JSON CLIs,
+  copied-bundle/tool parity tests and cleanup fixtures. No general runner enabled.
 - skills: Add an internal, tested run-scoped consent contract binding one-use
   decisions to artifact/input/workspace/runtime identity and limits, with expiry,
   cancellation and stale-decision rejection. Record the selected non-resumable

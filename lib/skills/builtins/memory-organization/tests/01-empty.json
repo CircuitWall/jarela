@@ -1,0 +1,6 @@
+{
+  "name": "Empty supplied facts produce no cleanup candidates",
+  "tool": "plan_memory_cleanup",
+  "input": { "now": "2026-10-29T00:00:00Z", "entries": [] },
+  "expect": { "ok": true }
+}
