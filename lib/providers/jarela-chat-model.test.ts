@@ -89,6 +89,63 @@ async function collectChunks(
 }
 
 describe("JarelaChatModel — empty stream handling", () => {
+  it("preserves argument-free calls whose provider emits no JSON fragments", async () => {
+    const provider = makeProvider([
+      { type: "tool_call_chunk", index: 0, id: "t1", name: "tool_1" },
+      { type: "stop", reason: "tool_use" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {}, boundTools: [makeTool(1)] });
+    const message = await model.invoke([new HumanMessage("run")]);
+    expect(message.tool_calls).toEqual([{ name: "tool_1", id: "t1", type: "tool_call", args: {} }]);
+  });
+
+  it.each([
+    '{"id":"example","content"',
+    '{"path":"notes.md","content"',
+    '{"name":"example","args":{"page_id"',
+    '{"name"',
+    '{"content":"unfinished',
+    "[]",
+    "null",
+  ])("rejects incomplete or non-object arguments instead of repairing %s", async (args) => {
+    const provider = makeProvider([
+      { type: "tool_call_chunk", index: 0, id: "t1", name: "tool_1", args_delta: args },
+      { type: "stop", reason: "tool_use" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {}, boundTools: [makeTool(1)] });
+    await expect(model.invoke([new HumanMessage("write the complete document")]))
+      .rejects.toThrow(/complete JSON object.*not executed/i);
+  });
+
+  it("does not expose repaired calls to streaming consumers when the stream ends early", async () => {
+    const provider = makeProvider([
+      { type: "tool_call_chunk", index: 0, id: "t1", name: "write_skill", args_delta: '{"id":"example","content"' },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {} });
+    const seen: AIMessageChunk[] = [];
+    const drain = async () => {
+      for await (const chunk of await model.stream([new HumanMessage("write")])) seen.push(chunk);
+    };
+    await expect(drain()).rejects.toThrow(/complete JSON object/i);
+    expect(seen.flatMap((chunk) => chunk.tool_calls ?? [])).toEqual([]);
+  });
+
+  it("validates every parallel call before releasing any of them", async () => {
+    const provider = makeProvider([
+      { type: "tool_call_chunk", index: 0, id: "t1", name: "tool_1", args_delta: '{"value":"complete"}' },
+      { type: "tool_call_chunk", index: 1, id: "t2", name: "tool_1", args_delta: '{"value"' },
+      { type: "stop", reason: "tool_use" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {} });
+    const calls: unknown[] = [];
+    await expect((async () => {
+      for await (const chunk of await model.stream([new HumanMessage("write")])) {
+        calls.push(...chunk.tool_calls ?? []);
+      }
+    })()).rejects.toThrow(/complete JSON object/i);
+    expect(calls).toEqual([]);
+  });
+
   it("yields a sentinel empty chunk when provider emits only a stop event", async () => {
     const provider = makeProvider([{ type: "stop", reason: "stop" }]);
     const model = new JarelaChatModel({ provider, modelId: "m", params: {} });

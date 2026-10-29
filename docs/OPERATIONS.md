@@ -128,6 +128,15 @@ the model step fails before those calls execute. Jarela reports an actionable
 error instead of attempting a partial write; earlier completed tool steps are
 not rolled back.
 
+Tool arguments are also checked as complete JSON objects before dispatch,
+even when the provider omits a truncation reason. Streaming tool calls are held
+until all calls in that model step pass this check; text and thinking still
+stream normally. Malformed JSON is not repaired by dropping unfinished fields
+or replaced with an empty object. The error reports incomplete arguments rather
+than misleading missing-field validation errors and does not echo the body.
+Complete calls still undergo each tool's schema and permission checks: a model
+that genuinely omits a required field must supply it on the next attempt.
+
 ### Dashboard metrics
 
 The Dashboard summarizes token use, estimated cost, cache activity, and tool reliability over a selectable time window. It also includes daily trends and model/provider breakdowns. Cost figures are estimates based on the configured pricing data, not billing statements.

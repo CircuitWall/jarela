@@ -413,7 +413,7 @@ export const anthropicProvider: ModelProvider = {
     return {
       text: textContent || null,
       tool_calls: toolCalls,
-      stop_reason: resp.stop_reason === "tool_use" ? "tool_use" : "stop",
+      stop_reason: resp.stop_reason === "tool_use" ? "tool_use" : resp.stop_reason === "max_tokens" ? "length" : "stop",
     };
   },
 

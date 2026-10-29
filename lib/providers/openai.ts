@@ -13,6 +13,7 @@ import type {
   OpenAITool,
 } from "./types";
 import { errorMessage } from "@/lib/utils/error";
+import { parseToolArguments, TRUNCATED_TOOL_CALL_MESSAGE } from "./tool-arguments";
 
 // Re-export so callers can pass zodResponseFormat(schema, name) as params.response_format
 // without importing from openai/helpers/zod directly.
@@ -156,6 +157,9 @@ function parseStopReason(reason: string | null | undefined): InvokeResult["stop_
 }
 
 export function parseOpenAIInvokeChoice(choice: OpenAIInvokeChoice): InvokeResult {
+  if (choice.finish_reason === "length" && choice.message?.tool_calls?.length) {
+    throw new Error(TRUNCATED_TOOL_CALL_MESSAGE);
+  }
   return {
     text: choice.message?.content ?? null,
     tool_calls: (choice.message?.tool_calls ?? []).flatMap((tc) => {
@@ -163,13 +167,7 @@ export function parseOpenAIInvokeChoice(choice: OpenAIInvokeChoice): InvokeResul
       return [{
         id: tc.id ?? "",
         name: tc.function.name,
-        arguments: (() => {
-          try {
-            return JSON.parse(tc.function.arguments ?? "{}") as Record<string, unknown>;
-          } catch {
-            return {};
-          }
-        })(),
+        arguments: parseToolArguments(tc.function.arguments ?? "{}"),
       }];
     }),
     stop_reason: parseStopReason(choice.finish_reason),
@@ -204,12 +202,11 @@ export async function* streamOpenAIEvents(
     const choice = chunk.choices?.[0];
     if (!choice) continue;
     const delta = choice.delta;
-    if (!delta) continue;
-    if (delta.content) yield { type: "text", delta: delta.content };
-    if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+    if (delta?.content) yield { type: "text", delta: delta.content };
+    if (typeof delta?.reasoning_content === "string" && delta.reasoning_content) {
       yield { type: "thinking", delta: delta.reasoning_content };
     }
-    if (delta.tool_calls) {
+    if (delta?.tool_calls) {
       for (const tc of delta.tool_calls) {
         yield {
           type: "tool_call_chunk",
@@ -418,5 +415,3 @@ export function makeOpenAICompatProvider(
     },
   };
 }
-
-

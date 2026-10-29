@@ -17,6 +17,7 @@ import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
 import type { ContentPart, InvokeMessage, OpenAITool, ToolParamSchema } from "@/lib/tools/runtime/types";
 import { maskInvokeMessages } from "@/lib/redaction/mask-messages";
 import { getEffectiveProviderToolLimit } from "./tool-limit";
+import { parseToolArguments, TRUNCATED_TOOL_CALL_MESSAGE } from "./tool-arguments";
 
 interface Fields {
   provider: ModelProvider;
@@ -24,10 +25,6 @@ interface Fields {
   params: ProviderParams;
   boundTools?: StructuredToolInterface[];
 }
-
-const TRUNCATED_TOOL_CALL_MESSAGE =
-  "Model truncated a tool call at max_tokens. Increase the model output-token limit and retry; " +
-  "the incomplete tool call was not executed.";
 
 export class JarelaChatModel extends BaseChatModel {
   lc_namespace = ["jarela", "chat_models"];
@@ -177,6 +174,7 @@ export class JarelaChatModel extends BaseChatModel {
     if (!this._provider.streamInvoke) return;
     let emittedAny = false;
     let sawToolCallChunk = false;
+    let pendingToolCalls: AIMessageChunk | null = null;
     let stopReason: "stop" | "tool_use" | "length" | undefined;
     for await (const event of this._provider.streamInvoke(this._modelId, invokeMessages, this._params, openaiTools, signal)) {
       if (event.type === "text") {
@@ -206,20 +204,20 @@ export class JarelaChatModel extends BaseChatModel {
         const additionalKwargs = providerMeta && event.id
           ? { provider_tool_call_meta: { [event.id]: providerMeta } }
           : undefined;
-        yield new ChatGenerationChunk({
-          message: new AIMessageChunk({
-            content: "",
-            tool_call_chunks: [{
-              index: event.index,
-              id: event.id,
-              name: event.name,
-              args: event.args_delta,
-              type: "tool_call_chunk" as const,
-            }],
-            ...(additionalKwargs ? { additional_kwargs: additionalKwargs } : {}),
-          }),
-          text: "",
+        const toolChunk = new AIMessageChunk({
+          content: "",
+          tool_call_chunks: [{
+            index: event.index,
+            id: event.id,
+            name: event.name,
+            args: event.args_delta,
+            type: "tool_call_chunk" as const,
+          }],
+          ...(additionalKwargs ? { additional_kwargs: additionalKwargs } : {}),
         });
+        // LangChain repairs incomplete JSON by dropping unfinished fields.
+        // Hold every call until the complete model step passes strict parsing.
+        pendingToolCalls = pendingToolCalls ? pendingToolCalls.concat(toolChunk) : toolChunk;
       } else if (event.type === "stop") {
         stopReason = event.reason;
       } else if (event.type === "usage") {
@@ -288,6 +286,12 @@ export class JarelaChatModel extends BaseChatModel {
     }
     if (stopReason === "length" && sawToolCallChunk) {
       throw new Error(TRUNCATED_TOOL_CALL_MESSAGE);
+    }
+    if (pendingToolCalls) {
+      for (const call of pendingToolCalls.tool_call_chunks ?? []) {
+        parseToolArguments(call.args || "{}");
+      }
+      yield new ChatGenerationChunk({ message: pendingToolCalls, text: "" });
     }
     // Mid-stream truncation: provider produced content then stopped because of
     // max_tokens (or a length-equivalent). The aggregated message is partial
