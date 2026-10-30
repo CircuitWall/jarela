@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-30
+
+### Added
+
+- proposals: Add shared choices and artifact approvals
+- skills: Add bounded invocation and result validation
+- skills: Add inert in-memory artifact capture
+- skills: Add memory cleanup execution bundle contract
+- skills: Add bounded raw execution output capture
+- workflows: Add gated staged runner and durable coordinator
+
+### Fixed
+
+- proposals: Fix response delivery and outcome review
+- agents: Update chat and review interaction guidance
+- proposals: Add context for delayed user responses
+- proposals: Hide internal continuation messages from chat
+
+### Changed
+
+- proposals: Verify answered inputs remain hidden
+- prompts: Add structure and size verification guidance
+- cleanup: Remove confirmed unreachable code
+- acceptance: Add coverage for previously skipped checks
+- skills: Add policy http acceptance regressions
+
 ### Added
 
 - Add inactive run-owned skill staging, exact-consent runner orchestration and
