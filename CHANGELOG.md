@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add inactive run-owned skill staging, exact-consent runner orchestration and
+  a bounded durable workflow coordinator with checked bindings, one retry
+  budget, persisted choices, CAS ownership and uncertain-write reconciliation.
+  Production activation and process-owner backends remain unavailable.
 - Add internal bounded raw skill stdout/stderr capture with strict streaming
   UTF-8 checks, terminal failures and shared result-schema validation; no
   process launch, execution authorization or cleanup guarantee is enabled.
