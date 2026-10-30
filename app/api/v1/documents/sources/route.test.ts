@@ -1,17 +1,72 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { resolve } from "node:path";
 
-const mocks = vi.hoisted(() => ({ create: vi.fn(), find: vi.fn() }));
+const mocks = vi.hoisted(() => ({ create: vi.fn(), find: vi.fn(), stat: vi.fn(), notify: vi.fn() }));
 vi.mock("@/lib/stores/document-sources", () => ({
   createDocumentSource: mocks.create, getDocumentSourceByPath: mocks.find,
   getDocumentSourceStats: () => ({}), listDocumentSources: () => [],
 }));
-vi.mock("@/lib/triggers", () => ({ notifyTriggerHandlers: vi.fn() }));
+vi.mock("@/lib/triggers", () => ({ notifyTriggerHandlers: mocks.notify }));
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, promises: { ...actual.promises, stat: mocks.stat } };
+});
 import { POST } from "./route";
 
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.create.mockImplementation((input) => ({ ...input, id: "source", enabled: 1, config: JSON.stringify(input.config) }));
+  mocks.stat.mockResolvedValue({ isDirectory: () => true });
+});
+
+describe("source creation write boundary", () => {
+  function local(body: unknown) {
+    return new NextRequest("http://localhost/api/v1/documents/sources", {
+      method: "POST", body: JSON.stringify(body),
+    });
+  }
+
+  it("normalizes local input and notifies exactly once after creation", async () => {
+    const response = await POST(local({ kind: "local_folder", path: "synthetic-folder", label: null }));
+    expect(response.status).toBe(201);
+    expect(mocks.stat).toHaveBeenCalledWith(resolve("synthetic-folder"));
+    expect(mocks.find).toHaveBeenCalledWith(resolve("synthetic-folder"));
+    expect(mocks.create).toHaveBeenCalledExactlyOnceWith({ path: resolve("synthetic-folder"), label: null });
+    expect(mocks.notify).toHaveBeenCalledExactlyOnceWith("source_changed");
+    expect(mocks.create.mock.invocationCallOrder[0]).toBeLessThan(mocks.notify.mock.invocationCallOrder[0]);
+  });
+
+  it("keeps local conflict wording without creating or notifying", async () => {
+    mocks.find.mockReturnValueOnce({ id: "existing" });
+    const response = await POST(local({ path: "synthetic-folder" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "source already exists for this path" });
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["invalid input", { path: "" }, "invalid"],
+    ["non-directory", { path: "synthetic-file" }, "path is not a directory"],
+    ["unreadable", { path: "synthetic-absent" }, "path does not exist or is unreadable"],
+  ])("rejects %s local sources before lookup, creation, or notification", async (mode, body, error) => {
+    if (mode === "non-directory") mocks.stat.mockResolvedValueOnce({ isDirectory: () => false });
+    if (mode === "unreadable") mocks.stat.mockRejectedValueOnce(new Error("synthetic missing path"));
+    const response = await POST(local(body));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain(mode === "invalid input" ? "string" : error);
+    expect(mocks.find).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it("does not claim success when post-create notification fails", async () => {
+    mocks.notify.mockRejectedValueOnce(new Error("Synthetic notification failure"));
+    await expect(POST(local({ path: "synthetic-folder" }))).rejects.toThrow("Synthetic notification failure");
+    expect(mocks.create).toHaveBeenCalledOnce();
+    expect(mocks.notify).toHaveBeenCalledOnce();
+  });
 });
 
 function request(kind: string, config: Record<string, unknown>) {

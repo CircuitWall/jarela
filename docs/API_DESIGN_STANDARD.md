@@ -62,6 +62,13 @@ It does not infer failures from arbitrary payload variables.
   binary payloads explicitly with their transport-specific parsers.
 - Client contracts live in [api/types.ts](../api/types.ts); domain schemas may
   own inferred types. Keep input/output types aligned when changing fields.
+- Unreleased document-source contracts are owned by
+  [api/document-sources.ts](../api/document-sources.ts). Collection and item
+  routes reuse its mutation schemas; client and store statistics types are
+  inferred from the same definitions and re-exported through existing paths.
+  Mail-specific configuration validation remains in the owning mail module.
+  Collection statistics use one aggregate SQLite query, including empty and
+  disabled sources, rather than one query set per source.
 - Shared collection/item shapes use [serializers.ts](../lib/api/serializers.ts).
   Pass already-read data (such as document source stats) to pure serializers.
   Do not hide database reads, catch corrupt persisted JSON, or expose private

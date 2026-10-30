@@ -42,6 +42,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Use Node's built-in SQLite in document-search regression tests instead of an
+  undeclared native dependency that failed clean CI installs.
+- Derive document-source mutation and statistics types from shared Zod schemas
+  used at collection/item boundaries, preserving v1 payloads and validation.
+- Defer provider setup-guide content until its disclosure opens; retain the
+  guide text and native keyboard-accessible disclosure behavior.
+- Batch document-source listing statistics into one SQLite query instead of
+  three aggregate queries per source; preserve counts and response shapes.
+- Reject failed environment restart requests before health polling, cancel
+  panel-owned requests and polling on unmount or scope changes, bound stalled
+  health requests to 30 seconds, and retain drafts when settings reload fails.
 - Remove the remaining grandfathered function-size exceptions through typed
   lifecycle, stage, and view ownership boundaries; retain the 150-line guard.
 - Separate backend configuration normalization, migration schema data, bridge

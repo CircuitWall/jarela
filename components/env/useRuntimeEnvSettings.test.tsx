@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useRuntimeEnvSettings, type RuntimeEnvRow } from "./useRuntimeEnvSettings";
 import { NetworkEnvEditor } from "@/components/integrations/NetworkEnvEditor";
 import { EnvVarsPanel } from "./EnvVarsPanel";
+import { StrictMode } from "react";
 
 const mocks = vi.hoisted(() => ({ refreshConfig: vi.fn(), confirm: vi.fn() }));
 vi.mock("@/api/runtime-config", () => ({ refreshRuntimeConfig: mocks.refreshConfig }));
@@ -84,9 +85,161 @@ it("confirms restart, preserves its caller reason and polls health before cleari
     method: "POST", body: JSON.stringify({ reason: "synthetic restart" }),
   }));
   await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-  expect(fetchMock).toHaveBeenCalledWith("/api/v1/health", { cache: "no-store" });
+  expect(fetchMock).toHaveBeenCalledWith("/api/v1/health", expect.objectContaining({ cache: "no-store" }));
   expect(result.current.restarting).toBe(false);
   expect(result.current.restartNeeded).toBe(false);
+});
+
+it("reports rejected restart requests without polling an already healthy server", async () => {
+  const { result } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  act(() => result.current.onReset(entries[0]));
+  await waitFor(() => expect(result.current.restartNeeded).toBe(true));
+  fetchMock.mockResolvedValueOnce({
+    ok: false, status: 403, statusText: "Forbidden", json: async () => ({ error: "Restart denied" }),
+  });
+  await act(async () => { await result.current.onRestart(); });
+  expect(result.current.error).toBe("Restart denied");
+  expect(result.current.restarting).toBe(false);
+  expect(result.current.restartNeeded).toBe(true);
+  expect(fetchMock.mock.calls.some(([url]) => url === "/api/v1/health")).toBe(false);
+});
+
+it("retains the editor draft when a successful write cannot reload the settings", async () => {
+  const { result } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  fetchMock.mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(new Error("Reload unavailable"));
+  act(() => result.current.setEditing({ name: "JARELA_PORT", value: "4242" }));
+  act(() => result.current.onSave());
+  await waitFor(() => expect(result.current.saving).toBe(false));
+  expect(result.current.error).toBe("Reload unavailable");
+  expect(result.current.editing?.value).toBe("4242");
+});
+
+it("does not restart after an unmounted confirmation resolves", async () => {
+  let confirm!: (value: boolean) => void;
+  mocks.confirm.mockImplementationOnce(() => new Promise<boolean>((resolve) => { confirm = resolve; }));
+  const { result, unmount } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let restart!: Promise<void>;
+  act(() => { restart = result.current.onRestart(); });
+  unmount();
+  await act(async () => { confirm(true); await restart; });
+  expect(fetchMock.mock.calls.some(([url]) => url === "/api/v1/system/restart")).toBe(false);
+});
+
+it("cancels the owned health-poll timer on unmount", async () => {
+  const { result, unmount } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  vi.useFakeTimers();
+  await act(async () => { await result.current.onRestart(); });
+  unmount();
+  await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+  expect(fetchMock.mock.calls.some(([url]) => url === "/api/v1/health")).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("bounds health polling even if a health request never responds", async () => {
+  const { result } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url !== "/api/v1/health") return { ok: true, json: async () => ({ entries }) };
+    return new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    });
+  });
+  vi.useFakeTimers();
+  await act(async () => { await result.current.onRestart(); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(result.current.error).toBe("Server didn't come back within 30s — check it manually.");
+  expect(result.current.restarting).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("ignores an obsolete load when the panel scope changes", async () => {
+  let resolve!: (response: unknown) => void;
+  fetchMock.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  const { result, rerender } = renderHook(
+    ({ scope }: { scope: "network" | "runtime" }) => useRuntimeEnvSettings(scope, "synthetic restart"),
+    { initialProps: { scope: "network" } },
+  );
+  const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+  rerender({ scope: "runtime" });
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  await act(async () => { resolve({ ok: true, json: async () => ({ entries }) }); });
+  expect(signal.aborted).toBe(true);
+  expect(result.current.rows.map((entry) => entry.name)).toEqual(["JARELA_TEST_LIMIT"]);
+});
+
+it("aborts pending writes on unmount without reloading or refreshing runtime readers", async () => {
+  const { result, unmount } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let resolve!: (response: unknown) => void;
+  fetchMock.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  act(() => result.current.onReset(entries[0]));
+  const signal = fetchMock.mock.calls[1][1].signal as AbortSignal;
+  unmount();
+  await act(async () => { resolve({ ok: true }); });
+  expect(signal.aborted).toBe(true);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(mocks.refreshConfig).not.toHaveBeenCalled();
+});
+
+it("aborts an in-flight health fetch when the panel unmounts", async () => {
+  const { result, unmount } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let healthSignal!: AbortSignal;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url !== "/api/v1/health") return { ok: true };
+    healthSignal = init!.signal!;
+    return new Promise((_resolve, reject) => {
+      healthSignal.addEventListener("abort", () => reject(healthSignal.reason), { once: true });
+    });
+  });
+  vi.useFakeTimers();
+  await act(async () => { await result.current.onRestart(); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+  unmount();
+  await act(async () => {});
+  expect(healthSignal.aborted).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("coalesces repeated restart clicks while confirmation is pending", async () => {
+  let confirm!: (value: boolean) => void;
+  mocks.confirm.mockImplementationOnce(() => new Promise<boolean>((resolve) => { confirm = resolve; }));
+  const { result } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let first!: Promise<void>;
+  act(() => { first = result.current.onRestart(); });
+  await act(async () => { await result.current.onRestart(); });
+  expect(mocks.confirm).toHaveBeenCalledOnce();
+  await act(async () => { confirm(false); await first; });
+  expect(fetchMock.mock.calls.some(([url]) => url === "/api/v1/system/restart")).toBe(false);
+  mocks.confirm.mockResolvedValueOnce(false);
+  await act(async () => { await result.current.onRestart(); });
+  expect(mocks.confirm).toHaveBeenCalledTimes(2);
+});
+
+it("falls back to the HTTP status when a restart error is not JSON", async () => {
+  const { result } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"));
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  fetchMock.mockResolvedValueOnce({
+    ok: false, status: 503, statusText: "Unavailable", json: async () => { throw new SyntaxError("not JSON"); },
+  });
+  await act(async () => { await result.current.onRestart(); });
+  expect(result.current.error).toBe("503 Unavailable");
+  expect(result.current.restarting).toBe(false);
+});
+
+it("recreates its request ownership during StrictMode effect replay", async () => {
+  const { result } = renderHook(() => useRuntimeEnvSettings("network", "synthetic restart"), { wrapper: StrictMode });
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  const signals = fetchMock.mock.calls.map(([, options]) => options.signal as AbortSignal);
+  expect(signals).toHaveLength(2);
+  expect(signals[0].aborted).toBe(true);
+  expect(signals[1].aborted).toBe(false);
+  expect(result.current.rows.map((entry) => entry.name)).toEqual(["JARELA_PORT"]);
 });
 
 it("wires both panels to independent row editors without duplicating network settings", async () => {

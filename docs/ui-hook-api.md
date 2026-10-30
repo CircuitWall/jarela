@@ -100,6 +100,13 @@ Validate the return contract with
 [card tests](../components/credentials/IntegrationCard.test.tsx). These are mocked
 local checks, not proof of vendor consent or resource authorization.
 
+Unreleased setup-guide disclosures keep their lightweight summaries in the
+credential form and load the shared
+[guide-content chunk](../components/credentials/IntegrationSetupGuideContent.tsx)
+only after a guide first opens. Loaded content stays mounted across later
+close/open actions. The provider text is unchanged; chunk-load errors reach the
+existing React error boundary rather than being presented as empty guidance.
+
 ## Behavioral guarantees
 
 ### Component-local controllers (unreleased)
@@ -117,10 +124,13 @@ These are internal ownership boundaries, not new extension contracts.
 the runtime and network environment editors. It accepts a `runtime | network`
 scope and restart reason, owns rows/loading/error, editing and saving state,
 restart flags, and save/reset/restart actions. Save and reset refresh runtime
-configuration and reload rows; failed writes retain the draft. Restart keeps
-the existing confirmation and 30-second health polling. This extraction does
-not add unmount cancellation or validate the restart POST status; those remain
-limitations, not guarantees of the new ownership boundary.
+configuration and reload rows; failed writes or reloads retain the draft.
+Unreleased lifecycle hardening aborts panel-owned requests and health polling
+on unmount or scope changes, ignores late completions, and prevents duplicate
+restart confirmations. Restart validates the POST status before polling health;
+rejection preserves the restart-needed flag and surfaces the server error.
+The 30-second polling deadline also aborts a stalled health request. Aborting
+an already-issued mutation does not roll back server-side changes.
 
 The existing public notification hook retains its return contract while routing
 and delivery are separate internal operations. Timer cleanup, API payloads,
