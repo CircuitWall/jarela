@@ -13,6 +13,41 @@ function manifest(inputSchema: unknown = { type: "object", properties: {} }, out
 }
 
 describe("inert skill invocation/result protocol", () => {
+  it("validates nullable fields and explicit result alternatives without coercion", () => {
+    const nullable = { anyOf: [{ type: "string", minLength: 2 }, { type: "null" }] };
+    const checked = manifest({
+      type: "object", properties: { expiry: nullable }, required: ["expiry"], additionalProperties: false,
+    }, {
+      anyOf: [
+        { type: "object", properties: { ok: { type: "boolean", enum: [true] } }, required: ["ok"], additionalProperties: false },
+        { type: "object", properties: { error: { type: "string", minLength: 1 } }, required: ["error"], additionalProperties: false },
+      ],
+    });
+    expect(validateSkillInvocation(checked, '{"expiry":null}')).toEqual({ expiry: null });
+    expect(validateSkillInvocation(checked, '{"expiry":"UTC"}')).toEqual({ expiry: "UTC" });
+    for (const text of ['{"expiry":""}', '{"expiry":"x"}', '{"expiry":0}', '{}']) {
+      expect(() => validateSkillInvocation(checked, text)).toThrow(z.ZodError);
+    }
+    expect(validateSkillResult(checked, '{"ok":true}')).toEqual({ ok: true });
+    expect(validateSkillResult(checked, '{"error":"invalid"}')).toEqual({ error: "invalid" });
+    for (const text of ['{"ok":false}', '{"error":""}', '{"ok":true,"extra":1}', 'null']) {
+      expect(() => validateSkillResult(checked, text)).toThrow(z.ZodError);
+    }
+  });
+
+  it("allows overlapping and nested alternatives without leaking rejected-branch issues", () => {
+    const checked = manifest(undefined, {
+      anyOf: [
+        { type: "string", maxLength: 1 },
+        { anyOf: [{ type: "string", minLength: 1 }, { type: "array", items: { type: "null" } }] },
+      ],
+    });
+    expect(validateSkillResult(checked, '"x"')).toBe("x");
+    expect(validateSkillResult(checked, '"long"')).toBe("long");
+    expect(validateSkillResult(checked, '[null]')).toEqual([null]);
+    expect(() => validateSkillResult(checked, '[1]')).toThrow(/at least one/);
+  });
+
   it("checks nested fields without coercion, stripping, defaults or input mutation", () => {
     const schema = {
       type: "object", properties: {
@@ -152,6 +187,24 @@ describe("inert skill invocation/result protocol", () => {
       expect(error.issues).toHaveLength(20);
       expect(error.issues[0].path).toEqual(["field0"]);
       expect(error.message).not.toContain("sensitive-value");
+    }
+  });
+
+  it("bounds failed-alternative diagnostics at the original field paths without echoing values", () => {
+    const properties = Object.fromEntries(Array.from({ length: 30 }, (_, index) => [
+      `field${index}`, { anyOf: [{ type: "integer" }, { type: "null" }] },
+    ]));
+    const checked = manifest({ type: "object", properties });
+    const input = Object.fromEntries(Object.keys(properties).map((key) => [key, "private-value"]));
+    try {
+      validateSkillInvocation(checked, JSON.stringify(input));
+      expect.fail("Expected validation failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(z.ZodError);
+      if (!(error instanceof z.ZodError)) throw error;
+      expect(error.issues).toHaveLength(20);
+      expect(error.issues[0].path).toEqual(["field0"]);
+      expect(error.message).not.toContain("private-value");
     }
   });
 });

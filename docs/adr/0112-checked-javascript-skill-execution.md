@@ -269,6 +269,31 @@ immutable artifact identity and authorization before using validated output.
 The [extension guide](../EXTENDING.md#internal-invocationresult-validation-unreleased)
 records the implemented subset and outstanding runtime responsibilities.
 
+### Memory cleanup candidate increment (2026-10-30)
+
+Implementation has started with the existing read-only Memory Organization
+planner as the first executable-bundle candidate. Its `execution.json` declares
+the two existing portable scripts, exact fact projections, nullable expiry,
+success/field-error output shapes and 5,000 ms / 64 KiB limits. No new algorithm,
+database access, production staging or execution tool is added.
+
+The internal schema subset now additionally supports `anyOf` with two to four
+branches. This narrowly extends the earlier combinator rejection: each branch
+must itself satisfy the strict bounded subset, alternative nodes reject sibling
+keywords, and the invocation root remains an explicit object. Existing JSON
+depth/node limits cover all branches. Matching any branch passes without
+coercion; total failure reports one issue at the original path, bounded by the
+existing 20-issue limit. Semantic UTC dates, trimmed text limits and duplicate
+keys remain the shared planner's responsibility, not newly claimed schema checks.
+
+Contract tests use captured bytes in test-only temporary locations and real
+Node subprocesses, checking valid and field-error fixtures against the manifest
+and fixed typed tool. They also check source-change independence, empty PATH,
+paths with spaces/metacharacters and maximum record counts. These tests are not
+the proposed production snapshot/consent/cleanup implementation or a full W1
+journey. Execution inspection remains unavailable, and all outstanding
+boundary-review and cross-platform acceptance gates below remain in force.
+
 ### Identity, authority and lifecycle
 
 - Build a private run snapshot using safe file operations; hash the manifest,

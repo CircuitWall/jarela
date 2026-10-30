@@ -10,9 +10,11 @@ export const SKILL_INSPECTION_LIMITS = {
   totalBytes: 4 * 1024 * 1024,
   jsonDepth: 32,
   jsonNodes: 4096,
+  schemaAlternatives: 4,
 } as const;
 
 type ValueSchema =
+  | { anyOf: ValueSchema[] }
   | { type: "object"; properties: Record<string, ValueSchema>; required?: string[]; additionalProperties?: boolean }
   | { type: "array"; items: ValueSchema; minItems?: number; maxItems?: number }
   | { type: "string"; minLength?: number; maxLength?: number; enum?: string[] }
@@ -21,53 +23,56 @@ type ValueSchema =
   | { type: "null" };
 
 const nonnegativeInteger = z.number().int().nonnegative();
-const valueSchema: z.ZodType<ValueSchema> = z.lazy(() => z.discriminatedUnion("type", [
-  z.strictObject({
-    type: z.literal("object"),
-    properties: z.preprocess((value, ctx) => {
-      if (value && typeof value === "object" && Object.hasOwn(value, "__proto__")) {
-        ctx.addIssue({ code: "custom", message: "Reserved schema property name: __proto__" });
+const valueSchema: z.ZodType<ValueSchema> = z.lazy(() => z.union([
+  z.strictObject({ anyOf: z.array(valueSchema).min(2).max(SKILL_INSPECTION_LIMITS.schemaAlternatives) }),
+  z.discriminatedUnion("type", [
+    z.strictObject({
+      type: z.literal("object"),
+      properties: z.preprocess((value, ctx) => {
+        if (value && typeof value === "object" && Object.hasOwn(value, "__proto__")) {
+          ctx.addIssue({ code: "custom", message: "Reserved schema property name: __proto__" });
+        }
+        return value;
+      }, z.record(z.string(), valueSchema)),
+      required: z.array(z.string()).optional(),
+      additionalProperties: z.boolean().optional(),
+    }).superRefine((schema, ctx) => {
+      const required = schema.required ?? [];
+      if (new Set(required).size !== required.length || required.some((key) => !Object.hasOwn(schema.properties, key))) {
+        ctx.addIssue({ code: "custom", path: ["required"], message: "Required keys must be unique declared properties" });
       }
-      return value;
-    }, z.record(z.string(), valueSchema)),
-    required: z.array(z.string()).optional(),
-    additionalProperties: z.boolean().optional(),
-  }).superRefine((schema, ctx) => {
-    const required = schema.required ?? [];
-    if (new Set(required).size !== required.length || required.some((key) => !Object.hasOwn(schema.properties, key))) {
-      ctx.addIssue({ code: "custom", path: ["required"], message: "Required keys must be unique declared properties" });
-    }
-  }),
-  z.strictObject({
-    type: z.literal("array"), items: valueSchema,
-    minItems: nonnegativeInteger.optional(), maxItems: nonnegativeInteger.optional(),
-  }).refine((s) => s.minItems === undefined || s.maxItems === undefined || s.minItems <= s.maxItems, "minItems exceeds maxItems"),
-  z.strictObject({
-    type: z.literal("string"),
-    minLength: nonnegativeInteger.optional(), maxLength: nonnegativeInteger.optional(),
-    enum: z.array(z.string()).min(1).optional(),
-  }).refine((s) => s.minLength === undefined || s.maxLength === undefined || s.minLength <= s.maxLength, "minLength exceeds maxLength"),
-  z.strictObject({
-    type: z.enum(["number", "integer"]),
-    minimum: z.number().optional(), maximum: z.number().optional(),
-    enum: z.array(z.number()).min(1).optional(),
-  }).superRefine((s, ctx) => {
-    if (s.minimum !== undefined && s.maximum !== undefined && s.minimum > s.maximum) {
-      ctx.addIssue({ code: "custom", message: "minimum exceeds maximum" });
-    }
-    if (s.type === "integer" && s.enum?.some((value) => !Number.isInteger(value))) {
-      ctx.addIssue({ code: "custom", path: ["enum"], message: "Integer enum values must be integers" });
-    }
-  }),
-  z.strictObject({ type: z.literal("boolean"), enum: z.array(z.boolean()).min(1).optional() }),
-  z.strictObject({ type: z.literal("null") }),
+    }),
+    z.strictObject({
+      type: z.literal("array"), items: valueSchema,
+      minItems: nonnegativeInteger.optional(), maxItems: nonnegativeInteger.optional(),
+    }).refine((s) => s.minItems === undefined || s.maxItems === undefined || s.minItems <= s.maxItems, "minItems exceeds maxItems"),
+    z.strictObject({
+      type: z.literal("string"),
+      minLength: nonnegativeInteger.optional(), maxLength: nonnegativeInteger.optional(),
+      enum: z.array(z.string()).min(1).optional(),
+    }).refine((s) => s.minLength === undefined || s.maxLength === undefined || s.minLength <= s.maxLength, "minLength exceeds maxLength"),
+    z.strictObject({
+      type: z.enum(["number", "integer"]),
+      minimum: z.number().optional(), maximum: z.number().optional(),
+      enum: z.array(z.number()).min(1).optional(),
+    }).superRefine((s, ctx) => {
+      if (s.minimum !== undefined && s.maximum !== undefined && s.minimum > s.maximum) {
+        ctx.addIssue({ code: "custom", message: "minimum exceeds maximum" });
+      }
+      if (s.type === "integer" && s.enum?.some((value) => !Number.isInteger(value))) {
+        ctx.addIssue({ code: "custom", path: ["enum"], message: "Integer enum values must be integers" });
+      }
+    }),
+    z.strictObject({ type: z.literal("boolean"), enum: z.array(z.boolean()).min(1).optional() }),
+    z.strictObject({ type: z.literal("null") }),
+  ]),
 ]));
 
 const manifestSchema = z.strictObject({
   schemaVersion: z.literal(1),
   entrypoint: portableSkillPath.refine((value) => /\.(mjs|cjs)$/.test(value), "Only .mjs and .cjs entry points are supported"),
   files: z.array(portableSkillPath).min(1).max(SKILL_INSPECTION_LIMITS.files),
-  inputSchema: valueSchema.refine((schema) => schema.type === "object", "Input must use an object schema"),
+  inputSchema: valueSchema.refine((schema) => "type" in schema && schema.type === "object", "Input must use an object schema"),
   outputSchema: valueSchema,
   timeoutMs: z.number().int().min(1000).max(120_000).default(60_000),
   maxOutputBytes: z.number().int().min(1).max(256 * 1024).default(64 * 1024),

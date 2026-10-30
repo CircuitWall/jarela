@@ -145,6 +145,11 @@ that independently authorize Node execution, not a checked-runner workaround.
 The memory planner consumes supplied fact projections only and never accesses
 the store or mutates it. Bundle files are included in standalone build tracing.
 See [script-backed built-ins](EXTENDING.md#script-backed-built-in-steps).
+The unreleased Memory Organization execution manifest adapts those same two
+portable scripts for internal artifact/protocol contract tests; bounded `anyOf`
+schemas represent nullable expiry and result variants. Ordinary discovery and
+the fixed typed tool are unchanged. Inspection remains execution-unavailable;
+test-only subprocess staging does not introduce a production runner or store.
 
 Unreleased skill execution consent policy is managed by the Security UI through
 `app/api/v1/security/skill-execution/route.ts`, restricted to unlocked loopback
