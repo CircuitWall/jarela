@@ -239,8 +239,8 @@ describe("prompt registry coverage", () => {
         "browser_screenshot", "browser_click", "browser_fill_many", "browser_fill", "tool_result_get",
         "memory_list", "memory_read", "memory_write",
       ],
-      "extension-development": ["list_tools", "describe_extension_surfaces", "scaffold_extension", "run_skill", "workflow_progress"],
-      "contribution-review": ["list_tools", "prepare_contribution_bundle", "workflow_progress"],
+      "extension-development": ["list_tools", "describe_extension_surfaces", "scaffold_extension", "start_extension_authoring", "request_extension_stage", "inspect_extension_authoring", "inspect_authoring_operation", "cancel_authoring_operation", "run_skill", "workflow_progress"],
+      "contribution-review": ["list_tools", "prepare_contribution_bundle", "request_contribution_tests", "inspect_contribution_operation", "request_contribution_commit", "request_contribution_push", "request_contribution_draft_pr", "cancel_authoring_operation", "workflow_progress"],
       "jarela-configuration": [
         "read_agent_instruction", "update_agent_instruction", "list_tools", "list_skills",
         "read_skill", "write_skill", "describe_extension_surfaces", "propose_config_change",

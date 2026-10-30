@@ -5,8 +5,10 @@ description: "Use when: preparing a local contribution bundle, reviewing an outg
 
 # Contribution Review
 
-Prepare a local review bundle first. This initial slice never commits, pushes,
+Prepare a local review bundle first. The pure text builder never commits, pushes,
 opens a PR, publishes a package or verifies repository/test claims itself.
+The reviewed lifecycle below independently observes repository state and tests,
+then requires a different human approval for each publication effect.
 Existing bug fixes do not depend on new extension authoring.
 
 ## Input
@@ -37,13 +39,16 @@ has an observed result.
    every outgoing code/doc/fixture byte. Remove credentials, account identifiers,
    raw chats, user memory, private service data and contributor machine paths.
    Use synthetic fixtures. Denial or cancellation must not advance downstream.
-4. Discover `prepare_contribution_bundle` via `list_tools` with
+4. For already validated supplied text, optionally discover
+   `prepare_contribution_bundle` via `list_tools` with
    `include_schema: true`. Supply selected before/after UTF-8 text, normalized
    relative paths, owner/repository, base revision, topic branch, classification,
    rights/license review, summary, worktree and test report. Use null for a
    missing file; this slice excludes binary and empty-file create/delete patches.
    Example file change: `{"path":"fixture.txt","before":"old\n","after":"new\n"}`.
    Input is limited to 64 KiB, 32 files and 16,384 characters per before/after.
+   Otherwise use the checked lifecycle below; never invent reports to satisfy
+   this optional text builder.
 5. Check `ok`, `revision`, `diff`, `files`, `checks` and `required_gates`.
    The tool blocks common sensitive markers, unsafe paths, reported dirty trees,
    unknown rights and nonpassing tests, but it does not inspect the repository,
@@ -54,17 +59,46 @@ has an observed result.
    local text bundle if publication is not requested, denied or unavailable;
    report explicitly that nothing was sent. Do not request credentials in chat.
    A missing credential never authorizes switching destinations.
-7. If requested, obtain separate exact authorization for local commit, remote
+7. Discover `request_contribution_tests`, `inspect_contribution_operation`,
+   `request_contribution_commit`, `request_contribution_push` and
+   `request_contribution_draft_pr` with their schemas. Initialize the selected
+   canonical Git workspace. It must be clean; the workflow never reverts or
+   stages unrelated changes. The supported test path requires its existing
+   local Node/Vitest installation and a supported native process owner.
+   Do not install dependencies or bypass an unavailable runner implicitly.
+   Supply the exact base commit, destination, topic branch, classification,
+   rights/license review, summary, Conventional Commit message,
+   `files:[{"path":"src/value.mjs","content":"EXACT_PROPOSED_TEXT"}]` and
+   `test_files:["src/value.test.mjs"]`. Null content deletes a file.
+   This is a test request, not observed success. No caller-supplied test report
+   can satisfy it. Inspect the local exact review in Skills or the approval banner.
+8. Approving tests creates an isolated topic worktree under the selected
+   workspace's ignored `node_modules/.cache/jarela-contributions`. Review the
+   complete selected test source, hooks and repository/dependency execution
+   effects: these are full-trust code, NOT a sandbox. Actual passing checks,
+   descendant cleanup and unchanged selected scope are required before the
+   canonical local bundle is available. Tests can execute imported/configured
+   code beyond the selected sources; privacy heuristics cannot prove safety.
+   Keep the local bundle and stop here when publication was not requested.
+9. If requested, obtain separate exact authorization for local commit, remote
    push and draft PR. These are distinct gates; local execution trust or approval
-   of the bundle does not authorize them. Recheck actual outgoing bytes, base,
-   branch and destination before each write; any change invalidates prior review.
-   Missing trusted publication support is a blocker. Do not fabricate a PR URL
-   or call a model-declared gate value authorization.
-8. Use existing authorized repository tools and destination conventions only.
+   of the bundle does not authorize them. Pass the same `operation_id` to each
+   lifecycle request; each creates a fresh proposal and review revision. Recheck
+   actual outgoing bytes, base, branch, remote, hooks and destination before each
+   write. Changes invalidate review. Never reuse a test approval as commit,
+   push or draft-PR authority. Missing credentials block publication: do not ask
+   for credentials in chat, switch destinations or fabricate a PR URL.
+10. Use existing authorized repository tools and destination conventions only.
    Never push main, merge, publish packages, disable hooks or bypass checks.
    When contributing to Jarela, use Conventional Commits and rebase-merge policy.
    After an ambiguous write, inspect actual state before any retry. Verify and
    report observed commit, remote branch, draft-PR status and review feedback.
+   `inspect_contribution_operation` returns status metadata; complete source,
+   diff and observed evidence stay in the local operation preview.
+   `cancel_authoring_operation` with type `contribution` cancels waiting/running
+   work without rollback or downstream authority. Ownership remains until actual
+   settlement. Unknown outcomes block automatic retries. Restart invalidates
+   approvals; inspect any surviving user-owned worktree and start fresh.
 
 ## Validation
 

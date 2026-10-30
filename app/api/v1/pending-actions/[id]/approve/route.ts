@@ -17,7 +17,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
   const action = getPendingAction(id);
   if (!action) return NextResponse.json({ error: "not found" }, { status: 404 });
-  if (action.kind === "execute_skill" || action.kind === "execute_workflow") {
+  if (action.kind === "execute_skill" || action.kind === "execute_workflow" || action.kind === "authoring_operation") {
     const refused = localExecutionGuard(req);
     if (refused) return refused;
   }
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   const reserved = reservePendingApproval(id);
   if (!reserved) return NextResponse.json({ error: "approval already accepted or handled; do not repeat the action" }, { status: 409 });
   let result: Awaited<ReturnType<typeof applyAction>>;
-  try { result = await applyAction(reserved.kind, payload, extras); }
+  try { result = await applyAction(reserved.kind, payload, extras, { agentId: reserved.agent_id, proposalId: reserved.id }); }
   catch {
     const final = setActionStatus(id, "failed", { error: "Approval application interrupted; verify external effects before retrying.", outcome: "unknown" });
     return NextResponse.json({ ok: false, action: final ? pendingActionToResponse(final) : null, error: "Approval outcome may be unknown" }, { status: 500 });

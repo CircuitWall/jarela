@@ -25,6 +25,21 @@ afterEach(() => {
 });
 
 describe("inert in-memory skill artifacts", () => {
+  it("constructs exact bounded text artifacts without filesystem writes or execution", () => {
+    const dir = bundle();
+    const captured = SkillExecutionArtifact.capture(dir);
+    const files = captured.files.map(({ path }) => ({ path, content: captured.readFile(path).toString("utf8") }));
+    expect(SkillExecutionArtifact.fromFiles([...files].reverse()).revision).toBe(captured.revision);
+    const artifact = SkillExecutionArtifact.fromFiles(files);
+    files[0].content = "changed";
+    expect(artifact.revision).toBe(captured.revision);
+    expect(() => SkillExecutionArtifact.fromFiles(files.slice(1))).toThrow();
+    expect(() => SkillExecutionArtifact.fromFiles([...files, { path: "extra.txt", content: "extra" }])).toThrow(/exactly/);
+    expect(() => SkillExecutionArtifact.fromFiles([...files, { path: "skill.md", content: "duplicate" }])).toThrow(/Duplicate/);
+    expect(() => SkillExecutionArtifact.fromFiles([...files, { path: "../escape", content: "" }])).toThrow();
+    expect(() => SkillExecutionArtifact.fromFiles([...files, { path: "bad.txt", content: "\ud800" }])).toThrow(/UTF-8/);
+    expect(() => SkillExecutionArtifact.fromFiles([...files, { path: "entry.mjs/nested", content: "" }])).toThrow(/Conflicting/);
+  });
   it("captures exact instructions, manifest and declared binary assets without running code", () => {
     const dir = bundle({ files: ["entry.mjs", "assets/data.bin"] });
     mkdirSync(join(dir, "assets"));

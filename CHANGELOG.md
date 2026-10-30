@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built-in skills. Separate execution, installation, commit, push and draft-PR
   gates remain mandatory; this slice does not execute, activate or publish code,
   verify caller-reported tests, or complete the roadmap release acceptance.
+- Add independently reviewed extension staging, owned fixture execution,
+  exact-source installation, configuration, agent enablement, actual verification
+  and explicit disable/removal/restoration. Retain user-owned inert source across
+  restarts without recovering execution grants; expose local review controls in
+  Skills and invalidate changed/expired approvals.
+- Add repository-inspected contribution tests and local review bundles with
+  independent commit, topic-push and draft-PR gates, exact worktree/source/hook
+  baselines, sensitive-content blockers and explicit missing-credential failures.
 
 ## [3.2.0] - 2026-10-30
 

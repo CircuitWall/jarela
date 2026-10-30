@@ -24,6 +24,7 @@ export type ActionKind =
   | "ask_choice"
   | "execute_skill"
   | "execute_workflow"
+  | "authoring_operation"
   | "update_scheduled_task_prompt"
   | "update_watcher_prompt";
 
@@ -68,7 +69,7 @@ export function getPendingAction(id: string): PendingActionRow | null {
 }
 
 function decodeAction(row: PendingActionRow): PendingActionRow {
-  return row.kind === "execute_skill" && row.result
+  return (row.kind === "execute_skill" || row.kind === "authoring_operation") && row.result
     ? { ...row, result: decryptIfNeeded(row.result) } : row;
 }
 
@@ -83,7 +84,7 @@ export function listPendingActions(opts: { status?: ActionStatus; agent_id?: str
 
 export function recoverAbandonedExecutionApprovals(): number {
   const rows = getDb().prepare(`SELECT id FROM pending_actions
-    WHERE status='pending' AND kind IN ('execute_skill','execute_workflow')`).all();
+    WHERE status='pending' AND kind IN ('execute_skill','execute_workflow','authoring_operation')`).all();
   for (const row of rows) {
     if (typeof row.id !== "string") throw new Error("Invalid stored execution approval identity");
     const accepted = getSystemOperation(`approval:${row.id}`)?.state === "accepted";
@@ -122,7 +123,7 @@ export function setActionStatus(
       throw new Error("Approval application is already in progress; verify its outcome instead of denying it");
     }
     const serialized = result === undefined ? null : JSON.stringify(result);
-    const stored = prior?.kind === "execute_skill" && serialized !== null ? encrypt(serialized) : serialized;
+    const stored = (prior?.kind === "execute_skill" || prior?.kind === "authoring_operation") && serialized !== null ? encrypt(serialized) : serialized;
     getDb()
       .prepare("UPDATE pending_actions SET status=?, result=?, decided_at=? WHERE id=?")
       .run(status, stored, now(), id);

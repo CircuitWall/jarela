@@ -794,8 +794,8 @@ behavior against R11; implement only the demonstrated gaps.
 | 3.1.0 | W0. Baseline and contract design | [#826](https://github.com/CircuitWall/jarela/issues/826) | Started: foundation regressions and source-linked gap inventory below; journey and design gates remain open |
 | 3.1.0 | W1. JavaScript-backed skills | [#827](https://github.com/CircuitWall/jarela/issues/827) | Planned; blocked on W0 and artifact-bound execution authorization |
 | 3.1.0 | W2. File workflow and interaction | [#828](https://github.com/CircuitWall/jarela/issues/828) | Planned; W1 needed only for script steps |
-| 3.2.0 | W3. Extension-development workflow | [#829](https://github.com/CircuitWall/jarela/issues/829) | Started (Unreleased): inert synthetic-service scaffold and built-in procedure; installation/update/removal acceptance and second-author walkthrough remain |
-| 3.2.0 | W4. Contribution workflow | [#830](https://github.com/CircuitWall/jarela/issues/830) | Started (Unreleased): local text/diff bundle and built-in procedure; repository evidence verification and separately authorized publication remain |
+| 3.2.0 | W3. Extension-development workflow | [#829](https://github.com/CircuitWall/jarela/issues/829) | Engineering implemented (Unreleased): exact reviewed stages, owned tests, installation denial, actual synthetic verification 10/10 and failed-update/disable/removal/restoration exercised; named ownership and second-author walkthrough remain |
+| 3.2.0 | W4. Contribution workflow | [#830](https://github.com/CircuitWall/jarela/issues/830) | Engineering implemented (Unreleased): repository-observed isolated tests/local bundles and separate commit/create-only push/draft-PR gates; named ownership and separately authorized live-remote acceptance remain |
 | 3.3.0 | W5. Agent advertisements | [#831](https://github.com/CircuitWall/jarela/issues/831) | Planned; routing baseline/design can proceed independently |
 
 Related items share three GitHub milestones: 3.1.0 foundations (W0-W2),

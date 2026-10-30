@@ -81,6 +81,9 @@ export default defineConfig({
           JARELA_DISABLE_UPDATE_CHECK: "1",
           // Throwaway DB so tests never touch the developer's ~/.jarela.
           JARELA_DB_DIR: E2E_DB_DIR!,
+          // Authoring acceptance installs drop-ins; never inherit a developer's
+          // configured autoload directory from .env.local.
+          JARELA_TOOLS_DIR: join(E2E_DB_DIR!, "tools"),
           // Non-default port so we never collide with an installed
           // jarela on 4312.
           JARELA_PORT: String(E2E_PORT),

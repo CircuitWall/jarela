@@ -1294,6 +1294,7 @@ export interface PendingAction {
     | "ask_choice"
     | "execute_skill"
     | "execute_workflow"
+    | "authoring_operation"
     | "update_scheduled_task_prompt"
     | "update_watcher_prompt";
   payload: Record<string, unknown>;

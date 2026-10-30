@@ -91,6 +91,38 @@ and launched entries without cleanup proof are retained with an explicit reason.
 Do not delete those files while an owner may still run. Resolve external effects
 and inspect ownership before manual maintenance; never replay surviving files.
 
+## Extension and contribution authoring (Unreleased)
+
+In **Skills**, open **Extension and contribution workflows**. Loading an
+example only fills an editable request. Select the permitted agent and canonical
+workspace; create the inert candidate, then request one stage at a time.
+The exact code/baseline/destination/effects must be reviewed and acknowledged
+before **Approve this authoring stage** becomes available. **Deny** leaves
+unstarted work inert; **Cancel active authoring stage** does not promise rollback.
+The shared approvals banner uses the same preview.
+
+Extension fixture tests require the existing native process owner. Installation
+can execute full-trust top-level code on the next loader import, even while
+invocation is disabled. Install, local synthetic configuration, agent enablement
+and actual verification require separate approvals. Stop on failure or changed
+state; review disable/removal and any restoration separately. Restored source
+must be staged, tested, installed and verified again.
+
+Inert authoring source has the existing ownership format's `retained` state and
+survives automatic cleanup/restart as user-owned data, **never** as executable
+consent. Explicitly review `discard` to remove the current identity-checked
+staged copy; it does not uninstall a tool. Earlier retained versions and drafts
+from expired sessions require deliberate inspection/removal. Restart invalidates
+operations and pending approvals. Start fresh rather than trusting old consent.
+For contributions, use a clean selected Git repository and existing local
+Vitest installation. Creation proposes tests in an isolated ignored topic
+worktree, not a commit. Keep its inspected local bundle when publication is not
+requested. Commit, topic push and draft PR each need fresh exact review with the
+same operation ID. Missing Git/GitHub credentials is a blocker, not consent to
+change destinations. Never retry an unknown write or delete an active worktree.
+See the [authoring contracts](EXTENDING.md#inert-authoring-and-local-contribution-bundles-unreleased)
+and [ADR-0115](adr/0115-reviewed-authoring-and-contribution-lifecycle.md).
+
 ## Manage agents
 
 The Agents view lists configured agents with a short summary of each instruction set. Use **New** to start adding an agent, and review the selected agent's tools and instructions before relying on it for a workflow.

@@ -46,8 +46,19 @@ export async function applyAction(
   kind: ActionKind,
   payload: unknown,
   extras?: Record<string, unknown>,
+  context?: { agentId: string; proposalId: string },
 ): Promise<ApplyResult> {
   switch (kind) {
+    case "authoring_operation": {
+      try {
+        const { approveAuthoringOperation } = await import("@/lib/workflows/authoring-operations");
+        if (!context?.agentId) throw new Error("Trusted approval agent context is required");
+        return { ok: true, detail: await approveAuthoringOperation(payload, context.agentId, context.proposalId) };
+      } catch (error) {
+        console.error("[authoring] approved operation failed", error instanceof Error ? error.message : "unknown failure");
+        return { ok: false, detail: { error: "Authoring operation refused or failed; inspect actual state before retrying", outcome: "unknown" } };
+      }
+    }
     case "execute_workflow": {
       const { approveWorkflowAuthorization } = await import("@/lib/workflows/authorization");
       try {

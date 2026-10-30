@@ -449,8 +449,8 @@ has its own content revision, separate from the script artifact/consent revision
 
 ### Inert authoring and local contribution bundles (Unreleased)
 
-This is the initial W3/W4 roadmap slice, not complete extension-development or
-remote-publication automation. The existing app manifest/release number does
+These unreleased W3/W4 workflows separate inert text builders from explicitly
+approved lifecycle effects. The existing app manifest/release number does
 not certify roadmap acceptance. Load the `extension-development` or
 `contribution-review` built-in skill for the applicable procedure.
 
@@ -502,14 +502,159 @@ verification. Review **every** outgoing byte; use synthetic fixtures and never
 include secrets, user memory, raw chats or private service data. A successful
 check still requires human privacy and exact-diff review.
 
-Both tools return bounded text only and always report no execution/publication
+Both text-builder tools return bounded text only and always report no execution/publication
 authority; scaffolds also report no installation authority. No writes, imports,
-activation, durable grants or remote publication are implemented by this slice.
+activation, durable grants or remote publication are performed by those builders.
 Keep the local bundle on denial/cancellation or missing credentials. Commit,
 push and draft PR remain distinct exact-diff/destination approval gates through
 existing authorized repository tools; local execution trust cannot satisfy them.
-End-to-end installation/update/removal acceptance, second-author walkthroughs
-and separately authorized remote publication remain work for #829/#830.
+The lifecycle services below supply distinct approved effects. Second-author
+walkthroughs and separately authorized live remote publication remain acceptance
+gates for #829/#830.
+
+#### Reviewed extension lifecycle
+
+Load `extension-development`, or open **Tools > Skills > Extension and contribution
+workflows**. `start_extension_authoring` captures the selected name, goal and
+discovery decision in a canonical workspace. An optional `source` replaces only
+the CommonJS tool implementation (maximum 16 KiB UTF-8); the synthetic
+contract and fixture assertions are fixed. Syntax validation does not import it.
+Built-in name collisions, malformed/sensitive source and overlapping configured
+autoload/staging paths are blockers.
+
+Use `request_extension_stage` for one operation at a time:
+
+1. `stage`: review exact files and approve a retained inert copy under the
+   existing data-directory `skill-runs/run-*` path. It is not auto-loaded.
+2. `test`: independently approve full-trust code execution. The existing checked
+   Node runner owns descendants, limits time/output and validates the exact
+   fixture result. Its environment does not inherit app credentials. Current
+   capability, safe-mode and skill-execution policy checks still apply; a policy
+   requiring a workflow-wide grant is not bypassed by a per-stage request.
+   Unsupported native ownership fails explicitly.
+3. `install`: only observed passing tests qualify. Review exact candidate and
+   previous source, agent, destination and import privileges. Only the tool
+   `.cjs` is copied into the existing configured tools directory (created only
+   by this approved effect if absent). It is initially disabled for invocation.
+   The loader can still execute top-level code on import; disabled is not inert.
+4. `configure`: review an explicit `fixture_origin` restricted to
+   `http://127.0.0.1:<port>` without credentials, path, query or fragment.
+5. `enable`: separately approve global drop-in enablement and granting only this
+   tool to the selected agent. Other agent settings are preserved atomically;
+   changed permission baselines require fresh review.
+6. `verify`: approve the actual permitted installed tool call against the
+   synthetic service and check its result and installed bytes. Catalog presence
+   is not verification.
+
+For an operator-owned synthetic fixture, explicitly start this dependency-free
+loopback server in a separate terminal, configure `http://127.0.0.1:8791`, and stop
+it with Ctrl+C afterward. An agent needs separate execution authority to start
+it; approving extension tests does not grant that authority.
+
+```shell
+node -e "require('node:http').createServer((req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({value:new URL(req.url,'http://127.0.0.1').searchParams.get('value')}))}).listen(8791,'127.0.0.1')"
+```
+
+Use `inspect_extension_authoring` for the session and `inspect_authoring_operation`
+for a pending/completed effect. `cancel_authoring_operation` never rolls back
+effects; underlying execution remains owned until settlement and late success
+does not convert cancellation into verified success.
+
+On failed tests/update/verification stop downstream work. Separately approve
+`disable`, then `remove`; removal revokes the selected agent's grant, verifies source absence and invalidates the
+loader cache. Disabling does not kill a call/import already in flight.
+`restore` disables and selects the originally retained prior bytes as a new
+candidate; it does **not** copy them into the loader directory. Stage, test,
+install, enable and verify again. There is no automatic rollback.
+
+Retained inert source survives restart and is never an execution grant.
+`discard` deletes only the current, identity-checked staged directory after its
+own review; installed code is unchanged. Earlier retained versions remain
+user-owned and require explicit inspection/removal. Restart invalidates all
+sessions, pending effects and executable approvals; inspect retained files and
+start a fresh review rather than resuming consent. See
+[ADR-0115](adr/0115-reviewed-authoring-and-contribution-lifecycle.md).
+
+Local unlocked endpoints mirror the tools:
+`POST /api/v1/extension-authoring` accepts
+`{"action":"create","agentId":"...","workspace":"...","input":{...}}` or
+`{"action":"request","agentId":"...","input":{"id":"...","stage":"test"}}`.
+`GET` with `id` and `agentId` inspects a session.
+`GET /api/v1/authoring-operations/<id>?type=extension` returns exact review;
+`DELETE` cancels. Approval/denial uses the existing pending-action endpoints
+and requires a separate local user decision. No model-supplied boolean approves.
+
+#### Reviewed contribution lifecycle
+
+Load `contribution-review`, or select **Contribution** in the same Skills panel.
+Existing fixes do not depend on extension authoring. `request_contribution_tests`
+requires a canonical clean Git root, exact current base commit, existing local
+Node/Vitest installation, supported native process owner, selected proposed
+UTF-8 files and test paths. No dependency installation happens implicitly.
+Unknown rights, sensitive content/paths, dirty source worktrees, stale base or
+changed selected bytes block progression. Rights/license text remains a human
+attestation, not a legal determination.
+
+Example request shape (replace every synthetic value with reviewed actual data):
+
+```json
+{
+  "destination": "synthetic-owner/synthetic-repo",
+  "branch": "fix/reviewed-value",
+  "base_revision": "0123456789abcdef0123456789abcdef01234567",
+  "classification": "core",
+  "summary": "Verify the selected synthetic change",
+  "ownership": "user_owned",
+  "license_review": "Synthetic user-owned fixture authorized for contribution",
+  "commit_message": "fix(fixture): verify reviewed value",
+  "files": [
+    {"path":"src/value.mjs","content":"export const value = () => \"after\";\n"},
+    {"path":"src/value.test.mjs","content":"import { expect, test } from \"vitest\";\nimport { value } from \"./value.mjs\";\ntest(\"value\", () => expect(value()).toBe(\"after\"));\n"}
+  ],
+  "test_files": ["src/value.test.mjs"]
+}
+```
+
+`classification` is `core|extension`; `ownership` is
+`user_owned|licensed_for_contribution|unknown`. Null file content means deletion.
+At most 32 files, 16,384 characters each, and 16 distinct JS/TS test paths are
+accepted. Binaries and empty-file creation/deletion are unsupported.
+
+Creation returns a pending **test** proposal, never a successful bundle.
+Approval creates a new isolated topic worktree under the source workspace's
+ignored `node_modules/.cache/jarela-contributions`, leaving its selected source
+and unrelated changes untouched. Review test source, hooks and execution
+effects: dependencies, Git hooks and imported/configured code can execute with
+full host privileges. Passing tests alone do not prove privacy or rights.
+The local exact operation preview contains observed test hashes/status/cleanup,
+repository evidence, the canonical bounded diff and selected files.
+
+Stop with that local bundle unless publication was requested. Then request
+`request_contribution_commit`, `request_contribution_push`, and
+`request_contribution_draft_pr` individually. Each accepts the **same**
+`{"operation_id":"..."}` and returns a fresh proposal and review revision.
+Commit includes exact identity/message/hooks/diff; push uses an explicit
+create-only topic refspec and existing local Git credentials; draft PR uses the
+configured GitHub authentication. Missing credentials never authorize a new
+destination or asking for secrets in chat. Hooks/checks are not bypassed.
+The empty expected-value lease prevents updating an already existing remote
+branch, including one created during approval. No main push, merge, package
+publication or automatic post-review write exists. Git mutations, hooks,
+transports and credential helpers run under native process ownership; inert
+discovery disables executable helpers rather than probing credentials.
+
+`inspect_contribution_operation` returns status metadata to the model; the
+complete reviewed source/diff remains local. The shared operation endpoint with
+`type=contribution` exposes full preview and cancellation. Denial/cancellation
+never rolls back effects; ambiguous outcomes block automatic retries. Restart
+does not recover grants. Surviving user-owned worktrees require inspection before
+fresh consent. Live remote publication remains separately authorized acceptance;
+local bare-remotes and fake HTTP fixtures do not certify a real destination.
+
+`POST /api/v1/contribution-authoring` accepts
+`{"action":"create","agentId":"...","workspace":"...","input":{...}}` or
+`{"action":"commit","agentId":"...","operation_id":"..."}` (likewise `push`
+and `draft_pr`). Creation/read operations do not approve tests or publication.
 
 ### Internal in-memory artifact capture (Unreleased)
 

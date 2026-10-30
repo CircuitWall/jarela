@@ -111,6 +111,13 @@ async function runShutdown(): Promise<void> {
   }
 
   try {
+    const { shutdownAuthoringOperations } = await import("@/lib/workflows/authoring-operations");
+    await shutdownAuthoringOperations();
+  } catch (err) {
+    console.error("[jarela] draining authoring operations failed:", err);
+  }
+
+  try {
     const { shutdownSkillExecutions } = await import("@/lib/skills/execution-service");
     await shutdownSkillExecutions();
   } catch (err) {

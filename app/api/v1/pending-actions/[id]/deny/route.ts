@@ -10,7 +10,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const action = getPendingAction(id);
   if (!action) return NextResponse.json({ error: "not found" }, { status: 404 });
-  if (action.kind === "execute_skill" || action.kind === "execute_workflow") {
+  if (action.kind === "execute_skill" || action.kind === "execute_workflow" || action.kind === "authoring_operation") {
     const refused = localExecutionGuard(_req);
     if (refused) return refused;
   }
@@ -21,6 +21,15 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "approval application is already in progress; verify its outcome" }, { status: 409 });
   }
   const final = setActionStatus(id, "denied", "user denied");
+  if (action.kind === "authoring_operation") {
+    const { AuthoringApprovalPayload, cancelAuthoringOperation, inspectAuthoringOperation } = await import("@/lib/workflows/authoring-operations");
+    try {
+      const payload = AuthoringApprovalPayload.parse(JSON.parse(action.payload));
+      const live = await inspectAuthoringOperation(payload.operation_id, payload.operation_type, action.agent_id);
+      if (live.proposal_id !== id) throw new Error("Denied proposal no longer owns the current stage");
+      await cancelAuthoringOperation(payload.operation_id, payload.operation_type, action.agent_id);
+    } catch (error) { console.warn("[authoring] denied operation no longer live", error instanceof Error ? error.message : "unknown failure"); }
+  }
   if (action.kind === "execute_skill") {
     const payload: unknown = JSON.parse(action.payload);
     if (payload && typeof payload === "object" && "request_id" in payload && typeof payload.request_id === "string") {

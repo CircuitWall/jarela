@@ -61,6 +61,32 @@ export class SkillExecutionArtifact {
     return Buffer.from(bytes);
   }
 
+  static fromFiles(files: readonly { path: string; content: string }[]): SkillExecutionArtifact {
+    if (files.length > SKILL_INSPECTION_LIMITS.files + 2) throw new Error("Too many artifact files");
+    const contents = new Map<string, Buffer>();
+    const folded = new Set<string>();
+    let total = 0;
+    for (const file of files) {
+      portableSkillPath.parse(file.path);
+      if (!file.content.isWellFormed() || file.content.includes("\0")) throw new Error("Artifact text must be well-formed UTF-8 without NUL");
+      const key = file.path.toLowerCase();
+      if (folded.has(key)) throw new Error("Duplicate artifact path");
+      for (const path of folded) {
+        if (path.startsWith(`${key}/`) || key.startsWith(`${path}/`)) throw new Error("Conflicting artifact paths");
+      }
+      folded.add(key);
+      const bytes = Buffer.from(file.content, "utf8");
+      const limit = file.path === "execution.json" ? SKILL_INSPECTION_LIMITS.manifestBytes : SKILL_INSPECTION_LIMITS.fileBytes;
+      if (bytes.length > limit || (total += bytes.length) > SKILL_INSPECTION_LIMITS.totalBytes) throw new SkillFileSizeError("Artifact exceeds size limits");
+      contents.set(file.path, bytes);
+    }
+    if (!contents.has("SKILL.md") || !contents.has("execution.json")) throw new Error("Artifact metadata is required");
+    const manifest = parseSkillExecutionManifest(decodeManifest(contents.get("execution.json")!));
+    const expected = new Set(["SKILL.md", "execution.json", ...manifest.files]);
+    if (expected.size !== contents.size || [...expected].some((path) => !contents.has(path))) throw new Error("Artifact files must exactly match the manifest");
+    return new SkillExecutionArtifact(new Map([...contents].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)));
+  }
+
   static capture(directory: string): SkillExecutionArtifact {
     const root = resolve(directory);
     const identity = rootIdentity(root);

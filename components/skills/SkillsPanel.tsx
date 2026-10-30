@@ -10,6 +10,7 @@ import { SkillList } from "./SkillList";
 import { SkillEditor, type SkillEditState } from "./SkillEditor";
 import { SkillRunner } from "./SkillRunner";
 import { WorkflowRunner } from "./WorkflowRunner";
+import { AuthoringWorkflows } from "./AuthoringWorkflows";
 
 export function SkillsPanel() {
   const [repos, setRepos] = useState<SkillRepo[]>([]);
@@ -59,6 +60,7 @@ export function SkillsPanel() {
         <SkillRepoSection repos={repos} onChanged={() => void load()} />
         <SkillRunner skills={skills} />
         <WorkflowRunner />
+        <AuthoringWorkflows />
 
         <SkillList
           skills={skills}

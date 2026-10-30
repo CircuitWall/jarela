@@ -9,6 +9,7 @@ import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choi
 import { ChoiceFields, type ChoiceResponse } from "./ChoiceFields";
 import { ArtifactPreview } from "./ArtifactPreview";
 import { SkillExecutionPreview } from "./SkillExecutionPreview";
+import { AuthoringOperationPreview } from "./AuthoringOperationPreview";
 
 const PAYLOAD_PREVIEW_CHARS = 6_000;
 const PAYLOAD_EXPANDED_PREVIEW_CHARS = 20_000;
@@ -483,7 +484,7 @@ export function ApprovalsBanner({
                 const response = responses[a.id] ?? { selected_values: [] };
                 const validResponse = choice?.success
                   ? choiceResponseSchema(choice.data).safeParse(response).success
-                  : a.kind === "execute_skill" || a.kind === "execute_workflow" ? reviewedExecutions[a.id] === true : a.kind !== "ask_choice";
+                  : a.kind === "execute_skill" || a.kind === "execute_workflow" || a.kind === "authoring_operation" ? reviewedExecutions[a.id] === true : a.kind !== "ask_choice";
                 return (
                   <div key={a.id} className="px-3 py-2.5 text-xs">
                     <div className="flex items-center gap-2 mb-1">
@@ -497,7 +498,11 @@ export function ApprovalsBanner({
                         onChange={(value) => setResponses((previous) => ({ ...previous, [a.id]: value }))}
                         disabled={busy}
                       />
-                    ) : a.kind === "execute_workflow" && typeof a.payload.authorization_id === "string"
+                    ) : a.kind === "authoring_operation" && typeof a.payload.operation_id === "string"
+                      && (a.payload.operation_type === "extension" || a.payload.operation_type === "contribution")
+                      ? <AuthoringOperationPreview id={a.payload.operation_id} type={a.payload.operation_type}
+                          onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
+                      : a.kind === "execute_workflow" && typeof a.payload.authorization_id === "string"
                       ? <SkillExecutionPreview requestId={a.payload.authorization_id} workflow
                           onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
                       : a.kind === "execute_skill" && typeof a.payload.request_id === "string"

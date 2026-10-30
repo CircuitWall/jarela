@@ -23,6 +23,15 @@ function setup(state: "prepared" | "launched" | "cleanup_verified" = "prepared")
   return { staging, ownerFile, ownership };
 }
 describe("conservative staging retention", () => {
+  it("preserves explicitly retained inert authoring source across restart and permits exact owned discard", () => {
+    const { staging } = setup();
+    staging.retainSource();
+    vi.spyOn(process, "kill").mockImplementation(() => { throw Object.assign(new Error("gone"), { code: "ESRCH" }); });
+    expect(cleanupAbandonedSkillStaging()).toEqual({ removed: [], retained: [{ directory: basename(staging.directory), reason: expect.stringContaining("User-owned") }] });
+    expect(() => staging.retainSource()).toThrow(/Only inert/);
+    staging.dispose();
+    expect(cleanupAbandonedSkillStaging()).toEqual({ removed: [], retained: [] });
+  });
   it("cleans a dead owner's prepared directory but never a live owner's directory", () => {
     const { staging } = setup();
     expect(cleanupAbandonedSkillStaging().retained).toHaveLength(1);
