@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Start roadmap W3/W4 authoring and contribution with inert synthetic-service
+  scaffolds, bounded local-only exact-diff review bundles and task-specific
+  built-in skills. Separate execution, installation, commit, push and draft-PR
+  gates remain mandatory; this slice does not execute, activate or publish code,
+  verify caller-reported tests, or complete the roadmap release acceptance.
+
 ## [3.2.0] - 2026-10-30
 
 ### Added

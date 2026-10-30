@@ -39,6 +39,10 @@ not an automatic retry. Missing credentials belong in credential UI, not chat.
    integration should ship with Jarela.
 
 Call `describe_extension_surfaces` when unsure which path fits.
+For a genuinely missing, authorized capability, load `extension-development`
+before scaffolding. Keep generated drafts outside auto-loaded directories;
+tests and installation need separate authority. Upstream sharing is optional:
+load `contribution-review` only for an explicitly requested contribution.
 
 ## Setup Flow For Users
 

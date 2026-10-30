@@ -1,0 +1,17 @@
+{
+  "name": "Dirty worktree blocks a contribution bundle",
+  "tool": "prepare_contribution_bundle",
+  "input": {
+    "destination": "example/fixture",
+    "branch": "fix/fixture",
+    "base_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "classification": "core",
+    "summary": "Correct synthetic fixture",
+    "ownership": "user_owned",
+    "license_review": "Original synthetic fixture with permitted contribution",
+    "worktree": "dirty",
+    "tests": { "status": "passed", "command": "node --test", "evidence": "Reported fixture result" },
+    "files": [{ "path": "fixture.txt", "before": "old\n", "after": "new\n" }]
+  },
+  "expect": { "ok": false, "issue_paths": ["worktree"] }
+}

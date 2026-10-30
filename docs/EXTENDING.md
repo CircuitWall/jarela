@@ -447,6 +447,70 @@ checked against `execution.json` in tests to detect drift. Sharing/reading this
 definition neither runs it nor authorizes its script step. The workflow definition
 has its own content revision, separate from the script artifact/consent revision.
 
+### Inert authoring and local contribution bundles (Unreleased)
+
+This is the initial W3/W4 roadmap slice, not complete extension-development or
+remote-publication automation. The existing app manifest/release number does
+not certify roadmap acceptance. Load the `extension-development` or
+`contribution-review` built-in skill for the applicable procedure.
+
+`scaffold_extension` is a Config/read tool. Supply a portable lowercase tool
+name, scoped goal and discovery decision/evidence. Reuse/configure decisions
+explicitly block authoring. An author decision returns a revision, suggested
+`extension-drafts/<name>` relative staging directory and three text files:
+the dependency-free CommonJS tool, Node fixture test and setup/recovery README.
+This is a fixed local synthetic-loopback-service template, not implementation
+of an arbitrary requested capability. Tests validate actual HTTP and checked
+input/output, including missing configuration, invalid origin, wrong output,
+oversized response and invalid UTF-8. Runtime generation never runs those tests.
+The discovery claim remains caller-supplied, not independently verified.
+
+Before any separately authorized staging write, verify the selected absolute
+directory is outside all configured tools/providers/skill repositories. The
+relative suggestion is not proof of isolation. Drop-in tools execute top-level
+code automatically when their configured directory is scanned: copying there
+is activation, not inert storage. Never install the fixture test beside the tool.
+Review full-trust effects and authorize tests, exact-source installation and
+agent permission separately using existing supported surfaces. Missing
+execution/install support is a blocker; the scaffold has no execution manifest
+and cannot be passed to `run_skill`. Generated guidance does not grant consent.
+
+`prepare_contribution_bundle` is also Config/read. It accepts a destination
+`owner/repository`, topic branch, base revision, classification, summary,
+rights/license review, reported worktree/tests and up to 32 selected file changes.
+Each file supplies a portable relative `path`, and `before`/`after` text (null
+for an absent file). Each side is limited to 16,384 characters; total canonical
+JSON input is capped at 64 KiB. Only well-formed UTF-8 text without NUL is
+supported; binary and empty-file creation/deletion are excluded.
+
+The local result contains exact before/after text and a full-replacement unified
+patch, sorted paths, SHA-256 revision and explicit remaining gates. Destination,
+branch, base, test/rights reports and all content bind the revision. Git's
+line-ending settings can change application results; verify the destination's
+policy and actual resulting bytes. The tool does not read repository state,
+run git, execute tests, use credentials or send network requests. Reports are
+explicitly `caller_supplied_not_verified`; verify them with trusted tools before
+using them downstream. A reported dirty/unknown tree, failed/unrun tests or
+unknown rights blocks bundle output.
+
+Common secret markers share the repository scanner's pure pattern list.
+Contribution checks additionally block common credential assignments, email
+addresses, contributor home paths, sensitive filenames and case-colliding paths.
+Unlike the commit scanner, inline suppression comments cannot bypass this check.
+These are conservative heuristics, not complete privacy, licensing or ownership
+verification. Review **every** outgoing byte; use synthetic fixtures and never
+include secrets, user memory, raw chats or private service data. A successful
+check still requires human privacy and exact-diff review.
+
+Both tools return bounded text only and always report no execution/publication
+authority; scaffolds also report no installation authority. No writes, imports,
+activation, durable grants or remote publication are implemented by this slice.
+Keep the local bundle on denial/cancellation or missing credentials. Commit,
+push and draft PR remain distinct exact-diff/destination approval gates through
+existing authorized repository tools; local execution trust cannot satisfy them.
+End-to-end installation/update/removal acceptance, second-author walkthroughs
+and separately authorized remote publication remain work for #829/#830.
+
 ### Internal in-memory artifact capture (Unreleased)
 
 `SkillExecutionArtifact.capture` is an internal, opt-in content-capture helper,

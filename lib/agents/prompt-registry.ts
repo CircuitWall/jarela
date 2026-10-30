@@ -113,6 +113,8 @@ export function listStaticPrompts(): StaticPrompt[] {
     },
     ...[
       { name: "browser-navigation", purpose: "Guides checked browser actions and privacy-preserving navigation hints." },
+      { name: "extension-development", purpose: "Guides inert extension scaffolding with separate code-execution, exact-artifact and installation gates." },
+      { name: "contribution-review", purpose: "Guides local-only contribution bundles, privacy review and separate commit/push/draft-PR gates." },
       { name: "jarela-configuration", purpose: "Guides scoped configuration edits, approval waiting and verified read-back." },
       { name: "jarela-documentation", purpose: "Finds available, version-scoped documentation without inventing installed content." },
       { name: "jarela-integrations", purpose: "Guides authorized setup, credential handling and narrowly scoped integration checks." },

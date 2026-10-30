@@ -26,6 +26,17 @@ interface ExtensionSurface {
 
 const SURFACES: readonly ExtensionSurface[] = [
   {
+    id: "external_tool",
+    name: "External drop-in tool",
+    summary: "Dependency-free .cjs tool with name, description, JSON schema and run(args, ctx). " +
+      "The configured tools directory auto-imports code with full host privileges. " +
+      "Use scaffold_extension for inert synthetic text outside that directory; installation is a separate approval.",
+    registration_entrypoint: "JARELA_TOOLS_DIR/<name>.cjs (getToolsDir in lib/tools/runtime/external.ts)",
+    doc_section: "docs/EXTENDING.md#inert-authoring-and-local-contribution-bundles-unreleased",
+    introspection_tool: "list_tools",
+    related_adrs: ["ADR-0023", "ADR-0111"],
+  },
+  {
     id: "llm_provider_builtin",
     name: "Built-in LLM provider",
     summary:

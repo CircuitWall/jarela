@@ -9,6 +9,7 @@ import { getBuiltinSkillsDir } from "./index";
 import { registeredCapability, registeredTools } from "@/lib/tools/runtime/registry";
 import "@/lib/tools/general/validate-personal-briefing";
 import "@/lib/tools/general/plan-memory-cleanup";
+import "@/lib/tools/general/authoring";
 
 const echoValidator = tool(
   async (input: { value: number }) =>

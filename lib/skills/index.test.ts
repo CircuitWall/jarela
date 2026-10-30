@@ -23,6 +23,8 @@ describe("built-in skills", () => {
     const skills = listSkills();
     expect(skills.map((s) => s.id)).toEqual(expect.arrayContaining([
       "browser-navigation",
+      "extension-development",
+      "contribution-review",
       "jarela-configuration",
       "jarela-documentation",
       "jarela-integrations",
@@ -44,7 +46,7 @@ describe("built-in skills", () => {
 
   it("discovers every built-in through matching frontmatter and task-specific descriptions", () => {
     const builtins = listSkills().filter((skill) => skill.source === "builtin");
-    expect(builtins).toHaveLength(7);
+    expect(builtins).toHaveLength(9);
     for (const skill of builtins) {
       expect(skill.name).toBe(skill.id);
       expect(skill.description).toMatch(/^Use when: .+\.$/);

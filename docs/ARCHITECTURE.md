@@ -174,6 +174,24 @@ cleanup, never implicit recovery or replay. Shutdown drains workflows and
 script owners before closing SQLite. Consent grants/captured executable bytes
 stay in memory; restart invalidates pending executable approvals.
 
+Unreleased W3/W4 starting primitives in `lib/workflows/authoring.ts` are pure
+bounded text builders, not another executor or persistence system.
+`lib/tools/general/authoring.ts` registers Config/read tools for inert external
+tool scaffolds and exact-diff local contribution review bundles. Discovery and
+repository/test/rights claims remain caller-supplied; output revisions bind the
+selected content and scope, never authorization. Built-in procedures require
+independent evidence and separate execution/install/commit/push/PR gates.
+The shared secret-marker list under `scripts/lib/secret-patterns.mjs` supports
+both the commit scanner and unsuppressible bundle checks; neither proves privacy.
+
+```mermaid
+flowchart LR
+  Skills["Authoring / contribution skills"] --> TextTools["Config/read text builders"]
+  TextTools --> Inert["Inert source / tests / local diff + revision"]
+  Inert --> Review["Independent validation + human review"]
+  Review -. "Separate authorization; not performed by text builders" .-> Lifecycle["Existing execution / installation / repository tools"]
+```
+
 ```mermaid
 flowchart LR
   UI["Local UI / explicit agent tools"] --> Coordinator["Bounded workflow service + trusted host"]
