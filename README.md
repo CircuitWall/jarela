@@ -245,7 +245,9 @@ Full docs are organized under the docs site and source docs folder:
 - [Operations guide](docs/OPERATIONS.md)
 - [Extending Jarela](docs/EXTENDING.md)
 - [API reference](docs/api.md)
+- [API design standard](docs/API_DESIGN_STANDARD.md)
 - [Contributing](CONTRIBUTING.md)
+- [Report technical debt](.github/ISSUE_TEMPLATE/technical-debt.yml)
 
 Maintainers can optionally run Copilot to propose a version-to-version
 documentation PR. Releases do not require this review or a Copilot token;

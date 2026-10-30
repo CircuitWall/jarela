@@ -26,6 +26,7 @@ import { getThreadActivity } from "@/lib/agents/thread-activity";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
 import { errorMessage } from "@/lib/utils/error";
 import { errorResponse, noStoreJson } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -41,7 +42,7 @@ function parseSeqParam(raw: string | null): number | undefined {
 export async function GET(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
   const thread = getThread(thread_id);
-  if (!thread) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  if (!thread) return errorResponse(NOT_FOUND_ERRORS.THREAD, 404);
 
   const url = new URL(req.url);
   const view = z.enum(["messages", "metadata"]).default("messages")
@@ -108,7 +109,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
   const fileRefs = collectThreadFileRefNames(thread_id);
   const deleted = deleteThread(thread_id);
-  if (!deleted) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  if (!deleted) return errorResponse(NOT_FOUND_ERRORS.THREAD, 404);
   removeFilesNoLongerReferenced(fileRefs);
 
   // Drop the thread's LangGraph checkpoint rows too. Without this the

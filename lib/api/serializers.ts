@@ -11,6 +11,24 @@ import type { MessageRow } from "@/lib/stores/threads";
 import type { MessageUsageRow } from "@/lib/stores/message-usage";
 import { parseJsonSafe } from "@/lib/utils/json";
 import type { PendingActionRow } from "@/lib/stores/pending-actions";
+import type { DocumentSourceRow, DocumentSourceStats } from "@/lib/stores/document-sources";
+
+export function documentSourceToResponse(row: DocumentSourceRow, stats: DocumentSourceStats) {
+  const config: unknown = row.config ? JSON.parse(row.config) : null;
+  return {
+    id: row.id,
+    path: row.path,
+    label: row.label,
+    enabled: row.enabled === 1,
+    last_scan_at: row.last_scan_at,
+    last_error: row.last_error,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    kind: row.kind,
+    config,
+    stats,
+  };
+}
 
 export function pendingActionToResponse(row: PendingActionRow) {
   return {

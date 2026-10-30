@@ -17,7 +17,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createCredential, deleteCredential, listCredentials, nextCredentialId, SECRET_PARAM_KEYS, type CredentialAuthMethod, type CredentialRow, type CredentialType } from "@/lib/stores/credentials";
-import { errorResponse, cachedJson, createdResponse } from "@/lib/api/responses";
+import { errorResponse, cachedJson, createdResponse, errorJson } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { probeCredentialAfterSave } from "@/lib/health/credential-probe";
 import { withKeyedMutation } from "@/lib/utils/keyed-mutation";
@@ -86,10 +86,7 @@ export async function POST(req: NextRequest) {
         const probe = await probeCredentialAfterSave({ credentialId: row.id, provider }).catch(() => null);
         if (probe && probe.status === "auth_failed") {
           deleteCredential(row.id);
-          return NextResponse.json(
-            { error: probe.error ?? "credential rejected by provider", code: "auth_failed" },
-            { status: 400 },
-          );
+          return errorJson({ error: probe.error ?? "credential rejected by provider", code: "auth_failed" }, { status: 400 });
         }
       }
       return createdResponse(publicView(row));

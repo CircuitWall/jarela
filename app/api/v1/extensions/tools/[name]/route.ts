@@ -13,6 +13,8 @@ import {
   isDropinDisabled,
   setDropinDisabled,
 } from "@/lib/stores/disabled-dropin-tools";
+import { errorJson, errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 const BodySchema = z.object({
   enabled: z.boolean(),
@@ -28,15 +30,12 @@ export async function PATCH(
   try {
     body = BodySchema.parse(await req.json());
   } catch (err) {
-    return NextResponse.json(
-      { error: "invalid body", detail: String(err) },
-      { status: 400 },
-    );
+    return errorJson({ error: "invalid body", detail: String(err) }, { status: 400 });
   }
 
   const tools = loadExternalTools(getBuiltinToolNames());
   if (!tools.files.has(name)) {
-    return NextResponse.json({ error: "tool not found" }, { status: 404 });
+    return errorResponse(NOT_FOUND_ERRORS.TOOL, 404);
   }
 
   setDropinDisabled(name, !body.enabled);

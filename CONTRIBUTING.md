@@ -14,6 +14,7 @@ it; the rest is on the honour system, audited at PR review.
 - [Release notes](#release-notes)
 - [Branch protection](#branch-protection)
 - [Public API surface](#public-api-surface)
+- [API design and technical debt](#api-design-and-technical-debt)
 - [Workspace packages](#workspace-packages)
 - [Local development quick reference](#local-development-quick-reference)
 
@@ -38,6 +39,33 @@ Trunk-based development. One long-lived branch.
 
 There is no `develop`, `staging`, or release branch. Releases are tags on
 `main`.
+
+## API design and technical debt
+
+Follow the [API design standard](./docs/API_DESIGN_STANDARD.md) for v1 changes.
+Preserve existing success shapes, error fields, status codes, and transport
+headers. Use shared response builders, Zod boundary validation, and canonical
+serializers rather than introducing a competing envelope or schema collection.
+
+Report reproducible maintenance problems with the
+[technical debt issue template](./.github/ISSUE_TEMPLATE/technical-debt.yml).
+Include concrete locations, observed impact, and verifiable acceptance criteria.
+
+`npm run lint:complexity` checks a 150-line function-body limit for production
+TypeScript/TSX, including workspace sources. Both lint and build run it.
+Existing long functions are recorded in
+[`scripts/function-complexity-baseline.json`](./scripts/function-complexity-baseline.json):
+new violations and increases fail; reductions require tightening/removing their
+entries. JSDoc above a function does not count. Blank lines and comments inside
+its body do count. Tests, declarations, dependencies, and generated output are
+excluded.
+
+The limit is a review guardrail, not proof of complexity or correctness.
+Prefer cohesive extraction over arbitrary splitting. A justified exception
+requires explicit review of the baseline change and its reason in the PR.
+After a deliberate reduction or reviewed exception, run
+`node scripts/check-function-complexity.mjs --write-baseline` and inspect the
+entire baseline diff; never regenerate it merely to silence a failing check.
 
 ## Commit messages
 
@@ -94,10 +122,13 @@ pull request titles plus post-merge commit subjects on `main`.
 
 The pre-commit hook also runs lint, typecheck, and the unit tests related to
 the staged files (`vitest related`, selected by
-`scripts/select-precommit-tests.mjs`). Docs-only commits skip tests; changes
-to test config, setup files, dependencies, hooks, non-code files, or deleted
-modules run the full suite. Set `JARELA_PRECOMMIT_FULL_TESTS=1` to force the
-full suite locally. CI always runs the full suite.
+`scripts/select-precommit-tests.mjs`). Docs-only commits skip tests. Shared test
+config/setup, dependencies, deleted modules, and non-code changes do not
+automatically trigger the full suite locally; CI covers their broader impact.
+Non-code changes include an existing sibling unit test when available; hook
+changes run the test-selector tests. Large code changes still use related tests.
+Set `JARELA_PRECOMMIT_FULL_TESTS=1` to explicitly request the full local suite.
+CI always runs the full suite; focused pre-commit success is not a CI substitute.
 
 When a local commit accidentally lands on `main`, move it to a topic branch
 before pushing:

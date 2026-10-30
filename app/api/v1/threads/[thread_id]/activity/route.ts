@@ -9,11 +9,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getThread } from "@/lib/stores/threads";
 import { getThreadActivity } from "@/lib/agents/thread-activity";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
-  if (!getThread(thread_id)) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  if (!getThread(thread_id)) return errorResponse(NOT_FOUND_ERRORS.THREAD, 404);
   return NextResponse.json(getThreadActivity(thread_id), { headers: { "Cache-Control": "no-store" } });
 }

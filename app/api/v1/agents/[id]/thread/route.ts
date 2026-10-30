@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getOrCreateAgentThread } from "@/lib/stores/threads";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
   if (!getAgentConfig(id)) {
-    return NextResponse.json({ error: "Agent not found" }, { status: 404 });
+    return errorResponse(NOT_FOUND_ERRORS.AGENT, 404);
   }
   const thread = getOrCreateAgentThread(id);
   return NextResponse.json({

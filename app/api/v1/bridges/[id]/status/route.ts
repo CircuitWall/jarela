@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBridge } from "@/lib/stores/bridges";
 import { getBridgeRuntimeStatus, isBridgeRunning } from "@/lib/bridges/runtime";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -13,7 +15,7 @@ interface Params { params: Promise<{ id: string }> }
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const row = getBridge(id);
-  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!row) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
   const live = getBridgeRuntimeStatus(id);
   return NextResponse.json({
     id,

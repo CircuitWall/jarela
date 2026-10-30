@@ -9,6 +9,7 @@ import {
   WEEKLY_PRICING_TASK_PROMPT,
   weeklyPricingTaskUpgrade,
 } from "@/lib/pricing/maintenance-task";
+import { errorResponse } from "@/lib/api/responses";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,7 @@ export function GET() {
 export async function POST() {
   const defaultAgent = getDefaultAgentConfig();
   if (!defaultAgent) {
-    return NextResponse.json({ error: "Configure a default agent before setting up weekly pricing updates." }, { status: 409 });
+    return errorResponse("Configure a default agent before setting up weekly pricing updates.", 409);
   }
 
   let task = getScheduledTask(WEEKLY_PRICING_TASK_ID);

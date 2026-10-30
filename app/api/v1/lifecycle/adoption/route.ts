@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorResponse } from "@/lib/api/responses";
 import {
   getVersionAdoptionState,
   updateVersionAdoptionState,
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(updateVersionAdoptionState(body.action, undefined, body.item_id));
   } catch (err) {
     if (err instanceof VersionAdoptionRequestError) {
-      return NextResponse.json({ error: err.message }, { status: 400 });
+      return errorResponse(err.message, 400);
     }
     throw err;
   }

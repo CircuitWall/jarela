@@ -6,6 +6,7 @@ import {
   getArtifactLifecycleSettings,
   setArtifactLifecycleSettings,
 } from "@/lib/stores/app-settings";
+import { errorResponse } from "@/lib/api/responses";
 
 const PatchBody = z.object({
   retention_days: z.number().int().min(1).max(3650).optional(),
@@ -32,10 +33,10 @@ export async function PATCH(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "bad-json" }, { status: 400 });
+    return errorResponse("bad-json", 400);
   }
   const parsed = PatchBody.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "bad-body" }, { status: 400 });
+  if (!parsed.success) return errorResponse("bad-body", 400);
   return NextResponse.json({
     settings: setArtifactLifecycleSettings(parsed.data),
     inventory: listArtifactFiles(),
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
     body = {};
   }
   const parsed = CleanupBody.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "bad-body" }, { status: 400 });
+  if (!parsed.success) return errorResponse("bad-body", 400);
   const settings = getArtifactLifecycleSettings();
   const result = cleanupArtifactFiles(settings, parsed.data.dry_run ?? false);
   return NextResponse.json({ settings, result });

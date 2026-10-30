@@ -10,7 +10,7 @@ import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorResponse } from "@/lib/api/responses";
 import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID, LOCAL_EMBEDDING_PROVIDER_NAME } from "@/lib/embeddings/constants";
 import { embedLocally } from "@/lib/embeddings/local";
 import { getLocalModelStatus, startLocalModelDownload } from "@/lib/embeddings/local-model";
@@ -118,7 +118,7 @@ export async function PUT(req: NextRequest) {
   if (parsed instanceof NextResponse) return parsed;
   const name = parsed.embedding_model_config;
   if (name && name !== LOCAL_EMBEDDING_CONFIG_NAME && !getModelConfig(name)) {
-    return NextResponse.json({ error: `unknown model config: ${name}` }, { status: 400 });
+    return errorResponse(`unknown model config: ${name}`, 400);
   }
   const selected = name === LOCAL_EMBEDDING_CONFIG_NAME
     ? (setLocalEmbeddingsEnabled(true), LOCAL_EMBEDDING_CONFIG_NAME)

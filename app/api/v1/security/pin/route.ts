@@ -39,6 +39,7 @@ import {
   recordPinFailure,
   recordPinSuccess,
 } from "@/lib/auth/pin-rate-limit";
+import { errorResponse, errorJson } from "@/lib/api/responses";
 
 const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("enable"), newPin: z.string() }),
@@ -48,23 +49,23 @@ const Body = z.discriminatedUnion("action", [
 
 export async function POST(req: Request) {
   if (!isLoopbackRequest(req)) {
-    return NextResponse.json({ error: "loopback-only" }, { status: 403 });
+    return errorResponse("loopback-only", 403);
   }
 
   getDb();
   if (isMasterKeyLocked()) {
-    return NextResponse.json({ error: "locked" }, { status: 423 });
+    return errorResponse("locked", 423);
   }
 
   let raw: unknown;
   try {
     raw = await req.json();
   } catch {
-    return NextResponse.json({ error: "bad-request" }, { status: 400 });
+    return errorResponse("bad-request", 400);
   }
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json({ error: "bad-request" }, { status: 400 });
+    return errorResponse("bad-request", 400);
   }
 
   const remote = req.headers.get("x-forwarded-for") ?? "loopback";
@@ -73,10 +74,7 @@ export async function POST(req: Request) {
   if (parsed.data.action !== "enable") {
     const rl = checkPinRateLimit(remote);
     if (!rl.allowed) {
-      return NextResponse.json(
-        { error: "rate-limited", retry_after_ms: rl.retryAfterMs },
-        { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
-      );
+      return errorJson({ error: "rate-limited", retry_after_ms: rl.retryAfterMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } });
     }
   }
 
@@ -87,14 +85,14 @@ export async function POST(req: Request) {
     switch (parsed.data.action) {
       case "enable": {
         if (pinEnabled) {
-          return NextResponse.json({ error: "wrong-state" }, { status: 409 });
+          return errorResponse("wrong-state", 409);
         }
         setPin({ newPin: parsed.data.newPin });
         break;
       }
       case "change": {
         if (!pinEnabled) {
-          return NextResponse.json({ error: "wrong-state" }, { status: 409 });
+          return errorResponse("wrong-state", 409);
         }
         setPin({ currentPin: parsed.data.currentPin, newPin: parsed.data.newPin });
         recordPinSuccess(remote);
@@ -102,7 +100,7 @@ export async function POST(req: Request) {
       }
       case "disable": {
         if (!pinEnabled) {
-          return NextResponse.json({ error: "wrong-state" }, { status: 409 });
+          return errorResponse("wrong-state", 409);
         }
         disablePin(parsed.data.currentPin);
         recordPinSuccess(remote);
@@ -113,15 +111,15 @@ export async function POST(req: Request) {
   } catch (err) {
     if (err instanceof InvalidPinError) {
       if (parsed.data.action !== "enable") recordPinFailure(remote);
-      return NextResponse.json({ error: "invalid-pin" }, { status: 401 });
+      return errorResponse("invalid-pin", 401);
     }
     if (err instanceof MasterKeyLockedError) {
-      return NextResponse.json({ error: "locked" }, { status: 423 });
+      return errorResponse("locked", 423);
     }
     if (err instanceof Error && /6 digits/.test(err.message)) {
-      return NextResponse.json({ error: "bad-pin" }, { status: 400 });
+      return errorResponse("bad-pin", 400);
     }
     console.error("[security/pin] unexpected error:", err);
-    return NextResponse.json({ error: "internal" }, { status: 500 });
+    return errorResponse("internal", 500);
   }
 }

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { addIgnore, getBridge, listIgnores, type BridgeIgnoreRow } from "@/lib/stores/bridges";
 import { errorMessage } from "@/lib/utils/error";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -18,7 +19,7 @@ function toResponse(r: BridgeIgnoreRow) {
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getBridge(id)) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!getBridge(id)) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
   return NextResponse.json(listIgnores(id).map(toResponse));
 }
 
@@ -34,7 +35,7 @@ const CreateSchema = z.object({
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getBridge(id)) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!getBridge(id)) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
 
   const parsed = await validateBody(req, CreateSchema);
   if (parsed instanceof NextResponse) return parsed;
@@ -49,10 +50,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   } catch (err) {
     const m = errorMessage(err);
     if (/UNIQUE/.test(m)) {
-      return NextResponse.json(
-        { error: "That chat is already on the ignore list." },
-        { status: 409 },
-      );
+      return errorResponse("That chat is already on the ignore list.", 409);
     }
     throw err;
   }

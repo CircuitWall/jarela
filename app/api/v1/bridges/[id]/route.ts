@@ -5,13 +5,14 @@ import { removeBridgeAuth, startBridge, stopBridge } from "@/lib/bridges/runtime
 import { bridgeToResponse } from "@/lib/api/serializers";
 import { errorResponse, notFoundResponse, validateBody } from "@/lib/api/responses";
 import { withKeyedMutation } from "@/lib/utils/keyed-mutation";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 interface Params { params: Promise<{ id: string }> }
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const row = getBridge(id);
-  if (!row) return notFoundResponse("not found");
+  if (!row) return notFoundResponse(NOT_FOUND_ERRORS.LEGACY);
   return NextResponse.json(bridgeToResponse(row));
 }
 
@@ -33,7 +34,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   return withKeyedMutation(`bridge:${id}`, async () => {
     const existing = getBridge(id);
-    if (!existing) return notFoundResponse("not found");
+    if (!existing) return notFoundResponse(NOT_FOUND_ERRORS.LEGACY);
 
     const patch: Parameters<typeof updateBridge>[1] = {};
     if (parsed.name !== undefined) patch.name = parsed.name;

@@ -69,6 +69,7 @@ nav:
       - Core and extensions: adr/0111-dependable-core-user-owned-extensions.md
       - JavaScript skill execution (proposed ADR): adr/0112-checked-javascript-skill-execution.md
       - API: api.md
+      - API design standard: API_DESIGN_STANDARD.md
   - Extending:
       - Extension surfaces: EXTENDING.md
       - Provider policy: PRICING_EXTRACTION_POLICY.md

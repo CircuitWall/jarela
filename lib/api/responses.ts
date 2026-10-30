@@ -1,19 +1,22 @@
 // Shared HTTP response builders for app/api/v1/** route handlers.
 //
-// Goal: every error/success payload across the v1 surface has the same
-// shape. Before this lived inline, response bodies drifted —
-// `{error: "x"}` vs `{message: "x"}`, 400 vs 422 for the same condition,
-// some routes returned Zod's raw issue array, others stringified it.
+// Preserve v1 payloads and statuses; structured errors and transport-specific
+// responses retain their documented fields. See docs/API_DESIGN_STANDARD.md.
 
 import { NextResponse } from "next/server";
 import type { z } from "zod";
 import type { NextRequest } from "next/server";
+import { NOT_FOUND_ERRORS } from "./errors";
 
-export function errorResponse(message: string, status: number = 400): NextResponse {
-  return NextResponse.json({ error: message }, { status });
+export function errorJson<T extends { error: unknown }>(body: T, init: ResponseInit): NextResponse<T> {
+  return NextResponse.json(body, init);
 }
 
-export function notFoundResponse(message: string = "Not found"): NextResponse {
+export function errorResponse(message: string, status: number = 400): NextResponse {
+  return errorJson({ error: message }, { status });
+}
+
+export function notFoundResponse(message: string = NOT_FOUND_ERRORS.DEFAULT): NextResponse {
   return errorResponse(message, 404);
 }
 

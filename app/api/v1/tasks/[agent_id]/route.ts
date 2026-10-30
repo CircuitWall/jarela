@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteTaskAssignment, upsertTaskAssignment } from "@/lib/stores/task-assignments";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorResponse } from "@/lib/api/responses";
 import type { ToolPolicy } from "@/api/types";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ agent_id: string }> };
 
@@ -38,6 +39,6 @@ export async function PUT(req: NextRequest, { params }: Params) {
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { agent_id } = await params;
   const deleted = deleteTaskAssignment(agent_id);
-  if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!deleted) return errorResponse(NOT_FOUND_ERRORS.DEFAULT, 404);
   return NextResponse.json({ deleted: true });
 }

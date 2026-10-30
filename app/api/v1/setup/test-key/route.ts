@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { errorJson } from "@/lib/api/responses";
 
 const Body = z.object({
   provider: z.enum(["anthropic", "openai", "gemini", "deepseek"]),
@@ -21,10 +22,7 @@ export async function POST(req: NextRequest) {
   try {
     parsed = Body.parse(await req.json());
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: "invalid request", hint: String(err) },
-      { status: 400 },
-    );
+    return errorJson({ ok: false, error: "invalid request", hint: String(err) }, { status: 400 });
   }
 
   const { provider, api_key } = parsed;

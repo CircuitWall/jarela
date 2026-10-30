@@ -4,6 +4,7 @@
 // config object.)
 import nextConfig from "eslint-config-next";
 import tseslint from "typescript-eslint";
+import apiResponses from "./scripts/eslint-api-responses.mjs";
 
 // Node builtins that must be imported with the `node:` prefix. Next 16's
 // edge-runtime bundler can't resolve bare specifiers like `"crypto"` or
@@ -49,6 +50,11 @@ const config = [
     },
   },
   {
+    files: ["app/api/**/*.ts"],
+    plugins: { "jarela-api": apiResponses },
+    rules: { "jarela-api/shared-errors": "error" },
+  },
+  {
     settings: {
       // eslint-config-next's bundled eslint-plugin-react still reaches the
       // removed context.getFilename API only when version auto-detection runs.
@@ -77,4 +83,3 @@ const config = [
 ];
 
 export default config;
-

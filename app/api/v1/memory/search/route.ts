@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getDefaultChatMinSimilarity, searchMemory } from "@/lib/embeddings";
+import { errorResponse } from "@/lib/api/responses";
 
 const QuerySchema = z.object({
   q: z.string().trim().min(1).max(1_000),
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
     min_chat_similarity: req.nextUrl.searchParams.get("min_chat_similarity") ?? undefined,
   });
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid input" }, { status: 400 });
+    return errorResponse(parsed.error.issues[0]?.message ?? "invalid input", 400);
   }
 
   const { q, source, limit, min_similarity, min_chat_similarity } = parsed.data;

@@ -11,10 +11,11 @@ import {
   withModelConfigMutation,
 } from "@/lib/stores/model-config";
 import { withDbTransaction } from "@/lib/db/transaction";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorJson, errorResponse } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
 import { resolvedModelMetadata } from "@/lib/stores/model-metadata";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -108,7 +109,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json(toResponse(r));
   } catch (err) {
     if (err instanceof ModelConfigStateError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
+      return errorJson({ error: err.message }, { status: err.status });
     }
     throw err;
   }
@@ -128,7 +129,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const { name } = await params;
   return withModelConfigMutation(name, () => {
     const deleted = deleteModelConfig(name);
-    if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!deleted) return errorResponse(NOT_FOUND_ERRORS.DEFAULT, 404);
     return NextResponse.json({ deleted: true });
   });
 }

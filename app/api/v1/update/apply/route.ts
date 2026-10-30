@@ -19,6 +19,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { NextResponse } from "next/server";
+import { errorResponse } from "@/lib/api/responses";
 
 export const dynamic = "force-dynamic";
 
@@ -102,7 +103,7 @@ export function POST() {
 
   const built = buildCommand();
   if ("error" in built) {
-    return NextResponse.json({ error: built.error }, { status: 400 });
+    return errorResponse(built.error, 400);
   }
 
   const startedAt = Date.now();

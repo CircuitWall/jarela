@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getBridge } from "@/lib/stores/bridges";
 import { lookupBridgeChat } from "@/lib/bridges/runtime";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -20,7 +21,7 @@ const Schema = z.object({
  */
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getBridge(id)) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!getBridge(id)) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
 
   const parsed = await validateBody(req, Schema);
   if (parsed instanceof NextResponse) return parsed;

@@ -6,7 +6,8 @@ import {
   setSsrfBypass,
   type CookieRecord,
 } from "@/lib/stores/allowed-sites";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 // Per-host operations on the allowed-sites list.
 //
@@ -47,10 +48,7 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
   if (parsed instanceof NextResponse) return parsed;
   const ok = putCookies(hostname, parsed.cookies as CookieRecord[]);
   if (!ok) {
-    return NextResponse.json(
-      { error: "host is not on the allowed-sites list" },
-      { status: 403 },
-    );
+    return errorResponse("host is not on the allowed-sites list", 403);
   }
   return NextResponse.json({ ok: true, count: parsed.cookies.length });
 }
@@ -60,7 +58,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const parsed = await validateBody(req, PatchInputSchema);
   if (parsed instanceof NextResponse) return parsed;
   const ok = setSsrfBypass(hostname, parsed.ssrf_bypass);
-  if (!ok) return NextResponse.json({ error: "host not found" }, { status: 404 });
+  if (!ok) return errorResponse(NOT_FOUND_ERRORS.HOST, 404);
   return NextResponse.json({ ok: true });
 }
 

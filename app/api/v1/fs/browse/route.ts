@@ -15,6 +15,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { errorMessage } from "@/lib/utils/error";
+import { errorResponse } from "@/lib/api/responses";
 
 export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("path");
@@ -25,10 +26,10 @@ export async function GET(req: NextRequest) {
   try {
     const st = await fs.stat(target);
     if (!st.isDirectory()) {
-      return NextResponse.json({ error: "not a directory" }, { status: 400 });
+      return errorResponse("not a directory", 400);
     }
   } catch {
-    return NextResponse.json({ error: "path does not exist or is unreadable" }, { status: 400 });
+    return errorResponse("path does not exist or is unreadable", 400);
   }
 
   let entries: { name: string; path: string }[] = [];
@@ -39,10 +40,7 @@ export async function GET(req: NextRequest) {
       .map((d) => ({ name: d.name, path: path.join(target, d.name) }))
       .sort((a, b) => a.name.localeCompare(b.name));
   } catch (e) {
-    return NextResponse.json(
-      { error: errorMessage(e) },
-      { status: 400 },
-    );
+    return errorResponse(errorMessage(e), 400);
   }
 
   const parent = path.dirname(target);

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBridge } from "@/lib/stores/bridges";
 import { getBridgeModule } from "@/lib/bridges/registry";
 import { repairBridge } from "@/lib/bridges/runtime";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -15,9 +17,9 @@ interface Params { params: Promise<{ id: string }> }
 export async function POST(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const row = getBridge(id);
-  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!row) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
   if (!getBridgeModule(row.kind)?.pairing) {
-    return NextResponse.json({ error: "bridge kind does not support pairing" }, { status: 400 });
+    return errorResponse("bridge kind does not support pairing", 400);
   }
   void repairBridge(id).catch((err) => {
     console.error(`[bridge ${id}] re-pair failed:`, err);

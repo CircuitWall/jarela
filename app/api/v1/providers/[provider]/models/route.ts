@@ -4,7 +4,7 @@ import { getProvider } from "@/lib/providers";
 import { modelCapabilities } from "@/lib/providers/capabilities";
 import { listModelConfigs, getModelParams } from "@/lib/stores/model-config";
 import type { ProviderCatalogModel, ProviderParams } from "@/lib/providers/types";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorJson } from "@/lib/api/responses";
 import {
   getKnownContextLength,
   getKnownMaxOutputTokens,
@@ -74,7 +74,7 @@ class CatalogConfigError extends Error {}
 
 function catalogErrorResponse(err: unknown): NextResponse {
   const status = err instanceof CatalogConfigError ? 400 : 500;
-  return NextResponse.json({ error: String(err) }, { status });
+  return errorJson({ error: String(err) }, { status });
 }
 
 // POST allows the editor to ship the in-form credentials (api_key /

@@ -13,6 +13,7 @@ import {
 } from "@/lib/stores/credentials";
 import { escapeHtml, oauthHtmlResponse } from "@/app/api/v1/integrations/oauth-callback";
 import { errorMessage } from "@/lib/utils/error";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 // GET /api/v1/integrations/gmail/oauth/callback?code=…&state=…
 //
@@ -101,7 +102,7 @@ function persistRefreshToken(input: {
   if (input.credentialId) {
     const cred = getCredential(input.credentialId);
     if (!cred || cred.provider !== "gmail") {
-      return { error: "credential not found" };
+      return { error: NOT_FOUND_ERRORS.CREDENTIAL };
     }
     const existing = getCredentialParams(cred);
     const merged: Record<string, unknown> = {

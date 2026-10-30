@@ -9,6 +9,7 @@ import { z } from "zod";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { geminiTts, resolveGoogleApiKey } from "@/lib/voice/gemini";
 import { errorResponse, notFoundResponse, validateBody } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 const MAX_TEXT = 5000;
 
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
   const text = parsed.text.trim();
 
   const agent = getAgentConfig(agentId);
-  if (!agent) return notFoundResponse("agent not found");
+  if (!agent) return notFoundResponse(NOT_FOUND_ERRORS.AGENT_LEGACY);
   if (!agent.voice_enabled) {
     return errorResponse("voice is not enabled for this agent");
   }

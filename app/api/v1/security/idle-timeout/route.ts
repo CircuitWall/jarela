@@ -16,6 +16,7 @@ import {
   getIdleTimeoutMs,
   setIdleTimeoutMs,
 } from "@/lib/security/screen-lock";
+import { errorResponse } from "@/lib/api/responses";
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -38,11 +39,11 @@ export async function PATCH(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "bad-json" }, { status: 400 });
+    return errorResponse("bad-json", 400);
   }
   const parsed = PatchBody.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "bad-timeout" }, { status: 400 });
+    return errorResponse("bad-timeout", 400);
   }
 
   setIdleTimeoutMs(parsed.data.idle_timeout_ms);

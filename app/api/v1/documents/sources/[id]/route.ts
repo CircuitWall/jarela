@@ -8,6 +8,7 @@ import {
 } from "@/lib/stores/document-sources";
 import { notifyTriggerHandlers } from "@/lib/triggers";
 import { notFoundResponse, validateBody } from "@/lib/api/responses";
+import { documentSourceToResponse } from "@/lib/api/serializers";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -20,19 +21,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const row = getDocumentSource(id);
   if (!row) return notFoundResponse();
-  return NextResponse.json({
-    id: row.id,
-    path: row.path,
-    label: row.label,
-    enabled: row.enabled === 1,
-    last_scan_at: row.last_scan_at,
-    last_error: row.last_error,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    kind: row.kind,
-    config: row.config ? JSON.parse(row.config) : null,
-    stats: getDocumentSourceStats(row.id),
-  });
+  return NextResponse.json(documentSourceToResponse(row, getDocumentSourceStats(row.id)));
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -42,19 +31,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const row = updateDocumentSource(id, parsed);
   if (!row) return notFoundResponse();
   await notifyTriggerHandlers("source_changed");
-  return NextResponse.json({
-    id: row.id,
-    path: row.path,
-    label: row.label,
-    enabled: row.enabled === 1,
-    last_scan_at: row.last_scan_at,
-    last_error: row.last_error,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    kind: row.kind,
-    config: row.config ? JSON.parse(row.config) : null,
-    stats: getDocumentSourceStats(row.id),
-  });
+  return NextResponse.json(documentSourceToResponse(row, getDocumentSourceStats(row.id)));
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {

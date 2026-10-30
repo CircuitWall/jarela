@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { listWhitelist, addToWhitelist } from "@/lib/stores/access";
 import { errorMessage } from "@/lib/utils/error";
+import { errorResponse } from "@/lib/api/responses";
 
 export async function GET() {
   return NextResponse.json(listWhitelist());
@@ -18,6 +19,6 @@ export async function POST(req: Request) {
     const entry = addToWhitelist(body.identity, body.display_name ?? null);
     return NextResponse.json(entry, { status: 201 });
   } catch (e) {
-    return NextResponse.json({ error: errorMessage(e) }, { status: 400 });
+    return errorResponse(errorMessage(e), 400);
   }
 }
