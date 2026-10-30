@@ -3,6 +3,8 @@ import { getDocumentSource } from "@/lib/stores/document-sources";
 import { backfillSourceEmbeddings, clearSourceEmbeddings, indexSource } from "@/lib/documents/indexer";
 import { isRemoteKind, runRemoteSource } from "@/lib/documents/remote";
 import { errorMessage } from "@/lib/utils/error";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -14,13 +16,13 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const source = getDocumentSource(id);
-  if (!source) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!source) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
   try {
     let stats;
     if (isRemoteKind(source.kind)) {
       stats = await runRemoteSource(source);
       if (stats.error) {
-        return NextResponse.json({ error: stats.error }, { status: 502 });
+        return errorResponse(stats.error, 502);
       }
       clearSourceEmbeddings(source.id);
       const backfill = await backfillSourceEmbeddings(source.id);
@@ -31,9 +33,6 @@ export async function POST(_req: NextRequest, { params }: Params) {
     }
     return NextResponse.json({ source_id: id, stats });
   } catch (err) {
-    return NextResponse.json(
-      { error: errorMessage(err) },
-      { status: 500 },
-    );
+    return errorResponse(errorMessage(err), 500);
   }
 }

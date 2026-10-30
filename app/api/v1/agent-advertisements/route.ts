@@ -5,6 +5,7 @@ import { errorResponse, noStoreJson } from "@/lib/api/responses";
 import { AdvertisementPolicySchema } from "@/lib/agents/advertisement-contract";
 import { advertisementService } from "@/lib/agents/advertisement-service";
 import { getAdvertisementPolicy } from "@/lib/stores/agent-advertisements";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 const agentId = z.string().min(1).max(200);
 const actionSchema = z.strictObject({
@@ -45,7 +46,7 @@ export async function POST(req: NextRequest) {
     const service = advertisementService();
     const state = body.action === "regenerate" ? await service.refresh(body.agent_id, true)
       : await service.setEnabled(body.agent_id, body.action === "enable");
-    if (!state) return failure("Agent not found", 404);
+    if (!state) return failure(NOT_FOUND_ERRORS.AGENT, 404);
     return await response(body.agent_id);
   } catch {
     console.warn("[advertisements] action refused");

@@ -34,13 +34,30 @@
       ]
     },
     {
+      "id": "api-error-response",
+      "operation": "Build compatible v1 HTTP errors with errorResponse or errorJson, preserving structured fields, statuses, headers and existing not-found wording.",
+      "canonicalSources": [
+        "lib/api/responses.ts",
+        "lib/api/errors.ts"
+      ],
+      "validationSources": [
+        "lib/api/responses.test.ts",
+        "scripts/eslint-api-responses.test.mjs"
+      ],
+      "exceptions": [
+        "HTTP-200 probe results and OAuth status payloads may contain error fields without being HTTP errors.",
+        "SSE, binary, HTML, redirects and plain-text responses keep their transport-specific contracts."
+      ]
+    },
+    {
       "id": "api-response-serialization",
       "operation": "Keep resource row-to-response mapping shared between collection and item routes to prevent shape drift.",
       "canonicalSources": [
         "lib/api/serializers.ts"
       ],
       "validationSources": [
-        "lib/api/serializers.test.ts"
+        "lib/api/serializers.test.ts",
+        "app/api/v1/documents/sources/contract.test.ts"
       ],
       "exceptions": [
         "Use a separate serializer when the public resource shapes or privacy rules intentionally differ."

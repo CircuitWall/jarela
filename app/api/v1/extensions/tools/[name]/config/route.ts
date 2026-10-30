@@ -17,6 +17,8 @@ import {
   setToolConfig,
   deleteToolConfig,
 } from "@/lib/stores/tool-config";
+import { errorResponse, errorJson } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 const BodySchema = z.object({
   values: z.record(z.string(), z.string()),
@@ -30,7 +32,7 @@ export async function GET(
   const tools = loadExternalTools(getBuiltinToolNames());
   const slots = tools.configs.get(name);
   if (!slots) {
-    return NextResponse.json({ error: "tool not found" }, { status: 404 });
+    return errorResponse(NOT_FOUND_ERRORS.TOOL, 404);
   }
   return NextResponse.json({
     name,
@@ -48,25 +50,19 @@ export async function PUT(
   try {
     body = BodySchema.parse(await req.json());
   } catch (err) {
-    return NextResponse.json(
-      { error: "invalid body", detail: String(err) },
-      { status: 400 },
-    );
+    return errorJson({ error: "invalid body", detail: String(err) }, { status: 400 });
   }
 
   const tools = loadExternalTools(getBuiltinToolNames());
   const slots = tools.configs.get(name);
   if (!slots) {
-    return NextResponse.json({ error: "tool not found" }, { status: 404 });
+    return errorResponse(NOT_FOUND_ERRORS.TOOL, 404);
   }
   const declaredKeys = new Set(slots.map((s) => s.key));
 
   for (const [key, value] of Object.entries(body.values)) {
     if (!declaredKeys.has(key)) {
-      return NextResponse.json(
-        { error: `tool "${name}" did not declare config slot "${key}"` },
-        { status: 400 },
-      );
+      return errorResponse(`tool "${name}" did not declare config slot "${key}"`, 400);
     }
     if (value === "") {
       deleteToolConfig(name, key);

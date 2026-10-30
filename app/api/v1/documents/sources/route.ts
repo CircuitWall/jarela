@@ -12,6 +12,8 @@ import {
 } from "@/lib/stores/document-sources";
 import { notifyTriggerHandlers } from "@/lib/triggers";
 import { mailSourceConfigSchema } from "@/lib/documents/mail-source-config";
+import { errorResponse } from "@/lib/api/responses";
+import { documentSourceToResponse } from "@/lib/api/serializers";
 
 const LocalSchema = z.object({
   path: z.string().min(1),
@@ -54,45 +56,22 @@ function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>
   }
 }
 
-function rowResponse(row: ReturnType<typeof createDocumentSource>) {
-  return {
-    id: row.id,
-    path: row.path,
-    label: row.label,
-    enabled: row.enabled === 1,
-    last_scan_at: row.last_scan_at,
-    last_error: row.last_error,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    kind: row.kind,
-    config: row.config ? JSON.parse(row.config) : null,
-    stats: getDocumentSourceStats(row.id),
-  };
-}
-
 export async function GET() {
   const sources = listDocumentSources();
   return NextResponse.json(
-    sources.map((s) => ({
-      id: s.id,
-      path: s.path,
-      label: s.label,
-      enabled: s.enabled === 1,
-      last_scan_at: s.last_scan_at,
-      last_error: s.last_error,
-      created_at: s.created_at,
-      updated_at: s.updated_at,
-      kind: s.kind,
-      config: s.config ? JSON.parse(s.config) : null,
-      stats: getDocumentSourceStats(s.id),
-    })),
+    sources.map((source) => documentSourceToResponse(source, getDocumentSourceStats(source.id))),
   );
 }
 
+/**
+ * Create either a local folder source or a configured remote source.
+ * Validates before persistence, preserves source identity conflict responses,
+ * and notifies source-change handlers only after the row has been created.
+ */
 export async function POST(req: NextRequest) {
   let body: unknown;
   try { body = await req.json(); } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+    return errorResponse("invalid json", 400);
   }
 
   // Remote source path — discriminated by `kind` being present (and
@@ -102,17 +81,17 @@ export async function POST(req: NextRequest) {
       && (body as { kind?: string }).kind !== "local_folder") {
     const parsed = RemoteSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid input" }, { status: 400 });
+      return errorResponse(parsed.error.issues[0]?.message ?? "invalid input", 400);
     }
     const { kind } = parsed.data;
     let config = parsed.data.config;
     if (kind === "gmail_mail" || kind === "outlook_mail" || kind === "icloud_mail") {
       const mail = mailSourceConfigSchema.safeParse(config);
       if (!mail.success) {
-        return NextResponse.json({ error: mail.error.issues[0]?.message ?? "invalid mail config" }, { status: 400 });
+        return errorResponse(mail.error.issues[0]?.message ?? "invalid mail config", 400);
       }
       if (kind === "icloud_mail" && !mail.data.scope) {
-        return NextResponse.json({ error: "Choose a mailbox scope for iCloud." }, { status: 400 });
+        return errorResponse("Choose a mailbox scope for iCloud.", 400);
       }
       config = mail.data;
     }
@@ -120,7 +99,7 @@ export async function POST(req: NextRequest) {
       ? `${kind.replace("_", "-")}://${createHash("sha256").update(JSON.stringify(config)).digest("hex")}`
       : syntheticPath(kind, config);
     if (getDocumentSourceByPath(synth)) {
-      return NextResponse.json({ error: "source already exists for this config" }, { status: 409 });
+      return errorResponse("source already exists for this config", 409);
     }
     const row = createDocumentSource({
       path: synth,
@@ -129,29 +108,29 @@ export async function POST(req: NextRequest) {
       config,
     });
     await notifyTriggerHandlers("source_changed");
-    return NextResponse.json(rowResponse(row), { status: 201 });
+    return NextResponse.json(documentSourceToResponse(row, getDocumentSourceStats(row.id)), { status: 201 });
   }
 
   const parsed = LocalSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid input" }, { status: 400 });
+    return errorResponse(parsed.error.issues[0]?.message ?? "invalid input", 400);
   }
   const abs = path.resolve(parsed.data.path);
 
   try {
     const st = await fs.stat(abs);
     if (!st.isDirectory()) {
-      return NextResponse.json({ error: "path is not a directory" }, { status: 400 });
+      return errorResponse("path is not a directory", 400);
     }
   } catch {
-    return NextResponse.json({ error: "path does not exist or is unreadable" }, { status: 400 });
+    return errorResponse("path does not exist or is unreadable", 400);
   }
 
   if (getDocumentSourceByPath(abs)) {
-    return NextResponse.json({ error: "source already exists for this path" }, { status: 409 });
+    return errorResponse("source already exists for this path", 409);
   }
 
   const row = createDocumentSource({ path: abs, label: parsed.data.label ?? null });
   await notifyTriggerHandlers("source_changed");
-  return NextResponse.json(rowResponse(row), { status: 201 });
+  return NextResponse.json(documentSourceToResponse(row, getDocumentSourceStats(row.id)), { status: 201 });
 }

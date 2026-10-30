@@ -33,6 +33,7 @@ import {
   recordPinSuccess,
 } from "@/lib/auth/pin-rate-limit";
 import { unlockScreen } from "@/lib/security/screen-lock";
+import { errorResponse, errorJson } from "@/lib/api/responses";
 
 const Body = z.object({ pin: z.string() });
 
@@ -40,27 +41,24 @@ export async function POST(req: Request) {
   // Touch the DB so master-key bootstrap has run.
   getDb();
   if (!isMasterKeyLocked()) {
-    return NextResponse.json({ error: "not-locked" }, { status: 409 });
+    return errorResponse("not-locked", 409);
   }
 
   const remote = req.headers.get("x-forwarded-for") ?? "loopback";
   const rl = checkPinRateLimit(remote);
   if (!rl.allowed) {
-    return NextResponse.json(
-      { error: "rate-limited", retry_after_ms: rl.retryAfterMs },
-      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
-    );
+    return errorJson({ error: "rate-limited", retry_after_ms: rl.retryAfterMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } });
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "bad-json" }, { status: 400 });
+    return errorResponse("bad-json", 400);
   }
   const parsed = Body.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "bad-pin" }, { status: 400 });
+    return errorResponse("bad-pin", 400);
   }
 
   try {
@@ -74,18 +72,18 @@ export async function POST(req: Request) {
   } catch (err) {
     if (err instanceof InvalidPinError) {
       recordPinFailure(remote);
-      return NextResponse.json({ error: "invalid-pin" }, { status: 401 });
+      return errorResponse("invalid-pin", 401);
     }
     if (err instanceof Error && /6 digits/.test(err.message)) {
       // pin-wrap's assertValidPin rejects wrong shape with a generic
       // Error — surface as 400 not 500.
-      return NextResponse.json({ error: "bad-pin" }, { status: 400 });
+      return errorResponse("bad-pin", 400);
     }    if (err instanceof Error && /is not locked/.test(err.message)) {
       // Parallel unlock won the race between our isMasterKeyLocked()
       // check and unwrap. The goal state is achieved - treat as success.
       unlockScreen();
       return NextResponse.json({ ok: true });
     }    console.error("[security/unlock] unexpected error:", err);
-    return NextResponse.json({ error: "internal" }, { status: 500 });
+    return errorResponse("internal", 500);
   }
 }

@@ -7,6 +7,7 @@ import {
   updateCustomHarness,
 } from "@/lib/stores/harnesses";
 import { HARNESS_SECTION_KEYS, isBuiltinHarnessId } from "@/lib/agents/harness/types";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 const sectionSchema = z.object({
   enabled: z.boolean().optional(),
@@ -32,7 +33,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const harness = getHarness(id);
-  if (!harness) return notFoundResponse("Harness not found");
+  if (!harness) return notFoundResponse(NOT_FOUND_ERRORS.HARNESS);
   return NextResponse.json(harness);
 }
 
@@ -44,7 +45,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const parsed = await validateBody(req, patchSchema);
   if (parsed instanceof Response) return parsed;
   const updated = updateCustomHarness(id, parsed);
-  if (!updated) return notFoundResponse("Harness not found");
+  if (!updated) return notFoundResponse(NOT_FOUND_ERRORS.HARNESS);
   return NextResponse.json(updated);
 }
 
@@ -54,6 +55,6 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     return errorResponse("built-in harnesses cannot be deleted", 400);
   }
   const ok = deleteCustomHarness(id);
-  if (!ok) return notFoundResponse("Harness not found");
+  if (!ok) return notFoundResponse(NOT_FOUND_ERRORS.HARNESS);
   return NextResponse.json({ deleted: true });
 }

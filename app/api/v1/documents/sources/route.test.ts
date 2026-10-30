@@ -61,7 +61,18 @@ describe("mail source creation", () => {
 
   it("rejects an existing source", async () => {
     mocks.find.mockReturnValueOnce({ id: "existing" });
-    expect((await POST(request("icloud_mail", { scope: "inbox" }))).status).toBe(409);
+    const response = await POST(request("icloud_mail", { scope: "inbox" }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "source already exists for this config" });
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("preserves the error response for malformed JSON", async () => {
+    const response = await POST(new NextRequest("http://localhost/api/v1/documents/sources", {
+      method: "POST",
+      body: "{",
+    }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid json" });
   });
 });

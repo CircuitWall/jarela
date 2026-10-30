@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { importServerJson, searchUpstream } from "@/lib/mcp/upstream-registry";
 import type { RegistryEntry } from "@/lib/mcp/registry";
 import { errorMessage } from "@/lib/utils/error";
-import { errorResponse, validateBody } from "@/lib/api/responses";
+import { errorResponse, validateBody, errorJson } from "@/lib/api/responses";
 import { z } from "zod";
 
 const ImportBody = z.object({
@@ -41,10 +41,7 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json({ entries: entries.map(expandHome), nextCursor });
   } catch (err) {
-    return NextResponse.json(
-      { error: "registry-unreachable", detail: errorMessage(err) },
-      { status: 503 },
-    );
+    return errorJson({ error: "registry-unreachable", detail: errorMessage(err) }, { status: 503 });
   }
 }
 
@@ -60,7 +57,7 @@ export async function POST(req: NextRequest) {
   try {
     return NextResponse.json({ entry: importServerJson(manifest) });
   } catch (err) {
-    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
+    return errorResponse(errorMessage(err), 400);
   }
 }
 

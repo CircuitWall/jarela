@@ -21,10 +21,11 @@ import {
   SECRET_PARAM_KEYS,
   updateCredential,
 } from "@/lib/stores/credentials";
-import { errorResponse } from "@/lib/api/responses";
+import { errorResponse, errorJson } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { probeCredentialAfterSave } from "@/lib/health/credential-probe";
 import { withKeyedMutation } from "@/lib/utils/keyed-mutation";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -60,7 +61,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
 async function updateCredentialRequest(req: NextRequest, id: string, patch: z.infer<typeof UpdateBody>) {
   const existing = getCredential(id);
-  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!existing) return errorResponse(NOT_FOUND_ERRORS.DEFAULT, 404);
   // Merge body params with the stored params, treating "***" as
   // "keep existing" so a redacted round-trip is safe.
   const stored = getCredentialParams(existing);
@@ -94,10 +95,7 @@ async function updateCredentialRequest(req: NextRequest, id: string, patch: z.in
         is_default: existing.is_default === 1,
         params: stored,
       });
-      return NextResponse.json(
-        { error: probe.error ?? "credential rejected by provider", code: "auth_failed" },
-        { status: 400 },
-      );
+      return errorJson({ error: probe.error ?? "credential rejected by provider", code: "auth_failed" }, { status: 400 });
     }
   }
   return NextResponse.json(publicView(next));
@@ -107,13 +105,10 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   return withKeyedMutation(`credential:${id}`, () => {
     if (isCredentialReferenced(id)) {
-      return NextResponse.json(
-        { error: "Credential is in use; rebind dependent models first.", code: "in_use" },
-        { status: 409 },
-      );
+      return errorJson({ error: "Credential is in use; rebind dependent models first.", code: "in_use" }, { status: 409 });
     }
     const deleted = deleteCredential(id);
-    if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!deleted) return errorResponse(NOT_FOUND_ERRORS.DEFAULT, 404);
     return NextResponse.json({ deleted: true });
   });
 }

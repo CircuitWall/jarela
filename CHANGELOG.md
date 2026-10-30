@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add shared v1 API error construction and lint enforcement without changing
+  response envelopes, statuses, retry headers, or domain probe results.
+- Add a 150-line production function-body ratchet with reviewed existing-debt
+  exceptions, shared document-source serialization, and API contributor guidance.
+- Keep pre-commit unit tests focused for configuration, dependency, hook, deleted
+  module, and large changes; run the full suite in CI or on explicit local opt-in.
+
 - Add opt-in, configured-model generation of bounded agent specialization
   advertisements after committed config saves, encrypted freshness/race handling,
   local inspection/regeneration/disable controls and an authorized delegate

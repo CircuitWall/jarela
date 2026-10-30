@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
-import { errorResponse, notFoundResponse, createdResponse, validateBody } from "./responses";
+import { errorJson, errorResponse, notFoundResponse, createdResponse, validateBody } from "./responses";
+import { NOT_FOUND_ERRORS } from "./errors";
 import type { NextRequest } from "next/server";
 
 function fakeReq(body: unknown, opts?: { unparseable?: boolean }): NextRequest {
@@ -26,6 +27,28 @@ describe("errorResponse", () => {
   });
 });
 
+describe("errorJson", () => {
+  it("preserves structured error fields and response headers", async () => {
+    const body = { error: "rate-limited", code: "rate_limit", retry_after_ms: 2500 };
+    const response = errorJson(body, {
+      status: 429,
+      headers: { "Retry-After": "3", "Cache-Control": "no-store" },
+    });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("3");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual(body);
+  });
+
+  it("preserves status text and structured validation issues", async () => {
+    const body = { error: { code: "invalid_body", issues: [{ path: ["name"] }] }, ok: false };
+    const response = errorJson(body, { status: 422, statusText: "Invalid input" });
+    expect(response.status).toBe(422);
+    expect(response.statusText).toBe("Invalid input");
+    expect(await response.json()).toEqual(body);
+  });
+});
+
 describe("notFoundResponse", () => {
   it("returns 404 with default message", async () => {
     const r = notFoundResponse();
@@ -37,6 +60,12 @@ describe("notFoundResponse", () => {
     const r = notFoundResponse("Agent not found");
     expect(r.status).toBe(404);
     expect(await r.json()).toEqual({ error: "Agent not found" });
+  });
+
+  it.each(Object.values(NOT_FOUND_ERRORS))("preserves existing wording: %s", async (message) => {
+    const response = notFoundResponse(message);
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: message });
   });
 });
 

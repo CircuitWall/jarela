@@ -4,6 +4,7 @@ import { deleteMemory, putMemory } from "@/lib/stores/memory";
 import { errorResponse, validateBody } from "@/lib/api/responses";
 import { isSkillExecutionPolicySetting } from "@/lib/skills/execution-policy";
 import { isAdvertisementMemory } from "@/lib/agents/advertisement-contract";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ namespace: string; key: string }> };
 
@@ -24,6 +25,6 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   if (isAdvertisementMemory(namespace, key)) return errorResponse("Use agent advertisement settings", 403);
   if (isSkillExecutionPolicySetting(namespace, key)) return errorResponse("Use Security settings to change skill execution policy", 403);
   const deleted = deleteMemory(namespace, key);
-  if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!deleted) return errorResponse(NOT_FOUND_ERRORS.DEFAULT, 404);
   return NextResponse.json({ deleted: true });
 }

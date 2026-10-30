@@ -3,22 +3,24 @@ import { getPendingAction, setActionStatus } from "@/lib/stores/pending-actions"
 import { getSystemOperation } from "@/lib/stores/system-signals";
 import { pendingActionToResponse } from "@/lib/api/serializers";
 import { localExecutionGuard } from "@/lib/api/local-execution-guard";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function POST(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const action = getPendingAction(id);
-  if (!action) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!action) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
   if (action.kind === "execute_skill" || action.kind === "execute_workflow" || action.kind === "authoring_operation") {
     const refused = localExecutionGuard(_req);
     if (refused) return refused;
   }
   if (action.status !== "pending") {
-    return NextResponse.json({ error: `already ${action.status}` }, { status: 409 });
+    return errorResponse(`already ${action.status}`, 409);
   }
   if (getSystemOperation(`approval:${id}`)?.state === "accepted") {
-    return NextResponse.json({ error: "approval application is already in progress; verify its outcome" }, { status: 409 });
+    return errorResponse("approval application is already in progress; verify its outcome", 409);
   }
   const final = setActionStatus(id, "denied", "user denied");
   if (action.kind === "authoring_operation") {

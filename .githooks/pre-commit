@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Pre-commit gate: mirror the CI checks that block PRs so we catch failures
-# locally before they hit the queue. Skip with `git commit --no-verify` if
-# you really need to bypass (e.g. WIP commit on a throwaway branch).
+# Pre-commit gate: lint, typecheck, and focused unit tests locally.
+# The required full regression suite runs in CI.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -34,22 +33,27 @@ echo "[pre-commit] typecheck"
 npx -y tsc --noEmit
 
 # Only tests related to the staged files run locally; CI runs the full
-# suite. Set JARELA_PRECOMMIT_FULL_TESTS=1 to force the full suite.
+# suite, including shared setup/config changes. Set
+# JARELA_PRECOMMIT_FULL_TESTS=1 to explicitly request a full local run.
 # A read loop rather than `mapfile -d` keeps this working on macOS Bash 3.2.
+selection="$(mktemp)"
+trap 'rm -f "$staged" "$selection"' EXIT
+node scripts/select-precommit-tests.mjs < "$staged" > "$selection"
+
 mode=""
 related=()
 while IFS= read -r -d '' token; do
   if [ -z "$mode" ]; then mode="$token"; else related+=("./$token"); fi
-done < <(node scripts/select-precommit-tests.mjs < "$staged")
+done < "$selection"
 
 run_tests() {
   env -u GIT_CONFIG_COUNT -u GIT_CONFIG_KEY_0 -u GIT_CONFIG_VALUE_0 -u GIT_CONFIG_PARAMETERS \
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 "$@"
 }
 
-case "${mode:-full}" in
+case "$mode" in
   none)
-    echo "[pre-commit] unit tests: skipped (no test-relevant files staged)"
+    echo "[pre-commit] unit tests: no focused targets; full suite runs in CI"
     ;;
   related)
     echo "[pre-commit] unit tests related to ${#related[@]} staged file(s)"
@@ -57,8 +61,12 @@ case "${mode:-full}" in
     # would silently find zero tests. The ./ prefix guards against leading dashes.
     run_tests npx vitest related --run --passWithNoTests "${related[@]}"
     ;;
-  *)
+  full)
     echo "[pre-commit] unit tests (full suite)"
     run_tests npm test --silent
+    ;;
+  *)
+    echo "[pre-commit] invalid test selection mode: $mode" >&2
+    exit 1
     ;;
 esac

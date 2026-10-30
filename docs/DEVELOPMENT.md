@@ -7,9 +7,15 @@ This guide focuses on developer experience for UI/state work.
 - Install: `npm install`
 - Lint all: `npm run lint`
 - Lint hooks only: `npm run lint:hooks`
+- Function-body ratchet (unreleased): `npm run lint:complexity`
 - Test all: `npm test`
 - Test hooks only: `npm run test:hooks`
 - Watch hook tests: `npm run test:hooks:watch`
+
+For JSON response contracts and validation rules, see the
+[API design standard](API_DESIGN_STANDARD.md). For reviewed function-length
+exceptions and technical debt reporting, see
+[Contributing](https://github.com/CircuitWall/jarela/blob/main/CONTRIBUTING.md#api-design-and-technical-debt).
 
 ## Documentation history chart
 

@@ -2,6 +2,8 @@
 
 For client-side React integration contracts, see
 [docs/ui-hook-api.md](./ui-hook-api.md).
+For response helpers, validation, compatibility, and transport exceptions, see
+the [API design standard](./API_DESIGN_STANDARD.md).
 
 This page lists every route that is part of Jarela's stable HTTP API. **A
 route is part of the contract only if its source file carries a `@public`

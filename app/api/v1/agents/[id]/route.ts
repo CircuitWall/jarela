@@ -16,6 +16,7 @@ import { agentToResponse } from "@/lib/api/serializers";
 import { notFoundResponse, validateBody } from "@/lib/api/responses";
 import type { AgentConfigIn } from "@/api/types";
 import { toUpdateAgentInput, WarmSummaryLimitSchema, UsageProfileSchema } from "../payload";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -26,14 +27,14 @@ const UpdateBody = z.looseObject({ warm_summary_limit: WarmSummaryLimitSchema, u
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const row = getAgentConfig(id);
-  if (!row) return notFoundResponse("Agent not found");
+  if (!row) return notFoundResponse(NOT_FOUND_ERRORS.AGENT);
   return NextResponse.json(agentToResponse(row));
 }
 
 export async function PUT(req: NextRequest, { params }: Params) {
   const { id } = await params;
   const existing = getAgentConfig(id);
-  if (!existing) return notFoundResponse("Agent not found");
+  if (!existing) return notFoundResponse(NOT_FOUND_ERRORS.AGENT);
 
   const parsed = await validateBody(req, UpdateBody);
   if (parsed instanceof NextResponse) return parsed;
@@ -47,6 +48,6 @@ export async function PUT(req: NextRequest, { params }: Params) {
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const deleted = deleteAgentConfig(id);
-  if (!deleted) return notFoundResponse("Agent not found");
+  if (!deleted) return notFoundResponse(NOT_FOUND_ERRORS.AGENT);
   return NextResponse.json({ deleted: true });
 }

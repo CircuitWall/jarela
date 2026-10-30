@@ -27,7 +27,7 @@ import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread, getThreadMessageBySeq, isValidThreadContextCursor, addMessage, updateMessageContent } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { sseResponse } from "@/lib/api/sse";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorJson } from "@/lib/api/responses";
 import { resolveTurnProfile } from "@/lib/agents/turn-profile";
 import type { RouteDecisionMetadata } from "@/api/types";
 import { finalizeRouteDecision } from "@/lib/agents/model-router";
@@ -35,6 +35,7 @@ import { getConfig } from "@/lib/env/config";
 import { parseToolResultReferenceEnvelope } from "@/lib/tools/support/result-refs";
 import { safeTranscriptFailureReason } from "@/api/message-content";
 import { createAssistantTranscriptDraft, persistAssistantDraftChunk, type AssistantTranscriptDraft } from "@/lib/agents/transcript-draft";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -125,7 +126,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   const attachments = parsed.attachments as ContentPart[] | undefined;
   const stream_options = parsed.stream_options as StreamOptions | undefined;
   if (typeof parsed.hot_since_seq === "number" && !isValidThreadContextCursor(thread_id, parsed.hot_since_seq)) {
-    return NextResponse.json({ error: "Boundary seq does not belong to this thread", code: "invalid_boundary" }, { status: 400 });
+    return errorJson({ error: "Boundary seq does not belong to this thread", code: "invalid_boundary" }, { status: 400 });
   }
   const hot_since_seq = parsed.hot_since_seq;
   const channels = parsed.channels ? Array.from(new Set(["chat", ...parsed.channels])) : undefined;
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   // caller can back off rather than pin yet more work in memory.
   const thread = getThread(thread_id);
   if (!thread) {
-    return NextResponse.json({ error: "Thread not found", code: "thread_not_found" }, { status: 404 });
+    return errorJson({ error: NOT_FOUND_ERRORS.THREAD, code: "thread_not_found" }, { status: 404 });
   }
   const pinnedModelConfigName = snapshotThreadModelConfigName(thread_id);
   const contextProfile = resolveTurnProfile("user");
@@ -471,13 +472,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   } catch (err) {
     releaseAdmission(false);
     if (err instanceof RunThreadError) {
-      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+      return errorJson({ error: err.message, code: err.code }, { status: err.status });
     }
     console.error("[run] failed to persist submitted user message", err);
-    return NextResponse.json(
-      { error: "Failed to persist submitted user message", code: "transcript_persist_failed" },
-      { status: 500 },
-    );
+    return errorJson({ error: "Failed to persist submitted user message", code: "transcript_persist_failed" }, { status: 500 });
   }
 
   return new Response(

@@ -27,6 +27,7 @@ import {
   getRedactionConfigPath,
   loadRedactionConfig,
 } from "@/lib/redaction/patterns";
+import { errorResponse } from "@/lib/api/responses";
 
 const PatchBody = z.object({
   enabled: z.boolean(),
@@ -50,11 +51,11 @@ export async function PATCH(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "bad-json" }, { status: 400 });
+    return errorResponse("bad-json", 400);
   }
   const parsed = PatchBody.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "bad-body" }, { status: 400 });
+    return errorResponse("bad-body", 400);
   }
   setRedactionEnabled(parsed.data.enabled);
   return NextResponse.json({ enabled: isRedactionEnabled() });

@@ -7,9 +7,9 @@
  * tool. See `docs/api.md`.
  */
 
-import { NextResponse } from "next/server";
+
 import { getAllToolCatalogAsync } from "@/lib/tools";
-import { cachedJson } from "@/lib/api/responses";
+import { cachedJson, errorJson } from "@/lib/api/responses";
 import { defaultToolStats, getToolStatsMap, listToolFailureSamples } from "@/lib/stores/tool-stats";
 
 interface ToolEnvelope {
@@ -74,10 +74,7 @@ export async function GET(req: Request) {
       60, 120,
     );
   } catch (err) {
-    return NextResponse.json(
-      { error: "Failed to list tools", detail: String(err) },
-      { status: 500 },
-    );
+    return errorJson({ error: "Failed to list tools", detail: String(err) }, { status: 500 });
   }
 }
 

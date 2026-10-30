@@ -3,6 +3,8 @@ import { z } from "zod";
 import { deleteRoute, getRoute, updateRoute, type BridgeRouteRow } from "@/lib/stores/bridges";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { errorMessage } from "@/lib/utils/error";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 interface Params { params: Promise<{ id: string; route_id: string }> }
 
@@ -33,19 +35,19 @@ const PatchSchema = z.object({
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { route_id } = await params;
   const existing = getRoute(route_id);
-  if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!existing) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
 
   const parsed = PatchSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid body" }, { status: 400 });
+    return errorResponse(parsed.error.issues[0]?.message ?? "invalid body", 400);
   }
   if (parsed.data.agent_id && !getAgentConfig(parsed.data.agent_id)) {
-    return NextResponse.json({ error: `agent ${parsed.data.agent_id} not found` }, { status: 400 });
+    return errorResponse(`agent ${parsed.data.agent_id} not found`, 400);
   }
 
   try {
     const updated = updateRoute(route_id, parsed.data);
-    if (!updated) return NextResponse.json({ error: "update failed" }, { status: 500 });
+    if (!updated) return errorResponse("update failed", 500);
     return NextResponse.json(toResponse(updated));
   } catch (err) {
     const m = errorMessage(err);
@@ -53,7 +55,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       const reason = /agent_id/.test(m)
         ? "That agent is already the target of another route."
         : "That chat is already routed.";
-      return NextResponse.json({ error: reason }, { status: 409 });
+      return errorResponse(reason, 409);
     }
     throw err;
   }

@@ -4,6 +4,8 @@ import { getThread, getThreadMessageBySeq } from "@/lib/stores/threads";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { currentChannelSummaries, pendingCompactionBoundary, pendingCompactionBoundarySeq } from "@/lib/agents/warm-summary-background";
 import { parseStoredTopics } from "@/lib/agents/conversation-summary";
+import { errorResponse, errorJson } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -17,20 +19,17 @@ const Body = z.object({
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
   const thread = getThread(thread_id);
-  if (!thread) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  if (!thread) return errorResponse(NOT_FOUND_ERRORS.THREAD, 404);
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Body must be { hot_since_seq: number | null }", code: "invalid_body" },
-      { status: 400 },
-    );
+    return errorJson({ error: "Body must be { hot_since_seq: number | null }", code: "invalid_body" }, { status: 400 });
   }
 
   const requestedSeq = parsed.data.hot_since_seq;
   const source = typeof requestedSeq === "number" ? getThreadMessageBySeq(thread_id, requestedSeq) : null;
   if (typeof requestedSeq === "number" && !source) {
-    return NextResponse.json({ error: "Boundary seq does not belong to this thread", code: "invalid_boundary" }, { status: 400 });
+    return errorJson({ error: "Boundary seq does not belong to this thread", code: "invalid_boundary" }, { status: 400 });
   }
   const updated = moveThreadContextBoundary(thread_id, requestedSeq, { refreshWarmSummary: true });
   return NextResponse.json({

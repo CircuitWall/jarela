@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { isIntegrationProbe, runProbe } from "@/lib/health/probes";
 import { getCredential } from "@/lib/stores/credentials";
 import { runWithToolCredentialContext } from "@/lib/tools/security/credential-context";
+import { errorResponse, errorJson } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -22,7 +24,7 @@ const PROBE_TOOL_NAME = "__integration_probe__";
 export async function POST(req: NextRequest, { params }: Params) {
   const { name } = await params;
   if (!isIntegrationProbe(name)) {
-    return NextResponse.json({ error: "unknown integration" }, { status: 404 });
+    return errorResponse("unknown integration", 404);
   }
 
   let credentialId: string | undefined;
@@ -38,13 +40,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (credentialId) {
     const cred = getCredential(credentialId);
     if (!cred) {
-      return NextResponse.json({ ok: false, error: "credential not found" }, { status: 404 });
+      return errorJson({ ok: false, error: NOT_FOUND_ERRORS.CREDENTIAL }, { status: 404 });
     }
     if (cred.type !== "integration" || cred.provider !== name) {
-      return NextResponse.json(
-        { ok: false, error: `credential ${credentialId} does not belong to integration "${name}"` },
-        { status: 400 },
-      );
+      return errorJson({ ok: false, error: `credential ${credentialId} does not belong to integration "${name}"` }, { status: 400 });
     }
   }
 
@@ -61,5 +60,5 @@ export async function POST(req: NextRequest, { params }: Params) {
   // every other failure mode is a 200 with ok:false so the UI can render
   // the error inline without treating it as a transport failure.
   const status = result.status === "unconfigured" ? 400 : 200;
-  return NextResponse.json({ ok: false, error: result.error ?? "unknown error" }, { status });
+  return errorJson({ ok: false, error: result.error ?? "unknown error" }, { status });
 }

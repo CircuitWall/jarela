@@ -1,0 +1,141 @@
+name: "Technical Debt"
+description: "Report technical debt, code quality issues, or refactoring opportunities"
+title: "[DEBT] "
+labels: ["type: technical-debt"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Technical Debt Report
+
+        Help us maintain code quality by reporting technical debt.
+
+        Include a reproducible example and measurable acceptance criteria.
+        See the [contribution guidance](https://github.com/CircuitWall/jarela/blob/main/CONTRIBUTING.md#api-design-and-technical-debt).
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: "Category"
+      description: "What type of technical debt is this?"
+      options:
+        - "Function Complexity (150-line body ratchet)"
+        - "Code Duplication"
+        - "Type Safety Gaps"
+        - "API Design / Contract Drift"
+        - "Performance Hotspot"
+        - "Test Coverage Gap"
+        - "Dependency Management"
+        - "Documentation Missing"
+        - "Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description"
+      description: "What is the technical debt? Why is it a problem?"
+      placeholder: |
+        Example:
+        A credential editor mixes OAuth polling, form handling,
+        credential CRUD, and provider-specific setup guides. This makes it hard to test,
+        modify, or reuse components.
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: "Location"
+      description: "File(s) and line numbers where the issue is located"
+      placeholder: |
+        components/credentials/IntegrationCard.tsx
+        app/api/v1/documents/sources/route.ts
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "Acceptance Criteria"
+      description: "What deterministic checks prove the debt is reduced without changing intended behavior?"
+      placeholder: |
+        - List and item routes return identical resource fields.
+        - Existing response bodies, statuses, and retry headers remain unchanged.
+        - Focused tests and the function-length ratchet pass.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "Severity"
+      description: "How urgent is this?"
+      options:
+        - "🟢 Low - Nice to fix, not blocking"
+        - "🟡 Medium - Should fix soon to prevent issues"
+        - "🔴 High - Fix before adding new features"
+        - "🔴 Critical - Blocking productivity or introduces risk"
+      default: 1
+    validations:
+      required: true
+
+  - type: input
+    id: effort
+    attributes:
+      label: "Estimated Effort"
+      description: "How long do you think this will take to fix?"
+      placeholder: "e.g., 2 hours, 1 day, 1 week"
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: "Impact"
+      description: "What are the consequences of not fixing this? Who is affected?"
+      placeholder: |
+        Example:
+        - Makes onboarding slower for new developers
+        - Increases bug rate when modifying OAuth logic
+        - Couples UI to business logic, making testing harder
+        - Increases bundle size unnecessarily
+
+  - type: textarea
+    id: suggested-fix
+    attributes:
+      label: "Suggested Fix (Optional)"
+      description: "If you have ideas on how to fix this, share them here"
+      placeholder: |
+        Example:
+        Extract OAuth logic into useOAuthFlow hook
+        Extract form handling into CredentialForm component
+        Lazy-load provider-specific setup guides
+        See TECHNICAL_DEBT_QUICK_WINS.md for more examples
+
+  - type: checkboxes
+    id: references
+    attributes:
+      label: "References"
+      description: "Does this relate to other work?"
+      options:
+        - label: "Covered in TECHNICAL_DEBT_ANALYSIS.md"
+        - label: "Part of TECHNICAL_DEBT_ROADMAP.md"
+        - label: "Part of TECHNICAL_DEBT_QUICK_WINS.md"
+        - label: "Related to a GitHub issue (link below)"
+
+  - type: textarea
+    id: related-issues
+    attributes:
+      label: "Related Issues (Optional)"
+      description: "Link any related GitHub issues or PRs"
+      placeholder: "#831, #832, PR #1234"
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        **Before submitting:** Search existing issues for duplicate reports.
+        Use synthetic data; never include credentials, private logs, or personal paths.

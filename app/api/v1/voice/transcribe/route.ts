@@ -5,6 +5,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { geminiStt, resolveGoogleApiKey } from "@/lib/voice/gemini";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25MB — Gemini inline_data upper bound
 const ALLOWED_MIME = new Set([
@@ -18,31 +20,28 @@ export async function POST(req: NextRequest) {
   try {
     form = await req.formData();
   } catch {
-    return NextResponse.json({ error: "expected multipart/form-data" }, { status: 400 });
+    return errorResponse("expected multipart/form-data", 400);
   }
   const agentId = String(form.get("agent_id") ?? "").trim();
   const audio = form.get("audio");
-  if (!agentId) return NextResponse.json({ error: "agent_id is required" }, { status: 400 });
+  if (!agentId) return errorResponse("agent_id is required", 400);
   if (!(audio instanceof Blob)) {
-    return NextResponse.json({ error: "audio file is required" }, { status: 400 });
+    return errorResponse("audio file is required", 400);
   }
-  if (audio.size === 0) return NextResponse.json({ error: "audio is empty" }, { status: 400 });
+  if (audio.size === 0) return errorResponse("audio is empty", 400);
   if (audio.size > MAX_BYTES) {
-    return NextResponse.json({ error: `audio exceeds ${MAX_BYTES} bytes` }, { status: 400 });
+    return errorResponse(`audio exceeds ${MAX_BYTES} bytes`, 400);
   }
 
   const agent = getAgentConfig(agentId);
-  if (!agent) return NextResponse.json({ error: "agent not found" }, { status: 404 });
+  if (!agent) return errorResponse(NOT_FOUND_ERRORS.AGENT_LEGACY, 404);
   if (!agent.voice_enabled) {
-    return NextResponse.json({ error: "voice is not enabled for this agent" }, { status: 400 });
+    return errorResponse("voice is not enabled for this agent", 400);
   }
 
   const apiKey = resolveGoogleApiKey();
   if (!apiKey) {
-    return NextResponse.json(
-      { error: 'Google API key not configured. Open Integrations → "Google AI (Gemini + Imagen)".' },
-      { status: 400 },
-    );
+    return errorResponse('Google API key not configured. Open Integrations → "Google AI (Gemini + Imagen)".', 400);
   }
 
   // Strip codec parameters (`audio/webm;codecs=opus` → `audio/webm`) before
@@ -51,7 +50,7 @@ export async function POST(req: NextRequest) {
   const fullType = audio.type || "audio/webm";
   const baseType = fullType.split(";")[0].trim().toLowerCase();
   if (!ALLOWED_MIME.has(baseType)) {
-    return NextResponse.json({ error: `unsupported audio type: ${fullType}` }, { status: 415 });
+    return errorResponse(`unsupported audio type: ${fullType}`, 415);
   }
 
   const buf = Buffer.from(await audio.arrayBuffer());
@@ -64,6 +63,6 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ text });
   } catch (err) {
-    return NextResponse.json({ error: String(err instanceof Error ? err.message : err) }, { status: 502 });
+    return errorResponse(String(err instanceof Error ? err.message : err), 502);
   }
 }

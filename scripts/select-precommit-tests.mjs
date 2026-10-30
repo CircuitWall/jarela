@@ -6,26 +6,24 @@
 //   "none"    – nothing test-relevant staged (docs only)
 //   "related" – remaining tokens are files for `vitest related`
 //   "full"    – run the whole suite
-// CI always runs the full suite; this only shortens the local loop, so any
-// doubt resolves to "full".
+// CI runs the full suite. Local commits never escalate automatically;
+// shared setup, configuration, and deleted modules require CI coverage.
 import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const CODE_EXTENSIONS = /\.(?:[cm]?[jt]sx?)$/i;
 const TEST_FILE = /\.test\.[cm]?[jt]sx?$/i;
 const TEST_EXTENSIONS = [".test.ts", ".test.tsx", ".test.mjs"];
-const MAX_RELATED_FILES = 100;
 
 // Files that change how every test runs (config, setup, deps, toolchain).
-const FULL_SUITE_TRIGGERS = [
+const CI_ONLY_TRIGGERS = [
   /^vitest\.config\.[cm]?[jt]s$/,
-  /^tests\//,
+  /^tests\/setup[^/]*\.[cm]?[jt]sx?$/,
   /^package(?:-lock)?\.json$/,
   /(?:^|\/)package\.json$/,
   /^tsconfig[^/]*\.json$/,
   /^\.npmrc$/,
   /^\.nvmrc$/,
-  /^\.githooks\//,
 ];
 
 // Files no test reads.
@@ -56,7 +54,7 @@ export function parseNameStatus(raw) {
 // example scripts/jarela-bin.test.mjs) would be missed without this.
 function siblingTests(file, exists) {
   if (TEST_FILE.test(file)) return [];
-  const stem = file.replace(CODE_EXTENSIONS, "");
+  const stem = file.replace(/\.[^/.]+$/, "");
   return TEST_EXTENSIONS.map((ext) => stem + ext).filter((candidate) => exists(candidate));
 }
 
@@ -66,13 +64,15 @@ export function selectTests(entries, { forceFull = false, exists = existsSync } 
   for (const { status, path } of entries) {
     const normalized = path.replace(/\\/g, "/");
     if (IGNORED.some((pattern) => pattern.test(normalized))) continue;
-    if (FULL_SUITE_TRIGGERS.some((pattern) => pattern.test(normalized))) {
-      return { mode: "full", files: [] };
+    if (normalized.startsWith(".githooks/")) {
+      related.push("scripts/select-precommit-tests.mjs");
+      continue;
     }
-    if (!CODE_EXTENSIONS.test(normalized)) return { mode: "full", files: [] };
+    if (CI_ONLY_TRIGGERS.some((pattern) => pattern.test(normalized))) continue;
     // `vitest related` can't trace importers of a file that no longer exists.
-    if (status === "D") return { mode: "full", files: [] };
-    related.push(normalized);
+    if (status === "D") continue;
+    if (CODE_EXTENSIONS.test(normalized)) related.push(normalized);
+    else related.push(...siblingTests(normalized, exists));
   }
   if (related.length === 0) return { mode: "none", files: [] };
   const files = [];
@@ -81,7 +81,6 @@ export function selectTests(entries, { forceFull = false, exists = existsSync } 
       if (!files.includes(candidate)) files.push(candidate);
     }
   }
-  if (files.length > MAX_RELATED_FILES) return { mode: "full", files: [] };
   return { mode: "related", files };
 }
 

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { currentWorkspace } from "@/lib/tools/filesystem/workspace-context";
 import { errorMessage } from "@/lib/utils/error";
+import { errorResponse, errorJson } from "@/lib/api/responses";
 
 const MAX_SNIPPET_BYTES = 16_384;
 const TEXT_EXTENSIONS = new Set([
@@ -77,18 +78,18 @@ function looksBinary(buffer: Buffer): boolean {
 export async function GET(req: NextRequest) {
   const href = req.nextUrl.searchParams.get("href");
   const threadId = req.nextUrl.searchParams.get("thread_id");
-  if (!href) return NextResponse.json({ error: "href is required" }, { status: 400 });
+  if (!href) return errorResponse("href is required", 400);
 
   const abs = resolveLocalPath(href, threadId);
-  if (!abs) return NextResponse.json({ error: "not a local file path" }, { status: 400 });
+  if (!abs) return errorResponse("not a local file path", 400);
 
   let stat;
   try {
     stat = await fs.stat(abs);
   } catch {
-    return NextResponse.json({ error: "file does not exist or is unreadable", path: abs }, { status: 404 });
+    return errorJson({ error: "file does not exist or is unreadable", path: abs }, { status: 404 });
   }
-  if (!stat.isFile()) return NextResponse.json({ error: "path is not a file", path: abs }, { status: 400 });
+  if (!stat.isFile()) return errorJson({ error: "path is not a file", path: abs }, { status: 400 });
 
   const name = path.basename(abs);
   const shouldRead = isTextLike(name) || stat.size <= MAX_SNIPPET_BYTES;
@@ -116,20 +117,20 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+    return errorResponse("invalid json", 400);
   }
-  if (typeof body.href !== "string") return NextResponse.json({ error: "href is required" }, { status: 400 });
+  if (typeof body.href !== "string") return errorResponse("href is required", 400);
   const threadId = typeof body.thread_id === "string" ? body.thread_id : null;
   const abs = resolveLocalPath(body.href, threadId);
-  if (!abs) return NextResponse.json({ error: "not a local file path" }, { status: 400 });
+  if (!abs) return errorResponse("not a local file path", 400);
 
   try {
     const stat = await fs.stat(abs);
-    if (!stat.isFile()) return NextResponse.json({ error: "path is not a file", path: abs }, { status: 400 });
+    if (!stat.isFile()) return errorJson({ error: "path is not a file", path: abs }, { status: 400 });
     openWithDefaultProgram(abs);
     return NextResponse.json({ ok: true, path: abs });
   } catch (e) {
-    return NextResponse.json({ error: errorMessage(e), path: abs }, { status: 400 });
+    return errorJson({ error: errorMessage(e), path: abs }, { status: 400 });
   }
 }
 

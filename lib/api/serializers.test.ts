@@ -8,12 +8,45 @@ import {
   parseMessageMetadataForResponse,
   parseToolEventsForResponse,
   resolveContextWindowTokens,
+  documentSourceToResponse,
 } from "./serializers";
+import type { DocumentSourceRow, DocumentSourceStats } from "@/lib/stores/document-sources";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { BridgeRow } from "@/lib/stores/bridges";
 import type { McpServerRow } from "@/lib/stores/mcp-servers";
 import type { MessageRow } from "@/lib/stores/threads";
 import type { MessageUsageRow } from "@/lib/stores/message-usage";
+
+describe("documentSourceToResponse", () => {
+  const row: DocumentSourceRow = {
+    id: "source", path: "github-repo://example/project", label: "Example",
+    enabled: 1, last_scan_at: null, last_error: "scan failed",
+    created_at: "2026-10-30T00:00:00Z", updated_at: "2026-10-30T01:00:00Z",
+    kind: "github_repo", config: '{"owner":"example","repo":"project"}',
+    last_cursor: "private-indexer-cursor",
+  };
+  const stats: DocumentSourceStats = {
+    source_id: row.id, document_count: 2, chunk_count: 4, embedded_chunk_count: 3,
+  };
+
+  it("preserves the complete public shape without exposing the indexer cursor", () => {
+    expect(documentSourceToResponse(row, stats)).toEqual({
+      id: row.id, path: row.path, label: row.label, enabled: true,
+      last_scan_at: null, last_error: row.last_error,
+      created_at: row.created_at, updated_at: row.updated_at, kind: row.kind,
+      config: { owner: "example", repo: "project" }, stats,
+    });
+  });
+
+  it("preserves null config and disabled local sources", () => {
+    expect(documentSourceToResponse({ ...row, kind: "local_folder", config: null, enabled: 0 }, stats))
+      .toMatchObject({ kind: "local_folder", config: null, enabled: false });
+  });
+
+  it("does not hide malformed persisted configuration", () => {
+    expect(() => documentSourceToResponse({ ...row, config: "{" }, stats)).toThrow(SyntaxError);
+  });
+});
 
 describe("agentToResponse", () => {
   const baseRow: AgentConfigRow = {
@@ -436,5 +469,4 @@ describe("resolveContextWindowTokens", () => {
     expect(resolveContextWindowTokens(-1, 8_192)).toBe(8_192);
   });
 });
-
 

@@ -6,6 +6,7 @@ import {
   updateUserLocation,
 } from "@/lib/stores/user-profile";
 import { errorMessage } from "@/lib/utils/error";
+import { errorJson, errorResponse } from "@/lib/api/responses";
 
 // Body for POST: upsert the latest coordinates from the browser.
 // Requires location_consent === 1 server-side; otherwise rejected.
@@ -26,19 +27,13 @@ export async function POST(req: NextRequest) {
   try {
     parsed = PostBody.parse(await req.json());
   } catch (e) {
-    return NextResponse.json(
-      { error: "invalid body", detail: errorMessage(e) },
-      { status: 400 },
-    );
+    return errorJson({ error: "invalid body", detail: errorMessage(e) }, { status: 400 });
   }
   try {
     const row = updateUserLocation(parsed);
     return NextResponse.json(row);
   } catch (e) {
-    return NextResponse.json(
-      { error: errorMessage(e) },
-      { status: 409 },
-    );
+    return errorResponse(errorMessage(e), 409);
   }
 }
 
@@ -47,10 +42,7 @@ export async function PUT(req: NextRequest) {
   try {
     parsed = PutBody.parse(await req.json());
   } catch (e) {
-    return NextResponse.json(
-      { error: "invalid body", detail: errorMessage(e) },
-      { status: 400 },
-    );
+    return errorJson({ error: "invalid body", detail: errorMessage(e) }, { status: 400 });
   }
   const row = setLocationConsent(parsed.consent);
   return NextResponse.json(row);

@@ -5,11 +5,12 @@
  * tuned setup can be reused as a personal template. See `docs/api.md`.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import { duplicateAgentConfig } from "@/lib/stores/agent-configs";
 import { agentToResponse } from "@/lib/api/serializers";
 import { createdResponse, errorResponse, notFoundResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -32,6 +33,6 @@ export async function POST(req: NextRequest, { params }: Params) {
   if (!parsed.success) return errorResponse(parsed.error.issues[0]?.message ?? "invalid body", 400);
 
   const row = duplicateAgentConfig(id, parsed.data.name);
-  if (!row) return notFoundResponse("Agent not found");
+  if (!row) return notFoundResponse(NOT_FOUND_ERRORS.AGENT);
   return createdResponse(agentToResponse(row));
 }

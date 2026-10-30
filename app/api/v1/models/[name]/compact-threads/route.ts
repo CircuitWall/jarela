@@ -27,6 +27,7 @@ import { compactThreadWarmContext, isManualCompactionRunning, trackManualCompact
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
+import { errorJson, errorResponse } from "@/lib/api/responses";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -43,13 +44,13 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { name } = await params;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.message, code: "invalid_body" }, { status: 400 });
+    return errorJson({ error: parsed.error.message, code: "invalid_body" }, { status: 400 });
   }
   const { using, keep_last = 8 } = parsed.data;
 
   let provider;
   try { provider = getProvider(using.provider); }
-  catch (e) { return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 400 }); }
+  catch (e) { return errorResponse(String(e instanceof Error ? e.message : e), 400); }
 
   // Agents that explicitly bind this model_config. If the model is the
   // workspace default, agents with model_config_name === null also fall

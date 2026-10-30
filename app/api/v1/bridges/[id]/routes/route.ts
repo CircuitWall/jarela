@@ -3,7 +3,8 @@ import { z } from "zod";
 import { createRoute, getBridge, listRoutes, type BridgeRouteRow } from "@/lib/stores/bridges";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { errorMessage } from "@/lib/utils/error";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -23,7 +24,7 @@ function toResponse(r: BridgeRouteRow) {
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getBridge(id)) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!getBridge(id)) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
   return NextResponse.json(listRoutes(id).map(toResponse));
 }
 
@@ -39,12 +40,12 @@ const CreateSchema = z.object({
 
 export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getBridge(id)) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!getBridge(id)) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
 
   const parsed = await validateBody(req, CreateSchema);
   if (parsed instanceof NextResponse) return parsed;
   if (!getAgentConfig(parsed.agent_id)) {
-    return NextResponse.json({ error: `agent ${parsed.agent_id} not found` }, { status: 400 });
+    return errorResponse(`agent ${parsed.agent_id} not found`, 400);
   }
 
   try {
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       const reason = /agent_id/.test(m)
         ? "That agent is already the target of another route. Each agent can serve at most one chat."
         : "That chat is already routed.";
-      return NextResponse.json({ error: reason }, { status: 409 });
+      return errorResponse(reason, 409);
     }
     throw err;
   }

@@ -56,25 +56,26 @@ describe("selectTests", () => {
     "packages/foo/package.json",
     "tsconfig.json",
     ".npmrc",
-    ".githooks/pre-commit",
-  ])("runs the full suite when %s changes", (file) => {
-    expect(selectTests(modified("lib/a.ts", file)).mode).toBe("full");
+  ])("leaves broad %s validation to CI without escalating local code tests", (file) => {
+    expect(selectTests(modified("lib/a.ts", file))).toEqual({ mode: "related", files: ["lib/a.ts"] });
+    expect(selectTests(modified(file))).toEqual({ mode: "none", files: [] });
   });
 
-  it("runs the full suite for non-code files tests may read", () => {
-    expect(selectTests(modified("lib/skills/foo/SKILL.md")).mode).toBe("full");
-    expect(selectTests(modified(".github/workflows/ci.yml")).mode).toBe("full");
-    expect(selectTests(modified("lib/integrations/manifest.json")).mode).toBe("full");
+  it("leaves non-code fixture and configuration coverage to CI when no focused test exists", () => {
+    for (const file of ["lib/skills/foo/SKILL.md", ".github/workflows/ci.yml", "lib/integrations/manifest.json"]) {
+      expect(selectTests(modified(file), { exists: () => false })).toEqual({ mode: "none", files: [] });
+    }
   });
 
-  it("runs the full suite when a code file is deleted or renamed", () => {
-    expect(selectTests([{ status: "D", path: "lib/a.ts" }]).mode).toBe("full");
-    expect(selectTests(parseNameStatus("R090\0lib/a.ts\0lib/b.ts\0")).mode).toBe("full");
+  it("leaves deleted-module coverage to CI and selects the destination of renamed code", () => {
+    expect(selectTests([{ status: "D", path: "lib/a.ts" }])).toEqual({ mode: "none", files: [] });
+    expect(selectTests(parseNameStatus("R090\0lib/a.ts\0lib/b.ts\0")))
+      .toEqual({ mode: "related", files: ["lib/b.ts"] });
   });
 
   it("normalizes Windows separators", () => {
     expect(selectTests(modified("lib\\a.ts"))).toEqual({ mode: "related", files: ["lib/a.ts"] });
-    expect(selectTests(modified("tests\\setup-rtl.ts")).mode).toBe("full");
+    expect(selectTests(modified("tests\\setup-rtl.ts")).mode).toBe("none");
   });
 
   it("adds sibling test files so subprocess-tested scripts still run their tests", () => {
@@ -90,9 +91,33 @@ describe("selectTests", () => {
     expect(selectTests(modified("lib/a.ts", "lib/a.test.ts"), { exists }).files).toEqual(["lib/a.ts", "lib/a.test.ts"]);
   });
 
-  it("falls back to the full suite for very large changes", () => {
+  it("keeps focused selection for very large changes", () => {
     const many = modified(...Array.from({ length: 101 }, (_, i) => `lib/f${i}.ts`));
-    expect(selectTests(many).mode).toBe("full");
+    const result = selectTests(many);
+    expect(result.mode).toBe("related");
+    expect(result.files).toHaveLength(101);
+  });
+
+  it("selects selector coverage for hook changes", () => {
+    expect(selectTests(modified(".githooks/pre-commit"), {
+      exists: (file) => file === "scripts/select-precommit-tests.test.mjs",
+    })).toEqual({
+      mode: "related",
+      files: ["scripts/select-precommit-tests.mjs", "scripts/select-precommit-tests.test.mjs"],
+    });
+  });
+
+  it("selects existing sibling tests of data files without adding non-code import targets", () => {
+    expect(selectTests(modified("lib/example.json"), {
+      exists: (file) => file === "lib/example.test.ts",
+    })).toEqual({ mode: "related", files: ["lib/example.test.ts"] });
+  });
+
+  it("retains focused tests when mixed with shared setup and deleted files", () => {
+    expect(selectTests([
+      ...modified("tests/setup-rtl.ts", "lib/a.test.ts", "package.json"),
+      { status: "D", path: "lib/old.ts" },
+    ])).toEqual({ mode: "related", files: ["lib/a.test.ts"] });
   });
 
   it("honors the force-full override", () => {

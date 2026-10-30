@@ -10,6 +10,7 @@ import { invalidateMcpTools } from "@/lib/mcp/client";
 import { mcpServerToResponse } from "@/lib/api/serializers";
 import { notFoundResponse, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -22,14 +23,14 @@ const PutBody = z.object({
 export async function GET(_req: NextRequest, { params }: Params) {
   const { name } = await params;
   const r = getMcpServer(name);
-  if (!r) return notFoundResponse("MCP server not found");
+  if (!r) return notFoundResponse(NOT_FOUND_ERRORS.MCP_SERVER);
   return NextResponse.json(mcpServerToResponse(r));
 }
 
 export async function PUT(req: NextRequest, { params }: Params) {
   const { name } = await params;
   const existing = getMcpServer(name);
-  if (!existing) return notFoundResponse("MCP server not found");
+  if (!existing) return notFoundResponse(NOT_FOUND_ERRORS.MCP_SERVER);
   const body = await validateBody(req, PutBody);
   if (body instanceof NextResponse) return body;
   const row = upsertMcpServer({
@@ -46,7 +47,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { name } = await params;
   const ok = deleteMcpServer(name);
-  if (!ok) return notFoundResponse("MCP server not found");
+  if (!ok) return notFoundResponse(NOT_FOUND_ERRORS.MCP_SERVER);
   invalidateMcpTools();
   return NextResponse.json({ deleted: true });
 }

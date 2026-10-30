@@ -5,6 +5,8 @@ import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
 import { isMaskedSecret } from "@/lib/utils/secret-mask";
 import { sanitizeOAuthInput } from "@/lib/utils/oauth-input";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 // POST /api/v1/integrations/outlook/oauth/start
 // Body: { client_id?, client_secret?, credential_id? }
@@ -34,14 +36,14 @@ export async function POST(req: NextRequest) {
   const json = await req.json().catch(() => ({}));
   const parsed = BodySchema.safeParse(json);
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid body" }, { status: 400 });
+    return errorResponse(parsed.error.issues[0]?.message ?? "invalid body", 400);
   }
 
   const targeted = parsed.data.credential_id
     ? getCredential(parsed.data.credential_id)
     : null;
   if (parsed.data.credential_id && (!targeted || targeted.provider !== "outlook")) {
-    return NextResponse.json({ error: "credential not found" }, { status: 404 });
+    return errorResponse(NOT_FOUND_ERRORS.CREDENTIAL, 404);
   }
   const targetedParams = targeted ? getCredentialParams(targeted) : {};
   const existing = getIntegrationRaw("outlook") ?? {};
@@ -59,19 +61,10 @@ export async function POST(req: NextRequest) {
       : fallbackClientSecret;
 
   if (!clientId || !clientSecret) {
-    return NextResponse.json(
-      { error: "client_id and client_secret are required (save them first or include in this request)" },
-      { status: 400 },
-    );
+    return errorResponse("client_id and client_secret are required (save them first or include in this request)", 400);
   }
   if (isMaskedSecret(clientSecret)) {
-    return NextResponse.json(
-      {
-        error:
-          "Saved client_secret looks like a placeholder. Re-enter the real OAuth client secret on this credential and click Save, then Connect again.",
-      },
-      { status: 400 },
-    );
+    return errorResponse("Saved client_secret looks like a placeholder. Re-enter the real OAuth client secret on this credential and click Save, then Connect again.", 400);
   }
 
   // Use the request's own origin as the loopback redirect target. UNLIKE

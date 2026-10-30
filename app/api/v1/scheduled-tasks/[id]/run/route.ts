@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { getScheduledTask } from "@/lib/stores/scheduled-tasks";
 import { runScheduledTaskNow } from "@/lib/scheduler";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -17,7 +19,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const task = getScheduledTask(id);
-  if (!task) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!task) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
   after(async () => {
     try {
       await runScheduledTaskNow(task);

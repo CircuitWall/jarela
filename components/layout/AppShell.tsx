@@ -38,6 +38,11 @@ import { AgentSwitcher } from "./AgentSwitcher";
 
 const ADVANCED_TABS = new Set(["dashboard", "tasks", "tools", "memory", "bridges", "logs", "env"]);
 
+/**
+ * Coordinates agent/thread selection, notification focus, and lock recovery.
+ * Panels mount on first visit and retain state across tab switches; stable chat
+ * callbacks prevent navigation or unread updates from restarting stream effects.
+ */
 export function AppShell() {
   const { state, dispatch } = useAppContext();
   const isFullMode = state.experienceMode === "full";

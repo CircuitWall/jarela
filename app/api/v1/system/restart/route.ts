@@ -23,6 +23,8 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { beginThreadOperation } from "@/lib/lifecycle/system-signals";
 import { getSystemOperation } from "@/lib/stores/system-signals";
+import { errorResponse } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 const RestartBody = z.object({
   /** Optional reason logged before exit so postmortems can correlate. */
@@ -39,7 +41,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     const ok = RestartBody.safeParse(raw);
     if (ok.success) parsed = ok.data;
     else if (raw && typeof raw === "object" && "thread_id" in raw) {
-      return NextResponse.json({ error: "Invalid agent restart context" }, { status: 400 });
+      return errorResponse("Invalid agent restart context", 400);
     }
   } catch {
     /* body is optional */
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     const existing = getSystemOperation(parsed.operation_id);
     if (existing) {
       if (existing.thread_id !== parsed.thread_id || existing.kind !== "restart") {
-        return NextResponse.json({ error: "Restart operation context mismatch" }, { status: 409 });
+        return errorResponse("Restart operation context mismatch", 409);
       }
       return NextResponse.json({ accepted: true, operation_id: existing.id, already_accepted: true,
         hint: "This restart operation was already accepted. Do not repeat it; inspect its completion signal on your next turn." }, { status: 202 });
@@ -59,7 +61,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     ? beginThreadOperation(parsed.thread_id, "restart", parsed.operation_id ?? randomUUID())
     : null;
   if (parsed.thread_id && !operationId) {
-    return NextResponse.json({ error: "Restart thread not found" }, { status: 404 });
+    return errorResponse(NOT_FOUND_ERRORS.RESTART_THREAD, 404);
   }
 
   // Schedule the exit AFTER returning the response so the client gets a

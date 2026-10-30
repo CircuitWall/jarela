@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getDefaultDocumentMinSimilarity, searchDocuments } from "@/lib/documents/search";
 import { DocumentExclusionUnavailableError } from "@/lib/documents/recall-policy";
+import { errorResponse } from "@/lib/api/responses";
 
 const QuerySchema = z.object({
   q: z.string().min(1),
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
     include_excluded: url.searchParams.get("include_excluded") ?? undefined,
   });
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid input" }, { status: 400 });
+    return errorResponse(parsed.error.issues[0]?.message ?? "invalid input", 400);
   }
   let hits: Awaited<ReturnType<typeof searchDocuments>>;
   try {
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     if (err instanceof DocumentExclusionUnavailableError) {
-      return NextResponse.json({ error: err.message }, { status: 503 });
+      return errorResponse(err.message, 503);
     }
     throw err;
   }

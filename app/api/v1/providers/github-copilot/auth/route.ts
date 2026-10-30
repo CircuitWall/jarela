@@ -7,7 +7,7 @@ import {
   getAuthStatus,
   clearStoredOAuthToken,
 } from "@/lib/providers/github-copilot-auth";
-import { validateBody } from "@/lib/api/responses";
+import { validateBody, errorResponse } from "@/lib/api/responses";
 import { errorMessage } from "@/lib/utils/error";
 
 const PutBody = z.object({
@@ -24,7 +24,7 @@ export async function POST() {
     const flow = await startDeviceFlow();
     return NextResponse.json(flow);
   } catch (e) {
-    return NextResponse.json({ error: errorMessage(e) }, { status: 500 });
+    return errorResponse(errorMessage(e), 500);
   }
 }
 
@@ -41,6 +41,6 @@ export async function PUT(req: NextRequest) {
     const result = await pollDeviceFlow(body.device_code);
     return NextResponse.json(result);
   } catch (e) {
-    return NextResponse.json({ error: errorMessage(e) }, { status: 500 });
+    return errorResponse(errorMessage(e), 500);
   }
 }

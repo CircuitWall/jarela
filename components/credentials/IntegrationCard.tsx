@@ -26,6 +26,12 @@ import { confirmAction } from "@/lib/ui/confirm";
 //     for this provider via `api.credentials.create`. The new row is NOT
 //     promoted to default — the user can promote it explicitly afterwards.
 
+/**
+ * Owns default, named, and new integration credential editing.
+ * OAuth completion refreshes the parent; masked fields are omitted on named
+ * credential saves so reconnecting cannot replace a saved secret with its mask.
+ * Polling is stopped on unmount, completion, expiry, or failure.
+ */
 export function IntegrationCard({
   definition: def,
   status,

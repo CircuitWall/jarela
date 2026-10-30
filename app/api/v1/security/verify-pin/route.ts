@@ -34,6 +34,7 @@ import {
   recordPinSuccess,
 } from "@/lib/auth/pin-rate-limit";
 import { unlockScreen } from "@/lib/security/screen-lock";
+import { errorResponse, errorJson } from "@/lib/api/responses";
 
 const Body = z.object({ pin: z.string() });
 
@@ -46,27 +47,24 @@ export async function POST(req: Request) {
   // Ensure master-key bootstrap has run so getMasterKeySource() is meaningful.
   getDb();
   if (getMasterKeySource() !== "pin-wrapped-keyfile") {
-    return NextResponse.json({ error: "no-pin" }, { status: 409 });
+    return errorResponse("no-pin", 409);
   }
 
   const remote = req.headers.get("x-forwarded-for") ?? "loopback";
   const rl = checkPinRateLimit(remote);
   if (!rl.allowed) {
-    return NextResponse.json(
-      { error: "rate-limited", retry_after_ms: rl.retryAfterMs },
-      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } },
-    );
+    return errorJson({ error: "rate-limited", retry_after_ms: rl.retryAfterMs }, { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } });
   }
 
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "bad-json" }, { status: 400 });
+    return errorResponse("bad-json", 400);
   }
   const parsed = Body.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "bad-pin" }, { status: 400 });
+    return errorResponse("bad-pin", 400);
   }
 
   try {
@@ -77,12 +75,12 @@ export async function POST(req: Request) {
   } catch (err) {
     if (err instanceof InvalidPinError) {
       recordPinFailure(remote);
-      return NextResponse.json({ error: "invalid-pin" }, { status: 401 });
+      return errorResponse("invalid-pin", 401);
     }
     if (err instanceof Error && /6 digits/.test(err.message)) {
-      return NextResponse.json({ error: "bad-pin" }, { status: 400 });
+      return errorResponse("bad-pin", 400);
     }
     console.error("[security/verify-pin] unexpected error:", err);
-    return NextResponse.json({ error: "internal" }, { status: 500 });
+    return errorResponse("internal", 500);
   }
 }

@@ -8,6 +8,7 @@ import {
   DISPLAY_FILTER_DEFAULTS,
 } from "@/lib/stores/agent-configs";
 import { notFoundResponse, validateBody } from "@/lib/api/responses";
+import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 // ADR-0022: per-agent message-channel display filters.
 // GET  -> { filters: DisplayFilters, defaults: DisplayFilters }
@@ -26,14 +27,14 @@ const PutSchema = z.object({
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getAgentConfig(id)) return notFoundResponse("Agent not found");
+  if (!getAgentConfig(id)) return notFoundResponse(NOT_FOUND_ERRORS.AGENT);
   const filters = getAgentDisplayFilters(id) ?? DISPLAY_FILTER_DEFAULTS;
   return NextResponse.json({ filters, defaults: DISPLAY_FILTER_DEFAULTS });
 }
 
 export async function PUT(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getAgentConfig(id)) return notFoundResponse("Agent not found");
+  if (!getAgentConfig(id)) return notFoundResponse(NOT_FOUND_ERRORS.AGENT);
   const parsed = await validateBody(req, PutSchema);
   if (parsed instanceof NextResponse) return parsed;
   const next = updateAgentDisplayFilters(id, parsed.filters);

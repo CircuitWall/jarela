@@ -18,6 +18,27 @@ beforeEach(() => {
 });
 
 describe("mail reindex failures", () => {
+  it("preserves the legacy not-found response", async () => {
+    mocks.source.mockReturnValue(null);
+    const response = await POST(new NextRequest("http://localhost/api/v1/documents/sources/missing/reindex", { method: "POST" }), {
+      params: Promise.resolve({ id: "missing" }),
+    });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "not found" });
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
+
+  it("preserves unexpected scan failures as HTTP 500", async () => {
+    mocks.run.mockRejectedValue(new Error("synthetic scan failure"));
+    const response = await POST(new NextRequest("http://localhost/api/v1/documents/sources/synthetic/reindex", { method: "POST" }), {
+      params: Promise.resolve({ id: "synthetic" }),
+    });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "synthetic scan failure" });
+    expect(mocks.clear).not.toHaveBeenCalled();
+    expect(mocks.backfill).not.toHaveBeenCalled();
+  });
+
   it.each([
     "iCloud indexing requires an updated package.",
     "Outlook search reached Microsoft's 1,000-result ceiling.",
