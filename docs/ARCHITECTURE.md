@@ -174,7 +174,7 @@ cleanup, never implicit recovery or replay. Shutdown drains workflows and
 script owners before closing SQLite. Consent grants/captured executable bytes
 stay in memory; restart invalidates pending executable approvals.
 
-Unreleased W3/W4 starting primitives in `lib/workflows/authoring.ts` are pure
+Unreleased W3/W4 primitives in `lib/workflows/authoring.ts` are pure
 bounded text builders, not another executor or persistence system.
 `lib/tools/general/authoring.ts` registers Config/read tools for inert external
 tool scaffolds and exact-diff local contribution review bundles. Discovery and
@@ -189,8 +189,32 @@ flowchart LR
   Skills["Authoring / contribution skills"] --> TextTools["Config/read text builders"]
   TextTools --> Inert["Inert source / tests / local diff + revision"]
   Inert --> Review["Independent validation + human review"]
-  Review -. "Separate authorization; not performed by text builders" .-> Lifecycle["Existing execution / installation / repository tools"]
+  Review --> Approval["Local exact-source single-stage approval"]
+  Approval --> Lifecycle["Bounded extension / contribution services"]
+  Lifecycle --> Existing["Existing owned runner / drop-in / permission / repository paths"]
 ```
+
+`lib/workflows/extension-service.ts` owns bounded single-effect authoring
+operations, not a model loop or another general workflow executor. It reuses
+the checked staged Node runner, existing drop-in directory and permission
+stores. Current source, canonical directory identities, agent permissions and
+configuration bind each review. Pending-action approvals apply only one stage.
+Exact code/diff previews are local-only; result bytes use existing encryption.
+Ephemeral operation state/grants are invalidated on restart. The existing
+staging ownership format adds `retained` for user-owned inert source, so cleanup
+does not erase drafts or recover consent. See
+[ADR-0115](adr/0115-reviewed-authoring-and-contribution-lifecycle.md).
+
+`lib/workflows/contribution-service.ts` independently inspects canonical clean
+Git state, selected bytes/base, existing local Vitest runtime and hook baselines.
+Approved tests use a user-owned isolated topic worktree under the workspace's
+ignored `node_modules/.cache/jarela-contributions`. Its canonical local bundle
+comes from observed validation, not a caller's test report. Distinct local
+approvals gate commit, create-only topic push and draft PR using existing Git and
+GitHub authentication. No package publication or second model executor is added;
+source/diff previews stay local while model inspection and approval results return
+metadata. Approved Git mutations/hooks/helpers use native-owned execution; inert
+discovery does not execute configured helpers or retrieve credentials.
 
 ```mermaid
 flowchart LR

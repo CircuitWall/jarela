@@ -55,7 +55,7 @@ function sensitive(value: string) {
     || /(?:[A-Z]:[\\/](?:Users|Documents and Settings)[\\/]|\/(?:home|Users)\/)[^\\/\s"']+/i.test(value)
     || /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(value);
 }
-function containsSensitive(value: unknown): boolean {
+export function containsSensitive(value: unknown): boolean {
   if (typeof value === "string") return sensitive(value);
   if (value !== null && typeof value === "object") return Object.values(value).some(containsSensitive);
   return false;

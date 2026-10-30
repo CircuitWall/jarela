@@ -211,6 +211,13 @@ export function getAgentTools(cfg: Pick<AgentConfigRow, "tools"> | null | undefi
   } catch {
     return [];
   }
+
+}
+
+export function compareAndSetAgentTools(id: string, expected: string, tools: string[]): void {
+  const updated = getDb().prepare("UPDATE agent_configs SET tools=?, updated_at=? WHERE id=? AND tools=?")
+    .run(JSON.stringify([...new Set(tools)]), now(), id, expected);
+  if (updated.changes !== 1) throw new Error("Agent permissions changed; request fresh review");
 }
 
 export function parseDelegateTargets(raw: string | null | undefined): string[] {

@@ -235,8 +235,8 @@ execution permission; unsupported process ownership fails explicitly.
 | `GET /api/v1/workflows/[id]?agentId=...` | Owning agent's durable run, current version, checked outputs/evidence and pending typed question. |
 | `POST /api/v1/workflows/[id]` | `{action, agentId, version}` for `advance`, `cancel`, `reconcile`; `answer` additionally requires exact `revision`, `stepId`, `answerJson`. |
 
-Use the existing pending-action approve/deny endpoints for `execute_skill` and
-`execute_workflow`; execution kinds additionally enforce the local/unlocked
+Use the existing pending-action approve/deny endpoints for `execute_skill`,
+`execute_workflow` and `authoring_operation`; these kinds additionally enforce the local/unlocked
 boundary. Pending is not success. Script plan consent expires after five minutes
 and binds exact run, definition, invocation, workspace and captured revisions.
 Typed workflow answers never substitute for it. Version conflicts refuse stale
@@ -244,6 +244,37 @@ updates. `reconcile` accepts no caller-supplied output: the authorized host must
 observe through a declared read-back action and validate the original contract.
 Encrypted durable state has terminal retention; live executable grants do not.
 See [lifecycle operations](OPERATIONS.md#checked-execution-and-workflow-lifecycle-unreleased).
+
+### Reviewed authoring operations (Unreleased)
+
+The same unlocked loopback/no-store boundary applies. Collection requests are
+strict JSON with a maximum 64 KiB body; caller-supplied approval fields are not
+accepted. See [extension lifecycle](EXTENDING.md#reviewed-extension-lifecycle).
+
+| Method and path | Request / result |
+| --- | --- |
+| `POST /api/v1/extension-authoring` | `{action:"create",agentId,workspace,input}` captures an inert synthetic candidate; `{action:"request",agentId,input:{id,stage,fixture_origin?}}` proposes one effect. |
+| `GET /api/v1/extension-authoring?id=...&agentId=...` | Owning agent's live session, revision and observed status; not a new grant. |
+| `POST /api/v1/contribution-authoring` | `{action:"create",agentId,workspace,input}` proposes actual isolated tests; `{action:"commit"\|"push"\|"draft_pr",agentId,operation_id}` proposes that distinct effect. |
+| `GET /api/v1/contribution-authoring?id=...&agentId=...` | Owning agent's live repository/source/test evidence and current stage. |
+| `GET /api/v1/authoring-operations/[id]?type=extension` | Exact live files, installed baseline, destination, policy/permission effects and observed result/error. |
+| `DELETE /api/v1/authoring-operations/[id]?type=extension` | Cancels pending/running work. Does not roll back effects; unresolved execution remains owned. |
+
+Use `type=contribution` for contribution operation preview/cancellation.
+Contribution stages reuse the operation ID but return a new pending proposal and
+review revision each time. Complete source/diff previews remain local; the
+agent-facing inspection tool returns status metadata only.
+Pending-action approval results likewise contain metadata only, so subsequent
+model proposal inspection cannot reveal the local code/diff. Approval binds the
+trusted pending ID/agent to its exact stage and revision.
+
+Extension stages are `stage`, `test`, `install`, `configure`, `enable`, `verify`,
+`disable`, `remove`, `restore` and `discard`. Only `configure` accepts
+`fixture_origin`. Restoration selects prior bytes as a candidate, not installed
+code; staging/tests/install/enable/verification need fresh reviews. Approval is
+the existing local pending-action operation and is consumed once. Sessions
+expire after 30 minutes, pending reviews after five minutes. Restart invalidates
+both without executing or replaying retained source.
 
 ---
 

@@ -13,10 +13,16 @@ describe("execution approval persistence", () => {
     expect(stored?.result).toMatch(/^enc:v1:/);
     expect(stored?.result).not.toContain("Synthetic checked output");
     expect(JSON.parse(getPendingAction(action.id)!.result!)).toEqual({ output: "Synthetic checked output" });
+    const authoring = createPendingAction({ agent_id: "synthetic-execution-agent", kind: "authoring_operation", payload: { operation_id: "synthetic" } });
+    setActionStatus(authoring.id, "approved", { output: "Synthetic private patch" });
+    expect(getDb().prepare("SELECT result FROM pending_actions WHERE id=?").get(authoring.id)?.result).toMatch(/^enc:v1:/);
+    expect(JSON.parse(getPendingAction(authoring.id)!.result!)).toEqual({ output: "Synthetic private patch" });
+    const staleAuthoring = createPendingAction({ agent_id: "synthetic-execution-agent", kind: "authoring_operation", payload: {} });
     const stale = createPendingAction({ agent_id: "synthetic-execution-agent", kind: "execute_workflow", payload: { authorization_id: "synthetic" } });
     const ordinary = createPendingAction({ agent_id: "synthetic-execution-agent", kind: "ask_choice", payload: {} });
     expect(recoverAbandonedExecutionApprovals()).toBeGreaterThanOrEqual(1);
     expect(getPendingAction(stale.id)?.status).toBe("failed");
+    expect(getPendingAction(staleAuthoring.id)?.status).toBe("failed");
     expect(getPendingAction(ordinary.id)?.status).toBe("pending");
     expect(recoverAbandonedExecutionApprovals()).toBe(0);
   });

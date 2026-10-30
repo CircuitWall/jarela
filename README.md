@@ -286,10 +286,14 @@ Jarela supports explicit extension points for:
 
 Use the agent tool `describe_extension_surfaces` and the docs guide for the correct entry point before editing frameworks or config.
 
-**Unreleased W3/W4 starting slice:** the `extension-development` and
+**Unreleased W3/W4 workflows:** the `extension-development` and
 `contribution-review` built-in skills pair with `scaffold_extension` and
 `prepare_contribution_bundle`. They return inert template/review text with exact
-revisions, not installed extensions or published contributions. See the
+revisions, not implicit installation or publication. Separate reviewed lifecycle
+operations now stage/test/install/configure/enable/verify a synthetic extension
+and support explicit disable/removal/reviewed restoration. Contribution operations
+inspect a clean repository and observed tests before separately reviewed commit,
+topic push and draft PR; local use never grants publication rights. See the
 [authoring guide](docs/EXTENDING.md#inert-authoring-and-local-contribution-bundles-unreleased)
 for scope, privacy limitations and separate execution/install/publication gates.
 

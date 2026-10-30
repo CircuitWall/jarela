@@ -17,7 +17,7 @@ function directoryIdentity(path: string) {
 const ownershipSchema = z.strictObject({
   schemaVersion: z.literal(1), pid: z.number().int().positive(),
   device: z.string(), inode: z.string(),
-  state: z.enum(["prepared", "launched", "cleanup_verified"]),
+  state: z.enum(["prepared", "launched", "cleanup_verified", "retained"]),
 });
 
 export class SkillRunStaging {
@@ -107,6 +107,13 @@ export class SkillRunStaging {
     this.#updateOwnership("launched");
   }
 
+  retainSource(): void {
+    this.verify();
+    const owner = ownershipSchema.parse(JSON.parse(readSkillFileBytes(dirname(this.#ownerFile), basename(this.#ownerFile), 4096).toString("utf8")));
+    if (owner.state !== "prepared") throw new Error("Only inert prepared source can be retained");
+    this.#updateOwnership("retained");
+  }
+
   markCleanupVerified(): void {
     this.#assertIdentity();
     this.#updateOwnership("cleanup_verified");
@@ -155,6 +162,7 @@ export function cleanupAbandonedSkillStaging() {
         const ownerName = `${entry.name}.json`;
         const metadata = ownershipSchema.parse(JSON.parse(readSkillFileBytes(owners, ownerName, 4096).toString("utf8")));
         if (metadata.device !== String(current.dev) || metadata.inode !== String(current.ino)) throw new Error("Staging identity changed");
+        if (metadata.state === "retained") throw new Error("User-owned authoring source is retained; discard only after explicit review");
         try { process.kill(metadata.pid, 0); throw new Error("Staging owner may still be alive"); }
         catch (error) {
           if (!(error && typeof error === "object" && "code" in error && error.code === "ESRCH")) throw error;
