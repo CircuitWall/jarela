@@ -102,3 +102,277 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full rules. Summary:
 - C4 Context: `README.md`.
 - C4 Container, Component, and sequence diagrams: `docs/ARCHITECTURE.md`.
 - Update both when component boundaries or external dependencies change.
+
+## Modular Agent Patterns
+
+Each module has specialized Agent.md files that auto-load when editing that module's code. These files are the **canonical reference** for implementation patterns.
+
+See [AGENT_MD_SYSTEM.md](./AGENT_MD_SYSTEM.md) for complete pattern system documentation.
+
+### How It Works
+
+**Auto-Loading by Directory:**
+```
+Edit lib/agents/file.ts     → loads lib/agents/Agent.md
+Edit lib/providers/file.ts  → loads lib/providers/Agent.md
+Edit lib/db/file.ts         → loads lib/db/Agent.md
+Edit app/api/route.ts       → loads app/api/Agent.md
+Edit lib/tools/file.ts      → loads lib/tools/Agent.md
+```
+
+**Pattern References:**
+- Patterns: 5+ core implementations with examples
+- Anti-Patterns: 5+ common mistakes to avoid
+- Testing Requirements: Test structure and validation
+- Frontier: Emerging patterns not yet standardized
+
+### Tier 1: Core Infrastructure
+
+**[lib/agents/Agent.md](./lib/agents/Agent.md)** - LangGraph orchestration
+**[lib/providers/Agent.md](./lib/providers/Agent.md)** - LLM provider adapters
+**[lib/db/Agent.md](./lib/db/Agent.md)** - SQLite persistence
+**[app/api/Agent.md](./app/api/Agent.md)** - Next.js API routes
+**[lib/tools/Agent.md](./lib/tools/Agent.md)** - Agent tool implementations
+
+### Tier 2: Components & State
+
+**components/Agent.md** - React component patterns
+**hooks/Agent.md** - React hooks patterns
+**lib/stores/Agent.md** - State management patterns
+
+### Tier 3: Integration & Testing
+
+**lib/mcp/Agent.md** - MCP integration patterns
+**scripts/Agent.md** - Automation patterns
+**tests/Agent.md** - Testing patterns
+
+### Implementation Workflow
+
+1. **Load the module's Agent.md**
+   - Identifies relevant patterns (usually 1-3 apply)
+
+2. **Reference appropriate pattern**
+   - Review pattern structure and examples
+   - Note any trade-offs or edge cases
+
+3. **Implement using pattern**
+   - Follow structure from pattern section
+   - Avoid documented anti-patterns
+   - Meet testing requirements
+
+4. **Validate against requirements**
+   - Ensure pattern correctly applied
+   - All test scenarios covered
+   - Cross-module patterns coordinated
+
+## Agent.md Auto-Evolution & Maintenance
+
+Agent.md files are **living documents** that improve with codebase maturity. Agents continuously monitor patterns and keep documentation synchronized.
+
+### Automated Pattern Monitoring
+
+Agents detect when patterns need updates:
+
+**Pattern Drift Detection**
+- Code implementation diverges from documented pattern
+- Action: Flag for pattern validation and potential update
+
+**New Pattern Emergence**
+- Same implementation approach appears in multiple modules
+- Action: Candidate for standardization and documentation
+
+**Anti-Pattern Recurrence**
+- Same mistake appears repeatedly across code
+- Action: Document as anti-pattern to prevent future occurrences
+
+**API Compatibility**
+- Dependency changes affect documented patterns
+- Action: Validate and update pattern implementations
+
+**Pattern Coverage Analysis**
+- Systematic scan of module files against documented patterns
+- Action: Identify gaps and new standardization opportunities
+
+### Pattern Update Workflow
+
+**For Any Agent Modifying Patterns:**
+
+1. Detect pattern change needed (via monitoring or new implementation)
+2. Validate pattern against codebase evidence
+3. Update Agent.md with pattern changes
+4. Update code examples to reflect current best approach
+5. Document change rationale in section notes
+
+**Validation Before Update:**
+
+- [ ] Pattern reflects current best practice in codebase
+- [ ] All known implementations of pattern catalogued
+- [ ] Code examples compile and match pattern specification
+- [ ] Related patterns updated if dependencies exist
+- [ ] Cross-references and links verified
+- [ ] Frontier section updated if pattern moving to stable
+- [ ] Change is backward compatible or breaking change noted
+
+### Pattern Lifecycle
+
+Patterns evolve through stages:
+
+**Frontier** (Emerging)
+- Initial observation: pattern used in 1-2 implementations
+- Status: Under observation, not yet standardized
+- Agent behavior: Document in Frontier section, request more examples
+
+**Candidate** (Consolidating)
+- Multiple independent implementations found
+- Status: Stable enough to document as standard pattern
+- Agent behavior: Move from Frontier to numbered pattern section
+
+**Standard** (Established)
+- Pattern documented and actively used
+- Status: Core best practice for module
+- Agent behavior: Reference in all related implementations
+
+**Deprecated** (Superseded)
+- Better pattern emerged or use case eliminated
+- Status: Keep for reference, don't use in new code
+- Agent behavior: Mark as deprecated, suggest alternative
+
+### Pattern Documentation Structure
+
+Each Agent.md maintains consistent sections:
+
+**Patterns** (5+ core implementations)
+- What: Clear problem and solution
+- When: Use cases and conditions
+- Example: Working code that agents can reference
+- Trade-offs: Performance, complexity, maintenance implications
+
+**Anti-Patterns** (5+ common mistakes)
+- ❌ What NOT to do
+- Why: Consequences and failure modes
+- ✅ What to do instead
+- Reference: Link to correct pattern
+
+**Testing Requirements**
+- Unit test structure for pattern
+- Integration test scenarios
+- Edge cases to validate
+- Performance expectations
+
+**Pattern Notes**
+- Implementation details
+- Common pitfalls
+- Performance characteristics
+- Maintenance considerations
+
+**Frontier** (Emerging patterns)
+- Pattern: Description of emerging approach
+- Status: Stability assessment
+- Examples: Known implementations
+- Next: Conditions for standardization
+
+### Continuous Monitoring
+
+Agents maintain Agent.md accuracy through:
+
+**On Code Commits**
+- Scan for implementation patterns
+- Compare against documented patterns
+- Flag deviations or new approaches
+
+**On Pattern Queries**
+- When agent needs pattern guidance
+- Validate pattern still current
+- Update references if pattern evolved
+
+**On Dependency Changes**
+- Check for API compatibility
+- Validate pattern still works
+- Update examples if needed
+
+**On Pattern Completion**
+- When code fully implements pattern
+- Confirm examples are current
+- Verify test requirements met
+
+### Integration with Code Repositories
+
+Agent.md files are **source of truth** for module patterns:
+
+- Agents reference Agent.md before implementing features
+- Code must align with documented patterns
+- Pattern changes require Agent.md updates
+- Examples in Agent.md must match codebase reality
+
+### Cross-Module Pattern Coordination
+
+When patterns span multiple modules:
+
+```
+Pattern change in lib/providers/ error handling
+    ↓
+Agents update: lib/agents/ error recovery patterns
+              lib/tools/ error propagation
+              app/api/ error response formatting
+    ↓
+All affected Agent.md files updated together
+```
+
+### Frontier: Pattern Stabilization Track
+
+Emerging patterns documented until ready for standardization:
+
+```markdown
+## Frontier Patterns
+
+### Streaming with Backpressure
+- Status: 2 implementations, behaviors diverging
+- Requirement: 3+ aligned implementations before standard
+- Current: Use Pattern X as base, document variations
+- Next: Collect implementations, extract common approach
+
+### Multi-Provider Failover
+- Status: 1 implementation, pattern under observation
+- Requirement: 2+ independent implementations
+- Current: Document in Frontier, gather evidence
+- Next: Extract pattern once consensus reached
+```
+
+### Documentation Validation
+
+Agent.md quality checks:
+
+- Code examples compile against current codebase
+- Links resolve to actual files and line numbers
+- Patterns reflect actual implementations in codebase
+- Anti-patterns match observed failure modes
+- No contradictions between patterns
+- Test requirements achievable
+- Performance claims supported by evidence
+
+### Success Indicators
+
+Healthy Agent.md files show:
+
+- Patterns match actual code implementations
+- Anti-patterns prevent repeated mistakes
+- New code follows documented patterns
+- Examples remain current and accurate
+- No orphaned patterns (patterns with no uses)
+- Frontier patterns progress toward standardization
+- Cross-module patterns stay synchronized
+
+---
+
+## Summary: Self-Improving Documentation
+
+Agent.md files continuously improve:
+
+✅ **Automated monitoring** keeps patterns aligned with codebase
+✅ **Pattern detection** captures new approaches for standardization
+✅ **Continuous validation** ensures accuracy and relevance
+✅ **Lifecycle tracking** moves patterns from frontier to standard
+✅ **Cross-module coordination** prevents pattern drift across modules
+✅ **Evidence-based** patterns grounded in actual implementations
+
+Agent.md serves as **single source of truth** for how agents should implement features.
