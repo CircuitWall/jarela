@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add internal bounded raw skill stdout/stderr capture with strict streaming
+  UTF-8 checks, terminal failures and shared result-schema validation; no
+  process launch, execution authorization or cleanup guarantee is enabled.
 - Add an experimental Memory Organization execution manifest over the existing
   read-only planner, with bounded nullable/result schema alternatives and
   captured-byte CLI contract tests. Checked skill execution remains unavailable.
