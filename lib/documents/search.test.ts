@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DatabaseSync } from "node:sqlite";
 import { defaultDocumentRecallPolicy } from "./recall-policy";
 
 const mocks = vi.hoisted(() => ({
@@ -164,8 +165,7 @@ describe("searchDocuments similarity threshold", () => {
   });
 
   it("executes both query forms against SQLite without returning disabled or other sources", async () => {
-    const { default: Database } = await import("better-sqlite3");
-    const db = new Database(":memory:");
+    const db = new DatabaseSync(":memory:");
     try {
       db.exec(`
         CREATE TABLE document_sources (id TEXT, label TEXT, enabled INTEGER);
