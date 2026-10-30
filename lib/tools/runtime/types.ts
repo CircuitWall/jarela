@@ -62,6 +62,10 @@ export type ToolParamSchema = {
 
 export interface ToolContext {
   thread_id?: string;
+  /** Per-invocation override for built-in workspace-aware tools; leaves shared thread state unchanged. */
+  workspace?: { root: string; scoped: boolean };
+  /** Trusted coordinator owns timeout reporting and must retain the actual tool promise until settlement. */
+  await_tool_settlement?: boolean;
   tool_credentials?: Readonly<Record<string, string>>;
   signal_continuation?: boolean;
   tool_result_max_bytes?: number;

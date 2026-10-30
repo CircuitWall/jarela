@@ -14,8 +14,11 @@ async function readPolicy(request: APIRequestContext) {
   const response = await request.get(endpoint);
   expect(response.status()).toBe(200);
   expect(response.headers()["cache-control"]).toBe("no-store");
-  const body: { policy: SkillExecutionPolicy; execution_available: boolean } = await response.json();
-  expect(body.execution_available).toBe(false);
+  const body: { policy: SkillExecutionPolicy; execution_available: boolean; ownership: { available: boolean; reason?: string; backend?: string } } = await response.json();
+  expect(typeof body.execution_available).toBe("boolean");
+  expect(body.execution_available).toBe(body.ownership.available);
+  if (body.ownership.available) expect(["windows-job", "linux-cgroup"]).toContain(body.ownership.backend);
+  else expect(body.ownership.reason).toBeTruthy();
   return body.policy;
 }
 
@@ -23,7 +26,7 @@ async function savePolicy(request: APIRequestContext, policy: SkillExecutionPoli
   const response = await request.put(endpoint, { data: policy });
   expect(response.status()).toBe(200);
   const body: { policy: SkillExecutionPolicy; execution_available: boolean } = await response.json();
-  expect(body.execution_available).toBe(false);
+  expect(typeof body.execution_available).toBe("boolean");
   expect(await readPolicy(request)).toEqual(body.policy);
   return body.policy;
 }
@@ -51,7 +54,7 @@ test.afterAll(() => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
-test("policy modes persist without enabling script execution", async ({ request }) => {
+test("policy modes persist independently of host execution availability", async ({ request }) => {
   for (const mode of ["blocked", "approve_workflow", "trusted_revisions", "ask_each_time"] as const) {
     expect(await savePolicy(request, { mode, trusted_revisions: [] }))
       .toEqual({ mode, trusted_revisions: [] });

@@ -8,6 +8,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
 import { ChoiceFields, type ChoiceResponse } from "./ChoiceFields";
 import { ArtifactPreview } from "./ArtifactPreview";
+import { SkillExecutionPreview } from "./SkillExecutionPreview";
 
 const PAYLOAD_PREVIEW_CHARS = 6_000;
 const PAYLOAD_EXPANDED_PREVIEW_CHARS = 20_000;
@@ -234,6 +235,7 @@ export function ApprovalsBanner({
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [secretForm, setSecretForm] = useState<SecretFormState | null>(null);
   const [responses, setResponses] = useState<Record<string, ChoiceResponse>>({});
+  const [reviewedExecutions, setReviewedExecutions] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [outcomes, setOutcomes] = useState<Record<string, PendingAction>>({});
   const settledIds = useRef(new Set<string>());
@@ -481,7 +483,7 @@ export function ApprovalsBanner({
                 const response = responses[a.id] ?? { selected_values: [] };
                 const validResponse = choice?.success
                   ? choiceResponseSchema(choice.data).safeParse(response).success
-                  : a.kind !== "ask_choice";
+                  : a.kind === "execute_skill" || a.kind === "execute_workflow" ? reviewedExecutions[a.id] === true : a.kind !== "ask_choice";
                 return (
                   <div key={a.id} className="px-3 py-2.5 text-xs">
                     <div className="flex items-center gap-2 mb-1">
@@ -495,7 +497,13 @@ export function ApprovalsBanner({
                         onChange={(value) => setResponses((previous) => ({ ...previous, [a.id]: value }))}
                         disabled={busy}
                       />
-                    ) : a.kind === "write_skill" || a.kind === "update_scheduled_task_prompt" || a.kind === "update_watcher_prompt"
+                    ) : a.kind === "execute_workflow" && typeof a.payload.authorization_id === "string"
+                      ? <SkillExecutionPreview requestId={a.payload.authorization_id} workflow
+                          onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
+                      : a.kind === "execute_skill" && typeof a.payload.request_id === "string"
+                      ? <SkillExecutionPreview requestId={a.payload.request_id}
+                          onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
+                      : a.kind === "write_skill" || a.kind === "update_scheduled_task_prompt" || a.kind === "update_watcher_prompt"
                       ? <ArtifactPreview payload={a.payload} />
                       : <PayloadPreview payload={a.payload} />}
                     {choice && !choice.success && <p role="alert">Invalid choice proposal. Dismiss it and request a new question.</p>}

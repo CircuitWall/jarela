@@ -59,6 +59,31 @@ export async function bootNode(): Promise<void> {
   const { initTools } = await import("@/lib/tools");
   initTools();
 
+  const { isMasterKeyLocked, onMasterKeyUnlocked } = await import("@/lib/crypto/master-key");
+  const recoverExecutionApprovals = async () => {
+    const { recoverAbandonedExecutionApprovals } = await import("@/lib/stores/pending-actions");
+    const recovered = recoverAbandonedExecutionApprovals();
+    if (recovered) console.warn(`[skill-execution] invalidated ${recovered} approvals from the prior app instance`);
+  };
+  if (isMasterKeyLocked()) {
+    onMasterKeyUnlocked(() => { void recoverExecutionApprovals().catch((error) => console.error("[skill-execution] approval recovery failed:", error)); });
+  } else await recoverExecutionApprovals();
+
+  const { cleanupAbandonedSkillStaging } = await import("@/lib/stores/skill-run-staging");
+  const staging = cleanupAbandonedSkillStaging();
+  if (staging.removed.length || staging.retained.length) {
+    console.log(`[skill-execution] staging cleanup: ${staging.removed.length} removed, ${staging.retained.length} retained`);
+    for (const retained of staging.retained) console.warn(`[skill-execution] retained ${retained.directory}: ${retained.reason}`);
+  }
+
+  const { getWorkflowService } = await import("@/lib/workflows/service");
+  if (isMasterKeyLocked()) {
+    onMasterKeyUnlocked(() => {
+      try { getWorkflowService().cleanup(); }
+      catch (error) { console.error("[workflows] retention cleanup failed:", error); }
+    });
+  } else getWorkflowService().cleanup();
+
   const { recoverAbandonedMessageDrafts } = await import("@/lib/stores/threads");
   recoverAbandonedMessageDrafts();
 

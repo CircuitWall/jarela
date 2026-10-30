@@ -16,6 +16,7 @@ const definitionSchema = z.strictObject({
   steps: z.array(z.strictObject({
     id, kind: z.enum(["tool", "script", "validate", "choice"]),
     action: id,
+    reconcileAction: id.optional(),
     effect: z.enum(["read", "write"]),
     input: binding,
     inputSchema: z.unknown(), outputSchema: z.unknown(),
@@ -37,6 +38,9 @@ export function parseWorkflowDefinition(text: string) {
     }
     if (step.effect === "write" && (step.maxAttempts !== 1 || step.kind !== "tool")) {
       throw new Error("Only single-attempt tool steps may declare writes");
+    }
+    if (step.reconcileAction !== undefined && (step.effect !== "write" || step.kind !== "tool")) {
+      throw new Error("Only write tool steps may declare a reconcile read-back action");
     }
     if (step.kind === "choice" && step.maxAttempts !== 1) throw new Error("Choice steps do not retry");
     if (step.kind === "script" && step.maxAttempts !== 1) throw new Error("Script execution does not automatically retry");

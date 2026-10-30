@@ -39,9 +39,9 @@ function store(path = ":memory:") {
 }
 const signal = () => new AbortController().signal;
 
-describe("inert bounded workflow definition", () => {
-  it("keeps activation disabled and validates ordered acyclic bindings", () => {
-    expect(WORKFLOW_PRODUCTION_ACTIVATION_AVAILABLE).toBe(false);
+describe("bounded workflow definition", () => {
+  it("exposes explicit app workflow entry points and validates ordered acyclic bindings", () => {
+    expect(WORKFLOW_PRODUCTION_ACTIVATION_AVAILABLE).toBe(true);
     expect(parseWorkflowDefinition(text([baseStep])).steps).toHaveLength(1);
     for (const steps of [
       [],
@@ -52,9 +52,14 @@ describe("inert bounded workflow definition", () => {
       [{ ...baseStep, effect: "write", maxAttempts: 2 }],
       [{ ...baseStep, kind: "script", maxAttempts: 2 }],
       [{ ...baseStep, kind: "validate", effect: "write" }],
+      [{ ...baseStep, reconcileAction: "read_back" }],
+      [{ ...baseStep, kind: "script", effect: "read", reconcileAction: "read_back" }],
+      [{ ...baseStep, effect: "write", reconcileAction: "Invalid Action" }],
       [{ ...baseStep, outputSchema: { type: "string", pattern: ".*" } }],
       Array.from({ length: 33 }, (_, index) => ({ ...baseStep, id: `step${index}` })),
     ]) expect(() => parseWorkflowDefinition(text(steps))).toThrow();
+    expect(parseWorkflowDefinition(text([{ ...baseStep, effect: "write", reconcileAction: "read_back" }])).steps[0])
+      .toMatchObject({ effect: "write", reconcileAction: "read_back" });
     expect(() => parseWorkflowDefinition(" ".repeat(65537))).toThrow(/64 KiB/);
   });
 });
@@ -334,5 +339,26 @@ describe("gated durable workflow coordinator", () => {
     const running = second.advance(write.id, signal());
     await vi.advanceTimersByTimeAsync(1001);
     expect(JSON.parse((await running).state).phase).toBe("uncertain");
+  });
+
+  it("blocks direct reconciliation and recovery until a timed-out host settles", async () => {
+    vi.useFakeTimers();
+    let finish!: () => void;
+    const runtime = new BoundedWorkflowRuntime(store(), { execute: () => new Promise((resolve) => {
+      finish = () => resolve(stepOutput({ saved: true }));
+    }) });
+    const created = runtime.create(text([{ ...baseStep, effect: "write" }]));
+    const advancing = runtime.advance(created.id, signal());
+    await vi.advanceTimersByTimeAsync(1000);
+    const uncertain = await advancing;
+    const observed = { outputJson: '{"saved":true}', evidence: "Fresh observed read-back" };
+    const sibling = new BoundedWorkflowRuntime(runtime.store, runtime.host, runtime.owner);
+    expect(() => sibling.reconcile(created.id, uncertain.version, observed)).toThrow(/still in flight/);
+    expect(() => runtime.reconcile(created.id, uncertain.version, observed)).toThrow(/still in flight/);
+    await expect(runtime.recover(created.id, uncertain.version, async () => true)).rejects.toThrow(/still in flight/);
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runtime.inspect(created.id).row.version).toBe(uncertain.version);
+    expect(JSON.parse(runtime.reconcile(created.id, uncertain.version, observed).state).phase).toBe("completed");
   });
 });

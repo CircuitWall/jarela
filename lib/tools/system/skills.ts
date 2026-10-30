@@ -5,6 +5,8 @@ import { inspectSkillExecution } from "@/lib/skills/execution-manifest";
 import { inspectSkillMetadata } from "@/lib/skills/frontmatter";
 import { portableSkillPath, readSkillTextFile } from "@/lib/skills/bundle-files";
 import { registerLangChainPackage } from "../packages/langchain-package";
+import { getThread } from "@/lib/stores/threads";
+import { currentWorkspace } from "../filesystem/workspace-context";
 
 const NOT_CONFIGURED = JSON.stringify({ error: "No writable skill repo is configured; built-in skills are read-only" });
 
@@ -102,10 +104,76 @@ export const listSkillsTool = tool(
   },
 );
 
+export const runSkillTool = tool(
+  async ({ id, input_json }, config) => {
+    const threadId = config.configurable?.thread_id;
+    const agentId = typeof threadId === "string" ? getThread(threadId)?.agent_id : undefined;
+    const workspace = currentWorkspace(config)?.root;
+    if (!agentId || !workspace) return JSON.stringify({ error: "Agent thread and initialized workspace are required" });
+    try {
+      const { skillExecutionService } = await import("@/lib/skills/execution-service");
+      return JSON.stringify(await skillExecutionService().request({
+        agentId, skillId: id, inputJson: input_json, workspace,
+      }));
+    } catch (error) {
+      return JSON.stringify({ error: error instanceof Error ? error.message : "Skill execution request failed" });
+    }
+  },
+  {
+    name: "run_skill",
+    description: "Request execution of an explicit dependency-free JavaScript skill bundle with checked JSON input/output. Requires this execute tool to be enabled, workspace_init and safe mode off. Default policy queues exact-code and exact-input human approval; pending is not success. Wait for the user and check_proposal; never approve yourself or fall back to shell execution. Trusted exact revisions may run immediately. Full-trust code is not sandboxed. Reading/discovering a skill never runs it.",
+    schema: z.object({
+      id: z.string().min(1).max(240),
+      input_json: z.string().max(65536).describe("Exact JSON object text satisfying execution.json inputSchema. Do not include secrets."),
+    }),
+  },
+);
+
+export const checkSkillExecutionTool = tool(
+  async ({ request_id }, config) => {
+    const threadId = config.configurable?.thread_id;
+    const agentId = typeof threadId === "string" ? getThread(threadId)?.agent_id : undefined;
+    if (!agentId) return JSON.stringify({ error: "Agent thread required" });
+    try {
+      const { skillExecutionService } = await import("@/lib/skills/execution-service");
+      const detail = skillExecutionService().inspect(request_id, agentId);
+      return JSON.stringify({ request_id, status: detail.status, result: detail.result, expires_at: detail.expires_at });
+    } catch (error) {
+      return JSON.stringify({ error: error instanceof Error ? error.message : "Execution request unavailable" });
+    }
+  },
+  {
+    name: "check_skill_execution",
+    description: "Read this agent's live skill execution status/result. Pending approval is not execution success; expired or restarted requests need fresh approval. Does not grant consent or execute code.",
+    schema: z.object({ request_id: z.uuid() }),
+  },
+);
+
+export const cancelSkillExecutionTool = tool(
+  async ({ request_id }, config) => {
+    const threadId = config.configurable?.thread_id;
+    const agentId = typeof threadId === "string" ? getThread(threadId)?.agent_id : undefined;
+    if (!agentId) return JSON.stringify({ error: "Agent thread required" });
+    try {
+      const { skillExecutionService } = await import("@/lib/skills/execution-service");
+      skillExecutionService().cancel(request_id, agentId);
+      return JSON.stringify({ cancelled: true });
+    } catch (error) {
+      return JSON.stringify({ error: error instanceof Error ? error.message : "Execution cancellation failed" });
+    }
+  },
+  {
+    name: "cancel_skill_execution",
+    description: "Cancel this agent's pending or running skill execution operation. Cancellation does not roll back side effects; inspect the final result to verify process cleanup.",
+    schema: z.object({ request_id: z.uuid() }),
+  },
+);
+
 registerLangChainPackage({
   category: "Skills",
   tools: {
-    read: [readSkillTool, listSkillsTool, readSkillResourceTool],
+    read: [readSkillTool, listSkillsTool, readSkillResourceTool, checkSkillExecutionTool],
     write: [writeSkillTool],
+    execute: [runSkillTool, cancelSkillExecutionTool],
   },
 });

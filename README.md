@@ -41,6 +41,18 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 
 Follow the [first-run guide](docs/FIRST_RUN.md) for the full setup flow and what to expect in your first chat.
 
+## Checked skills and durable workflows (Unreleased)
+
+The Skills view includes explicit checked execution and durable workflow
+controls. Enable the concrete execution tools for the selected agent and review
+the exact code, inputs, workspace and limits before approval. Reading a skill
+does not run it. Scripts run with full host permissions, **not in a sandbox**.
+Windows Job Objects and delegated Linux cgroup-v2 ownership are supported;
+missing host prerequisites and unsupported platforms fail explicitly.
+Workflow choices are not execution consent, and uncertain writes require
+authorized read-back rather than replay. See the [execution guide](docs/EXTENDING.md#checked-execution-and-durable-workflows-unreleased)
+and [operations](docs/OPERATIONS.md#checked-execution-and-workflow-lifecycle-unreleased).
+
 ## Dashboard costs (Jarela 3.0.0)
 
 The dashboard shows separate **input** and **output** prices per million tokens

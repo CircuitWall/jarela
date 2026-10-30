@@ -29,10 +29,12 @@ async function loadPolicy(method: "GET" | "PUT", policy?: SkillExecutionPolicy) 
   const body: unknown = await res.json();
   if (!body || typeof body !== "object" || !("policy" in body) || !("safety_mode" in body)
     || !["safe", "mostly_safe", "bypass"].includes(String(body.safety_mode))
-    || !("execution_available" in body) || body.execution_available !== false) {
+    || !("execution_available" in body) || typeof body.execution_available !== "boolean") {
     throw new Error("Invalid skill execution settings response");
   }
-  return { policy: SkillExecutionPolicySchema.parse(body.policy), safetyMode: String(body.safety_mode) };
+  const ownership = "ownership" in body && body.ownership && typeof body.ownership === "object" ? body.ownership : null;
+  return { policy: SkillExecutionPolicySchema.parse(body.policy), safetyMode: String(body.safety_mode),
+    available: body.execution_available, unavailableReason: ownership && "reason" in ownership ? String(ownership.reason) : "" };
 }
 
 export function SkillExecutionSettings() {
@@ -41,6 +43,8 @@ export function SkillExecutionSettings() {
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [safetyMode, setSafetyMode] = useState("");
+  const [available, setAvailable] = useState(false);
+  const [unavailableReason, setUnavailableReason] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -51,6 +55,8 @@ export function SkillExecutionSettings() {
       if (!active) return;
       setPolicy(result.policy);
       setSafetyMode(result.safetyMode);
+      setAvailable(result.available);
+      setUnavailableReason(result.unavailableReason);
       setLoaded(true);
     }).catch((err: unknown) => { if (active) setError(errorMessage(err)); });
     return () => { active = false; };
@@ -80,8 +86,11 @@ export function SkillExecutionSettings() {
       const result = await loadPolicy("PUT", policy);
       setPolicy(result.policy);
       setSafetyMode(result.safetyMode);
+      setAvailable(result.available);
+      setUnavailableReason(result.unavailableReason);
       setAcknowledged(false);
-      setMessage("Skill execution policy saved. Script execution is not available yet.");
+      setMessage(result.available ? "Skill execution policy saved. Explicit script requests still require the selected consent policy."
+        : "Skill execution policy saved. Script execution is unavailable on this host.");
     } catch (err) {
       setError(errorMessage(err));
     } finally { setSaving(false); }
@@ -89,9 +98,11 @@ export function SkillExecutionSettings() {
 
   return (
     <SettingsCard id="skill-execution" icon={<Shield size={14} />} title="Skill execution"
-      description="Choose when full-trust skill scripts require consent. These settings do not enable a runner.">
+      description="Choose when full-trust skill scripts require consent. Tools must also be enabled for the agent.">
       <div className="space-y-3">
-        <p className="text-xs text-fg-muted">Script execution is not available yet. Workflow approval still requires a verified, bounded plan.</p>
+        <p className="text-xs text-fg-muted">{available
+          ? "Checked script execution is available through explicit requests in Skills or run_skill. Workflow approval covers only the exact bounded plan."
+          : `Script execution is unavailable on this host. ${unavailableReason}`}</p>
         {safetyMode === "safe" && <p className="text-xs text-amber-500">Safe mode blocks all skill scripts regardless of this policy.</p>}
         {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
         {message && <p role="status" className="text-xs text-emerald-500">{message}</p>}

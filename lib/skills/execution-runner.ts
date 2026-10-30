@@ -6,7 +6,7 @@ import { SkillRunConsent, skillInvocationDigest, type SkillConsentBinding } from
 import { SkillExecutionOutput, SkillExecutionOutputError } from "./execution-output";
 import { validateSkillInvocation, type SkillJsonValue } from "./execution-protocol";
 
-export const SKILL_PRODUCTION_EXECUTION_AVAILABLE = false;
+export const SKILL_PRODUCTION_EXECUTION_AVAILABLE = true;
 const CLEANUP_MS = 1000;
 
 export interface OwnedSkillProcess {
@@ -56,7 +56,7 @@ async function boundedCleanup(work: () => Promise<boolean>): Promise<boolean> {
   }
 }
 
-// Internal orchestration only. No production process owner, route or tool exists.
+// Callers must establish human consent and provide the platform process owner.
 export async function runStagedSkill(input: {
   artifact: SkillExecutionArtifact; inputJson: string; binding: SkillConsentBinding;
   consent: SkillRunConsent; proposalId: string; signal: AbortSignal;
@@ -102,6 +102,7 @@ export async function runStagedSkill(input: {
     // A throwing launch may have started a process without returning its owner.
     // Retain staging and fail cleanup unless ownership is positively established.
     cleanupVerified = false;
+    staging.markLaunched();
     child = input.owner.launch({
       executable: process.execPath, args: [join(staging.directory, manifest.entrypoint)],
       cwd: input.binding.workspace, stdin: input.inputJson, env: {},
@@ -138,7 +139,7 @@ export async function runStagedSkill(input: {
     if (child) cleanupVerified = await boundedCleanup(() => child!.stopAndVerifyTree());
     // Keep staging if descendants may still be reading it. Never claim cleanup.
     if (staging && cleanupVerified) {
-      try { staging.dispose(); }
+      try { staging.markCleanupVerified(); staging.dispose(); }
       catch { cleanupVerified = false; error = "staging_cleanup_failed"; }
     }
   }

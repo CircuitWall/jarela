@@ -178,6 +178,14 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
     const streamOn = readStream(args) ?? getStreamDefault(t);
     const innerArgs = stripWrapperFields(args);
 
+    if ((config as { configurable?: { await_tool_settlement?: boolean } } | undefined)?.configurable?.await_tool_settlement) {
+      // The workflow coordinator bounds the response, but must retain ownership
+      // of the underlying call rather than an early timeout/background receipt.
+      const result = await (t as unknown as { invoke: (a: unknown, c?: unknown) => Promise<unknown> })
+        .invoke(innerArgs, withActivityReset(config, () => {}, streamOn));
+      return postProcessToolResult(t.name, result);
+    }
+
     if (asyncRun) {
       return runAsync(t, innerArgs, config, deadlineMs, streamOn);
     }

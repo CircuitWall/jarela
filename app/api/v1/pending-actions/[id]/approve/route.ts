@@ -5,6 +5,7 @@ import { applyAction } from "@/lib/agents/proposals";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
 import { pendingActionToResponse } from "@/lib/api/serializers";
+import { localExecutionGuard } from "@/lib/api/local-execution-guard";
 
 const ApproveBody = z.object({
   extras: z.record(z.string(), z.unknown()).optional(),
@@ -16,6 +17,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
   const action = getPendingAction(id);
   if (!action) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (action.kind === "execute_skill" || action.kind === "execute_workflow") {
+    const refused = localExecutionGuard(req);
+    if (refused) return refused;
+  }
   if (action.status !== "pending") {
     return NextResponse.json({ error: `already ${action.status}` }, { status: 409 });
   }

@@ -33,6 +33,18 @@ describe("workspace-context", () => {
     expect(currentWorkspace()).toBeUndefined();
   });
 
+  it("uses an invocation workspace without mutating shared thread or default state", () => {
+    const config = { configurable: { thread_id: "agent-thread" } };
+    const shared = { root: "/tmp/shared", scoped: false, opened_at: 1 };
+    setWorkspace(shared, config);
+    const first = { root: "/tmp/run-one", scoped: true, opened_at: 0 };
+    const second = { root: "/tmp/run-two", scoped: true, opened_at: 0 };
+    expect(currentWorkspace({ configurable: { ...config.configurable, workspace: first } })).toBe(first);
+    expect(currentWorkspace({ configurable: { ...config.configurable, workspace: second } })).toBe(second);
+    expect(currentWorkspace(config)).toBe(shared);
+    expect(currentWorkspace()).toBeUndefined();
+  });
+
   it("treats an empty-string thread_id as the default slot", () => {
     setWorkspace({ root: "/tmp/def", scoped: false, opened_at: 0 });
     expect(currentWorkspace({ configurable: { thread_id: "" } })?.root).toBe("/tmp/def");

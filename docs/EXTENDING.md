@@ -331,12 +331,25 @@ to stop the owned process. This helper neither terminates nor observes processes
 Diagnostics are untrusted, potentially sensitive script output; the helper
 does not sanitize them or authorize display/persistence.
 
-### Gated staged runner and durable coordinator (Unreleased)
+### Checked execution and durable workflows (Unreleased)
 
-[ADR-0113](adr/0113-gated-workflow-runtime.md) describes the internal implementation,
-not an activated execution feature. There is no new callable tool, route,
-environment opt-in, startup migration or production process-owner adapter.
-The exported production-availability constants remain false.
+[ADR-0114](adr/0114-production-skill-workflow-integration.md) integrates the
+previously internal [ADR-0113](adr/0113-gated-workflow-runtime.md) engine.
+Discovery and resource reading remain inert. Explicit execution is available
+only when the host can establish process ownership; Security settings report
+the current availability and reason when unavailable.
+
+Enable `run_skill` for the agent, initialize a workspace, then supply the skill
+ID and exact `input_json`. Alternatively use **Skills > Run a checked skill**.
+Default policy creates an `execute_skill` pending action. The shared review
+banner shows exact invocation bytes, captured files and hashes, workspace,
+runtime, limits and a full-trust acknowledgement. Approval executes once;
+pending is never success. `check_proposal`, `check_skill_execution` and the
+Skills controls expose the checked result; cancellation does not roll back
+side effects. Approval requests expire after five minutes and cannot survive
+restart. Captured code/arguments stay in memory; persisted checked script
+results are encrypted. Exact trusted-revision receipts may waive repeat
+invocation consent within their existing scope.
 
 - `lib/stores/skill-run-staging.ts` creates unique run-owned directories under
   `JARELA_DB_DIR/skill-runs`, writes captured bytes exclusively and verifies
@@ -346,15 +359,21 @@ The exported production-availability constants remain false.
   guarantees. A hostile same-user path race is outside this contract.
 - `lib/skills/execution-runner.ts` orchestrates strict input validation,
   exact revision/input/runtime/limit binding, live policy rechecks, one-use
-  consent consumption, direct `process.execPath`/argv and an empty environment.
-  A required trusted host adapter owns launch, raw pipes, completion and
-  descendant termination. There is deliberately no default backend claiming
-  arbitrary-code process-tree cleanup from immediate-child exit alone.
+  consent consumption and direct `process.execPath`/argv. The platform owner
+  supplies only required OS runtime environment, not app credentials or PATH.
+  Windows uses suspended launch and Job Objects with kill-on-close and
+  positive job-drain checks. Linux requires a delegated writable cgroup-v2
+  subtree with `cgroup.kill`; missing delegation fails explicitly. macOS
+  does not currently have a supported owner backend. Neither backend is a
+  sandbox or permission boundary against arbitrary same-user host access.
 - The runner bounds execution and cleanup waits, withholds results after
   failed exit, cancellation, timeout, protocol failure or unverified cleanup,
   and disposes staging only after verified process cleanup. Unverified cleanup
   retains staging and reports failure; restart never executes leftover files.
-  Retention/cleanup of crash leftovers still needs production review.
+  Startup and the local cleanup endpoint remove only recognized dead-owner
+  prepared/positively-cleaned directories. Launched leftovers without cleanup
+  evidence, changed identities and possibly live owners are retained with a
+  reason. Nothing executes or automatically retries surviving files.
 - `lib/workflows/definition.ts` parses inert strict version-1 JSON, limited to
   32 sequential steps and 64 KiB. Tool/script/validate/choice steps each declare
   input/output schemas and either literal input, separately schema-checked run
@@ -366,24 +385,60 @@ The exported production-availability constants remain false.
   and writes do not automatically retry. The trusted host must independently
   verify operation replay classification and permissions; declarations cannot
   make full-trust script code read-only.
-- `lib/stores/workflow-runs.ts` is an explicitly constructed SQLite store
-  with versioned compare-and-swap updates and 512 KiB state bounds. It is not
-  connected to the active application database on startup. Choices persist
+- `lib/stores/workflow-runs.ts` is an application SQLite store
+  with encrypted state, versioned compare-and-swap updates and 512 KiB
+  plaintext state bounds. Choices persist
   with exact run/revision/step/version checks, but answers are never script
   consent. Interrupted writes become uncertain and require validated observed
   reconciliation, not replay. Recovery of an interrupted owner requires a
-  host attestation that the old owner is dead. Model-generated outputs retain
+  OS proof that the old process owner is dead; ambiguous/PID-reused owners
+  remain blocked. Model-generated adapter outputs retain
   their label; schema validity is not factual verification.
 
-Tests combine real reviewed memory-cleanup CLI execution through staged runner
-orchestration with a deterministic failed check/retry, tool steps, human choice
-and synthetic archival/read-back. They also cover policy/binding refusal,
-timeout/cancel, cleanup refusal, database reopen, stale/duplicate answers,
-owner claims, retry budgets and uncertain writes. Test adapters know the
-reviewed fixture never spawns descendants; these results are not platform
-process-tree certification, live provider evaluation or milestone completion.
-Production adapter/approval/UI wiring, durable-state deployment/retention review,
-cross-host checks and human walkthroughs remain activation/acceptance work.
+Use **Skills > Durable workflows** or `run_workflow` with a versioned definition
+and invocation. `inspect_workflow`, `list_workflows`, `advance_workflow`,
+`cancel_workflow` and `reconcile_workflow` operate only on that agent's runs.
+Each concrete tool also needs its own permission. The host checks declared read
+effects against actual registered capabilities and refuses coordinator/proxy
+recursion. Built-in workspace-aware tools receive the run's scoped workspace
+per invocation, without mutating the agent's shared thread workspace; this also
+holds after restart and during read-back. Script workflows first request a separate exact-plan approval;
+this is deliberately required even if revision trust could authorize an isolated
+invocation. The plan binds run, definition, invocation, workspace and captured
+script revisions, permits each script step once, expires after five minutes
+and is never restored after restart. Approval waiting does not consume a script
+step's execution timeout. Resume explicitly after approval.
+
+Human typed answers are submitted through local workflow controls/API, not an
+agent answer tool. They bind run/revision/step/current version and do not grant
+execution permission. A write may declare `reconcileAction` naming a permitted
+read-back tool, called with the original input. Its observed JSON must satisfy
+the write output contract. Missing observation support is an explicit blocker;
+caller-provided guesses never mark a write reconciled.
+The coordinator retains the actual host promise across timeout/cancellation
+and blocks reconciliation until it settles. Late success or failure only
+releases that guard; it never completes the uncertain step. Ownership is
+shared process-wide by run ID, including across service/database instances.
+Shutdown waits for these promises, not merely the response race.
+
+Concrete tool invocations use the internal `await_tool_settlement` context
+flag: the workflow owns the response timeout, bypassing wallclock/background
+receipts. The tool runtime supplies a separate non-aborted SDK signal in this
+mode, isolating both explicit and inherited caller signals: the SDK otherwise
+rejects before a non-cooperative tool settles.
+Tool-local timeouts still apply; workflow cancellation does not guarantee
+remote rollback or termination. Script adapters retain their owned-process
+cancellation/cleanup contract.
+
+Local unlocked endpoints are `/api/v1/skill-executions` (request),
+`/skill-executions/[id]` (inspect/cancel), `/skill-executions/cleanup`,
+`/api/v1/workflows` (create/list) and `/workflows/[id]` (inspect/versioned
+advance/answer/cancel/reconcile). Workflow definitions and invocation bytes are
+schema-checked before persistence. API exposure does not grant remote callers
+script approval authority. Tests cover real Windows descendants, app/broker
+death and early parent exit, in addition to contract, CAS, restart and synthetic
+workflow checks. Host-specific acceptance and human walkthroughs remain
+separate release evidence; unit totals do not close the milestone.
 
 The Memory Organization bundle also includes an inert `workflow.json` example:
 supplied fact projections flow into the existing planner, then a typed keep/review

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Integrate explicit checked skill requests, exact-code approval review and
+  platform-owned execution with durable encrypted workflow controls, typed
+  answers, restart recovery, read-back reconciliation and conservative staging
+  cleanup. Discovery remains inert; full-trust scripts are not sandboxed and
+  unavailable ownership backends fail closed.
+
 - Add inactive run-owned skill staging, exact-consent runner orchestration and
   a bounded durable workflow coordinator with checked bindings, one retry
   budget, persisted choices, CAS ownership and uncertain-write reconciliation.
