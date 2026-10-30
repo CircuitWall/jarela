@@ -1,5 +1,6 @@
 import type { PersistedToolEvent } from "@/lib/stores/threads";
 import { getDb } from "@/lib/db";
+import { parseJsonSafe } from "@/lib/utils/json";
 
 const now = () => new Date().toISOString();
 
@@ -51,6 +52,7 @@ export interface ToolFailureSampleRow {
 
 export type ToolFailureClass =
   | "expected_skip"
+  | "caller_argument_error"
   | "transient_tool_failure"
   | "configuration_problem"
   | "suspected_product_gap";
@@ -193,9 +195,12 @@ export function listToolFailureSamples(toolName?: string): ToolFailureSampleRow[
   const sql = `SELECT tool_name, normalized_reason, failure_class, workflow_name, event_type, extraction_valid, intended_tool, blocked_operation, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at
      FROM tool_failure_samples${toolName ? " WHERE tool_name=?" : ""}
      ORDER BY count DESC, last_seen_at DESC`;
-  return (toolName
+  const rows = (toolName
     ? getDb().prepare(sql).all(toolName)
     : getDb().prepare(sql).all()) as unknown as ToolFailureSampleRow[];
+  return rows.map((row) => isCallerArgumentError(row.sample_error, undefined)
+    ? { ...row, normalized_reason: "caller_arguments", failure_class: "caller_argument_error" }
+    : row);
 }
 
 export function getToolFailurePatterns(
@@ -383,8 +388,11 @@ function normalizeText(text: string): Set<string> {
 }
 
 function isErrorPayload(payload: unknown): boolean {
-  if (typeof payload === "string") return /\berror\b|\bfailed\b|\bexception\b/i.test(payload);
+  if (typeof payload === "string") {
+    return isCallerArgumentError(sampleErrorText(payload), payload) || /\berror\b|\bfailed\b|\bexception\b/i.test(payload);
+  }
   if (!payload || typeof payload !== "object") return false;
+  if (isCallerArgumentError("", payload)) return true;
   if ("error" in payload || "errors" in payload) return true;
   const status = "status" in payload ? (payload as { status?: unknown }).status : undefined;
   if (typeof status === "string" && /error|failed/i.test(status)) return true;
@@ -392,7 +400,11 @@ function isErrorPayload(payload: unknown): boolean {
 }
 
 function sampleErrorText(payload: unknown): string {
-  if (typeof payload === "string") return payload;
+  if (typeof payload === "string") {
+    const parsed = parseJsonSafe<unknown>(payload);
+    if (!parsed || typeof parsed !== "object") return payload;
+    return sampleErrorText(parsed);
+  }
   if (!payload || typeof payload !== "object") return String(payload ?? "");
   const obj = payload as Record<string, unknown>;
   const candidate = obj.error ?? obj.message ?? obj.status ?? obj.errors;
@@ -400,7 +412,15 @@ function sampleErrorText(payload: unknown): string {
   return stringifyPayload(candidate ?? payload);
 }
 
+function isCallerArgumentError(text: string, payload: unknown): boolean {
+  const parsed = typeof payload === "string" ? parseJsonSafe<unknown>(payload) : payload;
+  const code = parsed && typeof parsed === "object" && "error_code" in parsed ? parsed.error_code : undefined;
+  return code === "invalid_tool_arguments" || code === "bad_args_json"
+    || /^(?:Error:\s*)?Received tool input did not match expected schema\b/i.test(text.trim());
+}
+
 function normalizeFailureReason(text: string, payload: unknown): string {
+  if (isCallerArgumentError(text, payload)) return "caller_arguments";
   const lower = `${text} ${stringifyPayload(payload)}`.toLowerCase();
   if (/auth|token|credential|unauthorized|401|master key|locked/.test(lower)) return "auth";
   if (/permission|forbidden|denied|403/.test(lower)) return "permission";
@@ -413,6 +433,7 @@ function normalizeFailureReason(text: string, payload: unknown): string {
 }
 
 function classifyFailure(text: string, payload: unknown): ToolFailureClass {
+  if (isCallerArgumentError(text, payload)) return "caller_argument_error";
   const lower = `${text} ${stringifyPayload(payload)}`.toLowerCase();
   if (/\b(skip|skipped|not applicable|duplicate|no event)\b/.test(lower)) return "expected_skip";
   const reason = normalizeFailureReason(text, payload);

@@ -1393,6 +1393,16 @@ export interface HarnessPatch {
 }
 
 export type SSEEventType =
+  | {
+    type: "stream_snapshot";
+    text: string;
+    tool_events: Array<
+      | { type: "tool_call"; id: string; name: string; arguments: Record<string, unknown> }
+      | { type: "tool_result"; id: string; name: string; result: unknown }
+      | { type: "tool_progress"; id: string; name: string; text: string }
+    >;
+    message: string;
+  }
   | { type: "text_delta"; delta: string }
   | { type: "thinking_delta"; delta: string }
   | { type: "status"; phase: "starting" | "preparing" | "compacting" | "thinking"; label: string }

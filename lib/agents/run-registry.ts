@@ -1,6 +1,7 @@
 import type { StreamChunk } from "./base";
 import { getConfig } from "@/lib/env/config";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
+import { randomUUID } from "node:crypto";
 
 // In-memory registry of in-flight agent runs, keyed by thread_id. When the user
 // switches agents mid-stream, the run keeps going server-side; if they return
@@ -13,7 +14,7 @@ import { getOrCreateGlobal } from "@/lib/utils/global-state";
 //   doesn't pin GBs of memory if every chunk lingers. Late attachers see the
 //   most recent slice plus all subsequent events.
 
-type Subscriber = (chunk: StreamChunk) => void;
+type Subscriber = (chunk: StreamChunk, eventId: string) => void;
 
 // Read once at module init. JARELA_RUN_BUFFER_SIZE / JARELA_RUN_REGISTRY_TTL_MS
 // override the defaults.
@@ -25,6 +26,8 @@ function runIdleMs(): number { return getConfig().runIdleMs; }
 function runMaxMs(): number { return getConfig().runMaxMs; }
 
 export interface ActiveRun {
+  id: string;
+  event_sequence: number;
   thread_id: string;
   agent_id: string | null;
   started_at: number;
@@ -77,6 +80,13 @@ const registryState = getOrCreateGlobal("__jarela_active_run_registry", () => ({
 }));
 const runs = registryState.runs;
 
+for (const run of runs.values()) {
+  if (typeof run.id !== "string" || !run.id || !Number.isSafeInteger(run.event_sequence)) {
+    run.id = randomUUID();
+    run.event_sequence = run.events.length;
+  }
+}
+
 // Cold-attach waiters: subscribers that opened a GET /run before the
 // server-side run actually called startRun (typical for triggers /
 // scheduler / watcher, which submit through `after()` + the per-thread
@@ -117,6 +127,8 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
   }
   const now = Date.now();
   const run: ActiveRun = {
+    id: randomUUID(),
+    event_sequence: 0,
     thread_id,
     agent_id,
     started_at: now,
@@ -170,17 +182,11 @@ function emitWatchdogTermination(
   // status check we'd otherwise be racing against.
   run.last_chunk_at = Date.now();
   const errChunk: StreamChunk = { type: "error", data: { message, code } };
-  if (run.events.length < MAX_BUFFERED) run.events.push(errChunk);
-  for (const fn of run.subscribers) {
-    try { fn(errChunk); } catch { /* subscriber errored, ignore */ }
-  }
+  publishEvent(run, errChunk);
   // Pair with a synthetic `done` so the client's consume() loop breaks
   // on a terminal event rather than waiting for the EventSource to close.
   const doneChunk: StreamChunk = { type: "done", data: {} };
-  if (run.events.length < MAX_BUFFERED) run.events.push(doneChunk);
-  for (const fn of run.subscribers) {
-    try { fn(doneChunk); } catch { /* */ }
-  }
+  publishEvent(run, doneChunk);
 }
 
 // Self-rearming idle watchdog. Fires when no chunk has arrived for
@@ -318,11 +324,15 @@ export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
       }
     }
   }
-  if (run.events.length < MAX_BUFFERED) {
-    run.events.push(chunk);
-  }
+  publishEvent(run, chunk);
+}
+
+function publishEvent(run: ActiveRun, chunk: StreamChunk): void {
+  const eventId = `${run.id}:${++run.event_sequence}`;
+  run.events.push(chunk);
+  if (run.events.length > MAX_BUFFERED) run.events.shift();
   for (const fn of run.subscribers) {
-    try { fn(chunk); } catch { /* subscriber errored, ignore */ }
+    try { fn(chunk, eventId); } catch { /* subscriber errored, ignore */ }
   }
 }
 
@@ -414,12 +424,36 @@ export async function waitForRunsToSettle(timeoutMs: number): Promise<number> {
 export function subscribe(
   thread_id: string,
   onEvent: Subscriber,
+  lastEventId?: string | null,
+  recoverReplayGap?: (run: ActiveRun) => void,
 ): { run: ActiveRun | null; unsubscribe: () => void } {
   const run = runs.get(thread_id);
   if (!run) return { run: null, unsubscribe: () => {} };
-  // Replay buffered events first (so the new subscriber catches up).
-  for (const ev of run.events) {
-    try { onEvent(ev); } catch { /* */ }
+  const firstSequence = run.event_sequence - run.events.length + 1;
+  let after = 0;
+  if (lastEventId || (firstSequence > 1 && recoverReplayGap)) {
+    const prefix = `${run.id}:`;
+    const sequenceText = lastEventId?.startsWith(prefix) ? lastEventId.slice(prefix.length) : "";
+    const sequence = /^\d+$/.test(sequenceText) ? Number(sequenceText) : NaN;
+    if (!Number.isSafeInteger(sequence) || sequence < firstSequence - 1 || sequence > run.event_sequence) {
+      if (recoverReplayGap) {
+        recoverReplayGap(run);
+        if (run.status !== "running") return { run, unsubscribe: () => {} };
+        run.subscribers.add(onEvent);
+        return { run, unsubscribe: () => { run.subscribers.delete(onEvent); } };
+      }
+      onEvent({
+        type: "error",
+        data: { code: "stream_replay_gap", message: "The response stream can no longer resume safely. Reload the conversation to read the saved result; do not resubmit actions automatically." },
+      }, "");
+      return { run, unsubscribe: () => {} };
+    }
+    after = sequence;
+  }
+  for (const [index, ev] of run.events.entries()) {
+    const sequence = firstSequence + index;
+    if (sequence <= after) continue;
+    try { onEvent(ev, `${run.id}:${sequence}`); } catch { /* */ }
   }
   if (run.status !== "running") {
     return { run, unsubscribe: () => {} };

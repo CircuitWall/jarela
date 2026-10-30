@@ -1,4 +1,5 @@
-import { tool } from "@langchain/core/tools";
+import { tool, ToolInputParsingException } from "@langchain/core/tools";
+import { toolExecutionControls } from "../support/wallclock";
 import { getToolResultMaxBytes } from "../support/result-refs";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { z } from "zod";
@@ -186,29 +187,37 @@ function resolveArgs(
 }
 
 export const invokeToolTool = tool(
-  async ({ name, args, args_json }, config?: RunnableConfig) => {
+  async ({ name, args, args_json, deadline_ms, async_run, stream }, config?: RunnableConfig) => {
     const toolName = name.trim();
     const permission = await resolveTargetPermission(toolName, config);
     if (!permission.ok) return permission.response;
 
     let resolvedArgs: Record<string, unknown>;
     try {
-      resolvedArgs = resolveArgs(args, args_json);
+      resolvedArgs = {
+        ...(deadline_ms === undefined ? {} : { deadline_ms }),
+        ...(async_run === undefined ? {} : { async_run }),
+        ...(stream === undefined ? {} : { stream }),
+        ...resolveArgs(args, args_json),
+      };
     } catch (err) {
       return reject(toolName, err instanceof Error ? err.message : String(err), "bad_args_json");
     }
 
     try {
+      const configuredBudget = config?.configurable?.tool_result_max_bytes;
+      const resultBudget = typeof configuredBudget === "number" && Number.isFinite(configuredBudget)
+        ? Math.max(1, Math.min(getToolResultMaxBytes(), Math.floor(configuredBudget))) : getToolResultMaxBytes();
       const result = await executeTool(toolName, resolvedArgs, {
         thread_id: getThreadId(config),
-        tool_result_max_bytes: Math.max(1, getToolResultMaxBytes() - Buffer.byteLength(JSON.stringify({ ok: true, tool: toolName, status: "done", result: null })) + 4),
+        tool_result_max_bytes: Math.max(1, resultBudget - Buffer.byteLength(JSON.stringify({ ok: true, tool: toolName, status: "done", result: null })) + 4),
         tool_credentials: toolCredentialsFromConfig(config),
         signal_continuation: config?.configurable?.signal_continuation === true,
         tool_permission_map: Array.isArray(config?.configurable?.tool_permission_map) ? config.configurable.tool_permission_map : undefined,
         delegation_depth: typeof config?.configurable?.delegation_depth === "number" ? config.configurable.delegation_depth : undefined,
         delegation_ancestors: Array.isArray(config?.configurable?.delegation_ancestors) ? config.configurable.delegation_ancestors : undefined,
         signal: config?.signal,
-      });
+      }, config);
       return JSON.stringify({
         ok: true,
         tool: toolName,
@@ -221,7 +230,7 @@ export const invokeToolTool = tool(
         tool: toolName,
         status: "error",
         error: err instanceof Error ? err.message : String(err),
-        error_code: "target_tool_failed",
+        error_code: err instanceof ToolInputParsingException ? "invalid_tool_arguments" : "target_tool_failed",
       } satisfies InvocationResult);
     }
   },
@@ -231,9 +240,11 @@ export const invokeToolTool = tool(
       "Never target invoke_tool itself; call the target tool directly. Execute a permitted tool by name only after list_tools finds a tool that is permitted for this agent but was not directly loaded this turn, especially when permission_reason='proxy_only' or 'provider_tool_limit'. " +
       "Prefer args: pass the target's arguments as a structured JSON object, matching its list_tools include_schema=true schema — this is the more reliable form and works on every provider that supports nested object schemas. " +
       "Only use args_json (the same arguments JSON-encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}') if your provider strips structured object schemas so args can only ever be emitted as '{}'. Send args_json='{}' when the target takes no arguments. " +
+      "deadline_ms, async_run and stream control the target call; values inside args or args_json take precedence over top-level values. " +
       "Never use invoke_tool to call invoke_tool itself; call already-loaded tools directly instead of wrapping them. " +
       "This does not bypass permissions, disabled categories, unavailable MCP servers, disabled drop-in tools, or credential requirements. Call list_tools with include_schema=true when you need the target tool's argument schema.",
     schema: z.object({
+      ...toolExecutionControls,
       name: z
         .string()
         .min(1)

@@ -408,6 +408,21 @@ flowchart LR
     RR[Run Registry<br/>lib/agents/run-registry] -.pub/sub + replay buffer.-> A
 ```
 
+### Tool proxy execution (unreleased)
+
+`invoke_tool` dispatches through the same `executeTool` runtime as direct calls.
+It preserves trusted run configuration, workspace overrides, progress writer and
+call correlation, cancellation, credential routing, permission overlays,
+delegation context, and coordinator-owned settlement.
+
+The target owns its deadline, background receipt, and streaming controls; the
+proxy does not start a second timeout or background operation. Top-level
+`deadline_ms`, `async_run`, and `stream` are defaults for the target; values
+inside `args` or decoded `args_json` take precedence. Output-size safeguards
+remain in place, reserving proxy-envelope overhead for paged results.
+Permissions, category toggles, credentials, completion-turn read-only rules,
+and the target's argument schema are not bypassed.
+
 ## Key Flow — User sends a chat turn
 
 ### Durable lifecycle signals

@@ -33,6 +33,8 @@ vi.mock("@/lib/mcp/client", () => ({
 }));
 
 const { executeTool } = await import("../index");
+const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
+const { createThread } = await import("@/lib/stores/threads");
 
 describe("executeTool MCP routing", () => {
   it("can invoke MCP tools and preserve thread context", async () => {
@@ -43,5 +45,24 @@ describe("executeTool MCP routing", () => {
       thread_id: "thread-mcp",
     });
     expect(mcpInvoke).toHaveBeenCalledOnce();
+  });
+
+  it("can proxy an MCP tool without stripping trusted execution context", async () => {
+    const writer = vi.fn();
+    upsertAgentConfig({ id: "mcp-proxy-agent", name: "MCP Proxy", identity: "test", instructions: "", tools: ["mcp_echo"] });
+    const thread = createThread("mcp-proxy-agent");
+    const out = await executeTool("invoke_tool", {
+      name: "mcp_echo", args_json: JSON.stringify({ value: "proxied" }),
+    }, { thread_id: thread.thread_id }, {
+      writer,
+      configurable: { workspace: { root: tmpRoot, scoped: true, opened_at: 1 }, custom_run_value: "preserved" },
+    });
+    expect(out).toMatchObject({ status: "done", result: { args: { value: "proxied" }, thread_id: thread.thread_id } });
+    expect(mcpInvoke).toHaveBeenLastCalledWith({ value: "proxied" }, expect.objectContaining({
+      writer: expect.any(Function),
+      configurable: expect.objectContaining({
+        workspace: { root: tmpRoot, scoped: true, opened_at: 1 }, custom_run_value: "preserved",
+      }),
+    }));
   });
 });

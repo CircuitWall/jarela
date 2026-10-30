@@ -302,7 +302,20 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       } catch {
         continue;
       }
-      if (event.type === "text_delta") {
+      if (event.type === "stream_snapshot") {
+        resetBuffer();
+        appendText(event.text);
+        flushPending();
+        const restoredTools: ToolEvent[] = event.tool_events.map((tool) => ({
+          id: tool.id,
+          name: tool.name,
+          phase: tool.type === "tool_call" ? "call" : tool.type === "tool_result" ? "result" : "progress",
+          payload: tool.type === "tool_call" ? tool.arguments : tool.type === "tool_result" ? tool.result : tool.text,
+        }));
+        setToolEvents(restoredTools);
+        reportVisibleToolActivity(restoredTools);
+        setVisibleActivityStatus(event.message);
+      } else if (event.type === "text_delta") {
         appendText(event.delta);
         setVisibleActivityStatus("Responding…");
       } else if (event.type === "reset_text") {
@@ -391,7 +404,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       }
     }
     return false;
-  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, reportVisibleToolActivity, resetStreamingText, setVisibleActivityStatus, splitStreamingContent]);
+  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, reportVisibleToolActivity, resetBuffer, resetStreamingText, setVisibleActivityStatus, splitStreamingContent]);
 
   const start = useCallback(async (
     threadId: string,

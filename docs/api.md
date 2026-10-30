@@ -116,7 +116,16 @@ on the same path.
 ### `GET /api/v1/threads/[thread_id]/run`
 
 Subscribe to the in-flight run as a Server-Sent Events stream. Reconnects
-resume from the last seen sequence id.
+resume using the browser's `Last-Event-ID` header and run-scoped SSE event IDs,
+replaying only events after the last received event. A fresh subscription
+without a cursor receives the bounded replay buffer, or a full-text snapshot
+if earlier events have already been evicted. If the run changed or
+the cursor fell outside the buffer, the stream sends a `stream_snapshot` with
+the current full text, available buffered tool events and a recovery notice.
+Clients replace their live buffers without marking the agent complete, then
+continue listening with the snapshot's cursor. Earlier tool details may be
+unavailable. Recovery never restarts actions. Completed runs also send their
+terminal event after the snapshot.
 
 ### `PATCH /api/v1/threads/[thread_id]/run`
 

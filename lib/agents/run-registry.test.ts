@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { startRun, finishRun, getRun, broadcast, waitForRun, pushSteering, drainSteering, abortRun } from "./run-registry";
-import { resetConfigCache } from "@/lib/env/config";
+import { startRun, finishRun, getRun, broadcast, waitForRun, pushSteering, drainSteering, abortRun, subscribe } from "./run-registry";
+import { getConfig, resetConfigCache } from "@/lib/env/config";
 import type { StreamChunk } from "./base";
 
 const delta = (s: string): StreamChunk => ({ type: "text_delta", data: { delta: s } } as StreamChunk);
@@ -9,6 +9,91 @@ const toolResult = (id: string): StreamChunk => ({ type: "tool_result", data: { 
 const heartbeat = (): StreamChunk => ({ type: "heartbeat", data: {} } as StreamChunk);
 
 describe("run-registry watchdog", () => {
+  it("migrates a surviving pre-cursor active run when the module reloads", async () => {
+    const run = startRun("legacy-cursor-migration", null);
+    broadcast(run, delta("Existing text."));
+    Reflect.deleteProperty(run, "id");
+    Reflect.deleteProperty(run, "event_sequence");
+    vi.resetModules();
+    const reloaded = await import("./run-registry");
+    expect(reloaded.getRun(run.thread_id)).toBe(run);
+    expect(run.id).toMatch(/^[a-f0-9-]{36}$/);
+    expect(run.event_sequence).toBe(1);
+    const ids: string[] = [];
+    const sub = reloaded.subscribe(run.thread_id, (_chunk, id) => ids.push(id));
+    reloaded.broadcast(run, delta(" More."));
+    expect(ids).toEqual([`${run.id}:1`, `${run.id}:2`]);
+    sub.unsubscribe();
+    reloaded.finishRun(run, "done");
+  });
+
+  it("resumes repeated reconnects without duplicating text or retry-guard warnings", () => {
+    const run = startRun("cursor-reconnects", null);
+    const received: string[] = [];
+    let cursor: string | undefined;
+    const receive = (chunk: StreamChunk, id: string) => {
+      cursor = id;
+      if (chunk.type === "text_delta") received.push(chunk.data.delta);
+    };
+    broadcast(run, delta("Tracing the validation path."));
+    let connection = subscribe(run.thread_id, receive);
+    connection.unsubscribe();
+    broadcast(run, delta("Retry guard skipped automatic retry."));
+    for (let attempt = 0; attempt < 15; attempt++) {
+      connection = subscribe(run.thread_id, receive, cursor);
+      connection.unsubscribe();
+    }
+    broadcast(run, { type: "done", data: {} });
+    finishRun(run, "done");
+    const terminal: StreamChunk[] = [];
+    subscribe(run.thread_id, (chunk) => terminal.push(chunk), cursor);
+    expect(received).toEqual(["Tracing the validation path.", "Retry guard skipped automatic retry."]);
+    expect(terminal.map((chunk) => chunk.type)).toEqual(["done"]);
+    expect(run.final_text).toBe(received.join(""));
+  });
+
+  it("rejects stale, invalid and evicted reconnect cursors without replaying text", () => {
+    const run = startRun("cursor-errors", null);
+    broadcast(run, delta("one"));
+    broadcast(run, delta("two"));
+    run.events.shift();
+    for (const cursor of [`${run.id}:0`, `${run.id}:99`, `${run.id}:invalid`, "another-run:1"]) {
+      const seen: StreamChunk[] = [];
+      const sub = subscribe(run.thread_id, (chunk) => seen.push(chunk), cursor);
+      expect(seen).toMatchObject([{ type: "error", data: { code: "stream_replay_gap" } }]);
+      expect(run.subscribers.size).toBe(0);
+      sub.unsubscribe();
+    }
+    finishRun(run, "done");
+  });
+
+  it("replays resets and assigns different cursors to a replacement run", () => {
+    const run = startRun("cursor-replacement", null);
+    broadcast(run, delta("discard"));
+    const seen: StreamChunk[] = [];
+    subscribe(run.thread_id, (chunk) => seen.push(chunk), `${run.id}:1`).unsubscribe();
+    broadcast(run, { type: "reset_text", data: {} });
+    broadcast(run, delta("corrected"));
+    subscribe(run.thread_id, (chunk) => seen.push(chunk), `${run.id}:1`).unsubscribe();
+    expect(seen.map((chunk) => chunk.type)).toEqual(["reset_text", "text_delta"]);
+    finishRun(run, "done");
+    const replacement = startRun(run.thread_id, null);
+    expect(replacement.id).not.toBe(run.id);
+    finishRun(replacement, "done");
+  });
+
+  it("retains the latest bounded events including terminal output after overflow", () => {
+    const run = startRun("cursor-overflow", null);
+    const limit = getConfig().runBufferSize;
+    for (let index = 0; index <= limit; index++) broadcast(run, delta(String(index)));
+    broadcast(run, { type: "done", data: {} });
+    finishRun(run, "done");
+    expect(run.events).toHaveLength(limit);
+    const received: StreamChunk[] = [];
+    subscribe(run.thread_id, (chunk) => received.push(chunk), `${run.id}:${limit + 1}`);
+    expect(received).toEqual([{ type: "done", data: {} }]);
+  });
+
   it("shares active runs and cold-attach waiters across module reload", async () => {
     const waiting = waitForRun("cross-bundle-registry", 1000);
     vi.resetModules();

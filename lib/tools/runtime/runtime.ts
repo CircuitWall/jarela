@@ -1,4 +1,4 @@
-import type { StructuredToolInterface } from "@langchain/core/tools";
+import type { StructuredToolInterface, ToolRunnableConfig } from "@langchain/core/tools";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { RunnableConfig } from "@langchain/core/runnables";
 
@@ -171,8 +171,10 @@ export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   context: ToolContext = {},
+  invocationConfig?: RunnableConfig,
 ): Promise<unknown> {
-  if (context.signal_continuation && registeredCapability(name) !== "read" && name !== "invoke_tool") {
+  const signalContinuation = context.signal_continuation ?? invocationConfig?.configurable?.signal_continuation === true;
+  if (signalContinuation && registeredCapability(name) !== "read" && name !== "invoke_tool") {
     throw new Error(`Tool "${name}" is blocked in a read-only completion turn`);
   }
   let t = allBuiltins().find((x) => x.name === name);
@@ -209,19 +211,26 @@ export async function executeTool(
     t = wrapToolForCredentialRouting(t, context.tool_credentials);
   }
 
-  const config: RunnableConfig = {
+  const awaitSettlement = context.await_tool_settlement ?? invocationConfig?.configurable?.await_tool_settlement === true;
+  const config: ToolRunnableConfig = {
+    ...invocationConfig,
+    // Keep progress correlation, but do not format the target's raw result as
+    // a ToolMessage belonging to the enclosing proxy call.
+    toolCall: undefined,
     // LangChain rejects on abort before a non-cooperative tool settles.
     // Workflow callers race cancellation themselves and retain this promise.
-    signal: context.await_tool_settlement ? new AbortController().signal : context.signal,
-    configurable: { thread_id: context.thread_id, signal_continuation: context.signal_continuation,
+    signal: awaitSettlement ? new AbortController().signal : context.signal ?? invocationConfig?.signal,
+    configurable: { ...invocationConfig?.configurable, ...Object.fromEntries(Object.entries({
+      thread_id: context.thread_id, signal_continuation: signalContinuation,
       workspace: context.workspace ? { ...context.workspace, opened_at: 0 } : undefined,
       await_tool_settlement: context.await_tool_settlement,
       tool_result_max_bytes: context.tool_result_max_bytes,
       tool_permission_map: context.tool_permission_map, tool_credentials: context.tool_credentials,
-      delegation_depth: context.delegation_depth, delegation_ancestors: context.delegation_ancestors },
+      delegation_depth: context.delegation_depth, delegation_ancestors: context.delegation_ancestors,
+    }).filter(([, value]) => value !== undefined)) },
   };
 
-  if (context.await_tool_settlement) context.signal?.throwIfAborted();
+  if (awaitSettlement) (context.signal ?? invocationConfig?.signal)?.throwIfAborted();
   const result = await t.invoke(args, config);
 
   if (typeof result === "string") {
