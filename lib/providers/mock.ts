@@ -136,6 +136,14 @@ export const mockProvider: ModelProvider = {
   name: "mock",
 
   async chat(_model_id, messages, _params: ProviderParams, signal): Promise<ProviderStreamResult> {
+    if (_model_id === "mock-advertisement-fixture") {
+      signal?.throwIfAborted();
+      return { stream: streamText(JSON.stringify({
+        purpose: "Review synthetic fixtures", call_when: ["A synthetic fixture needs a concise review"],
+        do_not_call_for: ["Unrelated operational changes"], inputs: "Synthetic fixture text",
+        output: "A checked plain-language summary", tools: [],
+      }), undefined, signal) };
+    }
     const userText = lastUserText(messages as ProviderMessage[]);
     const directives = parseMockDirectives(userText);
     if (directives.error) throw new Error(directives.error);

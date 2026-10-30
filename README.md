@@ -258,6 +258,12 @@ This is development/release infrastructure, not a cloud dependency of the app.
 Jarela is a single Next.js process organized around domain modules and explicit runtime boundaries:
 
 - The UI calls typed API routes; route handlers guard and validate requests before delegating to `lib/`.
+- **Unreleased agent advertisements:** saved agent configurations can optionally
+  derive bounded specialization metadata using an explicitly selected configured
+  model. Generation is off by default, with disclosed egress/usage limits and
+  local inspect/regenerate/disable controls. Only authorized delegates enter the
+  existing catalog; descriptions do not grant access or certify expertise.
+  See [operator guidance](docs/OPERATIONS.md#agent-advertisements-unreleased).
 - `lib/agents/` coordinates turn execution through provider and tool registries, with stores owning persistence.
 - Providers, built-in tools, MCP servers, bridges, and integrations connect through adapters and registries instead of reaching into each other's implementations.
 - Background work reuses the existing scheduler, agent queues, SQLite outbox, and leased signal delivery; there is no additional broker or agent process.

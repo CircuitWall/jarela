@@ -4,6 +4,10 @@ import { getConfig } from "@/lib/env/config";
 import { claimSystemSignals, renewSystemSignalLease, releaseSystemSignals, commitSystemSignalTranscript, type SystemSignalBatch } from "@/lib/stores/system-signals";
 import { runtimeInstanceId } from "@/lib/lifecycle/system-signals";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
+import {
+  createDelegationBudget,
+  isDelegationBudget,
+} from "@/lib/agents/delegation-budget";
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import { spillAttachments } from "@/lib/attachments/spill";
 import { fileReferenceFromContentPart, isFileReferenceMetadata, type AttachmentHandlingMetadata, type FileReferenceMetadata } from "@/lib/attachments/reference";
@@ -15,7 +19,7 @@ import { addMessage, capToolEventPayload, countForegroundThreadMessages, getMess
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
-import { getAgentConfig, getAgentTierProportions, getAgentTools, getAgentToolCredentials, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
+import { getAgentConfig, getAgentTierProportions, getAgentTools, getAgentToolCredentials, parseCitationStrictness } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { getMemoryPolicy } from "@/lib/stores/app-settings";
@@ -418,6 +422,16 @@ export function appendHistoryMessage(
  * callers leave them undefined.
  */
 export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedThreadRun> {
+  // The WeakMap-backed handle cannot be forged by request JSON. Recursive
+  // retries and delegated descendants retain this same root-task budget.
+  req = {
+    ...req,
+    _delegation_budget: isDelegationBudget(req._delegation_budget)
+      ? req._delegation_budget
+      : createDelegationBudget(),
+  };
+  const isDelegatedRun = (req._delegation_depth ?? 0) > 0
+    || (req._delegation_ancestors?.length ?? 0) > 0;
   // Lazy-start the scheduler when any agent activity occurs so previously
   // saved scheduled tasks resume firing across server restarts.
   startScheduler();
@@ -577,7 +591,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // The resolved strategy is the single source of truth for model routing and usage.
   const usageStrategy = resolveUsageStrategy(agentCfg.usage_strategy, getConfig().usageStrategy);
   const usageProfile = getUsageStrategyProfile(usageStrategy);
-  const autoRecallEnabled = shouldAutoRecall(usageStrategy, req.context_profile?.include_recall !== false);
+  const autoRecallEnabled = !isDelegatedRun
+    && shouldAutoRecall(usageStrategy, req.context_profile?.include_recall !== false);
   const autoFactsEnabled = shouldAutoRecall(usageStrategy, req.context_profile?.include_facts !== false);
   const useRouter = usageProfile.enableRouter ?? getConfig().modelRouterMode === "heuristic";
   const routePolicy = req._router_policy_override ?? usageProfile.routerPolicy ?? getConfig().modelRouterPolicy;
@@ -748,7 +763,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   }
   const currentThread = getThread(req.thread_id);
   if (
-    currentThread?.hot_since_seq
+    !isDelegatedRun
+    && currentThread?.hot_since_seq
     && currentThread.warm_summary
     && (currentThread.warm_summary_source_messages == null
       || currentThread.warm_summary_source_messages > warmSummaryMessageLimit(agentCfg.warm_summary_limit))
@@ -764,7 +780,10 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     undefined,
     {
       scope: req.context_profile?.history_scope,
-      includeWarm: req.context_profile?.include_warm,
+      // Warm-summary generation and refresh use separate provider calls,
+      // outside the delegated per-inference budget hook. Keep hot history,
+      // but never start unaccounted summarization work for a child run.
+      includeWarm: isDelegatedRun ? false : req.context_profile?.include_warm,
       includeFacts: autoFactsEnabled,
       bridgeKey: req.history_bridge_key ?? undefined,
       channels: req.channels,
@@ -775,7 +794,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const hotBudget = historyWindow.budget.tierBudgets.hot;
   const currentHotSinceSeq = getThread(req.thread_id)?.hot_since_seq ?? null;
   if (
-    autoBoundaryScope !== "bridge"
+    !isDelegatedRun
+    && autoBoundaryScope !== "bridge"
     && currentHotSinceSeq === null
     && pendingCompactionBoundarySeq(req.thread_id) === null
     && isHotContextNearBudget(historyWindow.tierUsage.hot_tokens, hotBudget)
@@ -784,7 +804,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     kickBoundaryCompaction(req.thread_id, historyWindow.hotSinceSeqCandidate);
   }
 
-  const delegateRosterLines = buildDelegateRoster(agentCfg, allowedTools);
+  const { buildDelegateCatalog } = await import("@/lib/agents/delegate-catalog");
+  const delegateRosterLines = await buildDelegateCatalog(agentCfg, toolPermissionMap, baseToolPermissionMap);
 
   // Ambient surroundings (ADR-0082). Only foreground chat turns get it: a
   // scheduled task or an extension fill firing while the user happens to be
@@ -911,12 +932,14 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       model_config_name: modelConfigName,
       route_decision: routeDecision,
       output_reserve_tokens: historyWindow.budget.outputReserveTokens,
+      context_window_tokens: runContextWindow,
       max_output_tokens: adaptiveOutputTokenCap,
       thinking_params: thinkingReduction?.params,
       tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
       delegation: delegationDepth > 0 || delegationAncestors.length > 0
         ? { depth: delegationDepth, ancestors: delegationAncestors }
         : undefined,
+      delegation_budget: req._delegation_budget,
     },
   };
 
@@ -963,7 +986,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // and the pre-retry stalled prose into the user's input field, and the
   // strict-citation audit (which lives inside the same wrapper) would do
   // the same with retry continuations. Bypass it entirely for those callers.
-  const stream = req.disable_quality_gates
+  const stream = req.disable_quality_gates || isDelegatedRun
     ? transientWrapped
     : stallRetryStream(transientWrapped, req, allowedTools, retriesLeft, attemptAbort, prepareThreadRun);
   return {
@@ -1001,29 +1024,6 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       ? { memory_hits: rawRecallCtx.memoryHits, message_hits: rawRecallCtx.messageHits }
       : undefined,
   };
-}
-
-/**
- * Build the `--- Available delegates ---` block lines for the system prompt
- * when the agent has the `delegate_to_agent` tool allowed and at least one
- * resolvable delegate target. Empty array short-circuits the block.
- */
-function buildDelegateRoster(
-  agentCfg: { delegate_targets?: string | null },
-  allowedTools: readonly string[],
-): string[] {
-  const delegateIds = parseDelegateTargets(agentCfg.delegate_targets);
-  if (delegateIds.length === 0) return [];
-  if (!allowedTools.includes("delegate_to_agent")) return [];
-
-  return delegateIds
-    .map((id) => {
-      const child = getAgentConfig(id);
-      if (!child) return null;
-      const firstLine = (child.identity || child.instructions || "").split("\n")[0].slice(0, 120);
-      return `  - ${child.id} — ${child.name}${firstLine ? `: ${firstLine}` : ""}`;
-    })
-    .filter((s): s is string => Boolean(s));
 }
 
 export interface AssistantUsageSnapshot {
@@ -1260,7 +1260,11 @@ export function persistAssistantMessage(
     // alongside the manifest; the UI picks it up on the next refresh.
     // Any failure (timeout, parse error, missing checker model) leaves
     // the manifest in place and the message renders normally.
-    if (persisted && manifest.length > 0) {
+    // Delegated inference must remain inside the shared per-inference budget.
+    // The post-persist checker calls a provider directly, outside llm.ts's
+    // budget hook, so delegated results keep their deterministic manifest but
+    // skip this optional model-based audit.
+    if (category !== "delegation" && persisted && manifest.length > 0) {
       void runCitationCheckerForRow(thread_id, row.msg_id, persisted, manifest);
     }
     // ADR-0041 wrote provider-reported token usage when available. The

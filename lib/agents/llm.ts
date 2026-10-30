@@ -26,6 +26,52 @@ import { wrapToolsForRehydrate } from "@/lib/redaction/wrap-tools";
 import { wrapToolsForCredentialRouting } from "@/lib/tools/security/wrap-credentials";
 import { errorMessage } from "@/lib/utils/error";
 import { modelCapabilities } from "@/lib/providers/capabilities";
+import { getKnownContextLength } from "@/lib/providers/known-context-windows";
+import {
+  isDelegationBudget,
+  reserveDelegationCost,
+  settleDelegationCost,
+  type DelegationBudget,
+  type DelegationCostReservation,
+} from "@/lib/agents/delegation-budget";
+import {
+  CACHE_CREATION_INPUT_RATE_MULTIPLIER,
+  estimateProviderCostUsd,
+  getPricingTables,
+  modelRatesFor,
+} from "@/lib/stores/pricing";
+import type { ProviderRates } from "@/lib/stores/pricing";
+
+class DelegationCostBudgetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DelegationCostBudgetError";
+  }
+}
+
+interface InferenceUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+}
+
+function isKnownCanonicalRate(rates: ProviderRates): boolean {
+  return rates.ok && rates.inferred === false
+    && typeof rates.inputPer1M === "number" && Number.isFinite(rates.inputPer1M) && rates.inputPer1M >= 0
+    && typeof rates.outputPer1M === "number" && Number.isFinite(rates.outputPer1M) && rates.outputPer1M >= 0;
+}
+
+function maxInferenceCostUsd(
+  rates: Pick<ProviderRates, "inputPer1M" | "outputPer1M">,
+  contextWindowTokens: number,
+  outputTokens: number,
+): number {
+  return (
+    contextWindowTokens * rates.inputPer1M! * CACHE_CREATION_INPUT_RATE_MULTIPLIER
+    + outputTokens * rates.outputPer1M!
+  ) / 1_000_000;
+}
 
 function clipText(text: string, max: number): { value: string; truncated: boolean } {
   if (text.length <= max) return { value: text, truncated: false };
@@ -267,7 +313,13 @@ async function* streamWithConfigImpl(
   const rehydrated = wrapToolsForRehydrate(baseTools);
   const tools = wrapToolsForCredentialRouting(rehydrated, runCfg?.tool_credentials ?? {});
 
-  const model = new JarelaChatModel({ provider, modelId: cfg.model_id, params });
+  const isDelegatedRun = (runCfg?.delegation?.depth ?? 0) > 0;
+  const model = new JarelaChatModel({
+    provider,
+    modelId: cfg.model_id,
+    params,
+    maxRetries: isDelegatedRun ? 0 : undefined,
+  });
   const store = new SqliteMemoryStore();
   const checkpointer = getCheckpointer();
 
@@ -295,16 +347,92 @@ async function* streamWithConfigImpl(
     }
   }
 
-  // Runs before every model call inside the react loop — i.e. after ToolNode
-  // has appended its results and before the next request goes out. Draining
-  // steering here is what makes it arrive alongside the tool results it should
-  // react to, without splitting a tool_use/tool_result pair (ADR-0080).
+  const delegationBudget = isDelegatedRun
+    && isDelegationBudget(runCfg?.delegation_budget)
+    ? runCfg.delegation_budget
+    : null;
+  const activeInference: { current: {
+    reservation: DelegationCostReservation;
+    rates: ProviderRates;
+    usage: InferenceUsage;
+  } | null } = { current: null };
+  const settleInferenceReservation = (retainFullReservation = false): void => {
+    if (!delegationBudget || !activeInference.current) return;
+    const active = activeInference.current;
+    activeInference.current = null;
+    const hasUsage = !retainFullReservation
+      && (active.usage.inputTokens > 0 || active.usage.outputTokens > 0);
+    const actualCost = hasUsage
+      ? estimateProviderCostUsd(cfg.provider, active.usage.inputTokens, active.usage.outputTokens, active.rates, {
+          cache_creation_input_tokens: active.usage.cacheCreationTokens,
+          cache_read_input_tokens: active.usage.cacheReadTokens,
+        })
+      : null;
+    const settled = settleDelegationCost(
+      active.reservation,
+      actualCost !== null && Number.isFinite(actualCost) && actualCost >= 0 ? actualCost : null,
+    );
+    if (settled.overrun) {
+      throw new DelegationCostBudgetError(
+        "Provider-reported usage exceeded the reserved per-inference delegation cost; further inference is blocked.",
+      );
+    }
+  };
+
+  // Runs before every model call inside the react loop. Reserve against the
+  // shared root budget before contacting the provider, then settle the prior
+  // inference from its usage before a later request can start.
   const preModelHook = () => {
+    if (delegationBudget) {
+      if (signal?.aborted) {
+        const aborted = new Error("Delegated inference cancelled before provider invocation.");
+        aborted.name = "AbortError";
+        throw aborted;
+      }
+      settleInferenceReservation();
+      const contextWindowCaps = [
+        runCfg?.context_window_tokens,
+        params.context_window_tokens,
+        getKnownContextLength(cfg.provider, cfg.model_id),
+      ].filter((value): value is number =>
+        typeof value === "number" && Number.isSafeInteger(value) && value > 0);
+      const contextWindowTokens = contextWindowCaps.length > 0
+        ? Math.min(...contextWindowCaps)
+        : undefined;
+      const outputTokens = params.max_tokens ?? runCfg?.max_output_tokens;
+      if (
+        !contextWindowTokens || !Number.isSafeInteger(contextWindowTokens) || contextWindowTokens <= 0
+        || !outputTokens || !Number.isSafeInteger(outputTokens) || outputTokens <= 0
+      ) {
+        throw new DelegationCostBudgetError(
+          "Delegated inference refused because its context or output token ceiling is unknown.",
+        );
+      }
+      const rates = modelRatesFor(getPricingTables(), cfg.provider, cfg.model_id);
+      if (!isKnownCanonicalRate(rates)) {
+        throw new DelegationCostBudgetError(
+          `Delegated inference refused because canonical pricing is unavailable for ${cfg.provider}/${cfg.model_id}.`,
+        );
+      }
+      const maximumCostUsd = maxInferenceCostUsd(rates, contextWindowTokens, outputTokens);
+      const reserved = reserveDelegationCost(delegationBudget, maximumCostUsd);
+      if (!reserved.ok) {
+        throw new DelegationCostBudgetError(
+          reserved.reason === "cost_exhausted"
+            ? "The root delegation cost budget cannot reserve another bounded model inference."
+            : "Delegated inference refused because its cost reservation could not be verified.",
+        );
+      }
+      activeInference.current = {
+        reservation: reserved.reservation,
+        rates,
+        usage: { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },
+      };
+    }
     const steering = drainSteering(threadId);
     if (steering.length === 0) return {};
     return { messages: steering.map((text) => new HumanMessage(text)) };
   };
-
   const agent = createReactAgent({ llm: model, tools, store, checkpointer, preModelHook });
 
   // Track which AIMessageChunk-tool-call-chunks we've already announced (by id).
@@ -364,6 +492,7 @@ async function* streamWithConfigImpl(
           signal_continuation: runCfg?.signal_continuation === true,
           delegation_depth: runCfg?.delegation?.depth ?? 0,
           delegation_ancestors: runCfg?.delegation?.ancestors ?? [],
+          delegation_budget: runCfg?.delegation_budget,
           tool_permission_map: runCfg?.tool_permission_map,
         },
         // LangGraph counts EACH node visit (model call + each tool call) as a
@@ -397,6 +526,12 @@ async function* streamWithConfigImpl(
             const outDetails = usage.output_token_details;
             if (outDetails) {
               usageThinkingTokens += outDetails.reasoning ?? 0;
+            }
+            if (delegationBudget && activeInference.current) {
+              activeInference.current.usage.inputTokens += usage.input_tokens ?? 0;
+              activeInference.current.usage.outputTokens += usage.output_tokens ?? 0;
+              activeInference.current.usage.cacheCreationTokens += details?.cache_creation ?? 0;
+              activeInference.current.usage.cacheReadTokens += details?.cache_read ?? 0;
             }
             sawUsage = true;
           }
@@ -471,6 +606,7 @@ async function* streamWithConfigImpl(
       }
     }
 
+    settleInferenceReservation();
     // Final flush in case stream ended without an "updates" tick.
     yield* flushPendingToolCalls();
     // Flush any text the rehydrator was still holding (an unclosed
@@ -482,9 +618,15 @@ async function* streamWithConfigImpl(
       }
     }
   } catch (err) {
-    const name = err instanceof Error ? err.name : "";
-    const baseMsg = errorMessage(err);
-    const stack = err instanceof Error && err.stack ? err.stack : "";
+    let caughtError = err;
+    try {
+      settleInferenceReservation(true);
+    } catch (settlementError) {
+      caughtError = settlementError;
+    }
+    const name = caughtError instanceof Error ? caughtError.name : "";
+    const baseMsg = errorMessage(caughtError);
+    const stack = caughtError instanceof Error && caughtError.stack ? caughtError.stack : "";
     // undici surfaces network failures as a bare "fetch failed" with the
     // real reason (ECONNREFUSED, EAI_AGAIN, UND_ERR_SOCKET, cert issues,
     // proxy CONNECT rejects, …) hidden under err.cause. Walk the chain so
@@ -543,7 +685,12 @@ async function* streamWithConfigImpl(
     let friendly = rawMsg;
     let code = "agent_error";
     let errPayloadRetryAfterMs: number | undefined;
-    if (name === "GraphRecursionError" || /recursion limit/i.test(rawMsg)) {
+    if (
+      name === "DelegationCostBudgetError"
+      || /delegated inference refused|delegation cost budget|reserved per-inference delegation cost/i.test(rawMsg)
+    ) {
+      code = "delegation_cost_budget";
+    } else if (name === "GraphRecursionError" || /recursion limit/i.test(rawMsg)) {
       const limit = getConfig().recursionLimit;
       friendly =
         `The agent took too many tool-calling steps without finishing (hit the ${limit}-step limit). ` +

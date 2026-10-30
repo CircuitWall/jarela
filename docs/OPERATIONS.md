@@ -2,6 +2,79 @@
 
 Jarela's main operational views are available from the app menu. They let you review usage, inspect tool configuration, manage scheduled work, and continue agent conversations.
 
+## Agent advertisements (Unreleased)
+
+In the agent editor, use **Agent advertisement** to inspect saved specialization
+metadata and generation state. Save a new agent first. Unsaved editor text is
+never sent for generation. Existing delegation works without advertisements;
+legacy catalog entries show names rather than private instruction excerpts.
+
+Generation is **disabled by default**. Explicitly select an existing enabled
+model configuration and save the generation settings before enabling it.
+This authorizes sending committed identity/instructions and bounded permitted
+tool descriptions to that configured provider, with its normal egress and
+usage costs. No conversations, unrelated memory, tool results or credentials
+are source inputs. Credential-shaped source text is conservatively refused.
+There is no default-model fallback or automatic provider enablement.
+
+Defaults allow ten calls per rolling hour, 16,000 source characters, 1,024
+output tokens and a 30-second deadline. Controls bound these to 1-100 calls,
+1,000-16,000 input characters, 256-2,048 output tokens and 1-60 seconds.
+These are enforced usage limits, not a quoted monetary charge. Too-large
+sources and exhausted call limits fail explicitly; there is no blind retry.
+
+Config saves persist independently. Changed routing sources become stale
+immediately, then pending/ready or failed; cosmetic/no-op saves do not spend
+another model call. The single in-process worker coalesces rapid saves and
+rejects late/deleted/revoked results. Current tool policy and public metadata
+are checked before catalog publication; missing credentials are readiness,
+not a change in underlying authority. Restart invalidates interrupted work.
+Failure never rolls back a valid config save. Generic memory tools/API cannot
+read or edit advertisement state or the generation policy/usage ledger.
+
+Use the distinct regenerate and per-agent disable/enable controls. Disabling
+generation invalidates publication and requests cancellation; a provider that
+ignores abort retains its worker slot until actual settlement. Full generated
+fields, status, freshness and safe error codes are visible locally. Claims are
+model-generated, not proof of expertise, access or successful validation.
+Leakage checks cannot guarantee semantic privacy: inspect output and disable
+it if inappropriate. Edit committed instructions rather than an untracked override.
+
+Only current authorized roster members with invocation permission enter the
+delegate catalog. Entries are ordered by ID; generated descriptions are omitted
+with an explicit notice if the catalog exceeds 12,000 characters, preserving
+all identities as legacy metadata. More than 32 targets or overflowing identity
+data requires narrowing the roster rather than silently selecting a subset.
+Actual dispatch still rechecks authority/readiness, target permissions and
+approvals. Parent agents remain responsible for validating delegate results.
+Delegated work shares a fixed root-task allowance across sequential, nested
+and fan-out handoffs: eight handoffs, 120 seconds and a $1 canonical-pricing
+estimate. Every delegated model inference reserves against the allowance
+before execution, not just the first inference of a child turn. Unknown or
+inferred pricing refuses execution, missing usage retains the reservation,
+and observed overruns block further inference. This estimate is not a promise
+of actual provider billing or third-party tool charges. Provider token-limit
+compliance and canonical pricing are required for its conservative bound.
+Queued execution rechecks the current roster and target permission/readiness;
+cancellation retains ownership until the child actually settles. Delegated
+turns do not automatically retry or route around a refusal.
+Existing task-only requests remain valid with bounded handoff defaults.
+Optional handoff fields are `context` (up to 6,000 characters),
+`expected_output` (800) and `validation_criteria` (1,200); task text is required
+and capped at 4,000. Successful text results are nonempty and capped at 16,000
+characters with target/thread provenance, used tools and elapsed time.
+Invalid/aborted output is a terminal non-retryable error, not success.
+Delegated runs use hot history but omit automatic recall, persisted warm
+summaries, background compaction/fact extraction and model-based citation
+auditing; these would otherwise spend outside the inference allowance.
+Automatic quality-gate retries are disabled too. Deterministic output checks
+still apply, explicit authorized tools remain available, and the parent must
+validate the result. Ordinary non-delegated turns retain their existing behavior.
+Live semantic-selection quality and human release acceptance are separate
+from deterministic permission/prompt tests.
+
+## Workspace layout
+
 At viewport widths of 1280px and above, the menu stays open on the right
 without covering the workspace. At 1536px and above, the agent selector also
 expands into a scrollable left sidebar with agent names and unread indicators.

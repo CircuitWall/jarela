@@ -2,6 +2,7 @@ import type { ContentPart } from "@/lib/tools/runtime/types";
 import type { StreamOptions } from "@/lib/agents/base";
 import type { TurnContextProfile } from "@/lib/agents/turn-profile";
 import type { SystemSignalBatch } from "@/lib/stores/system-signals";
+import type { DelegationBudget } from "@/lib/agents/delegation-budget";
 
 /**
  * Provenance of the inbound turn. When a non-user runner (bridge,
@@ -138,4 +139,6 @@ export interface ThreadRunRequest {
    *  when one agent hands a subtask to another; gates depth + cycles. */
   _delegation_depth?: number;
   _delegation_ancestors?: readonly string[];
+  /** Internal opaque handle; untrusted values are replaced by the run entry point. */
+  _delegation_budget?: DelegationBudget;
 }

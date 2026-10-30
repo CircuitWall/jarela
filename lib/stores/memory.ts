@@ -4,6 +4,7 @@ import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 import { isSensitiveMemoryNamespace } from "@/lib/crypto/sensitive";
 import { isLegacyStructuredMemoryRaw, memorySearchText, parseStructuredMemory, type StructuredMemoryRecord } from "@/lib/memory/record";
 import { isSkillExecutionPolicySetting } from "@/lib/skills/execution-policy";
+import { isAdvertisementMemory } from "@/lib/agents/advertisement-contract";
 
 // Older writes' history entries won't grow past this before the oldest
 // snapshot is dropped, so a long-lived key can't bloat the row forever.
@@ -37,8 +38,9 @@ export interface MemoryRow {
 }
 
 export function listMemory(namespace?: string, search?: string, limit = 50): MemoryRow[] {
-  let sql = MEM_COLS_SQL + " WHERE 1=1";
-  const params: (string | number)[] = [];
+  if (namespace === "agent-advertisements") throw new Error("Use agent advertisement settings to inspect derived metadata");
+  let sql = MEM_COLS_SQL + " WHERE namespace<>? AND NOT(namespace=? AND key IN (?,?))";
+  const params: (string | number)[] = ["agent-advertisements", "app-settings", "agent-advertisement-policy", "agent-advertisement-usage"];
   if (namespace) { sql += " AND namespace=?"; params.push(namespace); }
   if (search) { sql += " AND (key LIKE ? OR value LIKE ?)"; params.push(`%${search}%`, `%${search}%`); }
   sql += " ORDER BY updated_at DESC LIMIT ?";
@@ -71,6 +73,7 @@ export async function searchMemoryRows(namespace: string | undefined, search: st
 }
 
 export function getMemory(namespace: string, key: string): MemoryRow | null {
+  if (isAdvertisementMemory(namespace, key)) throw new Error("Use agent advertisement settings to inspect derived metadata");
   const row = (getDb().prepare(MEM_COLS_SQL + " WHERE namespace=? AND key=?").get(namespace, key) as unknown as MemoryRow) ?? null;
   return row ? migrateRowIfNeeded(decryptRow(row)) : null;
 }
@@ -104,6 +107,7 @@ function normalizeStructuredMemoryValue(value: unknown, previous: StructuredMemo
 }
 
 export function putMemory(namespace: string, key: string, value: unknown): MemoryRow {
+  if (isAdvertisementMemory(namespace, key)) throw new Error("Use agent advertisement settings to change generation policy or metadata");
   if (isSkillExecutionPolicySetting(namespace, key)) throw new Error("Skill execution policy must be changed in Security settings");
   const t = now();
   // Only the original created_at is needed to preserve insertion time on
@@ -138,6 +142,7 @@ export function putMemory(namespace: string, key: string, value: unknown): Memor
 }
 
 export function deleteMemory(namespace: string, key: string): boolean {
+  if (isAdvertisementMemory(namespace, key)) throw new Error("Use agent advertisement settings to change generation policy or metadata");
   if (isSkillExecutionPolicySetting(namespace, key)) throw new Error("Skill execution policy must be changed in Security settings");
   const removed = (getDb().prepare("DELETE FROM memory_store WHERE namespace=? AND key=?").run(namespace, key) as { changes: number }).changes > 0;
   evictMemoryEmbedCache(namespace, key);

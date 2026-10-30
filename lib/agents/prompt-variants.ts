@@ -77,6 +77,9 @@ export async function buildVariants(): Promise<Variant[]> {
     t.name === "web_search"
       ? { ...t, permission: "disabled" as const, permission_reason: "provider_tool_limit" }
       : t);
+  const delegateCfg = agentCfg({ tools: '["delegate_to_agent"]', delegate_targets: '["fixture-reviewer","fixture-summarizer"]' });
+  const delegatePermissions = applyAgentPermissionsToCatalog(catalog, delegateCfg);
+  const delegateTools = delegatePermissions.filter((tool) => tool.permission === "enabled").map((tool) => tool.name);
 
   const base = {
     trimmedMessage: "check my unread mail",
@@ -196,6 +199,21 @@ export async function buildVariants(): Promise<Variant[]> {
         toolPermissionMap: allBound,
       }),
       expected: expectedFor(allBound),
+    },
+    {
+      id: "generated-delegate-catalog",
+      prompt: buildSystemPrompt({
+        ...base,
+        agentCfg: delegateCfg,
+        experienceMode: "full",
+        allowedTools: delegateTools,
+        toolPermissionMap: markProxyOnlyTools(delegatePermissions, delegateTools, delegateTools),
+        delegateRosterLines: [
+          JSON.stringify({ id: "fixture-reviewer", name: "Fixture reviewer", provenance: "model-generated, not verified", purpose: "Review synthetic summaries", call_when: ["A synthetic summary needs validation"], do_not_call_for: ["Unrelated changes"], inputs: "Summary and fixture", output: "Review findings", tools: [] }),
+          JSON.stringify({ id: "fixture-summarizer", name: "Fixture summarizer", provenance: "legacy", specialization: "No current generated specialization" }),
+        ],
+      }),
+      expected: expectedFor(delegatePermissions),
     },
   ];
 }

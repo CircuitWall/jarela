@@ -13,6 +13,7 @@ C4Container
       Container(guard, "Origin / CSRF Guard", "lib/auth", "Rejects cross-origin mutating requests; same-origin enforcement")
       Container(routes, "API Routes", "Next.js Route Handlers", "REST + SSE endpoints under /api/v1")
       Container(agents, "Agent Runtime", "LangGraph + @langchain/*", "State-machine orchestration of LLM + tools; streams completions through providers")
+      Container(advertisements, "Derived Agent Metadata", "lib/agents/advertisement-service + lib/stores", "Opt-in configured-model queue, encrypted fingerprints/state, bounded authorized catalog (Unreleased)")
       Container(providers, "Provider Adapters", "lib/providers", "Per-vendor SDK glue (Anthropic, OpenAI, Google, Cohere, DeepSeek)")
       Container(pricing, "Pricing and Model Updates", "lib/pricing + lib/stores/pricing + lib/stores/model-metadata", "Refreshes provider pricing, separate aggregator signals, and source-backed API model metadata")
       Container(embed, "Embeddings", "lib/embeddings", "Vector embedding generator for semantic memory recall")
@@ -52,6 +53,10 @@ C4Container
     Rel(ui, guard, "fetch + EventSource")
     Rel(guard, routes, "allow same-origin")
     Rel(routes, agents, "invoke")
+    Rel(routes, advertisements, "local operator policy / inspect / regenerate")
+    Rel(advertisements, providers, "explicit configured generation only")
+    Rel(advertisements, db, "encrypted derived state + bounded usage ledger")
+    Rel(agents, advertisements, "fresh authorized descriptive catalog")
     Rel(routes, workflows, "unlocked local execution and workflow controls")
     Rel(agents, workflows, "explicit permission-gated tools")
     Rel(workflows, db, "encrypted results/state and approval metadata")
@@ -204,6 +209,17 @@ Ephemeral operation state/grants are invalidated on restart. The existing
 staging ownership format adds `retained` for user-owned inert source, so cleanup
 does not erase drafts or recover consent. See
 [ADR-0115](adr/0115-reviewed-authoring-and-contribution-lifecycle.md).
+
+Unreleased `lib/agents/advertisement-service.ts` is an in-process coalescing
+metadata worker, not a second agent executor. Shared config-store post-save
+hooks invalidate routing sources; the existing canonical tool authority resolver
+separates permission from transient readiness. Explicit configured-model policy
+bounds egress and usage. Encrypted rows use the existing `memory_store`, excluded
+from ordinary memory/recall; fingerprints and generation IDs reject stale
+publication after asynchronous work. The existing delegate catalog consumes
+only currently valid descriptive data with deterministic overflow and explicit
+legacy/error provenance. Dispatch and shared task budgets remain in the existing
+delegation path. See [ADR-0116](adr/0116-derived-agent-advertisements.md).
 
 `lib/workflows/contribution-service.ts` independently inspects canonical clean
 Git state, selected bytes/base, existing local Vitest runtime and hook baselines.

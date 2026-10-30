@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add opt-in, configured-model generation of bounded agent specialization
+  advertisements after committed config saves, encrypted freshness/race handling,
+  local inspection/regeneration/disable controls and an authorized delegate
+  catalog with explicit overflow. Private instructions are no longer used as
+  legacy catalog descriptions. Advertisements never grant permissions or prove
+  expertise; human/live semantic-selection acceptance remains separate.
+- Add shared delegation call/deadline/pricing-estimate budgets, per-inference
+  reservations, queued authority rechecks and bounded handoff/result contracts.
+  Unknown pricing fails closed; delegated turns no longer automatically retry.
+
 - Start roadmap W3/W4 authoring and contribution with inert synthetic-service
   scaffolds, bounded local-only exact-diff review bundles and task-specific
   built-in skills. Separate execution, installation, commit, push and draft-PR

@@ -12,6 +12,7 @@ import { ToolsSection } from "./agent-editor/ToolsSection";
 import { DelegatesSection } from "./agent-editor/DelegatesSection";
 import { AdvancedSection } from "./agent-editor/AdvancedSection";
 import { EditorChrome } from "./agent-editor/EditorChrome";
+import { AdvertisementSection } from "./agent-editor/AdvertisementSection";
 
 interface Props {
   agent?: AgentConfig;
@@ -67,6 +68,8 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
       <DelegatesSection form={form} />
       <hr className="border-border" />
       <AdvancedSection form={form} models={models} integrations={form.integrations} isFullMode={isFullMode} onClose={requestClose} />
+      <hr className="border-border" />
+      <AdvertisementSection agentId={agent?.id} models={models} />
       <DialogError message={error} />
     </EditorChrome>
   );
