@@ -6,7 +6,12 @@ import { useIntegrationOAuth } from "@/hooks/useIntegrationOAuth";
 import { IntegrationCredentialForm } from "./IntegrationCredentialForm";
 import { IntegrationCredentialActions } from "./IntegrationCredentialActions";
 
-/** Adapts the legacy default/edit/create props to a single credential editor mode. */
+/**
+ * Adapts the legacy default/edit/create props to a single credential editor mode.
+ * OAuth completion refreshes the parent; masked fields are omitted on named
+ * credential saves so reconnecting cannot replace a saved secret with its mask.
+ * Polling is stopped on unmount, completion, expiry, or failure.
+ */
 export function IntegrationCard({
   definition, status, credential, createNew, onChanged, onDeleted,
 }: {
