@@ -17,6 +17,92 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.2.0
+
+From 3.1.0 · 2026-10-30
+
+### Tools
+
+- `check_proposal` — changed; description changed
+- `propose_config_change` — changed; description changed; params changed: `kind`, `payload`
+
+### Prompts
+
+- `static.harness.builtin:default.plan_first` — changed (`lib/agents/harness/presets.ts`)
+
+    ```diff
+    + USER INTERACTION:
+    + - Use chat for user-facing answers, progress, blockers, and open-ended questions. Do not move the conversation to files, logs, notifications, or external messages; use external delivery only when the user requested it or configured that workflow.
+    + - For choice questions or supported approvals, use propose_config_change in the shared review UI (ask_choice for questions; the matching change kind for approvals). Wait for its result; text alone creates no controls. Choice answers do not execute changes.
+    + - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text.
+    ```
+
+- `static.harness.builtin:default.self_config` — changed (`lib/agents/harness/presets.ts`)
+
+    ```diff
+    + - After a successful propose_config_change, briefly direct the user to answer or approve/deny in the shared review UI; do not ask for a duplicate chat confirmation.
+    - - After calling propose_config_change, end your turn with one short sentence telling the user what you proposed and that they need to approve it in the banner above the input.
+    ```
+
+- `static.interaction.proposal-response` — added (`lib/proposals/response-message.ts`)
+- `static.lifecycle.version-adoption` — added (`lib/stores/version-adoption.ts`)
+- `static.skill.jarela-configuration` — changed (`lib/skills/builtins/jarela-configuration/SKILL.md`)
+
+    ```diff
+    + For choices or consent, inspect `propose_config_change` once: use `ask_choice`
+    + for questions and the matching change kind for approvals when its schema
+    + supports them. Both use the same review UI. Skill and task/watcher prompt
+    + proposals use `{id, expected_content, content}`. Wait for `check_proposal`,
+    + then verify the outcome; an answer alone does not apply or approve a change.
+    + than falling back to terminal execution. Choice/approval UI support does not
+    + imply a checked runner or general durable workflow engine is installed.
+    - than falling back to terminal execution. A reusable in-chat interaction panel
+    - is a design proposal, not a currently available question/approval tool.
+    ```
+
+- `static.skill.personal-briefing` — changed (`lib/skills/builtins/personal-briefing/SKILL.md`)
+
+    ```diff
+    + installed, authorized `propose_config_change` with `kind: ask_choice` only if
+    + its schema is available; otherwise ask in normal chat and wait. Do not invent interactive
+    - installed, authorized question/interaction tool only if its schema is actually
+    - available; otherwise ask in normal chat and wait. Do not invent interactive
+    ```
+
+- `system.Acknowledge before acting` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + USER INTERACTION:
+    + - Use chat for user-facing answers, progress, blockers, and open-ended questions. Do not move the conversation to files, logs, notifications, or external messages; use external delivery only when the user requested it or configured that workflow.
+    + - For choice questions or supported approvals, use propose_config_change in the shared review UI (ask_choice for questions; the matching change kind for approvals). Wait for its result; text alone creates no controls. Choice answers do not execute changes.
+    + - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text.
+    ```
+
+- `system.Self-configuration (with user approval)` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + - After a successful propose_config_change, briefly direct the user to answer or approve/deny in the shared review UI; do not ask for a duplicate chat confirmation.
+    - - After calling propose_config_change, end your turn with one short sentence telling the user what you proposed and that they need to approve it in the banner above the input.
+    ```
+
+### Commits
+
+- feat(workflows): add gated staged runner and durable coordinator
+- feat(skills): add bounded raw execution output capture
+- feat(skills): add memory cleanup execution bundle contract
+- test(skills): add policy http acceptance regressions
+- test(acceptance): add coverage for previously skipped checks
+- refactor(cleanup): remove confirmed unreachable code
+- feat(skills): add inert in-memory artifact capture
+- feat(skills): add bounded invocation and result validation
+- docs(prompts): add structure and size verification guidance
+- fix(proposals): hide internal continuation messages from chat
+- test(proposals): verify answered inputs remain hidden
+- fix(proposals): add context for delayed user responses
+- fix(agents): update chat and review interaction guidance
+- fix(proposals): fix response delivery and outcome review
+- feat(proposals): add shared choices and artifact approvals
+
 ## 3.1.0
 
 From 3.0.1 · 2026-10-29

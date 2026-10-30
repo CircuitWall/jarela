@@ -4129,6 +4129,159 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "3.2.0",
+      "previous_version": "3.1.0",
+      "date": "2026-10-30",
+      "hints": [],
+      "commits": [
+        "feat(workflows): add gated staged runner and durable coordinator",
+        "feat(skills): add bounded raw execution output capture",
+        "feat(skills): add memory cleanup execution bundle contract",
+        "test(skills): add policy http acceptance regressions",
+        "test(acceptance): add coverage for previously skipped checks",
+        "refactor(cleanup): remove confirmed unreachable code",
+        "feat(skills): add inert in-memory artifact capture",
+        "feat(skills): add bounded invocation and result validation",
+        "docs(prompts): add structure and size verification guidance",
+        "fix(proposals): hide internal continuation messages from chat",
+        "test(proposals): verify answered inputs remain hidden",
+        "fix(proposals): add context for delayed user responses",
+        "fix(agents): update chat and review interaction guidance",
+        "fix(proposals): fix response delivery and outcome review",
+        "feat(proposals): add shared choices and artifact approvals"
+      ],
+      "prompts": [
+        {
+          "id": "static.harness.builtin:default.plan_first",
+          "source": "lib/agents/harness/presets.ts",
+          "change": "changed",
+          "added_lines": [
+            "USER INTERACTION:",
+            "- Use chat for user-facing answers, progress, blockers, and open-ended questions. Do not move the conversation to files, logs, notifications, or external messages; use external delivery only when the user requested it or configured that workflow.",
+            "- For choice questions or supported approvals, use propose_config_change in the shared review UI (ask_choice for questions; the matching change kind for approvals). Wait for its result; text alone creates no controls. Choice answers do not execute changes.",
+            "- If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text."
+          ],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.harness.builtin:default.self_config",
+          "source": "lib/agents/harness/presets.ts",
+          "change": "changed",
+          "added_lines": [
+            "- After a successful propose_config_change, briefly direct the user to answer or approve/deny in the shared review UI; do not ask for a duplicate chat confirmation."
+          ],
+          "removed_lines": [
+            "- After calling propose_config_change, end your turn with one short sentence telling the user what you proposed and that they need to approve it in the banner above the input."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.interaction.proposal-response",
+          "source": "lib/proposals/response-message.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.lifecycle.version-adoption",
+          "source": "lib/stores/version-adoption.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.skill.jarela-configuration",
+          "source": "lib/skills/builtins/jarela-configuration/SKILL.md",
+          "change": "changed",
+          "added_lines": [
+            "For choices or consent, inspect `propose_config_change` once: use `ask_choice`",
+            "for questions and the matching change kind for approvals when its schema",
+            "supports them. Both use the same review UI. Skill and task/watcher prompt",
+            "proposals use `{id, expected_content, content}`. Wait for `check_proposal`,",
+            "then verify the outcome; an answer alone does not apply or approve a change.",
+            "than falling back to terminal execution. Choice/approval UI support does not",
+            "imply a checked runner or general durable workflow engine is installed."
+          ],
+          "removed_lines": [
+            "than falling back to terminal execution. A reusable in-chat interaction panel",
+            "is a design proposal, not a currently available question/approval tool."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.skill.personal-briefing",
+          "source": "lib/skills/builtins/personal-briefing/SKILL.md",
+          "change": "changed",
+          "added_lines": [
+            "installed, authorized `propose_config_change` with `kind: ask_choice` only if",
+            "its schema is available; otherwise ask in normal chat and wait. Do not invent interactive"
+          ],
+          "removed_lines": [
+            "installed, authorized question/interaction tool only if its schema is actually",
+            "available; otherwise ask in normal chat and wait. Do not invent interactive"
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Acknowledge before acting",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "USER INTERACTION:",
+            "- Use chat for user-facing answers, progress, blockers, and open-ended questions. Do not move the conversation to files, logs, notifications, or external messages; use external delivery only when the user requested it or configured that workflow.",
+            "- For choice questions or supported approvals, use propose_config_change in the shared review UI (ask_choice for questions; the matching change kind for approvals). Wait for its result; text alone creates no controls. Choice answers do not execute changes.",
+            "- If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text."
+          ],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Self-configuration (with user approval)",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "- After a successful propose_config_change, briefly direct the user to answer or approve/deny in the shared review UI; do not ask for a duplicate chat confirmation."
+          ],
+          "removed_lines": [
+            "- After calling propose_config_change, end your turn with one short sentence telling the user what you proposed and that they need to approve it in the banner above the input."
+          ],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "check_proposal",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Check a submitted change or choice proposal by id. For ask_choice, returns the original choice question/options and reason alongside selected_values and optional text in approved results, even after intervening chat. Reconcile late answers with newer instructions; an answer does not itself execute or approve another change.",
+          "previous_description": "Check the status of a previously-submitted config-change proposal by its id.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "propose_config_change",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Propose a configuration change that requires user approval. Use this when you'd benefit from installing/toggling an MCP server, or modifying agent settings (tool allowlist, identity, instructions, history window). For this agent's own instruction-only updates, prefer update_agent_instruction (no approval). Also use this single proposal tool for skill content and scheduled-task/watcher prompt edits requiring consent. These proposals show before/after content in the approval banner and reject stale edits. For a choice question, use ask_choice in the same UI; it records an answer without applyin…",
+          "previous_description": "Propose a configuration change that requires user approval. Use this when you'd benefit from installing/toggling an MCP server, or modifying agent settings (tool allowlist, identity, instructions, history window). For this agent's own instruction-only updates, prefer update_agent_instruction (no approval). The proposal is queued and shown to the user; they explicitly approve or deny. Don't propose changes the user didn't ask for — only when the current task clearly needs it.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "kind",
+            "payload"
+          ],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
