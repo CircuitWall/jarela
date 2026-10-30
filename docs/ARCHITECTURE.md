@@ -150,6 +150,10 @@ portable scripts for internal artifact/protocol contract tests; bounded `anyOf`
 schemas represent nullable expiry and result variants. Ordinary discovery and
 the fixed typed tool are unchanged. Inspection remains execution-unavailable;
 test-only subprocess staging does not introduce a production runner or store.
+The internal `lib/skills/execution-output.ts` collector reuses result validation
+over bounded copied pipe bytes with strict UTF-8. It creates no process and
+cannot attest exit status, authorization or process-tree cleanup; a captured
+schema-valid value is not a successful execution.
 
 Unreleased skill execution consent policy is managed by the Security UI through
 `app/api/v1/security/skill-execution/route.ts`, restricted to unlocked loopback

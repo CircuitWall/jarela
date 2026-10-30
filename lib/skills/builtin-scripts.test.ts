@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -12,6 +12,7 @@ import { registeredCapability } from "@/lib/tools/runtime/registry";
 import { SkillExecutionArtifact } from "./execution-artifact";
 import { inspectSkillExecution } from "./execution-manifest";
 import { validateSkillInvocation, validateSkillResult } from "./execution-protocol";
+import { SkillExecutionOutput } from "./execution-output";
 
 const root = mkdtempSync(join(tmpdir(), "jarela-portable-builtins-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -89,6 +90,50 @@ describe("portable built-in script contracts", () => {
         { path: "scripts/plan-cleanup.mjs", bytes: expect.any(Number) },
       ],
     });
+  });
+
+  it("captures real built-in pipe bytes in ten fresh processes and preserves nonzero field failures", async () => {
+    const manifest = SkillExecutionArtifact.capture(join(root, "memory-organization")).getManifest();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const input = attempt % 2 ? { ...valid(), entries: [entry("a"), entry("a")] } : valid();
+      const inputJson = JSON.stringify(input);
+      validateSkillInvocation(manifest, inputJson);
+      const controller = new AbortController();
+      const output = new SkillExecutionOutput(manifest);
+      const child = spawn(process.execPath, [join(root, "memory-organization", manifest.entrypoint)], {
+        cwd: tmpdir(), env: {}, shell: false, timeout: 5000, signal: controller.signal,
+      });
+      const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", (code, signal) => resolve({ code, signal }));
+      });
+      async function stdout() {
+        for await (const chunk of child.stdout) {
+          if (!Buffer.isBuffer(chunk)) throw new Error("Expected raw stdout bytes");
+          output.writeStdout(chunk);
+        }
+      }
+      async function stderr() {
+        for await (const chunk of child.stderr) {
+          if (!Buffer.isBuffer(chunk)) throw new Error("Expected raw stderr bytes");
+          output.writeStderr(chunk);
+        }
+      }
+      try {
+        const completed = Promise.all([closed, stdout(), stderr()]);
+        child.stdin.once("error", (error) => controller.abort(error));
+        child.stdin.end(inputJson);
+        const [exit] = await completed;
+        const result = output.finish();
+        expect(exit).toEqual({ code: attempt % 2 ? 1 : 0, signal: null });
+        expect(result.output).toEqual(planMemoryCleanup(input));
+        expect(result.diagnostics).toBe("");
+        expect(result.stdoutBytes).toBeGreaterThan(0);
+      } finally {
+        if (child.exitCode === null && child.signalCode === null) controller.abort();
+        output.dispose();
+      }
+    }
   });
 
   it("runs captured planner bytes 10/10 from a path with spaces and metacharacters, independent of PATH and mutable source", () => {

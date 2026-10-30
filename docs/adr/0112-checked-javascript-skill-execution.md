@@ -296,6 +296,30 @@ boundary-review and cross-platform acceptance gates below remain in force.
 
 ### Identity, authority and lifecycle
 
+#### Raw-output transport increment (2026-10-30)
+
+The internal `SkillExecutionOutput` helper now bounds copied stdout bytes at
+the parsed manifest limit and stderr at 16 KiB while incrementally validating
+strict UTF-8. Fixed-capacity buffers avoid unbounded chunk-list overhead.
+Finalization rejects incomplete encoding and validates the complete JSON value
+through the existing protocol validator. Overflow is never clipped into a
+success result; the first error is terminal, and disposal clears/releases
+retained byte buffers. Structured error codes do not echo raw script output.
+
+Tests cover exact/excess stream ceilings, single-byte and varied chunking,
+malformed/partial Unicode, JSON/schema errors, mutation of caller buffers and
+manifest, and terminal/disposal states. Ten fresh reviewed built-in CLI processes
+exercise actual raw pipes and both zero/nonzero field-validation exits.
+These are not arbitrary-code launch or descendant-cleanup tests.
+
+The helper does not spawn/stage code, enforce execution deadlines, grant consent,
+observe exit status or establish process-tree ownership. Its returned checked
+value is only protocol evidence, never execution success. The unresolved
+production owner must dispose on failures, terminate/reap the whole tree and
+verify all lifecycle facts before exposing a successful execution envelope.
+No boundary approval was available during this increment; production execution
+and durable-workflow activation remain blocked, not implicitly approved.
+
 - Build a private run snapshot using safe file operations; hash the manifest,
   instructions, declared code/data and validators. Review/authorize the immutable
   snapshot identity, not a mutable source path. Execute that snapshot only.

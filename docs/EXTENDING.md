@@ -304,6 +304,33 @@ This closes only the pure validation portion of the proposed protocol. It does
 not verify exit status, runtime identity, snapshots, authorization, cancellation,
 process cleanup or cross-host execution. Execution remains unavailable.
 
+### Internal raw-output capture (Unreleased)
+
+`SkillExecutionOutput` consumes raw `Uint8Array` stdout/stderr chunks without
+starting a process or granting execution. It validates a private copy of the
+manifest, preallocates bounded buffers, copies chunks and rejects the first byte
+past the declared stdout ceiling or fixed 16 KiB stderr ceiling. Byte-sized
+chunks cannot create an unbounded retained chunk list. Both streams require
+valid UTF-8, including multibyte sequences split across chunks; malformed bytes
+fail immediately and incomplete trailing sequences fail on finalization.
+
+`finish()` checks one complete stdout JSON result with the shared schema
+validator and returns the checked value, bounded diagnostics and exact byte
+counts. It does not strip a JSON BOM, repair text or parse clipped output.
+Limit, encoding and result failures have explicit error codes and never return
+an output value; the first failure remains terminal. Buffers are cleared and
+released after failure, finalization or explicit disposal; later writes fail.
+Clearing buffers is not a guarantee of erasing all runtime/OS copies.
+
+This is protocol capture only. A JSON `ok: false` field-error envelope can pass
+its declared schema, and even a valid success-shaped result does not prove a
+zero process exit or verified cleanup. The future process owner must enforce
+abort/timeout/exit/pipe completion and whole-tree termination before consuming
+results, dispose on every exit path, and treat capture failures as a request
+to stop the owned process. This helper neither terminates nor observes processes.
+Diagnostics are untrusted, potentially sensitive script output; the helper
+does not sanitize them or authorize display/persistence.
+
 ### Internal in-memory artifact capture (Unreleased)
 
 `SkillExecutionArtifact.capture` is an internal, opt-in content-capture helper,
