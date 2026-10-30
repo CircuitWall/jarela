@@ -2,6 +2,32 @@ import type { UsageProfile } from "@/lib/agents/usage-profile";
 import type { ModelCapabilities } from "@/lib/providers/capabilities";
 import type { ModelMetadata } from "@/lib/stores/model-metadata";
 
+export interface WorkflowRun {
+  id: string;
+  agentId: string;
+  revision: string;
+  version: number;
+  workspace: string;
+  owner: { pid: number; instanceId: string };
+  phase: "ready" | "running" | "waiting" | "uncertain" | "completed" | "failed" | "cancelled";
+  next: number;
+  steps: Array<{
+    id: string; attempts: number;
+    status: "pending" | "running" | "waiting" | "done" | "failed" | "uncertain" | "cancelled";
+    output?: unknown; evidence?: string;
+    origin?: "tool" | "script" | "deterministic" | "model_generated" | "human";
+  }>;
+  error?: string;
+  question?: { stepId: string; input: unknown; outputSchema: unknown; executionApproval: false };
+  executionApproval?: { kind: "approval_required"; proposalId: string; requestId?: string };
+}
+export interface WorkflowCreate {
+  agentId: string; definitionText: string; invocationJson?: string; workspace: string;
+}
+export type WorkflowMutation =
+  | { action: "advance" | "cancel" | "reconcile"; agentId: string; version: number }
+  | { action: "answer"; agentId: string; version: number; revision: string; stepId: string; answerJson: string };
+
 export interface AgentInfo {
   id: string;
   name: string;
@@ -1266,6 +1292,8 @@ export interface PendingAction {
     | "upsert_harness"
     | "write_skill"
     | "ask_choice"
+    | "execute_skill"
+    | "execute_workflow"
     | "update_scheduled_task_prompt"
     | "update_watcher_prompt";
   payload: Record<string, unknown>;

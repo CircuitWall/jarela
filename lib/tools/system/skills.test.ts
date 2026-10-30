@@ -13,7 +13,7 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
-const { writeSkillTool, readSkillTool, listSkillsTool, readSkillResourceTool } = await import("./skills");
+const { writeSkillTool, readSkillTool, listSkillsTool, readSkillResourceTool, runSkillTool, checkSkillExecutionTool, cancelSkillExecutionTool } = await import("./skills");
 const { getDb } = await import("@/lib/db");
 const { createSkillRepo } = await import("@/lib/stores/skill-repos");
 const { registeredCategory, registeredCapability } = await import("@/lib/tools/runtime/registry");
@@ -21,6 +21,23 @@ const { registeredCategory, registeredCapability } = await import("@/lib/tools/r
 const parse = (raw: unknown) => JSON.parse(String(raw));
 
 describe("skill tools on the agent path", () => {
+  it("registers explicit execution separately from inert reads and requires a real thread/workspace", async () => {
+    expect(registeredCapability("run_skill")).toBe("execute");
+    expect(registeredCapability("cancel_skill_execution")).toBe("execute");
+    expect(registeredCapability("check_skill_execution")).toBe("read");
+    expect(parse(await runSkillTool.invoke({ id: "memory-organization", input_json: "{}" })).error).toMatch(/thread.*workspace/i);
+    expect(parse(await checkSkillExecutionTool.invoke({ request_id: "00000000-0000-4000-8000-000000000000" })).error).toMatch(/thread/i);
+    expect(parse(await cancelSkillExecutionTool.invoke({ request_id: "00000000-0000-4000-8000-000000000000" })).error).toMatch(/thread/i);
+    const schema = convertToOpenAITool(runSkillTool);
+    if (process.env.JARELA_PROMPT_DUMP === "1") {
+      mkdirSync(join(process.cwd(), ".prompts"), { recursive: true });
+      for (const tool of [runSkillTool, checkSkillExecutionTool, cancelSkillExecutionTool]) {
+        writeFileSync(join(process.cwd(), ".prompts", `tool.${tool.name}.json`), JSON.stringify(convertToOpenAITool(tool), null, 2));
+      }
+    }
+    expect(schema.function.description).toMatch(/pending is not success/i);
+    expect(schema.function.parameters).toMatchObject({ required: ["id", "input_json"] });
+  });
   const repo = mkdtempSync(join(tmpdir(), "jarela-test-skill-repo-"));
   afterAll(() => {
     getDb().exec("DELETE FROM skill_repos");

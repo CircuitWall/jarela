@@ -45,8 +45,8 @@ function setup(owner: SkillProcessOwner = { launch: () => processFixture() }) {
 }
 
 describe("gated staged skill orchestration", () => {
-  it("keeps production activation disabled", () => {
-    expect(SKILL_PRODUCTION_EXECUTION_AVAILABLE).toBe(false);
+  it("exposes explicit execution without granting discovery any authority", () => {
+    expect(SKILL_PRODUCTION_EXECUTION_AVAILABLE).toBe(true);
   });
 
   it("stages exact captured bytes, detects mutation and disposes only its owned run directory", () => {

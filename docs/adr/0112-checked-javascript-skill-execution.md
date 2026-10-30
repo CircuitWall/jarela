@@ -2,6 +2,12 @@
 
 Status: **Proposed; implementation blocked on boundary review**
 
+Integration amendment (2026-10-30): [ADR-0114](0114-production-skill-workflow-integration.md)
+supersedes the internal-only coding gate with explicit app integration.
+Historical implementation-only statements below describe earlier increments,
+not the current app surface. Human consent, supported process ownership and
+release acceptance remain independent requirements.
+
 Implementation note (2026-10-30): [ADR-0113](0113-gated-workflow-runtime.md)
 permits internal orchestration and deterministic fixtures behind inactive
 production gates. This does not approve production executable staging/launch,

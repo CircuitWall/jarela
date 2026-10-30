@@ -8,6 +8,9 @@ vi.mock("@/lib/crypto/master-key", async (importOriginal) => ({
   isMasterKeyLocked: () => locks.master,
 }));
 vi.mock("@/lib/security/screen-lock", () => ({ isScreenLocked: () => locks.screen }));
+vi.mock("@/lib/skills/process-owner", () => ({
+  getSkillProcessOwnerAvailability: () => ({ available: false, reason: "Synthetic unsupported host" }),
+}));
 
 const route = await import("@/app/api/v1/security/skill-execution/route");
 const settings = await import("@/lib/stores/app-settings");
@@ -43,6 +46,7 @@ describe("skill execution Security settings API and store", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.json()).toEqual({
       policy: defaultSkillExecutionPolicy(), safety_mode: "mostly_safe", execution_available: false,
+      ownership: { available: false, reason: "Synthetic unsupported host" },
     });
   });
 

@@ -43,6 +43,54 @@ The app view was captured at a 390 CSS-pixel viewport. The device frame, status
 bar, and home indicator are illustrative; this is not a screenshot of a
 verified installed or standalone-mode iOS PWA.
 
+## Checked execution and workflow lifecycle (Unreleased)
+
+In **Skills**, open **Run a checked skill** or **Durable workflows**. Select
+an agent with the required concrete tool permissions and a canonical absolute
+workspace directory. Security settings report whether the platform process
+owner is available. Windows requires PowerShell/Add-Type and supported Job
+Objects; the runtime derives `SystemRoot` from the OS for Node startup, without
+inheriting app credentials or PATH. Linux requires writable delegated cgroup v2
+with `cgroup.kill`; `JARELA_SKILL_CGROUP_ROOT` may select that delegation.
+Other hosts cannot currently execute checked scripts. These are full-trust
+scripts, not sandboxed code: review the complete captured sources and exact
+invocation in the shared approval banner. An acknowledgement is required.
+Linux delegation does not prevent privileged/same-user cgroup migration; the
+host owns zombie reaping. Simultaneous app and broker death requires external
+cgroup cleanup, not an inferred successful run.
+
+The Memory Organization workflow example only plans from supplied entries and
+asks for a typed keep/review response. It never archives/deletes memory. Create,
+resume, approve its exact script plan, then resume again. A choice answer is
+separate from script consent. Completed step outputs are contract-checked,
+not independent proof of factual accuracy. Do not retry an uncertain write:
+use its declared authorized read-back action, or stop for external review.
+Cancellation and timeout stop waiting, not necessarily the underlying tool.
+Read-back is blocked while the original local invocation is still in flight,
+even through another service instance. Wait for it to settle; a late result
+never replaces the uncertain state. Then request fresh read-back explicitly.
+Shutdown reports undrained if an interrupted adapter has not settled.
+
+Executable approvals expire after five minutes and are invalidated at restart.
+Pending approval is not completed work. Exact trusted-revision policy can waive
+repeat isolated invocation approval but not a workflow's whole-plan review.
+Workflow definitions, invocation and checked state/results are encrypted locally;
+IDs, owning agent, phase, revision, owner identity and timestamps remain readable.
+Ready/waiting/running/uncertain rows do not expire. Terminal runs expire after
+30 days; startup/create/list sweep at most 100 per call. The database is capped
+at 1,000 retained runs, and reaching capacity fails explicitly rather than
+discarding active work. A restart does not resume a workflow. Use **Resume /
+recover**; an ambiguous prior owner remains blocked, reads use remaining retry
+budget and interrupted writes become uncertain.
+
+Staging lives under `JARELA_DB_DIR/skill-runs` with ownership sidecars under
+`skill-run-owners`. Startup and `POST /api/v1/skill-executions/cleanup` remove only
+recognized dead-owner directories whose identity matches and whose state proves
+they were never launched or cleanup was verified. Unknown/live/changed entries
+and launched entries without cleanup proof are retained with an explicit reason.
+Do not delete those files while an owner may still run. Resolve external effects
+and inspect ownership before manual maintenance; never replay surviving files.
+
 ## Manage agents
 
 The Agents view lists configured agents with a short summary of each instruction set. Use **New** to start adding an agent, and review the selected agent's tools and instructions before relying on it for a workflow.

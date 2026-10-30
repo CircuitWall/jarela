@@ -213,6 +213,38 @@ Setting `writable: true` on one repo clears it on any other.
 - **Sources:** [`lib/skills/index.ts`](../lib/skills/index.ts), [`lib/stores/skill-repos.ts`](../lib/stores/skill-repos.ts), [`app/api/v1/skills/route.ts`](../app/api/v1/skills/route.ts), [`app/api/v1/skills/[id]/route.ts`](../app/api/v1/skills/[id]/route.ts), [`app/api/v1/skills/repos/route.ts`](../app/api/v1/skills/repos/route.ts), [`app/api/v1/skills/repos/[id]/route.ts`](../app/api/v1/skills/repos/[id]/route.ts)
 - **Agent equivalent:** `list_skills`, `read_skill`, and `write_skill` tools (repo management has no agent tool yet — API only).
 
+### Checked execution and workflows (Unreleased)
+
+These endpoints require unlocked loopback access, reject tailnet identity
+headers and return `Cache-Control: no-store`. Reading resources is still inert.
+Full-trust scripts are not sandboxed. The selected agent needs the concrete
+execution permission; unsupported process ownership fails explicitly.
+
+| Method and path | Request / result |
+| --- | --- |
+| `GET /api/v1/security/skill-execution` | Policy, safety mode, `execution_available` and discriminated `ownership` availability/backend or refusal reason. |
+| `PUT /api/v1/security/skill-execution` | Existing strict policy contract; returns the same status shape. Does not itself execute code. |
+| `POST /api/v1/skill-executions` | `{agent_id, skill_id, input_json, workspace}`. Exact invocation JSON remains a string. Returns live request ID and pending proposal, or a checked trusted-revision result. |
+| `GET /api/v1/skill-executions/[id]` | Live exact invocation, captured files with hashes/base64, limits and result/error. Never reconstructs consent after restart. |
+| `DELETE /api/v1/skill-executions/[id]` | Cancels a pending/running request; does not roll back effects. |
+| `POST /api/v1/skill-executions/cleanup` | Conservative recognized dead-owner staging sweep; returns removed and retained entries/reasons. |
+| `GET /api/v1/workflow-templates/[skill-id]` | Validates and returns inert selected bundle `workflow.json` as `definitionText` plus revision. |
+| `GET /api/v1/workflow-approvals/[id]` | Exact live plan/invocation/captured script review, not a workflow result. |
+| `POST /api/v1/workflows` | `{agentId, definitionText, invocationJson?, workspace}`; creates a durable run without executing it. |
+| `GET /api/v1/workflows?agentId=...&limit=...&after=...` | Owning agent's runs; default 50, maximum 100. |
+| `GET /api/v1/workflows/[id]?agentId=...` | Owning agent's durable run, current version, checked outputs/evidence and pending typed question. |
+| `POST /api/v1/workflows/[id]` | `{action, agentId, version}` for `advance`, `cancel`, `reconcile`; `answer` additionally requires exact `revision`, `stepId`, `answerJson`. |
+
+Use the existing pending-action approve/deny endpoints for `execute_skill` and
+`execute_workflow`; execution kinds additionally enforce the local/unlocked
+boundary. Pending is not success. Script plan consent expires after five minutes
+and binds exact run, definition, invocation, workspace and captured revisions.
+Typed workflow answers never substitute for it. Version conflicts refuse stale
+updates. `reconcile` accepts no caller-supplied output: the authorized host must
+observe through a declared read-back action and validate the original contract.
+Encrypted durable state has terminal retention; live executable grants do not.
+See [lifecycle operations](OPERATIONS.md#checked-execution-and-workflow-lifecycle-unreleased).
+
 ---
 
 ## Models

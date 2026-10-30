@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { getOrCreateAgentThread } from "./threads";
 import { beginSystemOperation, getSystemOperation, finishSystemOperation, emitSystemSignal, withSystemSignalTransaction } from "./system-signals";
 import { runtimeInstanceId } from "@/lib/lifecycle/system-signals";
+import { decryptIfNeeded, encrypt } from "@/lib/crypto/envelope";
 
 const now = () => new Date().toISOString();
 
@@ -21,6 +22,8 @@ export type ActionKind =
   | "upsert_harness"
   | "write_skill"
   | "ask_choice"
+  | "execute_skill"
+  | "execute_workflow"
   | "update_scheduled_task_prompt"
   | "update_watcher_prompt";
 
@@ -58,9 +61,15 @@ export function createPendingAction(input: CreatePendingActionInput): PendingAct
 }
 
 export function getPendingAction(id: string): PendingActionRow | null {
-  return (getDb()
+  const row = (getDb()
     .prepare("SELECT * FROM pending_actions WHERE id=?")
     .get(id) as unknown as PendingActionRow) ?? null;
+  return row ? decodeAction(row) : null;
+}
+
+function decodeAction(row: PendingActionRow): PendingActionRow {
+  return row.kind === "execute_skill" && row.result
+    ? { ...row, result: decryptIfNeeded(row.result) } : row;
 }
 
 export function listPendingActions(opts: { status?: ActionStatus; agent_id?: string } = {}): PendingActionRow[] {
@@ -69,7 +78,22 @@ export function listPendingActions(opts: { status?: ActionStatus; agent_id?: str
   if (opts.status) { sql += " AND status=?"; params.push(opts.status); }
   if (opts.agent_id) { sql += " AND agent_id=?"; params.push(opts.agent_id); }
   sql += " ORDER BY created_at DESC LIMIT 200";
-  return getDb().prepare(sql).all(...params) as unknown as PendingActionRow[];
+  return (getDb().prepare(sql).all(...params) as unknown as PendingActionRow[]).map(decodeAction);
+}
+
+export function recoverAbandonedExecutionApprovals(): number {
+  const rows = getDb().prepare(`SELECT id FROM pending_actions
+    WHERE status='pending' AND kind IN ('execute_skill','execute_workflow')`).all();
+  for (const row of rows) {
+    if (typeof row.id !== "string") throw new Error("Invalid stored execution approval identity");
+    const accepted = getSystemOperation(`approval:${row.id}`)?.state === "accepted";
+    setActionStatus(row.id, "failed", {
+      error: accepted ? "App restarted during execution; verify external effects before retrying"
+        : "App restarted; execution authorization was discarded. Request fresh approval",
+      ...(accepted ? { outcome: "unknown" } : {}),
+    });
+  }
+  return rows.length;
 }
 
 export function reservePendingApproval(id: string): PendingActionRow | null {
@@ -97,9 +121,11 @@ export function setActionStatus(
     if (status === "denied" && getSystemOperation(`approval:${id}`)?.state === "accepted") {
       throw new Error("Approval application is already in progress; verify its outcome instead of denying it");
     }
+    const serialized = result === undefined ? null : JSON.stringify(result);
+    const stored = prior?.kind === "execute_skill" && serialized !== null ? encrypt(serialized) : serialized;
     getDb()
       .prepare("UPDATE pending_actions SET status=?, result=?, decided_at=? WHERE id=?")
-      .run(status, result === undefined ? null : JSON.stringify(result), now(), id);
+      .run(status, stored, now(), id);
     const action = getPendingAction(id);
     if (action && prior?.status !== status && status !== "pending") {
       const thread = getOrCreateAgentThread(action.agent_id);

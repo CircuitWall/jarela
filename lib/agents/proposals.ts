@@ -31,6 +31,7 @@ import { setDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
 import { BUILTIN_CATEGORIES, type BuiltinCategory } from "@/lib/tools/runtime/registry";
 import { applyArtifactProposal } from "./artifact-proposals";
 import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
+import { z } from "zod";
 
 export interface ApplyResult {
   ok: boolean;
@@ -47,6 +48,24 @@ export async function applyAction(
   extras?: Record<string, unknown>,
 ): Promise<ApplyResult> {
   switch (kind) {
+    case "execute_workflow": {
+      const { approveWorkflowAuthorization } = await import("@/lib/workflows/authorization");
+      try {
+        const parsed = z.object({ authorization_id: z.uuid() }).parse(payload);
+        return { ok: true, detail: approveWorkflowAuthorization(parsed.authorization_id) };
+      } catch (error) {
+        return { ok: false, detail: { error: error instanceof Error ? error.message : "Workflow authorization failed" } };
+      }
+    }
+    case "execute_skill": {
+      const { skillExecutionService } = await import("@/lib/skills/execution-service");
+      try {
+        const result = await skillExecutionService().approve(payload);
+        return { ok: result.status === "succeeded", detail: result };
+      } catch (error) {
+        return { ok: false, detail: { error: error instanceof Error ? error.message : "Skill execution failed" } };
+      }
+    }
     case "ask_choice": {
       const question = choiceProposalSchema.safeParse(payload);
       if (!question.success) return { ok: false, detail: question.error.message };

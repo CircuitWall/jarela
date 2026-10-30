@@ -56,6 +56,7 @@ import "../support/async-results-tool";
 import "../system/tool-telemetry-issue";
 import "../web/browser-control";
 import "../system/skills";
+import "../system/workflows";
 import "../general/terminal";
 import "../delegation/claude-delegate";
 import "../delegation/codex-delegate";

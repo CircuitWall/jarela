@@ -1,5 +1,8 @@
 import type { DocumentRecallPolicy } from "@/lib/documents/recall-policy";
 import type {
+  WorkflowRun,
+  WorkflowCreate,
+  WorkflowMutation,
   AgentConfig,
   AgentConfigIn,
   AgentInfo,
@@ -493,6 +496,18 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
 }
 
 export const api = {
+  workflows: {
+    list: (agentId: string, limit = 50, after?: string) => {
+      const query = new URLSearchParams({ agentId, limit: String(limit) });
+      if (after) query.set("after", after);
+      return request<WorkflowRun[]>(`/workflows?${query}`, { cache: "no-store" });
+    },
+    get: (agentId: string, id: string) => request<WorkflowRun>(
+      `/workflows/${encodeURIComponent(id)}?${new URLSearchParams({ agentId })}`, { cache: "no-store" }),
+    create: (input: WorkflowCreate) => request<WorkflowRun>("/workflows", { method: "POST", body: JSON.stringify(input) }),
+    mutate: (id: string, input: WorkflowMutation, signal?: AbortSignal) => request<WorkflowRun>(
+      `/workflows/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify(input), signal, timeoutMs: 120_000 }),
+  },
   agents: {
     list: (opts?: { force?: boolean }) =>
       cachedList(agentListCache, () => request<AgentConfig[]>("/agents"), setAgentListCache, opts?.force === true),

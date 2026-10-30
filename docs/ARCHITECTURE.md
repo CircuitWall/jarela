@@ -24,7 +24,8 @@ C4Container
       Container(registry, "Run Registry", "lib/agents/run-registry", "In-memory pub/sub of in-flight agent chunks; replay buffer for reattaching EventSource clients")
       Container(crypto, "Crypto Envelope", "lib/crypto", "AES-GCM-at-rest for sensitive memory + OAuth tokens; OS keychain or .secret-key fallback")
       Container(proxy, "Proxy Dispatcher", "lib/proxy", "undici GlobalDispatcher; reads HTTP_PROXY env vars + encrypted proxy_config row; gates all outbound HTTP (ADR-0009)")
-      Container(envsync, "Env Sync", "lib/env", "Probes user shell rc / Windows User-scope env on boot + on demand: writes credential vars into the encrypted store (ADR-0016, ADR-0034) and caches the full env for every spawned subprocess — exec, terminal, claude_delegate, MCP stdio children (ADR-0072)")
+      Container(envsync, "Env Sync", "lib/env", "Caches user shell env for exec, terminal, delegation and MCP children; checked skill runners deliberately do not inherit it")
+      Container(workflows, "Checked Execution and Workflows", "lib/skills + lib/workflows", "Exact-code consent, encrypted durable CAS state, typed choices and observed reconciliation (Unreleased)")
       ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite + native sqlite", "Checkpoints, memory, settings, schedules, proposals, bridges — at ~/.jarela")
       ContainerDb(filestore, "File Store", "lib/files + ~/.jarela/files/", "Content-addressed image/file refs plus generated binary artifacts; served by /api/v1/files/[name]")
       ContainerDb(extdir, "Extension dirs", "filesystem (~/.jarela/{providers,tools}/)", "Drop-in .cjs files for external providers + tools, hot-loaded per request (ADR-0013)")
@@ -43,13 +44,18 @@ C4Container
     System_Ext(atlassian, "Atlassian Cloud", "Jira REST + Confluence REST (tools + document-RAG ingest, ADR-0026)")
     System_Ext(mailproviders, "Mail Providers", "Gmail, Microsoft Graph, and iCloud Mail (remote document indexing)")
     System_Ext(whatsapp, "WhatsApp Web", "Baileys-paired endpoint")
-    System_Ext(usershell, "User shell rc / Windows User env", "Source for credential env vars (ADR-0016) and, since ADR-0072, the full env every spawned subprocess inherits")
+    System_Ext(usershell, "User shell rc / Windows User env", "Credential/env source for general subprocess tools; deliberately excluded from checked skill execution")
     System_Ext(browserext, "Jarela Browser Extension", "Chrome MV3 — element picker, posts captures to localhost (ADR-0018)")
+    System_Ext(skillowner, "Skill Process Owner", "Transient Windows Job / Linux delegated cgroup broker; full-trust, not a sandbox (Unreleased)")
 
     Rel(user, ui, "HTTPS")
     Rel(ui, guard, "fetch + EventSource")
     Rel(guard, routes, "allow same-origin")
     Rel(routes, agents, "invoke")
+    Rel(routes, workflows, "unlocked local execution and workflow controls")
+    Rel(agents, workflows, "explicit permission-gated tools")
+    Rel(workflows, db, "encrypted results/state and approval metadata")
+    Rel(workflows, skillowner, "captured bytes, exact argv and bounded raw streams")
     Rel(routes, voice, "STT/TTS + generate_voice")
     Rel(agents, mcp, "tool calls")
     Rel(agents, providers, "stream completion")
@@ -146,34 +152,38 @@ The memory planner consumes supplied fact projections only and never accesses
 the store or mutates it. Bundle files are included in standalone build tracing.
 See [script-backed built-ins](EXTENDING.md#script-backed-built-in-steps).
 The unreleased Memory Organization execution manifest adapts those same two
-portable scripts for internal artifact/protocol contract tests; bounded `anyOf`
+portable scripts for artifact/protocol contracts and explicit execution; bounded `anyOf`
 schemas represent nullable expiry and result variants. Ordinary discovery and
 the fixed typed tool are unchanged. Inspection remains execution-unavailable;
-test-only subprocess staging does not introduce a production runner or store.
+inspection itself never authorizes or invokes the separate execution service.
 The internal `lib/skills/execution-output.ts` collector reuses result validation
 over bounded copied pipe bytes with strict UTF-8. It creates no process and
 cannot attest exit status, authorization or process-tree cleanup; a captured
 schema-valid value is not a successful execution.
 
-Inactive runner/workflow modules implement the orchestration proposed in
-[ADR-0113](adr/0113-gated-workflow-runtime.md). `lib/stores/skill-run-staging.ts`
+The unreleased app integration follows
+[ADR-0114](adr/0114-production-skill-workflow-integration.md). `lib/stores/skill-run-staging.ts`
 owns explicit run directories under the data directory;
 `lib/skills/execution-runner.ts` consumes the existing artifact, consent and
-output contracts but requires a trusted process-owner adapter. No production
-adapter or callable execution surface is registered. The bounded sequential
-definition/coordinator under `lib/workflows/` uses an explicitly constructed
+output contracts and an available platform process-owner adapter. Local APIs,
+permission-gated tools and Skills controls share the live execution service.
+The bounded sequential definition/coordinator under `lib/workflows/` uses an encrypted
 `lib/stores/workflow-runs.ts` SQLite CAS store, not generic memory or a second
-retry loop around model workflow progress. This table is not created by active
-startup/migrations. Production activation remains false.
+retry loop around model workflow progress. Startup performs bounded retention
+cleanup, never implicit recovery or replay. Shutdown drains workflows and
+script owners before closing SQLite. Consent grants/captured executable bytes
+stay in memory; restart invalidates pending executable approvals.
 
 ```mermaid
 flowchart LR
-  Host["Inactive trusted host adapter"] --> Coordinator["Bounded workflow coordinator"]
-  Coordinator --> RunStore["Explicit workflow CAS store"]
-  Coordinator --> Runner["Gated staged skill orchestration"]
+  UI["Local UI / explicit agent tools"] --> Coordinator["Bounded workflow service + trusted host"]
+  UI --> Review["Exact-code / plan approval"]
+  Coordinator --> RunStore["Encrypted SQLite CAS + retention"]
+  Coordinator --> Runner["Live checked skill execution service"]
+  Review --> Consent["Exact one-use consent and current policy"]
   Runner --> Staging["Run-owned captured bytes"]
   Runner --> Consent["Exact one-use consent and current policy"]
-  Runner --> Owner["Required process-tree owner (no production backend)"]
+  Runner --> Owner["Windows Job / delegated Linux cgroup owner"]
   Owner --> Capture["Bounded raw output and schema checks"]
 ```
 

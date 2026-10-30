@@ -210,13 +210,18 @@ export async function executeTool(
   }
 
   const config: RunnableConfig = {
-    signal: context.signal,
+    // LangChain rejects on abort before a non-cooperative tool settles.
+    // Workflow callers race cancellation themselves and retain this promise.
+    signal: context.await_tool_settlement ? new AbortController().signal : context.signal,
     configurable: { thread_id: context.thread_id, signal_continuation: context.signal_continuation,
+      workspace: context.workspace ? { ...context.workspace, opened_at: 0 } : undefined,
+      await_tool_settlement: context.await_tool_settlement,
       tool_result_max_bytes: context.tool_result_max_bytes,
       tool_permission_map: context.tool_permission_map, tool_credentials: context.tool_credentials,
       delegation_depth: context.delegation_depth, delegation_ancestors: context.delegation_ancestors },
   };
 
+  if (context.await_tool_settlement) context.signal?.throwIfAborted();
   const result = await t.invoke(args, config);
 
   if (typeof result === "string") {

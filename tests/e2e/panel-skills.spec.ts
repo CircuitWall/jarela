@@ -18,6 +18,21 @@ test("Skills tab mounts under Tools with header + repo add affordance", async ({
   await expect(page.getByPlaceholder("Pick or paste an absolute path")).toBeVisible();
 });
 
+test("execution controls expose full-trust warnings while loading a workflow stays inert", async ({ page }) => {
+  const launches: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && /\/api\/v1\/(skill-executions|workflows)(\/|$)/.test(request.url())) launches.push(request.url());
+  });
+  await page.getByText("Run a checked skill", { exact: true }).click();
+  await expect(page.getByText(/Explicit full-trust execution, not a sandbox/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request execution", exact: true })).toBeDisabled();
+  await page.getByText("Durable workflows", { exact: true }).click();
+  await page.getByRole("button", { name: "Load read-only Memory Organization example" }).click();
+  await expect(page.getByLabel("Versioned definition JSON")).toHaveValue(/memory-cleanup-review/);
+  await expect(page.getByLabel("Workflow invocation JSON")).toHaveValue(/"entries": \[\]/);
+  expect(launches).toEqual([]);
+});
+
 test("built-in skills list with frontmatter names and a Clone affordance", async ({ page, request }) => {
   // Other spec files (and other projects running this same file in
   // parallel) share one E2E server/DB, so a writable repo may already
@@ -29,7 +44,7 @@ test("built-in skills list with frontmatter names and a Clone affordance", async
   expect(body.skills).toEqual(expect.arrayContaining([
     expect.objectContaining({ id: "jarela-configuration", name: "jarela-configuration", source: "builtin" }),
   ]));
-  await expect(page.getByText("jarela-configuration", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("span").filter({ hasText: /^jarela-configuration$/ })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "New", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Clone/ }).first()).toBeVisible();
 });
@@ -51,20 +66,21 @@ test("add a repo, write a skill, edit it, then delete it", async ({ page }) => {
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("heading", { name: "New skill" })).toBeHidden();
 
-    await expect(page.getByText("E2E Smoke Skill")).toBeVisible({ timeout: 10_000 });
-    await page.getByText("E2E Smoke Skill").click();
+    const skillName = page.locator("span").filter({ hasText: /^E2E Smoke Skill$/ });
+    await expect(skillName).toBeVisible({ timeout: 10_000 });
+    await skillName.click();
     await expect(page.getByRole("heading", { name: /Edit skill/ })).toBeVisible();
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     await page.getByRole("textbox", { name: /Content/ }).fill("# E2E Smoke Skill\n\nEdited by the panel-skills e2e test.\n");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("heading", { name: /Edit skill/ })).toBeHidden();
 
-    await page.getByText("E2E Smoke Skill").click();
+    await skillName.click();
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     await expect(page.getByRole("textbox", { name: /Content/ })).toHaveValue(/Edited by the panel-skills e2e test/);
     await page.getByRole("button", { name: "Delete", exact: true }).click();
     await page.getByRole("dialog").last().getByRole("button", { name: "Delete", exact: true }).click();
-    await expect(page.getByText("E2E Smoke Skill")).toHaveCount(0);
+    await expect(skillName).toHaveCount(0);
 
     // Clean up the repo row too, so it doesn't linger (pointing at a
     // now-removed directory) for other tests sharing this E2E database.

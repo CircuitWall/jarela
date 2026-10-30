@@ -61,6 +61,24 @@ function makeSlowTool(name: string, delayMs: number) {
 }
 
 describe("wrapWithWallclock", () => {
+  it.each([false, true])("retains the actual promise for coordinator-owned settlement (async_run=%s)", async (asyncRun) => {
+    let finish!: (value: string) => void;
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => { started = resolve; });
+    const inner = tool(async () => {
+      started();
+      return new Promise<string>((resolve) => { finish = resolve; });
+    }, { name: "settlement", description: "Synthetic non-abortable tool", schema: z.object({}) });
+    let settled = false;
+    const work = wrapWithWallclock(inner).invoke({ deadline_ms: 1, async_run: asyncRun },
+      { configurable: { await_tool_settlement: true } }).then((result) => { settled = true; return result; });
+    await ready;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+    finish('{"ok":true}');
+    expect(JSON.parse(await work as string)).toEqual({ ok: true });
+  });
+
   it("publishes a correlated durable completion for a background invocation", async () => {
     signalMocks.finish.mockClear();
     const wrapped = wrapWithWallclock(makeSlowTool("background-signal", 5));

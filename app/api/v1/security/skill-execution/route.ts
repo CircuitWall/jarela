@@ -6,6 +6,7 @@ import { errorResponse, noStoreJson, validateBody } from "@/lib/api/responses";
 import { SkillExecutionPolicySchema } from "@/lib/skills/execution-policy";
 import { getSkillExecutionPolicy, setSkillExecutionPolicy, isSkillTrustWorkspace } from "@/lib/stores/app-settings";
 import { resolveSafetyMode } from "@/lib/tools/security/safety";
+import { getSkillProcessOwnerAvailability } from "@/lib/skills/process-owner";
 
 function guard(req: Request) {
   if (!isLoopbackRequest(req) || req.headers.get("tailscale-user-login")) return errorResponse("loopback-only", 403);
@@ -14,7 +15,8 @@ function guard(req: Request) {
 }
 
 function response() {
-  return noStoreJson({ policy: getSkillExecutionPolicy(), safety_mode: resolveSafetyMode(), execution_available: false });
+  const ownership = getSkillProcessOwnerAvailability();
+  return noStoreJson({ policy: getSkillExecutionPolicy(), safety_mode: resolveSafetyMode(), execution_available: ownership.available, ownership });
 }
 
 export function GET(req: Request) {

@@ -20,7 +20,7 @@ describe("skill execution Security settings", () => {
     const select = await screen.findByLabelText("Consent policy");
     await waitFor(() => expect(select.closest("fieldset")?.disabled).toBe(false));
     expect((select as HTMLSelectElement).value).toBe("ask_each_time");
-    expect(screen.getByText(/Script execution is not available yet/)).toBeTruthy();
+    expect(screen.getByText(/Script execution is unavailable on this host/)).toBeTruthy();
     fireEvent.change(select, { target: { value: "blocked" } });
     fetchMock.mockResolvedValueOnce(response({ mode: "blocked", trusted_revisions: [] }));
     fireEvent.click(screen.getByRole("button", { name: "Save skill execution policy" }));

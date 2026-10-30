@@ -102,6 +102,21 @@ async function runShutdown(): Promise<void> {
     console.error("[jarela] stopping scheduler failed:", err);
   }
 
+  try {
+    const { shutdownWorkflowService } = await import("@/lib/workflows/service");
+    const drained = await shutdownWorkflowService(5000);
+    if (!drained.drained) console.error("[jarela] workflow hosts did not drain before shutdown");
+  } catch (err) {
+    console.error("[jarela] draining workflows failed:", err);
+  }
+
+  try {
+    const { shutdownSkillExecutions } = await import("@/lib/skills/execution-service");
+    await shutdownSkillExecutions();
+  } catch (err) {
+    console.error("[jarela] draining skill executions failed:", err);
+  }
+
   // 2b. Drain trigger handlers — closes fs.watch watchers and any other
   //     handler that has timers / sockets attached. Independent of the
   //     scheduler tick (those are run-loop ownership; this is per-handler

@@ -95,6 +95,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**": [
       "./lib/skills/builtins/**/*",
+      "./lib/skills/process-owner-*.ps1",
+      "./lib/skills/process-owner-*.cjs",
       "./node_modules/@napi-rs/keyring/**/*",
       // Transformers.js uses onnxruntime-node in Node; onnxruntime-web is the
       // browser backend and is never loaded. scripts/postbuild.mjs prunes

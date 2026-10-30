@@ -2,6 +2,11 @@
 
 Status: **Proposed; implementation permitted behind an inactive production gate**
 
+Integration amendment (2026-10-30): [ADR-0114](0114-production-skill-workflow-integration.md)
+supersedes the inactive-only coding boundary with explicit local app entry
+points. This ADR preserves the rationale and limitations of the internal
+increment; it is not the current activation guide.
+
 Date: 2026-10-30
 
 Related: [ADR-0112](0112-checked-javascript-skill-execution.md), W1/W2

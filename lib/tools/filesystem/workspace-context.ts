@@ -39,6 +39,7 @@ const DEFAULT_KEY = "_default";
 export interface ToolConfig {
   configurable?: {
     thread_id?: string;
+    workspace?: WorkspaceContext;
     [k: string]: unknown;
   };
   /**
@@ -71,7 +72,7 @@ function keyFor(config?: ToolConfig): string {
 }
 
 export function currentWorkspace(config?: ToolConfig): WorkspaceContext | undefined {
-  return store().get(keyFor(config));
+  return config?.configurable?.workspace ?? store().get(keyFor(config));
 }
 
 export function setWorkspace(ws: WorkspaceContext, config?: ToolConfig): void {

@@ -4,7 +4,7 @@ import { WorkflowRunStore, type WorkflowRunRow } from "@/lib/stores/workflow-run
 import { validateSkillInvocation, validateSkillResult, type SkillJsonValue } from "@/lib/skills/execution-protocol";
 import { parseWorkflowDefinition, resolveWorkflowInput, type WorkflowStep } from "./definition";
 
-export const WORKFLOW_PRODUCTION_ACTIVATION_AVAILABLE = false;
+export const WORKFLOW_PRODUCTION_ACTIVATION_AVAILABLE = true;
 const stepStateSchema = z.strictObject({
   id: z.string(), attempts: z.number().int().min(0).max(3),
   status: z.enum(["pending", "running", "waiting", "done", "failed", "uncertain", "cancelled"]),
@@ -82,13 +82,20 @@ function decode(row: WorkflowRunRow) {
 
 // Host adapters remain responsible for capability checks, consent and process
 // ownership. This coordinator cannot turn a choice response into authorization.
+const executionHost = globalThis as typeof globalThis & { __jarelaWorkflowExecutions?: Map<string, Promise<void>> };
+export const workflowExecutions = executionHost.__jarelaWorkflowExecutions ??= new Map<string, Promise<void>>();
+
 export class BoundedWorkflowRuntime {
   readonly #active = new Map<string, AbortController>();
   constructor(
     readonly store: WorkflowRunStore,
     readonly host: WorkflowHost,
-    readonly owner = randomUUID(),
+    readonly owner: string = randomUUID(),
   ) {}
+
+  assertExecutionSettled(id: string): void {
+    if (workflowExecutions.has(id)) throw new Error("Workflow execution is still in flight; wait for settlement before reconciliation or continuation");
+  }
 
   create(definitionText: string, invocationJson = "{}"): WorkflowRunRow {
     const definition = parseWorkflowDefinition(definitionText);
@@ -112,6 +119,7 @@ export class BoundedWorkflowRuntime {
     let row = this.store.get(id);
     const { state, definition, outputs, invocation } = decode(row);
     if (state.phase !== "ready") throw new Error("Workflow is not ready; reconcile, answer or recover before advancing");
+    this.assertExecutionSettled(id);
     for (; state.next < definition.steps.length;) {
       const step = definition.steps[state.next];
       const progress = state.steps[state.next];
@@ -151,9 +159,16 @@ export class BoundedWorkflowRuntime {
             controller.abort(); reject(new Error("Workflow step timed out"));
           }, step.timeoutMs);
         });
-        result = adapterResult.parse(await Promise.race([
-          this.host.execute(step, input, controller.signal), interrupted,
-        ]));
+        const work = Promise.resolve().then(() => {
+          if (controller.signal.aborted) throw new Error("Workflow interrupted before host execution");
+          return this.host.execute(step, input, controller.signal);
+        });
+        const release = () => {
+          if (workflowExecutions.get(id) === settled) workflowExecutions.delete(id);
+        };
+        const settled = work.then(release, release);
+        workflowExecutions.set(id, settled);
+        result = adapterResult.parse(await Promise.race([work, interrupted]));
       } catch {
         state.phase = step.effect === "write" ? "uncertain" : signal.aborted ? "cancelled" : "failed";
         progress.status = state.phase;
@@ -223,6 +238,7 @@ export class BoundedWorkflowRuntime {
   }
 
   async recover(id: string, expectedVersion: number, priorOwnerIsDead: (owner: string) => Promise<boolean>): Promise<WorkflowRunRow> {
+    this.assertExecutionSettled(id);
     const row = this.store.get(id);
     const { state, definition } = decode(row);
     if (row.version !== expectedVersion || state.phase !== "running" || !(await priorOwnerIsDead(row.owner))) {
@@ -238,6 +254,7 @@ export class BoundedWorkflowRuntime {
   }
 
   reconcile(id: string, expectedVersion: number, observed: { outputJson: string; evidence: string }): WorkflowRunRow {
+    this.assertExecutionSettled(id);
     const row = this.store.get(id);
     const { state, definition } = decode(row);
     if (row.version !== expectedVersion || state.phase !== "uncertain") throw new Error("Workflow reconciliation is stale or unnecessary");
