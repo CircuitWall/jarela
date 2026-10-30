@@ -145,6 +145,15 @@ export function WatchersSection({ agents, models }: { agents: Record<string, Age
   );
 }
 
+function watcherTiming(watcher: Watcher) {
+  return {
+    nextRun: sharedFormatRelative(watcher.next_run_at, { collapseSeconds: true }),
+    lastRun: watcher.last_run_at ? sharedFormatRelative(watcher.last_run_at, { collapseSeconds: true }) : null,
+    lastFired: watcher.last_fired_at ? sharedFormatRelative(watcher.last_fired_at, { collapseSeconds: true }) : null,
+    overdue: !watcher.last_error && new Date(watcher.next_run_at).getTime() < Date.now() - 60_000,
+  };
+}
+
 function WatcherCard({
   watcher, agent, agents, models, onCancel, onRunNow, onChanged,
 }: {
@@ -160,14 +169,7 @@ function WatcherCard({
   const [running, setRunning] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [canceling, setCanceling] = useState(false);
-  const nextRun = sharedFormatRelative(watcher.next_run_at, { collapseSeconds: true });
-  const lastRun = watcher.last_run_at
-    ? sharedFormatRelative(watcher.last_run_at, { collapseSeconds: true })
-    : null;
-  const lastFired = watcher.last_fired_at
-    ? sharedFormatRelative(watcher.last_fired_at, { collapseSeconds: true })
-    : null;
-  const overdue = !watcher.last_error && new Date(watcher.next_run_at).getTime() < Date.now() - 60_000;
+  const { nextRun, lastRun, lastFired, overdue } = watcherTiming(watcher);
   // Pre-flight model availability for the assigned agent; only relevant
   // when the watcher reacts via an agent prompt (not a pure script).
   const modelStatus = watcher.reaction_kind === "agent_prompt"
@@ -223,33 +225,7 @@ function WatcherCard({
       {expanded && (
         <div className="px-3 py-2 border-t border-border/60 text-[11px] text-fg-subtle space-y-2">
           <Row label="Agent">
-            <Select
-              size="sm"
-              value={watcher.agent_id}
-              onChange={async (e) => {
-                const next = e.target.value;
-                if (next === watcher.agent_id) return;
-                try {
-                  await api.watchers.update(watcher.id, { agent_id: next });
-                  onChanged();
-                } catch (err) {
-                  pushErrorToast({
-                    title: "Couldn't re-assign watcher",
-                    error: err,
-                    context: { panel: "scheduled-tasks", action: "watcher.reassign", watcher_id: watcher.id, target_agent: next },
-                  });
-                }
-              }}
-            >
-              {Object.values(agents).length === 0 && (
-                <option value={watcher.agent_id}>{watcher.agent_id}</option>
-              )}
-              {Object.values(agents)
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((a) => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-            </Select>
+            <WatcherAgentSelector watcher={watcher} agents={agents} onChanged={onChanged} />
           </Row>
           <Row label="Tool">
             <span className="font-mono">{watcher.tool}</span>
@@ -299,77 +275,143 @@ function WatcherCard({
               <pre className="whitespace-pre-wrap break-words text-rose-700 dark:text-rose-300/90">{watcher.last_error}</pre>
             </Row>
           )}
-          <div className="flex justify-end pt-1 gap-2">
-            <button
-              onClick={async () => {
-                if (toggling) return;
-                setToggling(true);
-                try {
-                  await api.watchers.update(watcher.id, { enabled: !watcher.enabled });
-                  pushToast({
-                    kind: "info",
-                    source: "system",
-                    sourceLabel: "Watchers",
-                    title: watcher.enabled ? "Watcher paused" : "Watcher resumed",
-                    body: `"${watcher.label}"`,
-                    agent_id: null,
-                    thread_id: null,
-                    ttl: 3000,
-                  });
-                  onChanged();
-                } catch (e) {
-                  pushErrorToast({
-                    title: "Couldn't toggle watcher",
-                    error: e,
-                    context: { panel: "scheduled-tasks", action: "watcher.toggle", watcher_id: watcher.id, target_enabled: !watcher.enabled },
-                  });
-                } finally {
-                  setToggling(false);
-                }
-              }}
-              disabled={toggling || running || canceling}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-fg hover:border-fg-muted disabled:opacity-50 transition-colors"
-              title={watcher.enabled ? "Pause this watcher" : "Resume this watcher"}
-            >
-              {toggling ? <Loader2 size={11} className="animate-spin text-fg-muted" /> : <Power size={11} />}
-              {toggling ? "Saving…" : watcher.enabled ? "Pause" : "Resume"}
-            </button>
-            <button
-              onClick={async () => {
-                if (running) return;
-                setRunning(true);
-                try {
-                  await onRunNow();
-                } finally {
-                  setRunning(false);
-                }
-              }}
-              disabled={running || toggling || canceling}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-emerald-700 dark:hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50 transition-colors"
-              title="Poll the tool right now. If the result differs from the last poll, the agent fires."
-            >
-              {running ? <Loader2 size={11} className="animate-spin text-emerald-600 dark:text-emerald-400" /> : <Play size={11} />}
-              {running ? "Polling…" : "Poll now"}
-            </button>
-            <button
-              onClick={async () => {
-                if (canceling) return;
-                setCanceling(true);
-                try {
-                  await onCancel();
-                } finally {
-                  setCanceling(false);
-                }
-              }}
-              disabled={canceling || running || toggling}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-rose-700 dark:hover:text-rose-400 hover:border-rose-700 disabled:opacity-50 transition-colors"
-            >
-              {canceling ? <Loader2 size={11} className="animate-spin text-rose-600 dark:text-rose-400" /> : <Trash2 size={11} />}
-              {canceling ? "Canceling…" : "Cancel watcher"}
-            </button>
-          </div>
+          <WatcherControls
+            watcher={watcher}
+            onChanged={onChanged}
+            onRunNow={onRunNow}
+            onCancel={onCancel}
+            running={running}
+            setRunning={setRunning}
+            toggling={toggling}
+            setToggling={setToggling}
+            canceling={canceling}
+            setCanceling={setCanceling}
+          />
         </div>
       )}
+    </div>
+  );
+}
+
+function WatcherAgentSelector({ watcher, agents, onChanged }: {
+  watcher: Watcher;
+  agents: Record<string, AgentConfig>;
+  onChanged: () => void;
+}) {
+  return (
+    <Select
+      size="sm"
+      value={watcher.agent_id}
+      onChange={async (e) => {
+        const next = e.target.value;
+        if (next === watcher.agent_id) return;
+        try {
+          await api.watchers.update(watcher.id, { agent_id: next });
+          onChanged();
+        } catch (err) {
+          pushErrorToast({
+            title: "Couldn't re-assign watcher",
+            error: err,
+            context: { panel: "scheduled-tasks", action: "watcher.reassign", watcher_id: watcher.id, target_agent: next },
+          });
+        }
+      }}
+    >
+      {Object.values(agents).length === 0 && (
+        <option value={watcher.agent_id}>{watcher.agent_id}</option>
+      )}
+      {Object.values(agents)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((a) => (
+          <option key={a.id} value={a.id}>{a.name}</option>
+        ))}
+    </Select>
+  );
+}
+
+function WatcherControls({
+  watcher, onChanged, onRunNow, onCancel, running, setRunning, toggling, setToggling, canceling, setCanceling,
+}: {
+  watcher: Watcher;
+  onChanged: () => void;
+  onRunNow: () => Promise<void> | void;
+  onCancel: () => Promise<void> | void;
+  running: boolean;
+  setRunning: (value: boolean) => void;
+  toggling: boolean;
+  setToggling: (value: boolean) => void;
+  canceling: boolean;
+  setCanceling: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex justify-end pt-1 gap-2">
+      <button
+        onClick={async () => {
+          if (toggling) return;
+          setToggling(true);
+          try {
+            await api.watchers.update(watcher.id, { enabled: !watcher.enabled });
+            pushToast({
+              kind: "info",
+              source: "system",
+              sourceLabel: "Watchers",
+              title: watcher.enabled ? "Watcher paused" : "Watcher resumed",
+              body: `"${watcher.label}"`,
+              agent_id: null,
+              thread_id: null,
+              ttl: 3000,
+            });
+            onChanged();
+          } catch (e) {
+            pushErrorToast({
+              title: "Couldn't toggle watcher",
+              error: e,
+              context: { panel: "scheduled-tasks", action: "watcher.toggle", watcher_id: watcher.id, target_enabled: !watcher.enabled },
+            });
+          } finally {
+            setToggling(false);
+          }
+        }}
+        disabled={toggling || running || canceling}
+        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-fg hover:border-fg-muted disabled:opacity-50 transition-colors"
+        title={watcher.enabled ? "Pause this watcher" : "Resume this watcher"}
+      >
+        {toggling ? <Loader2 size={11} className="animate-spin text-fg-muted" /> : <Power size={11} />}
+        {toggling ? "Saving…" : watcher.enabled ? "Pause" : "Resume"}
+      </button>
+      <button
+        onClick={async () => {
+          if (running) return;
+          setRunning(true);
+          try {
+            await onRunNow();
+          } finally {
+            setRunning(false);
+          }
+        }}
+        disabled={running || toggling || canceling}
+        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-emerald-700 dark:hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50 transition-colors"
+        title="Poll the tool right now. If the result differs from the last poll, the agent fires."
+      >
+        {running ? <Loader2 size={11} className="animate-spin text-emerald-600 dark:text-emerald-400" /> : <Play size={11} />}
+        {running ? "Polling…" : "Poll now"}
+      </button>
+      <button
+        onClick={async () => {
+          if (canceling) return;
+          setCanceling(true);
+          try {
+            await onCancel();
+          } finally {
+            setCanceling(false);
+          }
+        }}
+        disabled={canceling || running || toggling}
+        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-rose-700 dark:hover:text-rose-400 hover:border-rose-700 disabled:opacity-50 transition-colors"
+      >
+        {canceling ? <Loader2 size={11} className="animate-spin text-rose-600 dark:text-rose-400" /> : <Trash2 size={11} />}
+        {canceling ? "Canceling…" : "Cancel watcher"}
+      </button>
     </div>
   );
 }

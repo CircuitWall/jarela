@@ -31,141 +31,56 @@ export async function GET(req: NextRequest) {
 
   if (manualCurrency) {
     try {
-      if (manualCurrency === "USD") {
-        return cachedJson<CurrencyResponse>({
-          currency: "USD",
-          rate_from_usd: 1,
-          country_code: null,
-          source: "manual",
-          updated_at: new Date().toISOString(),
-        }, 3600);
-      }
-      const rates = await fetchFxRates();
-      const rate = rates[manualCurrency];
-      if (!rate || !Number.isFinite(rate) || rate <= 0) {
-        return cachedJson<CurrencyResponse>({
-          currency: "USD",
-          rate_from_usd: 1,
-          country_code: null,
-          source: "default",
-          updated_at: new Date().toISOString(),
-        }, 3600);
-      }
-      return cachedJson<CurrencyResponse>({
-        currency: manualCurrency,
-        rate_from_usd: rate,
-        country_code: null,
-        source: "manual",
-        updated_at: new Date().toISOString(),
-      }, 3600);
+      return await currencyResponse(manualCurrency, null, "manual");
     } catch (err) {
       console.warn("[currency] manual lookup failed, falling back to USD:", err);
-      return cachedJson<CurrencyResponse>({
-        currency: "USD",
-        rate_from_usd: 1,
-        country_code: null,
-        source: "default",
-        updated_at: new Date().toISOString(),
-      }, 3600);
+      return defaultCurrencyResponse();
     }
   }
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     if (country) {
       try {
-        const currency = await resolveCurrencyForCountry(country);
-        if (!currency || currency === "USD") {
-          return cachedJson<CurrencyResponse>({
-            currency: "USD",
-            rate_from_usd: 1,
-            country_code: country,
-            source: currency ? "location" : "default",
-            updated_at: new Date().toISOString(),
-          }, 3600);
-        }
-        const rates = await fetchFxRates();
-        const rate = rates[currency];
-        if (!rate || !Number.isFinite(rate) || rate <= 0) {
-          return cachedJson<CurrencyResponse>({
-            currency: "USD",
-            rate_from_usd: 1,
-            country_code: country,
-            source: "default",
-            updated_at: new Date().toISOString(),
-          }, 3600);
-        }
-        return cachedJson<CurrencyResponse>({
-          currency,
-          rate_from_usd: rate,
-          country_code: country,
-          source: "location",
-          updated_at: new Date().toISOString(),
-        }, 3600);
+        return await currencyResponse(await resolveCurrencyForCountry(country), country, "location");
       } catch (err) {
         console.warn("[currency] country lookup failed, falling back to USD:", err);
       }
     }
-    return cachedJson<CurrencyResponse>({
-      currency: "USD",
-      rate_from_usd: 1,
-      country_code: null,
-      source: "default",
-      updated_at: new Date().toISOString(),
-    }, 3600);
+    return defaultCurrencyResponse();
   }
 
   try {
     const countryCode = await reverseCountryCode(lat, lng);
-    if (!countryCode) {
-      return cachedJson<CurrencyResponse>({
-        currency: "USD",
-        rate_from_usd: 1,
-        country_code: null,
-        source: "default",
-        updated_at: new Date().toISOString(),
-      }, 3600);
-    }
-
-    const currency = await resolveCurrencyForCountry(countryCode);
-    if (!currency || currency === "USD") {
-      return cachedJson<CurrencyResponse>({
-        currency: "USD",
-        rate_from_usd: 1,
-        country_code: countryCode,
-        source: currency ? "location" : "default",
-        updated_at: new Date().toISOString(),
-      }, 3600);
-    }
-
-    const rates = await fetchFxRates();
-    const rate = rates[currency];
-    if (!rate || !Number.isFinite(rate) || rate <= 0) {
-      return cachedJson<CurrencyResponse>({
-        currency: "USD",
-        rate_from_usd: 1,
-        country_code: countryCode,
-        source: "default",
-        updated_at: new Date().toISOString(),
-      }, 3600);
-    }
-
-    return cachedJson<CurrencyResponse>({
-      currency,
-      rate_from_usd: rate,
-      country_code: countryCode,
-      source: "location",
-      updated_at: new Date().toISOString(),
-    }, 3600);
+    if (!countryCode) return defaultCurrencyResponse();
+    return await currencyResponse(await resolveCurrencyForCountry(countryCode), countryCode, "location");
   } catch (err) {
     console.warn("[currency] location lookup failed, falling back to USD:", err);
-    return cachedJson<CurrencyResponse>({
-      currency: "USD",
-      rate_from_usd: 1,
-      country_code: null,
-      source: "default",
-      updated_at: new Date().toISOString(),
-    }, 3600);
+    return defaultCurrencyResponse();
   }
+}
+
+function defaultCurrencyResponse(countryCode: string | null = null) {
+  return formatCurrencyResponse("USD", 1, countryCode, "default");
+}
+
+function formatCurrencyResponse(
+  currency: string, rate: number, countryCode: string | null, source: CurrencyResponse["source"],
+) {
+  return cachedJson<CurrencyResponse>({
+    currency,
+    rate_from_usd: rate,
+    country_code: countryCode,
+    source,
+    updated_at: new Date().toISOString(),
+  }, 3600);
+}
+
+async function currencyResponse(currency: string | null, countryCode: string | null, source: CurrencyResponse["source"]) {
+  if (!currency) return defaultCurrencyResponse(countryCode);
+  if (currency === "USD") return formatCurrencyResponse(currency, 1, countryCode, source);
+  const rate = (await fetchFxRates())[currency];
+  if (!rate || !Number.isFinite(rate) || rate <= 0) return defaultCurrencyResponse(countryCode);
+  return formatCurrencyResponse(currency, rate, countryCode, source);
 }
 
 async function reverseCountryCode(lat: number, lng: number): Promise<string | null> {

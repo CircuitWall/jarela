@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { IntegrationCard } from "./IntegrationCard";
 import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition, IntegrationStatus } from "@/api/types";
+import * as confirmation from "@/lib/ui/confirm";
 
 const claudeCodeDefinition: IntegrationDefinition = {
   name: "claude-code",
@@ -317,6 +318,19 @@ describe("IntegrationCard", () => {
       });
     });
 
+    it("cancels default-credential OAuth when switching to create mode", async () => {
+      const pending = deferred<Awaited<ReturnType<typeof api.integrations.gmailOauthStatus>>>();
+      vi.mocked(api.integrations.gmailOauthStatus).mockReturnValueOnce(pending.promise);
+      const { rerender } = render(<IntegrationCard definition={mailDefinition("gmail")} onChanged={onChanged} />);
+      await connect();
+      await poll();
+      rerender(<IntegrationCard definition={mailDefinition("gmail")} createNew onChanged={onChanged} />);
+      await act(async () => { pending.resolve({ status: "done" }); });
+      expect(onChanged).not.toHaveBeenCalled();
+      expect(screen.queryByText("Connected to Gmail. Refresh token saved.")).toBeNull();
+      expect(screen.getByRole("button", { name: "Connect Gmail" })).toHaveProperty("disabled", true);
+    });
+
     it("notifies the current parent callback without restarting polling on rerender", async () => {
       vi.mocked(api.integrations.gmailOauthStatus).mockResolvedValue({ status: "done" });
       const latestOnChanged = vi.fn();
@@ -377,6 +391,209 @@ describe("IntegrationCard", () => {
         type: "integration", provider: "gmail", auth_method: "oauth", label: "Personal", params: {},
       });
       expect(onChanged).toHaveBeenCalledOnce();
+    });
+
+    it.each(["gmail", "outlook"] as const)("preserves %s connection labels and disabled-state guidance", (provider) => {
+      const label = provider === "gmail" ? "Gmail" : "Outlook";
+      const vendor = provider === "gmail" ? "Google" : "Microsoft";
+      const { rerender } = render(<IntegrationCard definition={mailDefinition(provider)} onChanged={onChanged} />);
+      expect(screen.getByRole("button", { name: `Connect ${label}` })).toHaveProperty(
+        "title", `Authorize ${label} + Calendar via ${vendor} OAuth — opens a browser window`,
+      );
+      rerender(<IntegrationCard definition={mailDefinition(provider)} createNew onChanged={onChanged} />);
+      const button = screen.getByRole("button", { name: `Connect ${label}` });
+      expect(button).toHaveProperty("disabled", true);
+      expect(button).toHaveProperty("title", `Save this credential first, then connect ${label}`);
+    });
+
+    it("does not show OAuth controls for non-OAuth integrations", () => {
+      render(<IntegrationCard definition={claudeCodeDefinition} onChanged={onChanged} />);
+      expect(screen.queryByRole("button", { name: /^Connect / })).toBeNull();
+    });
+
+    it("prioritizes an existing credential even when createNew is also supplied", async () => {
+      const credential = mailCredential("gmail");
+      vi.spyOn(api.credentials, "update").mockResolvedValue(credential);
+      const create = vi.spyOn(api.credentials, "create");
+      render(<IntegrationCard definition={mailDefinition("gmail")} credential={credential} createNew onChanged={onChanged} />);
+      expect(screen.getByRole("button", { name: "Connect Gmail" })).toHaveProperty("disabled", false);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save" })); });
+      expect(api.credentials.update).toHaveBeenCalledWith(credential.id, {
+        label: "Work", params: { client_id: "synthetic-client" },
+      });
+      expect(create).not.toHaveBeenCalled();
+      expect(onChanged).toHaveBeenCalledOnce();
+    });
+
+    it.each(["edit", "create"] as const)("sends null for a blank label in %s mode", async (mode) => {
+      const credential = mailCredential("gmail");
+      const update = vi.spyOn(api.credentials, "update").mockResolvedValue(credential);
+      const create = vi.spyOn(api.credentials, "create").mockResolvedValue(credential);
+      render(<IntegrationCard definition={mailDefinition("gmail")} credential={mode === "edit" ? credential : undefined} createNew={mode === "create"} onChanged={onChanged} />);
+      fireEvent.change(screen.getByLabelText(/Label/), { target: { value: "  " } });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: mode === "edit" ? "Save" : "Create" })); });
+      if (mode === "edit") {
+        expect(update).toHaveBeenCalledWith(credential.id, {
+          label: null, params: { client_id: "synthetic-client" },
+        });
+      } else {
+        expect(create).toHaveBeenCalledWith({
+          type: "integration", provider: "gmail", auth_method: "oauth", label: null, params: {},
+        });
+      }
+      expect(onChanged).toHaveBeenCalledOnce();
+    });
+
+    it("derives API-key auth for new non-OAuth credentials", async () => {
+      const create = vi.spyOn(api.credentials, "create").mockResolvedValue(mailCredential("gmail"));
+      render(<IntegrationCard definition={claudeCodeDefinition} createNew onChanged={onChanged} />);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Create" })); });
+      expect(create).toHaveBeenCalledWith({
+        type: "integration", provider: "claude-code", auth_method: "api_key", label: null, params: {},
+      });
+    });
+
+    it.each(["edit", "create"] as const)("reports %s failures without a success notification", async (mode) => {
+      vi.spyOn(api.credentials, "update").mockRejectedValue(new Error("Synthetic save failure"));
+      vi.spyOn(api.credentials, "create").mockRejectedValue(new Error("Synthetic save failure"));
+      const name = mode === "edit" ? "Save" : "Create";
+      render(<IntegrationCard definition={mailDefinition("gmail")} credential={mode === "edit" ? mailCredential("gmail") : undefined} createNew={mode === "create"} onChanged={onChanged} />);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name })); });
+      expect(screen.getByText("Synthetic save failure")).toBeTruthy();
+      expect(screen.getByRole("button", { name })).toHaveProperty("disabled", false);
+      expect(onChanged).not.toHaveBeenCalled();
+    });
+
+    it("preserves the default-credential save path and returned masks", async () => {
+      const saved: IntegrationStatus = {
+        name: "gmail", configured: true, values: { client_secret: "********" }, updated_at: "2026-01-02T00:00:00Z",
+      };
+      const save = vi.spyOn(api.integrations, "save").mockResolvedValue(saved);
+      const list = vi.spyOn(api.credentials, "list");
+      render(<IntegrationCard definition={mailDefinition("gmail")} onChanged={onChanged} />);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save" })); });
+      expect(save).toHaveBeenCalledWith("gmail", {});
+      expect(screen.getByLabelText("Client secret")).toHaveProperty("value", "********");
+      expect(list).not.toHaveBeenCalled();
+      expect(onChanged).toHaveBeenCalledOnce();
+    });
+
+    it("waits for the default credential label update before notifying the parent", async () => {
+      const credential = { ...mailCredential("gmail"), is_default: true };
+      const pending = deferred<Credential>();
+      vi.spyOn(api.integrations, "save").mockResolvedValue({
+        name: "gmail", configured: true, values: { client_secret: "********" }, updated_at: null,
+      });
+      vi.spyOn(api.credentials, "list").mockResolvedValue([credential]);
+      const update = vi.spyOn(api.credentials, "update").mockReturnValue(pending.promise);
+      render(<IntegrationCard definition={mailDefinition("gmail")} onChanged={onChanged} />);
+      fireEvent.change(screen.getByLabelText(/Label/), { target: { value: " Personal " } });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save" })); });
+      expect(update).toHaveBeenCalledWith(credential.id, { label: "Personal" });
+      expect(screen.getByLabelText("Client secret")).toHaveProperty("value", "********");
+      expect(onChanged).not.toHaveBeenCalled();
+      await act(async () => { pending.resolve(credential); });
+      expect(onChanged).toHaveBeenCalledOnce();
+    });
+
+    it.each([true, false])("only removes a named credential when confirmation is %s", async (confirmed) => {
+      const credential = mailCredential("gmail");
+      const confirm = vi.spyOn(confirmation, "confirmAction").mockResolvedValue(confirmed);
+      const remove = vi.spyOn(api.credentials, "delete").mockResolvedValue(undefined);
+      const clear = vi.spyOn(api.integrations, "delete");
+      const onDeleted = vi.fn();
+      render(<IntegrationCard definition={mailDefinition("gmail")} credential={credential} createNew onChanged={onChanged} onDeleted={onDeleted} />);
+      const button = screen.getByRole("button", { name: "Delete" });
+      expect(button).toHaveProperty("title", "Delete this credential");
+      await act(async () => { fireEvent.click(button); });
+      expect(confirm).toHaveBeenCalledWith({ message: 'Delete credential "Work"?', destructive: true });
+      expect(remove).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+      if (confirmed) expect(remove).toHaveBeenCalledWith(credential.id);
+      expect(clear).not.toHaveBeenCalled();
+      expect(onChanged).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+      expect(onDeleted).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+    });
+
+    it.each([true, false])("only clears default integration values when confirmation is %s", async (confirmed) => {
+      const confirm = vi.spyOn(confirmation, "confirmAction").mockResolvedValue(confirmed);
+      const clear = vi.spyOn(api.integrations, "delete").mockResolvedValue(undefined);
+      const remove = vi.spyOn(api.credentials, "delete");
+      render(<IntegrationCard definition={mailDefinition("gmail")} status={{
+        name: "gmail", configured: true, values: { client_id: "synthetic-client" }, updated_at: null,
+      }} onChanged={onChanged} />);
+      const button = screen.getByRole("button", { name: "Clear" });
+      expect(button).toHaveProperty("title", "Remove saved credentials");
+      await act(async () => { fireEvent.click(button); });
+      expect(confirm).toHaveBeenCalledWith({
+        message: "Remove saved credentials for Gmail?", destructive: true, confirmLabel: "Remove",
+      });
+      expect(clear).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+      if (confirmed) expect(clear).toHaveBeenCalledWith("gmail");
+      expect(remove).not.toHaveBeenCalled();
+      expect(screen.getByLabelText("Client ID")).toHaveProperty("value", confirmed ? "" : "synthetic-client");
+      expect(onChanged).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+    });
+
+    it.each([false, true])("hides removal for an unsaved credential (createNew=%s)", (createNew) => {
+      render(<IntegrationCard definition={mailDefinition("gmail")} createNew={createNew} onChanged={onChanged} />);
+      expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+    });
+
+    it("does not offer to clear the saved default while creating an additional credential", () => {
+      render(<IntegrationCard definition={mailDefinition("gmail")} createNew status={{
+        name: "gmail", configured: true, values: {}, updated_at: null,
+      }} onChanged={onChanged} />);
+      expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    });
+
+    it("preserves default/additional badges, label placeholders, and promotion wiring", async () => {
+      const credential = mailCredential("gmail");
+      const update = vi.spyOn(api.credentials, "update").mockResolvedValue(credential);
+      const { rerender } = render(<IntegrationCard definition={mailDefinition("gmail")} credential={credential} onChanged={onChanged} />);
+      expect(screen.getByText("additional")).toBeTruthy();
+      expect(screen.getByLabelText(/Label/)).toHaveProperty("placeholder", "Untitled credential");
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Set default" })); });
+      expect(update).toHaveBeenCalledWith(credential.id, { is_default: true });
+      expect(onChanged).toHaveBeenCalledOnce();
+      rerender(<IntegrationCard definition={mailDefinition("gmail")} credential={{ ...credential, is_default: true }} onChanged={onChanged} />);
+      expect(screen.getByText("default")).toBeTruthy();
+      expect(screen.getByLabelText(/Label/)).toHaveProperty("placeholder", "Default credential");
+      expect(screen.queryByRole("button", { name: "Set default" })).toBeNull();
+    });
+
+    it("preserves field provenance and clears saved masks only when the secret is focused", () => {
+      render(<IntegrationCard definition={mailDefinition("gmail")} status={{
+        name: "gmail", configured: true, updated_at: null,
+        values: { client_id: "synthetic-client", client_secret: "********" }, source: { client_id: "rc" },
+      }} onChanged={onChanged} />);
+      expect(screen.getByText("from shell")).toBeTruthy();
+      expect(screen.getByLabelText("Client secret")).toHaveProperty("value", "********");
+      fireEvent.focus(screen.getByLabelText(/Client ID/));
+      expect(screen.getByLabelText(/Client ID/)).toHaveProperty("value", "synthetic-client");
+      fireEvent.focus(screen.getByLabelText("Client secret"));
+      expect(screen.getByLabelText("Client secret")).toHaveProperty("value", "");
+    });
+
+    it("renders test feedback from the action owner", async () => {
+      vi.spyOn(api.integrations, "test").mockResolvedValue({ ok: true, detail: { displayName: "Synthetic account" } });
+      render(<IntegrationCard definition={mailDefinition("gmail")} credential={mailCredential("gmail")} onChanged={onChanged} />);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Test" })); });
+      expect(screen.getByText("Connected as Synthetic account")).toBeTruthy();
+      expect(api.integrations.test).toHaveBeenCalledWith("gmail", "integration-gmail-work");
+    });
+
+    it("shows a clear failure instead of leaving an unhandled rejection", async () => {
+      vi.spyOn(confirmation, "confirmAction").mockResolvedValue(true);
+      vi.spyOn(api.integrations, "delete").mockRejectedValue(new Error("Synthetic clear failure"));
+      render(<IntegrationCard definition={mailDefinition("gmail")} status={{
+        name: "gmail", configured: true, updated_at: null, values: { client_id: "synthetic-client" },
+      }} onChanged={onChanged} />);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear" })); });
+      expect(screen.getByText("Synthetic clear failure")).toBeTruthy();
+      expect(screen.getByLabelText("Client ID")).toHaveProperty("value", "synthetic-client");
+      expect(onChanged).not.toHaveBeenCalled();
     });
   });
 });

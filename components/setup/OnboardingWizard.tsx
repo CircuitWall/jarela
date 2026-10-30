@@ -39,9 +39,7 @@ const STEPS: StepInfo[] = [
   { id: "review", title: "Here's what we're starting with", short: "Review" },
 ];
 
-export function OnboardingWizard({ context, onReady }: Props) {
-  const { state, dispatch } = useAppContext();
-  const router = useRouter();
+function useWizardData() {
   const [loading, setLoading] = useState(true);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
@@ -50,17 +48,10 @@ export function OnboardingWizard({ context, onReady }: Props) {
   const [loadError, setLoadError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
 
-  const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [about, setAbout] = useState("");
-  const [assistantName, setAssistantName] = useState("");
-  const [assistantIcon, setAssistantIcon] = useState<string | null>(null);
-  const [starterGoal, setStarterGoal] = useState("");
-  const [createdAgent, setCreatedAgent] = useState<AgentConfig | null>(null);
   const [preset, setPreset] =
     useState<NonNullable<UserProfile["preset"]>>("home");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   const refreshModels = useCallback(async () => {
     try {
@@ -146,6 +137,26 @@ export function OnboardingWizard({ context, onReady }: Props) {
       cancelled = true;
     };
   }, [loadAttempt]);
+
+  return {
+    loading, models, agents, setAgents, integrationDefs, integrations, loadError, setLoadAttempt,
+    name, setName, about, setAbout, preset, setPreset,
+    handleModelsChanged, handleProviderConfigured, handleAgentsChanged,
+  };
+}
+
+function useWizardController({ context, onReady }: Props) {
+  const { state, dispatch } = useAppContext();
+  const router = useRouter();
+  const data = useWizardData();
+  const { loading, name, about, preset, models, agents, setAgents, integrations } = data;
+  const [step, setStep] = useState(0);
+  const [assistantName, setAssistantName] = useState("");
+  const [assistantIcon, setAssistantIcon] = useState<string | null>(null);
+  const [starterGoal, setStarterGoal] = useState("");
+  const [createdAgent, setCreatedAgent] = useState<AgentConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading) onReady?.();
@@ -240,6 +251,18 @@ export function OnboardingWizard({ context, onReady }: Props) {
   })();
   const isLast = step === STEPS.length - 1;
 
+  return {
+    ...data, context, state, step, setStep, assistantName, setAssistantName, assistantIcon,
+    setAssistantIcon, starterGoal, setStarterGoal, createdAgent, starterModel,
+    defaultModelProvider, saving, saveError, handleSave, fullScreen, canAdvance, isLast, canSave,
+  };
+}
+
+type WizardController = ReturnType<typeof useWizardController>;
+
+export function OnboardingWizard(props: Props) {
+  const wizard = useWizardController(props);
+  const { loading, fullScreen, state, step, setStep, loadError, setLoadAttempt, saveError, isLast } = wizard;
   if (loading) {
     return (
       <div
@@ -299,116 +322,136 @@ export function OnboardingWizard({ context, onReady }: Props) {
             </button>
           </div>
         )}
-        {step === 0 && (
-          <StepProfile
-            name={name}
-            onNameChange={setName}
-            about={about}
-            onAboutChange={setAbout}
-            preset={preset}
-            onPresetChange={setPreset}
-          />
-        )}
-        {step === 1 && (
-          <StepCredentials
-            definitions={integrationDefs}
-            integrations={integrations}
-            onChanged={handleModelsChanged}
-            onConfigured={handleProviderConfigured}
-            readOnly={context === "profile"}
-            firstRun={context === "setup"}
-          />
-        )}
-        {step === 2 && (
-          <StepModel
-            models={models}
-            onChanged={handleModelsChanged}
-            readOnly={context === "profile"}
-            defaultProvider={context === "setup" ? defaultModelProvider : undefined}
-          />
-        )}
-        {step === 3 && (
-          <StepAgent
-            agents={agents}
-            models={models}
-            onChanged={handleAgentsChanged}
-            readOnly={context === "profile"}
-            starter={context === "setup" ? {
-              name: assistantName,
-              onNameChange: setAssistantName,
-              icon: assistantIcon,
-              onIconChange: setAssistantIcon,
-              goal: starterGoal,
-              onGoalChange: setStarterGoal,
-            } : undefined}
-          />
-        )}
-        {step === 4 && (
-          <StepReview
-            name={name}
-            about={about}
-            preset={preset}
-            models={models}
-            agents={agents}
-            integrations={integrations}
-            readOnlySettings={context === "profile"}
-            starterAgent={context === "setup" && !createdAgent && agents.length === 0 ? {
-              name: assistantName.trim(),
-              modelConfigName: starterModel?.name ?? "",
-            } : undefined}
-          />
-        )}
+        <WizardStep wizard={wizard} />
         {saveError && isLast && (
           <p role="alert" className="mx-auto mt-4 w-full max-w-2xl text-sm text-rose-600 dark:text-rose-300">
             {saveError}
           </p>
         )}
       </div>
+      <WizardFooter wizard={wizard} />
+    </main>
+  );
+}
 
-      <footer className="sticky bottom-0 z-20 border-t border-border bg-surface/85 px-4 py-3 backdrop-blur-xl sm:px-8">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-3">
+function WizardStep({ wizard }: { wizard: WizardController }) {
+  const {
+    step, context, name, setName, about, setAbout, preset, setPreset, integrationDefs, integrations,
+    handleModelsChanged, handleProviderConfigured, models, defaultModelProvider, agents,
+    handleAgentsChanged, assistantName, setAssistantName, assistantIcon, setAssistantIcon,
+    starterGoal, setStarterGoal, createdAgent, starterModel,
+  } = wizard;
+  return (
+    <>
+      {step === 0 && (
+        <StepProfile
+          name={name}
+          onNameChange={setName}
+          about={about}
+          onAboutChange={setAbout}
+          preset={preset}
+          onPresetChange={setPreset}
+        />
+      )}
+      {step === 1 && (
+        <StepCredentials
+          definitions={integrationDefs}
+          integrations={integrations}
+          onChanged={handleModelsChanged}
+          onConfigured={handleProviderConfigured}
+          readOnly={context === "profile"}
+          firstRun={context === "setup"}
+        />
+      )}
+      {step === 2 && (
+        <StepModel
+          models={models}
+          onChanged={handleModelsChanged}
+          readOnly={context === "profile"}
+          defaultProvider={context === "setup" ? defaultModelProvider : undefined}
+        />
+      )}
+      {step === 3 && (
+        <StepAgent
+          agents={agents}
+          models={models}
+          onChanged={handleAgentsChanged}
+          readOnly={context === "profile"}
+          starter={context === "setup" ? {
+            name: assistantName,
+            onNameChange: setAssistantName,
+            icon: assistantIcon,
+            onIconChange: setAssistantIcon,
+            goal: starterGoal,
+            onGoalChange: setStarterGoal,
+          } : undefined}
+        />
+      )}
+      {step === 4 && (
+        <StepReview
+          name={name}
+          about={about}
+          preset={preset}
+          models={models}
+          agents={agents}
+          integrations={integrations}
+          readOnlySettings={context === "profile"}
+          starterAgent={context === "setup" && !createdAgent && agents.length === 0 ? {
+            name: assistantName.trim(),
+            modelConfigName: starterModel?.name ?? "",
+          } : undefined}
+        />
+      )}
+    </>
+  );
+}
+
+function WizardFooter({ wizard }: { wizard: WizardController }) {
+  const { context, step, setStep, saving, isLast, handleSave, canSave, canAdvance, saveError } = wizard;
+  return (
+    <footer className="sticky bottom-0 z-20 border-t border-border bg-surface/85 px-4 py-3 backdrop-blur-xl sm:px-8">
+      <div className="mx-auto flex w-full max-w-2xl items-center gap-3">
+        <button
+          type="button"
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
+          disabled={step === 0 || saving}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-border px-4 py-2.5 text-sm hover:border-fg-faint disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <ArrowLeft size={14} /> Back
+        </button>
+
+        <div className="flex-1" />
+
+        {isLast ? (
           <button
             type="button"
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
-            disabled={step === 0 || saving}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-4 py-2.5 text-sm hover:border-fg-faint disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={handleSave}
+            disabled={saving || !canSave}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <ArrowLeft size={14} /> Back
+            {saving ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <CheckCircle2 size={14} />
+            )}
+            {context === "setup" ? "Start our first chat" : "Save and open chat"}
           </button>
-
-          <div className="flex-1" />
-
-          {isLast ? (
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || !canSave}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <CheckCircle2 size={14} />
-              )}
-              {context === "setup" ? "Start our first chat" : "Save and open chat"}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
-              disabled={!canAdvance}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
+        ) : (
+          <button
+            type="button"
+            onClick={() => setStep((s) => Math.min(STEPS.length - 1, s + 1))}
+            disabled={!canAdvance}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
               Continue <ArrowRight size={14} />
-            </button>
-          )}
-        </div>
-        {saveError && isLast && (
-          <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-rose-600 dark:text-rose-300 sm:hidden">
-            {saveError}
-          </p>
+          </button>
         )}
-      </footer>
-    </main>
+      </div>
+      {saveError && isLast && (
+        <p className="mx-auto mt-2 max-w-2xl text-center text-xs text-rose-600 dark:text-rose-300 sm:hidden">
+          {saveError}
+        </p>
+      )}
+    </footer>
   );
 }

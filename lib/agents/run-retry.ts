@@ -138,14 +138,33 @@ export async function* transientRetryStream(
 // stalled prose stays visible (already streamed) and a "↻" separator marks
 // the boundary; the consumer's text/tool accumulator naturally captures
 // both halves into a single combined assistant message.
-export async function* stallRetryStream(
+interface RetryObservation {
+  textBuf: string;
+  toolNames: string[];
+  toolResultSummaries: string[];
+  toolOutcomes: ToolOutcomes;
+  workflowObservations: WorkflowProgressObservation[];
+  loopedToolName: string | null;
+  doneChunk: StreamChunk | null;
+}
+
+interface RetryAssessment {
+  stalled: boolean;
+  looped: boolean;
+  fabrication: ReturnType<typeof validateAssistantOutput>;
+  citationFail: boolean;
+  promisedWriteStall: boolean;
+  zeroToolStall: boolean;
+  classifierStalled: boolean;
+  classifierReason: string;
+  uncitedHighClaims: ReadonlyArray<{ text: string; reason: string; marker: number | null }>;
+}
+
+async function* observeRetryAttempt(
   inner: AsyncIterable<StreamChunk>,
   originalReq: ThreadRunRequest,
-  allowedTools: readonly string[],
   retriesLeft: number,
-  attemptAbort: AbortController,
-  prepareRetry: PrepareRetry,
-): AsyncGenerator<StreamChunk> {
+): AsyncGenerator<StreamChunk, RetryObservation | null> {
   let textBuf = "";
   const toolNames: string[] = [];
   const toolResultSummaries: string[] = [];
@@ -220,12 +239,21 @@ export async function* stallRetryStream(
       break;
     } else if (chunk.type === "error") {
       yield chunk;
-      return;
+      return null;
     } else {
       yield chunk;
     }
   }
+  return { textBuf, toolNames, toolResultSummaries, toolOutcomes, workflowObservations, loopedToolName, doneChunk };
+}
 
+async function assessRetryAttempt(
+  observation: RetryObservation,
+  originalReq: ThreadRunRequest,
+  allowedTools: readonly string[],
+  retriesLeft: number,
+): Promise<RetryAssessment> {
+  const { textBuf, toolNames, toolOutcomes, loopedToolName } = observation;
   const succeededToolNames = toolOutcomes.successfulNames();
 
   const trimmedText = textBuf.trim();
@@ -333,7 +361,32 @@ export async function* stallRetryStream(
     }
   }
   const citationFail = uncitedHighClaims.length > 0;
+  return {
+    stalled,
+    looped,
+    fabrication,
+    citationFail,
+    promisedWriteStall,
+    zeroToolStall,
+    classifierStalled,
+    classifierReason,
+    uncitedHighClaims,
+  };
+}
 
+export async function* stallRetryStream(
+  inner: AsyncIterable<StreamChunk>,
+  originalReq: ThreadRunRequest,
+  allowedTools: readonly string[],
+  retriesLeft: number,
+  attemptAbort: AbortController,
+  prepareRetry: PrepareRetry,
+): AsyncGenerator<StreamChunk> {
+  const observation = yield* observeRetryAttempt(inner, originalReq, retriesLeft);
+  if (!observation) return;
+  const { textBuf, toolNames, toolResultSummaries, toolOutcomes, workflowObservations, loopedToolName, doneChunk } = observation;
+  const { stalled, looped, fabrication, citationFail, promisedWriteStall, zeroToolStall,
+    classifierStalled, classifierReason, uncitedHighClaims } = await assessRetryAttempt(observation, originalReq, allowedTools, retriesLeft);
   if (!stalled && !looped && fabrication.ok && !citationFail) {
     if (workflowObservations.length > 0) {
       yield* workflowStepRetryStream(workflowObservations, originalReq, retriesLeft, attemptAbort, doneChunk, textBuf, toolNames, toolResultSummaries, prepareRetry);

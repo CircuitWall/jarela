@@ -82,37 +82,9 @@ interface Props {
 // header (z-40) is hidden while this is visible so the user lands on a
 // focused, one-purpose screen.
 export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThreadId, onPickAgent, onCreateAgent, suppressed }: Props) {
-  // Capture which agent we transitioned through so the icon can keep
-  // showing during the fade-out, even if a parent state shift would
-  // otherwise clear it.
-  const [pickedId, setPickedId] = useState<string | null>(null);
-  const [dismissing, setDismissing] = useState(false);
-  const [done, setDone] = useState(false);
-  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Prefetch checklist. Drives both the step display and the dismiss
-  // gate — we don't fade out until every step is settled so ChatView
-  // mounts onto warm data instead of showing its own loading spinners.
-  type StepStatus = "pending" | "active" | "done";
-  type Step = { key: string; label: string; status: StepStatus };
-  const [steps, setSteps] = useState<Step[]>(() => {
-    const opening = agentsLoaded && Boolean(activeAgentId);
-    return [
-      { key: "agents", label: "Loading your agents", status: agentsLoaded ? "done" : "active" },
-      { key: "profile", label: "Setting up your profile", status: opening ? "active" : "pending" },
-      { key: "agent", label: "Getting your agent ready", status: opening ? "active" : "pending" },
-      { key: "thread", label: "Preparing your conversation", status: opening ? "active" : "pending" },
-      { key: "messages", label: "Loading recent messages", status: "pending" },
-    ];
-  });
-  const [adoption, setAdoption] = useState<VersionAdoptionState | null>(null);
-  const [adoptionBusy, setAdoptionBusy] = useState<VersionAdoptionAction | null>(null);
-  const [adoptionLiveLabel, setAdoptionLiveLabel] = useState<string | null>(null);
-  const adoptionRef = useRef<VersionAdoptionState | null>(null);
-  const adoptionRunStartedRef = useRef<string | null>(null);
-  const adoptionAbortRef = useRef<AbortController | null>(null);
-  adoptionRef.current = adoption;
+  const { pickedId, dismissing, done, steps, handlePick } = useBootSelection({ agentsLoaded, activeAgentId, preferredThreadId, onPickAgent });
 
-  const defaultAgent = useMemo(
+const defaultAgent = useMemo(
     () => agents.find((a) => a.is_default) ?? null,
     [agents],
   );
@@ -124,6 +96,8 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
     [agents],
   );
 
+  const { adoption, adoptionBusy, adoptionLiveLabel, handleAdoptionAction, handleAdoptionItemRetry } = useBootAdoption({ agentsLoaded, defaultAgent, handlePick });
+
   // The agent whose icon we show during the opening phase. Prefer the
   // explicitly-picked one (so a click animates that icon even if the
   // active-agent state changes), fall back to the active agent, then
@@ -134,44 +108,510 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
     return agents.find((a) => a.id === id) ?? null;
   }, [pickedId, activeAgentId, agents]);
 
-  const markStep = useCallback((key: string, status: StepStatus) => {
-    setSteps((prev) => prev.map((s) => (s.key === key ? { ...s, status } : s)));
-  }, []);
-
-  const handlePick = useCallback((id: string) => {
-    if (pickedId) return;
-    setPickedId(id);
-    onPickAgent(id);
-  }, [onPickAgent, pickedId]);
-
-  useEffect(() => {
-    if (!agentsLoaded || !defaultAgent) return;
-    let cancelled = false;
-    void api.lifecycle.adoption.get()
-      .then((state) => {
-        if (!cancelled) setAdoption(state);
-      })
-      .catch(() => {
-        if (!cancelled) setAdoption(null);
-      });
-    return () => { cancelled = true; };
-  }, [agentsLoaded, defaultAgent]);
-
   useEffect(() => {
     if (!agentsLoaded || suppressed) return;
-    void api.agents.recentReplies().catch(() => {});
+    void api.agents.recentReplies().catch(() => { });
   }, [agentsLoaded, suppressed]);
 
-  useEffect(() => () => {
-    adoptionAbortRef.current?.abort();
-  }, []);
+if (done) return null;
+  if (suppressed) return null;
 
-  const adoptionRunStatus = adoption?.status;
-  const adoptionThreadId = adoption?.adoption_thread_id;
-  const adoptionPrompt = adoption?.adoption_prompt;
-  const adoptionDefaultAgentId = adoption?.default_agent_id;
-  const adoptionCurrentVersion = adoption?.current_version;
+  const phase: "loading" | "pick" | "opening" =
+    !agentsLoaded
+      ? "loading"
+      : activeAgentId || pickedId
+        ? "opening"
+        : "pick";
 
+  const activeStepKey = steps.find((step) => step.status === "active")?.key
+    ?? steps.find((step) => step.status === "pending")?.key;
+  const activeStepLabel = steps.find((step) => step.key === activeStepKey)?.label;
+  const statusText =
+    phase === "loading"
+      ? activeStepLabel ?? "Loading your agents"
+      : phase === "opening"
+        ? activeStepLabel ?? `Opening ${focusAgent?.name ?? "agent"}`
+        : "Choose an agent to begin";
+
+const { tileAgent, showAdoption, adoptionBlocksTile, tileClickable, adoptionTitle, adoptionNeedsAttention } = bootPickerState({ focusAgent, defaultAgent, phase, adoption });
+
+  return (
+    <div
+      data-testid="boot-screen"
+      role="status"
+      aria-live="polite"
+      aria-hidden={dismissing}
+      className={[
+        "fixed inset-0 z-[70]",
+        "bg-surface text-fg",
+        "transition-opacity duration-500 ease-out motion-reduce:transition-none",
+        dismissing ? "opacity-0 pointer-events-none" : "opacity-100",
+      ].join(" ")}
+      style={{
+        backgroundImage: "radial-gradient(ellipse at center, color-mix(in srgb, var(--color-accent) 5%, var(--color-surface)) 0%, var(--color-surface) 68%)",
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
+      }}
+    >
+      {/*
+        Fixed three-row layout so the Logo and headline never reflow as
+        the phase changes:
+          - Logo + headline pinned in a stable block above center
+          - Tile slot always 11rem tall, centered
+          - Recent list sits in its own slot below the tile and just
+            fades its opacity in/out — it never adds or removes layout
+            height, so the tile and headline stay put.
+      */}
+      <div className="boot-screen-stack absolute inset-0 flex flex-col items-center justify-center gap-6 lg:gap-8">
+        <Logo className="boot-screen-logo h-16 w-auto" />
+        <p className={`inline-flex items-center justify-center font-serif text-base tracking-normal text-fg-muted min-h-[1.5rem] text-center px-6 ${phase !== "pick" ? "animate-pulse motion-reduce:animate-none" : ""}`}>
+          {statusText}
+        </p>
+
+        <BootAgentTile
+          tileAgent={tileAgent}
+          tileClickable={tileClickable}
+          handlePick={handlePick}
+          adoptionBlocksTile={adoptionBlocksTile}
+          adoption={adoption}
+          phase={phase}
+        />
+        <BootAgentChoices
+          phase={phase}
+          recentAgents={recentAgents}
+          showAdoption={showAdoption}
+          handlePick={handlePick}
+          adoption={adoption}
+          adoptionTitle={adoptionTitle}
+          adoptionLiveLabel={adoptionLiveLabel}
+          handleAdoptionItemRetry={handleAdoptionItemRetry}
+          adoptionBusy={adoptionBusy}
+          adoptionNeedsAttention={adoptionNeedsAttention}
+          handleAdoptionAction={handleAdoptionAction}
+          defaultAgent={defaultAgent}
+          onCreateAgent={onCreateAgent}
+        />
+      </div>
+      <div
+        className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+      >
+        <VersionTag />
+        <PoweredBy />
+      </div>
+    </div>
+  );
+}
+
+function useBootWarmup({ activeAgentId, pickedId, agentsLoaded, done, setDismissing, setSteps, markStep, preferredThreadId, dismissTimerRef, setDone }: {
+  activeAgentId: string | null;
+  pickedId: string | null;
+  agentsLoaded: boolean;
+  done: boolean;
+  setDismissing: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  setSteps: import("react").Dispatch<import("react").SetStateAction<{ key: string; label: string; status: "pending" | "done" | "active"; }[]>>;
+  markStep: (key: string, status: "pending" | "done" | "active") => void;
+  preferredThreadId: string | null | undefined;
+  dismissTimerRef: import("react").RefObject<NodeJS.Timeout | null>;
+  setDone: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+}) {
+  // Prefetch agent profile, config, thread, and recent messages BEFORE
+  // we let the chat view take over. The user stays on the boot screen
+  // and sees each step tick off, which is far better than landing on a
+  // half-rendered chat that has to fetch the same data anyway.
+  useEffect(() => {
+    const id = activeAgentId ?? pickedId;
+    if (!id || !agentsLoaded || done) return;
+    setDismissing(false);
+
+    setSteps([
+      { key: "agents", label: "Loading your agents", status: "done" },
+      { key: "profile", label: "Setting up your profile", status: "active" },
+      { key: "agent", label: "Getting your agent ready", status: "active" },
+      { key: "thread", label: "Preparing your conversation", status: "active" },
+      { key: "messages", label: "Loading recent messages", status: "pending" },
+    ]);
+
+    let cancelled = false;
+
+    void (async () => {
+      await Promise.allSettled([
+        api.profile.get({ startup: true }).catch((error: unknown) => {
+          console.error("startup profile warmup failed", error);
+        }).finally(() => {
+          if (!cancelled) markStep("profile", "done");
+        }),
+        api.agents
+          .get(id, { startup: true })
+          .catch((error: unknown) => {
+            console.error("startup agent warmup failed", error);
+          })
+          .finally(() => {
+            if (!cancelled) markStep("agent", "done");
+          }),
+        (async () => {
+          try {
+            if (preferredThreadId) {
+              try {
+                const preferred = await api.threads.get(preferredThreadId, { startup: true });
+                if (preferred.agent_id === id) return;
+              } catch (error) {
+                console.error("startup selected conversation warmup failed", error);
+              }
+            }
+            const t = await api.agents.getThread(id, { startup: true });
+            if (cancelled) return;
+            markStep("thread", "done");
+            markStep("messages", "active");
+            await api.threads.get(t.thread_id, { startup: true });
+          } catch (error) {
+            console.error("startup conversation warmup failed", error);
+            // Errors here are non-fatal for boot — ChatView will surface
+            // them with its own retry path. Just mark the steps done so
+            // we don't block the user behind the splash forever.
+          } finally {
+            if (!cancelled) {
+              markStep("thread", "done");
+              markStep("messages", "done");
+            }
+          }
+        })(),
+      ]);
+      if (cancelled) return;
+      // Short grace period so the user actually sees the final "all
+      // done" state before the screen fades.
+      const settleTimer = setTimeout(() => {
+        if (cancelled) return;
+        setDismissing(true);
+        dismissTimerRef.current = setTimeout(() => setDone(true), 500);
+      }, 250);
+      dismissTimerRef.current = settleTimer;
+    })();
+
+    return () => {
+      cancelled = true;
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, [activeAgentId, pickedId, preferredThreadId, agentsLoaded, markStep, done, setDismissing, setSteps, dismissTimerRef, setDone]);
+
+}
+
+function useAdoptionActions({ adoptionBusy, adoption, handlePick, setAdoptionBusy, setAdoption, adoptionRunStartedRef }: {
+  adoptionBusy: VersionAdoptionAction | null;
+  adoption: VersionAdoptionState | null;
+  handlePick: (id: string) => void;
+  setAdoptionBusy: import("react").Dispatch<import("react").SetStateAction<VersionAdoptionAction | null>>;
+  setAdoption: import("react").Dispatch<import("react").SetStateAction<VersionAdoptionState | null>>;
+  adoptionRunStartedRef: import("react").RefObject<string | null>;
+}) {
+  async function handleAdoptionAction(action: VersionAdoptionAction) {
+    if (adoptionBusy) return;
+    if ((action === "start" || action === "retry") && adoption?.status === "running" && adoption.default_agent_id) {
+      handlePick(adoption.default_agent_id);
+      return;
+    }
+    setAdoptionBusy(action);
+    try {
+      const next = await api.lifecycle.adoption.action(action);
+      setAdoption(next);
+      if ((action === "start" || action === "retry") && next.default_agent_id) {
+        adoptionRunStartedRef.current = null;
+      }
+    } catch {
+      setAdoption((prev) => prev ? { ...prev, status: "failed", error: "Could not update adoption status." } : prev);
+    } finally {
+      setAdoptionBusy(null);
+    }
+  }
+
+  async function handleAdoptionItemRetry(itemId: string) {
+    if (adoptionBusy || adoption?.status === "running") return;
+    setAdoptionBusy("retry");
+    try {
+      const next = await api.lifecycle.adoption.retryItem(itemId);
+      setAdoption(next);
+      adoptionRunStartedRef.current = null;
+    } catch {
+      setAdoption((prev) => prev ? { ...prev, error: "Could not retry that step." } : prev);
+    } finally {
+      setAdoptionBusy(null);
+    }
+  }
+
+  return { handleAdoptionAction, handleAdoptionItemRetry };
+}
+
+function BootAgentTile({ tileAgent, tileClickable, handlePick, adoptionBlocksTile, adoption, phase }: {
+  tileAgent: AgentConfig | null;
+  tileClickable: boolean;
+  handlePick: (id: string) => void;
+  adoptionBlocksTile: boolean;
+  adoption: VersionAdoptionState | null;
+  phase: "loading" | "pick" | "opening";
+}) {
+  return (<>
+    {/* Tile slot — always reserves the same 11rem so neighbours don't shift. */}
+    <div className="boot-screen-tile relative z-10 h-44 w-44 lg:h-56 lg:w-56">
+      {tileAgent ? (
+        <button
+          type="button"
+          onClick={tileClickable ? () => handlePick(tileAgent.id) : undefined}
+          disabled={!tileClickable}
+          aria-label={
+            tileClickable
+              ? `Open ${tileAgent.name}`
+              : adoptionBlocksTile
+                ? `Review the ${adoption?.current_version ?? "update"} adoption checklist below before opening ${tileAgent.name}`
+                : `Opening ${tileAgent.name}`
+          }
+          className={[
+            "absolute inset-0 rounded-3xl overflow-hidden",
+            "ring-1 ring-border/50 ring-offset-4 ring-offset-surface",
+            "shadow-xl shadow-black/10",
+            tileClickable
+              ? "hover:ring-accent/50 hover:shadow-black/15 transition-colors transition-shadow duration-200 ease-out motion-reduce:transition-none cursor-pointer"
+              : "cursor-default",
+          ].join(" ")}
+        >
+          <div
+            className={`absolute inset-0 bg-gradient-to-br ${gradientFor(tileAgent.id)} flex items-center justify-center text-5xl font-bold text-white select-none`}
+          >
+            {tileAgent.icon ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={tileAgent.icon}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              tileAgent.name.charAt(0).toUpperCase()
+            )}
+          </div>
+
+          {/*
+                "default" pill — only meaningful in the picker. Fades
+                out as we transition to opening so the same tile keeps
+                showing without a remount flash.
+              */}
+          <span
+            className={[
+              "absolute top-2 right-2 text-[10px] font-medium",
+              "px-1.5 py-0.5 rounded-full text-white bg-accent/80",
+              "backdrop-blur-sm shadow transition-opacity duration-200 motion-reduce:transition-none",
+              phase === "pick" && tileAgent.is_default
+                ? "opacity-100"
+                : "opacity-0",
+            ].join(" ")}
+          >
+            default
+          </span>
+
+          <div className="absolute inset-x-0 bottom-0 pt-10 pb-3 px-3 bg-gradient-to-t from-black/85 via-black/55 to-transparent">
+            <p className="text-base font-semibold text-white drop-shadow-sm truncate text-center">
+              {tileAgent.name}
+            </p>
+          </div>
+        </button>
+      ) : (
+        <div
+          className="absolute inset-0 rounded-3xl bg-surface-2/60 ring-2 ring-border/30 ring-offset-4 ring-offset-surface"
+          aria-hidden
+        />
+      )}
+    </div>
+
+</>);
+}
+
+function BootAgentChoices({
+  phase, recentAgents, showAdoption, handlePick,
+  adoption, adoptionTitle, adoptionLiveLabel, handleAdoptionItemRetry,
+  adoptionBusy, adoptionNeedsAttention, handleAdoptionAction, defaultAgent,
+  onCreateAgent,
+}: {
+  phase: "loading" | "pick" | "opening";
+  recentAgents: AgentConfig[];
+  showAdoption: boolean;
+  handlePick: (id: string) => void;
+  adoption: VersionAdoptionState | null;
+  adoptionTitle: string;
+  adoptionLiveLabel: string | null;
+  handleAdoptionItemRetry: (itemId: string) => Promise<void>;
+  adoptionBusy: VersionAdoptionAction | null;
+  adoptionNeedsAttention: boolean;
+  handleAdoptionAction: (action: VersionAdoptionAction) => Promise<void>;
+  defaultAgent: AgentConfig | null;
+  onCreateAgent: () => void;
+}) {
+  return (<>
+    {/*
+          Recent list slot. Fixed size (so neighbours don't reflow when
+          phase changes). Opacity-toggled instead of conditionally
+          rendered so the picker→opening transition is a fade, not a
+          layout shift.
+        */}
+    <div className="boot-screen-recent-slot w-48 min-h-[12rem] relative lg:w-72 lg:min-h-[13rem]">
+      <div
+        className={[
+          "absolute inset-x-0 top-0 flex flex-col items-center gap-2",
+          "transition-opacity duration-200 motion-reduce:transition-none",
+          phase === "pick" && recentAgents.length > 0 && !showAdoption
+            ? "opacity-100"
+            : "opacity-0 pointer-events-none",
+        ].join(" ")}
+      >
+        <p className="text-xs text-fg-faint">
+          Recent
+        </p>
+        <div className="flex flex-col gap-1.5 w-full">
+          {recentAgents.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => handlePick(a.id)}
+              title={a.identity || a.name}
+              aria-label={`Open ${a.name}`}
+              disabled={phase !== "pick"}
+              className="flex items-center gap-3 px-3 py-2 rounded-xl border border-border/60 bg-surface-2/60 hover:bg-surface-3 hover:border-border transition-colors text-left"
+            >
+              <div
+                className={`w-9 h-9 shrink-0 rounded-lg bg-gradient-to-br ${gradientFor(a.id)} flex items-center justify-center text-sm font-bold text-white select-none overflow-hidden`}
+              >
+                {a.icon ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={a.icon}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  a.name.charAt(0).toUpperCase()
+                )}
+              </div>
+              <p className="text-sm text-fg-muted truncate flex-1">
+                {a.name}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <AdoptionChecklist
+        showAdoption={showAdoption}
+        adoption={adoption}
+        adoptionTitle={adoptionTitle}
+        adoptionLiveLabel={adoptionLiveLabel}
+        handleAdoptionItemRetry={handleAdoptionItemRetry}
+        adoptionBusy={adoptionBusy}
+        adoptionNeedsAttention={adoptionNeedsAttention}
+        handleAdoptionAction={handleAdoptionAction}
+      />
+      {phase === "pick" &&
+        !defaultAgent &&
+        recentAgents.length === 0 && (
+          <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-2 px-3 text-center">
+            <p className="text-xs text-fg-faint">
+              Create an agent to start chatting.
+            </p>
+            <button
+              type="button"
+              onClick={onCreateAgent}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-fg transition-colors hover:bg-accent/20"
+            >
+              <Plus size={14} /> Create an agent
+            </button>
+          </div>
+        )}
+    </div>
+
+  </>);
+}
+
+function AdoptionChecklist({
+  showAdoption, adoption, adoptionTitle, adoptionLiveLabel,
+  handleAdoptionItemRetry, adoptionBusy, adoptionNeedsAttention, handleAdoptionAction,
+}: {
+  showAdoption: boolean;
+  adoption: VersionAdoptionState | null;
+  adoptionTitle: string;
+  adoptionLiveLabel: string | null;
+  handleAdoptionItemRetry: (itemId: string) => Promise<void>;
+  adoptionBusy: VersionAdoptionAction | null;
+  adoptionNeedsAttention: boolean;
+  handleAdoptionAction: (action: VersionAdoptionAction) => Promise<void>;
+}) {
+  return (<>
+    {showAdoption && adoption && (
+      <WorkflowChecklist
+        eyebrow="Version check"
+        title={adoptionTitle}
+        phaseLabel={adoption.phase === "impact_radius" ? "phase 1" : adoption.phase === "adoption" ? "phase 2" : adoption.status === "failed" ? "attention" : adoption.status}
+        summary={adoptionLiveLabel ?? adoption.summary}
+        items={adoption.checklist}
+        error={adoption.error}
+        onRetryItem={(item) => void handleAdoptionItemRetry(item.id)}
+        canRetryItem={(item) => item.id !== "fetch-changes"}
+        retryDisabled={adoptionBusy !== null || adoption.status === "running"}
+      >
+        {adoption.status === "done" && (
+          <p className="mt-2 rounded-lg border border-border/50 bg-surface px-2 py-1 text-[10px] leading-snug text-fg-muted">
+            {adoptionNeedsAttention
+              ? "Summary ready. Open the agent from the main tile to review pending adoption actions."
+              : "Summary ready. No pending adoption actions were flagged."}
+          </p>
+        )}
+        <div className="mt-2 flex gap-1.5">
+          {adoption.status === "running" ? (
+            <span className="flex-1 rounded-lg border border-border/60 bg-surface px-2 py-1 text-center text-[10px] font-medium text-fg-muted">
+              Running
+            </span>
+          ) : adoption.status === "done" ? null : (
+            <button
+              type="button"
+              onClick={() => void handleAdoptionAction(adoption.status === "failed" ? "retry" : "start")}
+              disabled={adoptionBusy !== null}
+              className="flex-1 rounded-lg border border-accent/40 bg-accent/15 px-2 py-1 text-[10px] font-medium text-fg hover:bg-accent/20 disabled:opacity-60"
+            >
+              {adoptionBusy ? "Working" : adoption.status === "failed" ? "Retry" : "Adapt"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void handleAdoptionAction("dismiss")}
+            disabled={adoptionBusy !== null}
+            className="rounded-lg border border-border/60 bg-surface px-2 py-1 text-[10px] text-fg-muted hover:bg-surface-3 disabled:opacity-60"
+          >
+            Dismiss
+          </button>
+        </div>
+      </WorkflowChecklist>
+    )}
+
+</>);
+}
+
+function useAdoptionRun({
+  adoptionRef, agentsLoaded, defaultAgent, adoptionRunStatus,
+  adoptionThreadId, adoptionPrompt, adoptionDefaultAgentId, adoptionCurrentVersion,
+  adoptionRunStartedRef, adoptionAbortRef, setAdoptionBusy, setAdoptionLiveLabel,
+  setAdoption,
+}: {
+  adoptionRef: import("react").RefObject<VersionAdoptionState | null>;
+  agentsLoaded: boolean;
+  defaultAgent: AgentConfig | null;
+  adoptionRunStatus: import("@/api/types").VersionAdoptionStatus | undefined;
+  adoptionThreadId: string | null | undefined;
+  adoptionPrompt: string | null | undefined;
+  adoptionDefaultAgentId: string | null | undefined;
+  adoptionCurrentVersion: string | undefined;
+  adoptionRunStartedRef: import("react").RefObject<string | null>;
+  adoptionAbortRef: import("react").RefObject<AbortController | null>;
+  setAdoptionBusy: import("react").Dispatch<import("react").SetStateAction<VersionAdoptionAction | null>>;
+  setAdoptionLiveLabel: import("react").Dispatch<import("react").SetStateAction<string | null>>;
+  setAdoption: import("react").Dispatch<import("react").SetStateAction<VersionAdoptionState | null>>;
+}) {
   useEffect(() => {
     const adoptionRunSnapshot = adoptionRef.current;
     if (!agentsLoaded || !defaultAgent || !adoptionRunSnapshot) return;
@@ -252,141 +692,100 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
     })();
 
     return () => { cancelled = true; };
-  }, [adoptionRunStatus, adoptionThreadId, adoptionPrompt, adoptionDefaultAgentId, adoptionCurrentVersion, agentsLoaded, defaultAgent]);
+  }, [adoptionRunStatus, adoptionThreadId, adoptionPrompt, adoptionDefaultAgentId, adoptionCurrentVersion, agentsLoaded, defaultAgent, adoptionRef, adoptionRunStartedRef, adoptionAbortRef, setAdoptionBusy, setAdoptionLiveLabel, setAdoption]);
 
-  // Prefetch agent profile, config, thread, and recent messages BEFORE
-  // we let the chat view take over. The user stays on the boot screen
-  // and sees each step tick off, which is far better than landing on a
-  // half-rendered chat that has to fetch the same data anyway.
-  useEffect(() => {
-    const id = activeAgentId ?? pickedId;
-    if (!id || !agentsLoaded || done) return;
-    setDismissing(false);
+}
 
-    setSteps([
-      { key: "agents", label: "Loading your agents", status: "done" },
-      { key: "profile", label: "Setting up your profile", status: "active" },
-      { key: "agent", label: "Getting your agent ready", status: "active" },
-      { key: "thread", label: "Preparing your conversation", status: "active" },
+function useBootSelection({ agentsLoaded, activeAgentId, preferredThreadId, onPickAgent }: {
+  agentsLoaded: boolean;
+  activeAgentId: string | null;
+  preferredThreadId: Props["preferredThreadId"];
+  onPickAgent: Props["onPickAgent"];
+}) {
+  // Capture which agent we transitioned through so the icon can keep
+  // showing during the fade-out, even if a parent state shift would
+  // otherwise clear it.
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  const [dismissing, setDismissing] = useState(false);
+  const [done, setDone] = useState(false);
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Prefetch checklist. Drives both the step display and the dismiss
+  // gate — we don't fade out until every step is settled so ChatView
+  // mounts onto warm data instead of showing its own loading spinners.
+  type StepStatus = "pending" | "active" | "done";
+  type Step = { key: string; label: string; status: StepStatus };
+  const [steps, setSteps] = useState<Step[]>(() => {
+    const opening = agentsLoaded && Boolean(activeAgentId);
+    return [
+      { key: "agents", label: "Loading your agents", status: agentsLoaded ? "done" : "active" },
+      { key: "profile", label: "Setting up your profile", status: opening ? "active" : "pending" },
+      { key: "agent", label: "Getting your agent ready", status: opening ? "active" : "pending" },
+      { key: "thread", label: "Preparing your conversation", status: opening ? "active" : "pending" },
       { key: "messages", label: "Loading recent messages", status: "pending" },
-    ]);
+    ];
+  });
+  const markStep = useCallback((key: string, status: StepStatus) => {
+    setSteps((prev) => prev.map((s) => (s.key === key ? { ...s, status } : s)));
+  }, []);
 
+  const handlePick = useCallback((id: string) => {
+    if (pickedId) return;
+    setPickedId(id);
+    onPickAgent(id);
+  }, [onPickAgent, pickedId]);
+
+  useBootWarmup({ activeAgentId, pickedId, agentsLoaded, done, setDismissing, setSteps, markStep, preferredThreadId, dismissTimerRef, setDone });
+  return { pickedId, dismissing, done, steps, handlePick };
+}
+
+function useBootAdoption({ agentsLoaded, defaultAgent, handlePick }: {
+  agentsLoaded: boolean;
+  defaultAgent: AgentConfig | null;
+  handlePick: (id: string) => void;
+}) {
+  const [adoption, setAdoption] = useState<VersionAdoptionState | null>(null);
+  const [adoptionBusy, setAdoptionBusy] = useState<VersionAdoptionAction | null>(null);
+  const [adoptionLiveLabel, setAdoptionLiveLabel] = useState<string | null>(null);
+  const adoptionRef = useRef<VersionAdoptionState | null>(null);
+  const adoptionRunStartedRef = useRef<string | null>(null);
+  const adoptionAbortRef = useRef<AbortController | null>(null);
+  adoptionRef.current = adoption;
+
+  useEffect(() => {
+    if (!agentsLoaded || !defaultAgent) return;
     let cancelled = false;
+    void api.lifecycle.adoption.get()
+      .then((state) => {
+        if (!cancelled) setAdoption(state);
+      })
+      .catch(() => {
+        if (!cancelled) setAdoption(null);
+      });
+    return () => { cancelled = true; };
+  }, [agentsLoaded, defaultAgent]);
 
-    void (async () => {
-      await Promise.allSettled([
-        api.profile.get({ startup: true }).catch((error: unknown) => {
-          console.error("startup profile warmup failed", error);
-        }).finally(() => {
-          if (!cancelled) markStep("profile", "done");
-        }),
-        api.agents
-          .get(id, { startup: true })
-          .catch((error: unknown) => {
-            console.error("startup agent warmup failed", error);
-          })
-          .finally(() => {
-            if (!cancelled) markStep("agent", "done");
-          }),
-        (async () => {
-          try {
-            if (preferredThreadId) {
-              try {
-                const preferred = await api.threads.get(preferredThreadId, { startup: true });
-                if (preferred.agent_id === id) return;
-              } catch (error) {
-                console.error("startup selected conversation warmup failed", error);
-              }
-            }
-            const t = await api.agents.getThread(id, { startup: true });
-            if (cancelled) return;
-            markStep("thread", "done");
-            markStep("messages", "active");
-            await api.threads.get(t.thread_id, { startup: true });
-          } catch (error) {
-            console.error("startup conversation warmup failed", error);
-            // Errors here are non-fatal for boot — ChatView will surface
-            // them with its own retry path. Just mark the steps done so
-            // we don't block the user behind the splash forever.
-          } finally {
-            if (!cancelled) {
-              markStep("thread", "done");
-              markStep("messages", "done");
-            }
-          }
-        })(),
-      ]);
-      if (cancelled) return;
-      // Short grace period so the user actually sees the final "all
-      // done" state before the screen fades.
-      const settleTimer = setTimeout(() => {
-        if (cancelled) return;
-        setDismissing(true);
-        dismissTimerRef.current = setTimeout(() => setDone(true), 500);
-      }, 250);
-      dismissTimerRef.current = settleTimer;
-    })();
+  useEffect(() => () => {
+    adoptionAbortRef.current?.abort();
+  }, []);
 
-    return () => {
-      cancelled = true;
-      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-    };
-  }, [activeAgentId, pickedId, preferredThreadId, agentsLoaded, markStep, done]);
+  const adoptionRunStatus = adoption?.status;
+  const adoptionThreadId = adoption?.adoption_thread_id;
+  const adoptionPrompt = adoption?.adoption_prompt;
+  const adoptionDefaultAgentId = adoption?.default_agent_id;
+  const adoptionCurrentVersion = adoption?.current_version;
 
-  if (done) return null;
-  if (suppressed) return null;
+  useAdoptionRun({ adoptionRef, agentsLoaded, defaultAgent, adoptionRunStatus, adoptionThreadId, adoptionPrompt, adoptionDefaultAgentId, adoptionCurrentVersion, adoptionRunStartedRef, adoptionAbortRef, setAdoptionBusy, setAdoptionLiveLabel, setAdoption });
 
-  const phase: "loading" | "pick" | "opening" =
-    !agentsLoaded
-      ? "loading"
-      : activeAgentId || pickedId
-        ? "opening"
-        : "pick";
+  const { handleAdoptionAction, handleAdoptionItemRetry } = useAdoptionActions({ adoptionBusy, adoption, handlePick, setAdoptionBusy, setAdoption, adoptionRunStartedRef });
+  return { adoption, adoptionBusy, adoptionLiveLabel, handleAdoptionAction, handleAdoptionItemRetry };
+}
 
-  const activeStepKey = steps.find((step) => step.status === "active")?.key
-    ?? steps.find((step) => step.status === "pending")?.key;
-  const activeStepLabel = steps.find((step) => step.key === activeStepKey)?.label;
-  const statusText =
-    phase === "loading"
-      ? activeStepLabel ?? "Loading your agents"
-      : phase === "opening"
-        ? activeStepLabel ?? `Opening ${focusAgent?.name ?? "agent"}`
-        : "Choose an agent to begin";
-
-  async function handleAdoptionAction(action: VersionAdoptionAction) {
-    if (adoptionBusy) return;
-    if ((action === "start" || action === "retry") && adoption?.status === "running" && adoption.default_agent_id) {
-      handlePick(adoption.default_agent_id);
-      return;
-    }
-    setAdoptionBusy(action);
-    try {
-      const next = await api.lifecycle.adoption.action(action);
-      setAdoption(next);
-      if ((action === "start" || action === "retry") && next.default_agent_id) {
-        adoptionRunStartedRef.current = null;
-      }
-    } catch {
-      setAdoption((prev) => prev ? { ...prev, status: "failed", error: "Could not update adoption status." } : prev);
-    } finally {
-      setAdoptionBusy(null);
-    }
-  }
-
-  async function handleAdoptionItemRetry(itemId: string) {
-    if (adoptionBusy || adoption?.status === "running") return;
-    setAdoptionBusy("retry");
-    try {
-      const next = await api.lifecycle.adoption.retryItem(itemId);
-      setAdoption(next);
-      adoptionRunStartedRef.current = null;
-    } catch {
-      setAdoption((prev) => prev ? { ...prev, error: "Could not retry that step." } : prev);
-    } finally {
-      setAdoptionBusy(null);
-    }
-  }
-
+function bootPickerState({ focusAgent, defaultAgent, phase, adoption }: {
+  focusAgent: AgentConfig | null;
+  defaultAgent: AgentConfig | null;
+  phase: "loading" | "pick" | "opening";
+  adoption: VersionAdoptionState | null;
+}) {
   // The agent rendered in the centered tile. During `loading` and
   // `pick` it's the default (so the user sees the same artwork as soon
   // as agents resolve). During `opening` it's whatever was picked.
@@ -417,234 +816,5 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThrea
     : `Updated to ${adoption?.current_version ?? "new version"}`;
   const adoptionNeedsAttention = adoption?.checklist.some((item) => item.status === "needs_attention") === true;
 
-  return (
-    <div
-      data-testid="boot-screen"
-      role="status"
-      aria-live="polite"
-      aria-hidden={dismissing}
-      className={[
-        "fixed inset-0 z-[70]",
-        "bg-surface text-fg",
-        "transition-opacity duration-500 ease-out motion-reduce:transition-none",
-        dismissing ? "opacity-0 pointer-events-none" : "opacity-100",
-      ].join(" ")}
-      style={{
-        backgroundImage: "radial-gradient(ellipse at center, color-mix(in srgb, var(--color-accent) 5%, var(--color-surface)) 0%, var(--color-surface) 68%)",
-        paddingTop: "env(safe-area-inset-top)",
-        paddingBottom: "env(safe-area-inset-bottom)",
-        paddingLeft: "env(safe-area-inset-left)",
-        paddingRight: "env(safe-area-inset-right)",
-      }}
-    >
-      {/*
-        Fixed three-row layout so the Logo and headline never reflow as
-        the phase changes:
-          - Logo + headline pinned in a stable block above center
-          - Tile slot always 11rem tall, centered
-          - Recent list sits in its own slot below the tile and just
-            fades its opacity in/out — it never adds or removes layout
-            height, so the tile and headline stay put.
-      */}
-      <div className="boot-screen-stack absolute inset-0 flex flex-col items-center justify-center gap-6 lg:gap-8">
-        <Logo className="boot-screen-logo h-16 w-auto" />
-        <p className={`inline-flex items-center justify-center font-serif text-base tracking-normal text-fg-muted min-h-[1.5rem] text-center px-6 ${phase !== "pick" ? "animate-pulse motion-reduce:animate-none" : ""}`}>
-          {statusText}
-        </p>
-
-        {/* Tile slot — always reserves the same 11rem so neighbours don't shift. */}
-        <div className="boot-screen-tile relative z-10 h-44 w-44 lg:h-56 lg:w-56">
-          {tileAgent ? (
-            <button
-              type="button"
-              onClick={tileClickable ? () => handlePick(tileAgent.id) : undefined}
-              disabled={!tileClickable}
-              aria-label={
-                tileClickable
-                  ? `Open ${tileAgent.name}`
-                  : adoptionBlocksTile
-                    ? `Review the ${adoption?.current_version ?? "update"} adoption checklist below before opening ${tileAgent.name}`
-                    : `Opening ${tileAgent.name}`
-              }
-              className={[
-                "absolute inset-0 rounded-3xl overflow-hidden",
-                "ring-1 ring-border/50 ring-offset-4 ring-offset-surface",
-                "shadow-xl shadow-black/10",
-                tileClickable
-                  ? "hover:ring-accent/50 hover:shadow-black/15 transition-colors transition-shadow duration-200 ease-out motion-reduce:transition-none cursor-pointer"
-                  : "cursor-default",
-              ].join(" ")}
-            >
-              <div
-                className={`absolute inset-0 bg-gradient-to-br ${gradientFor(tileAgent.id)} flex items-center justify-center text-5xl font-bold text-white select-none`}
-              >
-                {tileAgent.icon ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={tileAgent.icon}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  tileAgent.name.charAt(0).toUpperCase()
-                )}
-              </div>
-
-              {/*
-                "default" pill — only meaningful in the picker. Fades
-                out as we transition to opening so the same tile keeps
-                showing without a remount flash.
-              */}
-              <span
-                className={[
-                  "absolute top-2 right-2 text-[10px] font-medium",
-                  "px-1.5 py-0.5 rounded-full text-white bg-accent/80",
-                  "backdrop-blur-sm shadow transition-opacity duration-200 motion-reduce:transition-none",
-                  phase === "pick" && tileAgent.is_default
-                    ? "opacity-100"
-                    : "opacity-0",
-                ].join(" ")}
-              >
-                default
-              </span>
-
-              <div className="absolute inset-x-0 bottom-0 pt-10 pb-3 px-3 bg-gradient-to-t from-black/85 via-black/55 to-transparent">
-                <p className="text-base font-semibold text-white drop-shadow-sm truncate text-center">
-                  {tileAgent.name}
-                </p>
-              </div>
-            </button>
-          ) : (
-            <div
-              className="absolute inset-0 rounded-3xl bg-surface-2/60 ring-2 ring-border/30 ring-offset-4 ring-offset-surface"
-              aria-hidden
-            />
-          )}
-        </div>
-
-        {/*
-          Recent list slot. Fixed size (so neighbours don't reflow when
-          phase changes). Opacity-toggled instead of conditionally
-          rendered so the picker→opening transition is a fade, not a
-          layout shift.
-        */}
-        <div className="boot-screen-recent-slot w-48 min-h-[12rem] relative lg:w-72 lg:min-h-[13rem]">
-          <div
-            className={[
-              "absolute inset-x-0 top-0 flex flex-col items-center gap-2",
-              "transition-opacity duration-200 motion-reduce:transition-none",
-              phase === "pick" && recentAgents.length > 0 && !showAdoption
-                ? "opacity-100"
-                : "opacity-0 pointer-events-none",
-            ].join(" ")}
-          >
-            <p className="text-xs text-fg-faint">
-              Recent
-            </p>
-            <div className="flex flex-col gap-1.5 w-full">
-              {recentAgents.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => handlePick(a.id)}
-                  title={a.identity || a.name}
-                  aria-label={`Open ${a.name}`}
-                  disabled={phase !== "pick"}
-                  className="flex items-center gap-3 px-3 py-2 rounded-xl border border-border/60 bg-surface-2/60 hover:bg-surface-3 hover:border-border transition-colors text-left"
-                >
-                  <div
-                    className={`w-9 h-9 shrink-0 rounded-lg bg-gradient-to-br ${gradientFor(a.id)} flex items-center justify-center text-sm font-bold text-white select-none overflow-hidden`}
-                  >
-                    {a.icon ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={a.icon}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      a.name.charAt(0).toUpperCase()
-                    )}
-                  </div>
-                  <p className="text-sm text-fg-muted truncate flex-1">
-                    {a.name}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {showAdoption && adoption && (
-            <WorkflowChecklist
-              eyebrow="Version check"
-              title={adoptionTitle}
-              phaseLabel={adoption.phase === "impact_radius" ? "phase 1" : adoption.phase === "adoption" ? "phase 2" : adoption.status === "failed" ? "attention" : adoption.status}
-              summary={adoptionLiveLabel ?? adoption.summary}
-              items={adoption.checklist}
-              error={adoption.error}
-              onRetryItem={(item) => void handleAdoptionItemRetry(item.id)}
-              canRetryItem={(item) => item.id !== "fetch-changes"}
-              retryDisabled={adoptionBusy !== null || adoption.status === "running"}
-            >
-                {adoption.status === "done" && (
-                  <p className="mt-2 rounded-lg border border-border/50 bg-surface px-2 py-1 text-[10px] leading-snug text-fg-muted">
-                    {adoptionNeedsAttention
-                      ? "Summary ready. Open the agent from the main tile to review pending adoption actions."
-                      : "Summary ready. No pending adoption actions were flagged."}
-                  </p>
-                )}
-                <div className="mt-2 flex gap-1.5">
-                  {adoption.status === "running" ? (
-                    <span className="flex-1 rounded-lg border border-border/60 bg-surface px-2 py-1 text-center text-[10px] font-medium text-fg-muted">
-                      Running
-                    </span>
-                  ) : adoption.status === "done" ? null : (
-                    <button
-                      type="button"
-                      onClick={() => void handleAdoptionAction(adoption.status === "failed" ? "retry" : "start")}
-                      disabled={adoptionBusy !== null}
-                      className="flex-1 rounded-lg border border-accent/40 bg-accent/15 px-2 py-1 text-[10px] font-medium text-fg hover:bg-accent/20 disabled:opacity-60"
-                    >
-                      {adoptionBusy ? "Working" : adoption.status === "failed" ? "Retry" : "Adapt"}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => void handleAdoptionAction("dismiss")}
-                    disabled={adoptionBusy !== null}
-                    className="rounded-lg border border-border/60 bg-surface px-2 py-1 text-[10px] text-fg-muted hover:bg-surface-3 disabled:opacity-60"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-            </WorkflowChecklist>
-          )}
-
-          {phase === "pick" &&
-            !defaultAgent &&
-            recentAgents.length === 0 && (
-              <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-2 px-3 text-center">
-                <p className="text-xs text-fg-faint">
-                  Create an agent to start chatting.
-                </p>
-                <button
-                  type="button"
-                  onClick={onCreateAgent}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-fg transition-colors hover:bg-accent/20"
-                >
-                  <Plus size={14} /> Create an agent
-                </button>
-              </div>
-            )}
-        </div>
-      </div>
-      <div
-        className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
-      >
-        <VersionTag />
-        <PoweredBy />
-      </div>
-    </div>
-  );
+  return { tileAgent, showAdoption, adoptionBlocksTile, tileClickable, adoptionTitle, adoptionNeedsAttention };
 }

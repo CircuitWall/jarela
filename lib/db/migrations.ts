@@ -9,13 +9,7 @@ import { FILES_DIR, isSafeFileName } from "@/lib/files";
 
 const now = () => new Date().toISOString();
 
-export function runMigrations(db: DatabaseSync): void {
-  clearStatementCache(db);
-  const signalDeliveryColumns = db.prepare("PRAGMA table_info(signal_deliveries)").all() as Array<{ name: string }>;
-  if (signalDeliveryColumns.length && !signalDeliveryColumns.some((column) => column.name === "wake_eligible")) {
-    db.exec("ALTER TABLE signal_deliveries ADD COLUMN wake_eligible INTEGER NOT NULL DEFAULT 0");
-  }
-  db.exec(`
+const BASE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS threads (
       thread_id     TEXT PRIMARY KEY,
       agent_id      TEXT NOT NULL,
@@ -459,7 +453,15 @@ export function runMigrations(db: DatabaseSync): void {
       session_id  TEXT NOT NULL,
       updated_at  TEXT NOT NULL
     );
-  `);
+  `;
+
+export function runMigrations(db: DatabaseSync): void {
+  clearStatementCache(db);
+  const signalDeliveryColumns = db.prepare("PRAGMA table_info(signal_deliveries)").all() as Array<{ name: string }>;
+  if (signalDeliveryColumns.length && !signalDeliveryColumns.some((column) => column.name === "wake_eligible")) {
+    db.exec("ALTER TABLE signal_deliveries ADD COLUMN wake_eligible INTEGER NOT NULL DEFAULT 0");
+  }
+  db.exec(BASE_SCHEMA_SQL);
   ensureBridgeEventSubscriptionColumns(db);
   ensureToolFailureSampleColumns(db);
   ensureBridgeRouteColumns(db);

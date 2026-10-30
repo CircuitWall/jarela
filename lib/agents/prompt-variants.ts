@@ -60,7 +60,7 @@ export interface Variant {
   expected?: { bound: number; proxy: number; denied: number; unavailable: number };
 }
 
-export async function buildVariants(): Promise<Variant[]> {
+async function prepareVariantFixtures() {
   const catalog = await getAllToolCatalogAsync();
   const pinned = ["gmail_search", "gmail_send_email"];
   const cfg = agentCfg({ tools: JSON.stringify(pinned) });
@@ -97,17 +97,30 @@ export async function buildVariants(): Promise<Variant[]> {
     }],
   };
 
-  const expectedFor = (map: readonly { permission?: string; permission_reason?: string | null }[]) => {
-    const reachable = new Set(["proxy_only", "provider_tool_limit"]);
-    return {
-      bound: map.filter((t) => t.permission === "enabled").length,
-      proxy: map.filter((t) => t.permission_reason && reachable.has(t.permission_reason)).length,
-      denied: map.filter((t) =>
-        t.permission === "disabled" && !(t.permission_reason && reachable.has(t.permission_reason))).length,
-      unavailable: map.filter((t) => t.permission === "unavailable").length,
-    };
+  return {
+    cfg, permitted, allBound, narrowBound, withCap,
+    delegateCfg, delegatePermissions, delegateTools, base,
   };
+}
 
+function expectedFor(
+  map: readonly { permission?: string; permission_reason?: string | null }[],
+): NonNullable<Variant["expected"]> {
+  const reachable = new Set(["proxy_only", "provider_tool_limit"]);
+  return {
+    bound: map.filter((t) => t.permission === "enabled").length,
+    proxy: map.filter((t) => t.permission_reason && reachable.has(t.permission_reason)).length,
+    denied: map.filter((t) =>
+      t.permission === "disabled" && !(t.permission_reason && reachable.has(t.permission_reason))).length,
+    unavailable: map.filter((t) => t.permission === "unavailable").length,
+  };
+}
+
+export async function buildVariants(): Promise<Variant[]> {
+  const {
+    cfg, permitted, allBound, narrowBound, withCap,
+    delegateCfg, delegatePermissions, delegateTools, base,
+  } = await prepareVariantFixtures();
   return [
     ...USAGE_PROFILE_VALUES.flatMap((usage_profile) => {
       const profile = USAGE_PROFILES[usage_profile];

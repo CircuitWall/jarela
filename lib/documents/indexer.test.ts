@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync, statSync, unlinkSync, promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -235,4 +235,161 @@ describe("indexSource — terminal vs transient embedding failures (issue #597)"
     expect(result).toEqual({ chunks: 1, embedded: 1, failed: 0, error: null });
     expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.75]);
   });
+
+  it.each([false, true])("preserves chunks and backfills unchanged content (touched=%s)", async (touched) => {
+    const abs = join(sourceRoot, "unchanged.txt");
+    writeFileSync(abs, "stable synthetic document");
+    await indexSource(sourceRow);
+    const chunkIds = () => getDb().prepare("SELECT id FROM document_chunks ORDER BY id").all();
+    const before = chunkIds();
+    clearSourceEmbeddings(sourceId);
+    embedBestEffortSpy.mockClear();
+    if (touched) {
+      const future = new Date(Date.now() + 10_000);
+      utimesSync(abs, future, future);
+    }
+
+    const stats = await indexSource(sourceRow);
+
+    expect(stats).toEqual({ scanned: 1, added: 0, updated: 0, removed: 0, unchanged: 1, errors: 0 });
+    expect(chunkIds()).toEqual(before);
+    expect(embedBestEffortSpy).toHaveBeenCalledOnce();
+    expect(getDb().prepare("SELECT mtime_ms, size_bytes FROM documents WHERE source_id=?").get(sourceId))
+      .toEqual({ mtime_ms: Math.floor(statSync(abs).mtimeMs), size_bytes: statSync(abs).size });
+  });
+
+  it.each([false, true])("replaces chunks once during forced reindex (touched=%s)", async (touched) => {
+    const abs = join(sourceRoot, "forced.txt");
+    writeFileSync(abs, "stable forced content");
+    await indexSource(sourceRow);
+    const before = getDb().prepare("SELECT id FROM document_chunks").get();
+    embedBestEffortSpy.mockClear();
+    if (touched) {
+      const future = new Date(Date.now() + 10_000);
+      utimesSync(abs, future, future);
+    }
+
+    const stats = await indexSource(sourceRow, { forceReembed: true });
+
+    expect(stats).toEqual({ scanned: 1, added: 0, updated: 1, removed: 0, unchanged: 0, errors: 0 });
+    expect(getDb().prepare("SELECT id FROM document_chunks").get()).not.toEqual(before);
+    expect(embedBestEffortSpy).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])("reports unchanged backfill failures consistently (touched=%s)", async (touched) => {
+    const abs = join(sourceRoot, "backfill-failure.txt");
+    writeFileSync(abs, "synthetic backfill failure");
+    await indexSource(sourceRow);
+    clearSourceEmbeddings(sourceId);
+    if (touched) {
+      const future = new Date(Date.now() + 10_000);
+      utimesSync(abs, future, future);
+    }
+    embedImpl = (texts) => ({
+      vectors: texts.map(() => null), failed: texts.length, terminal: texts.map(() => false),
+      error: "Synthetic provider unavailable",
+    });
+
+    const stats = await indexSource(sourceRow);
+
+    expect(stats).toMatchObject({
+      unchanged: 1, updated: 0, errors: 0, embed_failed: 1, embed_error: "Synthetic provider unavailable",
+    });
+    expect(getDb().prepare("SELECT last_error FROM document_sources WHERE id=?").get(sourceId))
+      .toEqual({ last_error: "1 chunk failed to embed: Synthetic provider unavailable" });
+  });
+
+  it("counts changed and deleted documents without recreating document identities", async () => {
+    const abs = join(sourceRoot, "changed.txt");
+    writeFileSync(abs, "original content");
+    await indexSource(sourceRow);
+    const before = getDb().prepare("SELECT id FROM documents WHERE source_id=?").get(sourceId);
+    writeFileSync(abs, "updated content with a different size");
+    expect(await indexSource(sourceRow)).toEqual({
+      scanned: 1, added: 0, updated: 1, removed: 0, unchanged: 0, errors: 0,
+    });
+    expect(getDb().prepare("SELECT id FROM documents WHERE source_id=?").get(sourceId)).toEqual(before);
+    unlinkSync(abs);
+    expect(await indexSource(sourceRow)).toEqual({
+      scanned: 0, added: 0, updated: 0, removed: 1, unchanged: 0, errors: 0,
+    });
+    expect(chunkRows()).toEqual([]);
+  });
+
+  it.each([false, true])("only spends the per-tick budget on backfill work when required (missing=%s)", async (missing) => {
+    writeFileSync(join(sourceRoot, "a.txt"), "already indexed");
+    await indexSource(sourceRow);
+    if (missing) clearSourceEmbeddings(sourceId);
+    writeFileSync(join(sourceRoot, "b.txt"), "new file waiting");
+    embedBestEffortSpy.mockClear();
+
+    const stats = await indexSource(sourceRow, { maxFiles: 1 });
+
+    expect(stats.unchanged).toBe(1);
+    expect(stats.added).toBe(missing ? 0 : 1);
+    expect(embedBestEffortSpy).toHaveBeenCalledOnce();
+    expect(getDb().prepare("SELECT COUNT(*) AS count FROM documents WHERE source_id=?").get(sourceId))
+      .toEqual({ count: missing ? 1 : 2 });
+  });
+
+  it("skips binary files without spending the indexing budget", async () => {
+    writeFileSync(join(sourceRoot, "a.txt"), Buffer.from([0, 1, 2]));
+    writeFileSync(join(sourceRoot, "b.txt"), "valid synthetic text");
+
+    const stats = await indexSource(sourceRow, { maxFiles: 1 });
+
+    expect(stats).toEqual({ scanned: 2, added: 1, updated: 0, removed: 0, unchanged: 0, errors: 0 });
+    expect(embedBestEffortSpy).toHaveBeenCalledOnce();
+  });
+
+  it("does not read unchanged files unless forced reindexing requests the content", async () => {
+    const abs = join(sourceRoot, "fast-path.txt");
+    writeFileSync(abs, "synthetic fast-path document");
+    await indexSource(sourceRow);
+    const read = vi.spyOn(fs, "readFile");
+    try {
+      await indexSource(sourceRow);
+      expect(read).not.toHaveBeenCalled();
+      await indexSource(sourceRow, { forceReembed: true });
+      expect(read).toHaveBeenCalledOnce();
+      expect(read).toHaveBeenCalledWith(abs);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  it.each(["stable", "touched", "forced", "changed"] as const)(
+    "records a %s embedding exception and continues processing other files",
+    async (scenario) => {
+      const abs = join(sourceRoot, "a.txt");
+      writeFileSync(abs, "original synthetic content");
+      await indexSource(sourceRow);
+      clearSourceEmbeddings(sourceId);
+      if (scenario === "touched") {
+        const future = new Date(Date.now() + 10_000);
+        utimesSync(abs, future, future);
+      }
+      if (scenario === "changed") writeFileSync(abs, "changed synthetic content with a new size");
+      writeFileSync(join(sourceRoot, "b.txt"), "healthy document");
+      let first = true;
+      embedImpl = (texts) => {
+        if (first) {
+          first = false;
+          throw new Error("Synthetic embedding exception");
+        }
+        return { vectors: texts.map(() => [0.5]), error: null, failed: 0, terminal: texts.map(() => false) };
+      };
+
+      const stats = await indexSource(sourceRow, { forceReembed: scenario === "forced" });
+
+      expect(stats).toEqual({
+        scanned: 2, added: 1, updated: 0, removed: 0,
+        unchanged: scenario === "stable" || scenario === "touched" ? 1 : 0, errors: 1,
+      });
+      expect(getDb().prepare("SELECT last_error FROM document_sources WHERE id=?").get(sourceId))
+        .toEqual({ last_error: "Synthetic embedding exception" });
+      expect(getDb().prepare("SELECT COUNT(*) AS count FROM documents WHERE source_id=?").get(sourceId))
+        .toEqual({ count: 2 });
+    },
+  );
 });

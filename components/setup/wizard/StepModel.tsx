@@ -64,31 +64,63 @@ export function StepModel({ models, onChanged, readOnly = false, defaultProvider
   }
 
   if (readOnly) {
-    return (
-      <StepShell
-        icon={<ShieldCheck size={18} />}
-        eyebrow="Step 3 · Model"
-        title="Here's your model"
-        description="I'll leave it just as it is. You can change it later in Models settings."
-      >
-        <div className="space-y-2">
-          {models.map((model) => (
-            <div key={model.name} className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5">
-              <span className="shrink-0 text-fg-subtle"><ProviderLogo name={model.provider} size={22} /></span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium text-fg">{model.name}</span>
-                  {model.is_default && <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300">Default</span>}
-                </div>
-                <p className="truncate text-[11px] text-fg-faint">{model.provider} · {model.model_id}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </StepShell>
-    );
+    return <ModelReview models={models} />;
   }
 
+  return (
+    <ModelSetup
+      models={models}
+      defaultProvider={defaultProvider}
+      hasEnabledModel={hasEnabledModel}
+      editing={editing}
+      setEditing={setEditing}
+      error={error}
+      handleSave={handleSave}
+      handleSetDefault={handleSetDefault}
+      handleRemove={handleRemove}
+      onChanged={onChanged}
+    />
+  );
+}
+
+function ModelReview({ models }: { models: ModelConfig[] }) {
+  return (
+    <StepShell
+      icon={<ShieldCheck size={18} />}
+      eyebrow="Step 3 · Model"
+      title="Here's your model"
+      description="I'll leave it just as it is. You can change it later in Models settings."
+    >
+      <div className="space-y-2">
+        {models.map((model) => (
+          <div key={model.name} className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5">
+            <span className="shrink-0 text-fg-subtle"><ProviderLogo name={model.provider} size={22} /></span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium text-fg">{model.name}</span>
+                {model.is_default && <span className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300">Default</span>}
+              </div>
+              <p className="truncate text-[11px] text-fg-faint">{model.provider} · {model.model_id}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </StepShell>
+  );
+}
+
+function ModelSetup({ models, defaultProvider, hasEnabledModel, editing, setEditing, error, handleSave, handleSetDefault, handleRemove, onChanged }: {
+  models: ModelConfig[];
+  defaultProvider?: string;
+  hasEnabledModel: boolean;
+  editing: ModelConfig | null | "new";
+  setEditing: (model: ModelConfig | null | "new") => void;
+  error: string | null;
+  handleSave: (name: string, data: Omit<ModelConfig, "name" | "enabled" | "created_at" | "updated_at">) => Promise<void>;
+  handleSetDefault: (model: ModelConfig) => Promise<void>;
+  handleRemove: (name: string) => Promise<void>;
+  onChanged: () => void;
+}) {
   return (
     <StepShell
       icon={<ShieldCheck size={18} />}

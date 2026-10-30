@@ -150,302 +150,16 @@ export async function POST(req: NextRequest, { params }: Params) {
   const admission = new Promise<boolean>((resolve) => { releaseAdmission = resolve; });
   let persistedTurn: Awaited<ReturnType<typeof persistThreadRunUserMessage>> | null = null;
   const assistantDraftState: { current: AssistantTranscriptDraft | null } = { current: null };
+  const submitted: SubmittedTurn = {
+    thread_id, message, stream_options, hot_since_seq, channels, thread,
+    pinnedModelConfigName, contextProfile, enqueuedAt,
+  };
   try {
     ({ position } = enqueueThreadRun(thread_id, "user", async () => {
       if (!(await admission)) return;
       const admittedTurn = persistedTurn;
       if (!admittedTurn) return;
-
-      // startRun is called once it's our turn so the registry only ever
-      // holds one active entry per thread at a time. Subscribers that
-      // attach via GET before our turn comes will see no run yet and the
-      // SSE handler emits a synthetic done — the client reopens the
-      // EventSource and picks up the stream once we're running.
-      const active = startRun(thread_id, thread?.agent_id ?? null);
-      broadcast(active, { type: "status", data: { phase: "starting", label: "Starting…" } });
-      const runStartedAt = Date.now();
-      const queueWaitMs = Math.max(0, runStartedAt - enqueuedAt);
-      const perfTelemetryEnabled = getConfig().perfTelemetryEnabled;
-      let prepDurationMs = 0;
-      let ttftMs: number | null = null;
-      let streamDurationMs = 0;
-      const toolsUsed = new Set<string>();
-      let prepared;
-      try {
-        const activatedUserMessage = updateMessageContent(
-          admittedTurn.userMessageId,
-          admittedTurn.storedContent,
-          { transcriptStatus: "completed" },
-        );
-        if (!activatedUserMessage) throw new Error("Submitted user message no longer exists");
-        broadcast(active, { type: "status", data: { phase: "preparing", label: "Preparing context…" } });
-        const prepStartedAt = Date.now();
-        prepared = await prepareThreadRun({
-          thread_id,
-          message,
-          options: stream_options,
-          attachments: admittedTurn.attachments,
-          signal: active.abort.signal,
-          hot_since_seq,
-          channels,
-          context_profile: contextProfile,
-          _pinned_model_config_name: pinnedModelConfigName,
-          _onCompacting: () => broadcast(active, { type: "status", data: { phase: "compacting", label: "Compacting earlier messages…" } }),
-          _user_message_persisted: true,
-          _idle_ms_before_user: admittedTurn.idleMsBefore,
-        });
-        prepDurationMs = Date.now() - prepStartedAt;
-      } catch (err) {
-        // Prep failure (unknown agent, model misconfig, …). With queueing
-        // the HTTP request has already returned 202, so the error has to
-        // surface as an SSE chunk to any attached subscriber. There may
-        // be no subscriber if the GET hasn't connected yet — the chunk
-        // is buffered on the ActiveRun for the next attach.
-        const message_ = err instanceof RunThreadError ? err.message : String(err);
-        const code = err instanceof RunThreadError ? err.code : "run_prepare_error";
-        broadcast(active, { type: "error", data: { message: message_, code } });
-        const draft = assistantDraftState.current;
-        if (draft) {
-          updateMessageContent(draft.msg_id, draft.visibleContent, {
-            category: "run_error",
-            transcriptStatus: "failed",
-            statusReason: safeTranscriptFailureReason(code),
-          });
-        } else {
-          persistRunErrorMarker(thread_id, { errorMessage: message_, errorCode: code });
-        }
-        finishRun(active, "error");
-        return;
-      }
-
-      // Drive the agent to completion regardless of client connection. Events
-      // go to the registry; the GET subscriber (and any reattaching clients)
-      // receive them via subscribe().
-      //
-      // CRITICAL: finishRun() MUST run no matter what — if it doesn't, the
-      // run is pinned as "running" forever and the TTL eviction (scheduled
-      // inside finishRun()) never fires, so a leaked entry never self-heals.
-      // Wrap the whole body in try/finally.
-      let terminal: "done" | "error" = "error";
-      let assistantContent = "";
-      let terminalErrorCode: string | undefined;
-      let inputTokens: number | null = null;
-      let outputTokens: number | null = null;
-      let cacheReadTokens: number | null = null;
-      let cacheCreateTokens: number | null = null;
-      let thinkingTokens: number | null = null;
-      let toolResultCount = 0;
-      let toolResultBytes = 0;
-      let toolResultBytesSpilled = 0;
-      try {
-        const startedAt = Date.now();
-        broadcast(active, { type: "status", data: { phase: "thinking", label: "Thinking…" } });
-        const streamStartedAt = Date.now();
-        const collected = await collectStream(prepared.stream as AsyncIterable<StreamChunk>, {
-          onChunk: (chunk) => {
-            if (ttftMs === null && chunk.type !== "heartbeat") {
-              ttftMs = Math.max(0, Date.now() - runStartedAt);
-            }
-            if (chunk.type === "tool_call") {
-              const toolName = chunk.data && typeof chunk.data.name === "string"
-                ? chunk.data.name
-                : "";
-              if (toolName) toolsUsed.add(toolName);
-            }
-            const draft = assistantDraftState.current;
-            if (draft) persistAssistantDraftChunk(draft, chunk);
-            broadcast(active, chunk);
-          },
-        });
-        streamDurationMs = Date.now() - streamStartedAt;
-        assistantContent = collected.assistantContent;
-        terminal = collected.terminal;
-        terminalErrorCode = collected.errorCode;
-        if (collected.usage) {
-          inputTokens = collected.usage.input_tokens;
-          outputTokens = collected.usage.output_tokens;
-          cacheReadTokens = collected.usage.cache_read_input_tokens ?? 0;
-          cacheCreateTokens = collected.usage.cache_creation_input_tokens ?? 0;
-          thinkingTokens = collected.usage.thinking_tokens ?? null;
-        }
-        if (collected.toolEvents?.length) {
-          const resultEvents = collected.toolEvents.filter((ev) => ev.phase === "result");
-          toolResultCount = resultEvents.length;
-          toolResultBytes = resultEvents.reduce((sum, ev) => sum + estimatePayloadBytes(ev.payload), 0);
-          toolResultBytesSpilled = resultEvents.reduce((sum, ev) => sum + spilledToolResultBytes(ev.payload), 0);
-        }
-        const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
-          durationMs: Date.now() - startedAt,
-          terminal: collected.terminal,
-          errorCode: collected.errorCode,
-          retryCount: collected.routeDecision?.retry_count ?? prepared.route_decision?.retry_count ?? 0,
-        });
-        // If the stream threw mid-iteration, collectStream returns terminal="error"
-        // but no `error` chunk was broadcast — surface one to subscribers. Skip
-        // when the run was deliberately aborted: llm.ts already emitted an
-        // `error{code:"aborted"}` chunk for that path and re-broadcasting as
-        // `stream_error` would mask the intent.
-        if (collected.terminal === "error" && collected.errorMessage && !collected.aborted) {
-          broadcast(active, {
-            type: "error",
-            data: { message: collected.errorMessage, code: "stream_error" },
-          });
-        }
-        try {
-          // On a user abort (Stop / steer), append the interrupt footer so
-          // the partial reply is never silently dropped and the next agent
-          // turn sees a clear marker explaining the cut. withInterruptMarker
-          // returns the bare marker when the partial is empty, which forces
-          // persistAssistantMessage past its skip-empty guard so the thread
-          // always has a row recording what happened.
-          const contentToPersist = collected.aborted
-            ? withInterruptMarker(collected.assistantContent)
-            : collected.assistantContent;
-          const noResponse = collected.terminal === "done"
-            && !collected.aborted
-            && !contentToPersist.trim()
-            && !collected.toolEvents.length
-            && !prepared.signal_delivery?.signals.length;
-          const transcriptStatus = collected.aborted
-            ? "interrupted"
-            : collected.terminal === "done" && !noResponse ? "completed" : "failed";
-          const statusReason = transcriptStatus === "interrupted"
-            ? "Stopped by user."
-            : noResponse ? "The model completed without producing a response."
-            : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null;
-          const draft = assistantDraftState.current;
-          persistAssistantMessage(
-            thread_id,
-            contentToPersist,
-            collected.usedTools,
-            collected.toolEvents,
-            null,
-            collected.usage ?? null,
-            prepared.context_snapshot ?? null,
-            prepared.source_manifest ?? null,
-            routeDecision,
-            prepared.memory_recall ? { memory_recall: prepared.memory_recall } : null,
-            collected.terminal === "done" && !collected.aborted ? prepared.signal_delivery : undefined,
-            draft ? { draftMessageId: draft.msg_id, transcriptStatus, statusReason } : undefined,
-          );
-          // If the turn failed AND persistAssistantMessage skipped writing
-          // a row (no content + no tool events + not aborted), persist a
-          // synthetic `run_error` marker so the failure survives reload
-          // and cross-device sync. history-window filters these rows out
-          // of the LLM budget; the UI renders them as a compact chip.
-          // See ADR-0069.
-          if (
-            terminal === "error"
-            && !collected.aborted
-            && !collected.assistantContent.trim()
-            && (!collected.toolEvents || collected.toolEvents.length === 0)
-            && !assistantDraftState.current
-          ) {
-            persistRunErrorMarker(thread_id, { ...collected, routeDecision });
-          }
-          // Steering queued during the FINAL model call never reaches
-          // preModelHook — the react graph goes straight to END once the
-          // model stops emitting tool calls. Those messages are already in
-          // the transcript, so run a continuation rather than dropping them
-          // (ADR-0080). Skipped on abort: the user cancelled deliberately.
-          if (!collected.aborted) {
-            const undelivered = drainSteering(thread_id);
-            if (undelivered.length > 0) {
-              void runAgentTurn({
-                thread_id,
-                queue_source: "user",
-                message: undelivered.join("\n\n"),
-                skip_persist_user_message: true,
-                history_append_message: STEERING_CONTINUATION_PREFIX + undelivered.join("\n\n"),
-              }).catch((err) => console.error("[run] steering continuation failed", err));
-            }
-          }
-        } catch (persistErr) {
-          terminal = "error";
-          const draft = assistantDraftState.current;
-          if (draft
-            && getThreadMessageBySeq(thread_id, draft.seq)?.transcript_status === "in_progress") {
-            updateMessageContent(draft.msg_id, draft.visibleContent, {
-              transcriptStatus: "failed",
-              statusReason: safeTranscriptFailureReason("persist_error"),
-            });
-          }
-          broadcast(active, {
-            type: "error",
-            data: { message: `persist failed: ${(persistErr as Error).message}`, code: "persist_error" },
-          });
-        }
-      } catch (err) {
-        terminal = "error";
-        const errMsg = (err as Error).message ?? String(err);
-        broadcast(active, {
-          type: "error",
-          data: { message: errMsg, code: "run_crashed" },
-        });
-        // Same marker semantics as above but for the outer crash path — the
-        // stream threw before collectStream could emit an error chunk.
-        try {
-          const draft = assistantDraftState.current;
-          if (draft
-            && getThreadMessageBySeq(thread_id, draft.seq)?.transcript_status === "in_progress") {
-            updateMessageContent(draft.msg_id, draft.visibleContent, {
-              category: draft.visibleContent ? null : "run_error",
-              transcriptStatus: "failed",
-              statusReason: safeTranscriptFailureReason("run_crashed"),
-            });
-          } else if (!draft) {
-            persistRunErrorMarker(thread_id, { errorMessage: errMsg, errorCode: "run_crashed", routeDecision: prepared.route_decision ?? null });
-          }
-        } catch (persistErr) {
-          console.error("[run] failed to persist run_error marker", persistErr);
-        }
-      } finally {
-        if (perfTelemetryEnabled) {
-          const totalMs = Math.max(0, Date.now() - runStartedAt);
-          const ttftValue = ttftMs ?? totalMs;
-          const toolList = Array.from(toolsUsed).join(",") || "none";
-          const assistantChars = assistantContent.length;
-          const assistantBytes = estimateUtf8Bytes(assistantContent);
-          const inTok = inputTokens ?? -1;
-          const outTok = outputTokens ?? -1;
-          const cacheRead = cacheReadTokens ?? -1;
-          const cacheCreate = cacheCreateTokens ?? -1;
-          const cacheDenom = Math.max(0, inTok) + Math.max(0, cacheRead) + Math.max(0, cacheCreate);
-          const cacheReadPct = cacheDenom > 0 && cacheRead >= 0
-            ? Math.round((cacheRead / cacheDenom) * 1000) / 10
-            : -1;
-          console.info(
-            `[perf.run] thread=${thread_id} status=${terminal}`
-            + ` queue_ms=${queueWaitMs}`
-            + ` prep_ms=${prepDurationMs}`
-            + ` ttft_ms=${ttftValue}`
-            + ` stream_ms=${streamDurationMs}`
-            + ` total_ms=${totalMs}`
-            + ` input_tokens=${inTok}`
-            + ` output_tokens=${outTok}`
-            + ` cache_read_tokens=${cacheRead}`
-            + ` cache_create_tokens=${cacheCreate}`
-            + ` cache_read_pct=${cacheReadPct}`
-            + ` thinking_tokens=${thinkingTokens ?? -1}`
-            + ` assistant_chars=${assistantChars}`
-            + ` assistant_bytes=${assistantBytes}`
-            + ` tool_results=${toolResultCount}`
-            + ` tool_result_bytes=${toolResultBytes}`
-            + ` tool_result_bytes_spilled=${toolResultBytesSpilled}`
-            + ` tools=${toolList}`
-            + ` error_code=${terminalErrorCode ?? "-"}`,
-          );
-        }
-        finishRun(active, terminal);
-        publishNotification({
-          type: "run_completed",
-          thread_id,
-          agent_id: thread?.agent_id ?? null,
-          status: terminal,
-          preview: assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
-          ts: Date.now(),
-        });
-      }
+      await executeSubmittedTurn(submitted, assistantDraftState, admittedTurn);
     }));
   } catch (err) {
     if (err instanceof QueueFullError) {
@@ -482,6 +196,342 @@ export async function POST(req: NextRequest, { params }: Params) {
     JSON.stringify({ accepted: true, thread_id, queue_position: position }),
     { status: 202, headers: { "Content-Type": "application/json" } },
   );
+}
+
+interface SubmittedTurn {
+  thread_id: string;
+  message: string;
+  stream_options?: StreamOptions;
+  hot_since_seq?: number | null;
+  channels?: string[];
+  thread: NonNullable<ReturnType<typeof getThread>>;
+  pinnedModelConfigName: string | null;
+  contextProfile: ReturnType<typeof resolveTurnProfile>;
+  enqueuedAt: number;
+}
+
+type DraftState = { current: AssistantTranscriptDraft | null };
+type AdmittedTurn = Awaited<ReturnType<typeof persistThreadRunUserMessage>>;
+
+async function executeSubmittedTurn(
+  submitted: SubmittedTurn,
+  assistantDraftState: DraftState,
+  admittedTurn: AdmittedTurn,
+): Promise<void> {
+  const {
+    thread_id, message, stream_options, hot_since_seq, channels, thread,
+    pinnedModelConfigName, contextProfile,
+  } = submitted;
+  // Registry slots serialize with queue execution, not HTTP admission.
+  const active = startRun(thread_id, thread?.agent_id ?? null);
+  broadcast(active, { type: "status", data: { phase: "starting", label: "Starting…" } });
+  const runStartedAt = Date.now();
+  const perfTelemetryEnabled = getConfig().perfTelemetryEnabled;
+  let prepDurationMs = 0;
+  let prepared;
+  try {
+    const activatedUserMessage = updateMessageContent(
+      admittedTurn.userMessageId,
+      admittedTurn.storedContent,
+      { transcriptStatus: "completed" },
+    );
+    if (!activatedUserMessage) throw new Error("Submitted user message no longer exists");
+    broadcast(active, { type: "status", data: { phase: "preparing", label: "Preparing context…" } });
+    const prepStartedAt = Date.now();
+    prepared = await prepareThreadRun({
+      thread_id,
+      message,
+      options: stream_options,
+      attachments: admittedTurn.attachments,
+      signal: active.abort.signal,
+      hot_since_seq,
+      channels,
+      context_profile: contextProfile,
+      _pinned_model_config_name: pinnedModelConfigName,
+      _onCompacting: () => broadcast(active, {
+        type: "status", data: { phase: "compacting", label: "Compacting earlier messages…" },
+      }),
+      _user_message_persisted: true,
+      _idle_ms_before_user: admittedTurn.idleMsBefore,
+    });
+    prepDurationMs = Date.now() - prepStartedAt;
+  } catch (err) {
+    // Admission already returned 202; buffer the failure for SSE reattachment.
+    const message_ = err instanceof RunThreadError ? err.message : String(err);
+    const code = err instanceof RunThreadError ? err.code : "run_prepare_error";
+    broadcast(active, { type: "error", data: { message: message_, code } });
+    const draft = assistantDraftState.current;
+    if (draft) {
+      updateMessageContent(draft.msg_id, draft.visibleContent, {
+        category: "run_error",
+        transcriptStatus: "failed",
+        statusReason: safeTranscriptFailureReason(code),
+      });
+    } else {
+      persistRunErrorMarker(thread_id, { errorMessage: message_, errorCode: code });
+    }
+    finishRun(active, "error");
+    return;
+  }
+  await collectSubmittedTurn(
+    submitted, active, prepared, assistantDraftState,
+    runStartedAt, prepDurationMs, perfTelemetryEnabled,
+  );
+}
+
+async function collectSubmittedTurn(
+  submitted: SubmittedTurn,
+  active: ReturnType<typeof startRun>,
+  prepared: Awaited<ReturnType<typeof prepareThreadRun>>,
+  assistantDraftState: DraftState,
+  runStartedAt: number,
+  prepDurationMs: number,
+  perfTelemetryEnabled: boolean,
+): Promise<void> {
+  const { thread_id, thread, enqueuedAt } = submitted;
+  const queueWaitMs = Math.max(0, runStartedAt - enqueuedAt);
+  let ttftMs: number | null = null;
+  let streamDurationMs = 0;
+  const toolsUsed = new Set<string>();
+  let terminal: "done" | "error" = "error";
+  let assistantContent = "";
+  let terminalErrorCode: string | undefined;
+  let inputTokens: number | null = null;
+  let outputTokens: number | null = null;
+  let cacheReadTokens: number | null = null;
+  let cacheCreateTokens: number | null = null;
+  let thinkingTokens: number | null = null;
+  let toolResultCount = 0;
+  let toolResultBytes = 0;
+  let toolResultBytesSpilled = 0;
+  // Execution outlives subscribers; settlement must always release the registry.
+  try {
+    const startedAt = Date.now();
+    broadcast(active, { type: "status", data: { phase: "thinking", label: "Thinking…" } });
+    const streamStartedAt = Date.now();
+    const collected = await collectStream(prepared.stream as AsyncIterable<StreamChunk>, {
+      onChunk: (chunk) => {
+        if (ttftMs === null && chunk.type !== "heartbeat") {
+          ttftMs = Math.max(0, Date.now() - runStartedAt);
+        }
+        if (chunk.type === "tool_call") {
+          const toolName = chunk.data && typeof chunk.data.name === "string"
+            ? chunk.data.name
+            : "";
+          if (toolName) toolsUsed.add(toolName);
+        }
+        const draft = assistantDraftState.current;
+        if (draft) persistAssistantDraftChunk(draft, chunk);
+        broadcast(active, chunk);
+      },
+    });
+    streamDurationMs = Date.now() - streamStartedAt;
+    assistantContent = collected.assistantContent;
+    terminal = collected.terminal;
+    terminalErrorCode = collected.errorCode;
+    if (collected.usage) {
+      inputTokens = collected.usage.input_tokens;
+      outputTokens = collected.usage.output_tokens;
+      cacheReadTokens = collected.usage.cache_read_input_tokens ?? 0;
+      cacheCreateTokens = collected.usage.cache_creation_input_tokens ?? 0;
+      thinkingTokens = collected.usage.thinking_tokens ?? null;
+    }
+    if (collected.toolEvents?.length) {
+      const resultEvents = collected.toolEvents.filter((ev) => ev.phase === "result");
+      toolResultCount = resultEvents.length;
+      toolResultBytes = resultEvents.reduce((sum, ev) => sum + estimatePayloadBytes(ev.payload), 0);
+      toolResultBytesSpilled = resultEvents.reduce((sum, ev) => sum + spilledToolResultBytes(ev.payload), 0);
+    }
+    const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
+      durationMs: Date.now() - startedAt,
+      terminal: collected.terminal,
+      errorCode: collected.errorCode,
+      retryCount: collected.routeDecision?.retry_count ?? prepared.route_decision?.retry_count ?? 0,
+    });
+    // collectStream can catch a thrown iterator without an error event; don't
+    // mask a deliberate abort with the synthetic stream_error event.
+    if (collected.terminal === "error" && collected.errorMessage && !collected.aborted) {
+      broadcast(active, {
+        type: "error",
+        data: { message: collected.errorMessage, code: "stream_error" },
+      });
+    }
+    try {
+      persistSubmittedResult(thread_id, prepared, collected, assistantDraftState, routeDecision);
+    } catch (persistErr) {
+      terminal = "error";
+      const draft = assistantDraftState.current;
+      if (draft && getThreadMessageBySeq(thread_id, draft.seq)?.transcript_status === "in_progress") {
+        updateMessageContent(draft.msg_id, draft.visibleContent, {
+          transcriptStatus: "failed",
+          statusReason: safeTranscriptFailureReason("persist_error"),
+        });
+      }
+      broadcast(active, {
+        type: "error",
+        data: { message: `persist failed: ${(persistErr as Error).message}`, code: "persist_error" },
+      });
+    }
+  } catch (err) {
+    terminal = "error";
+    const errMsg = (err as Error).message ?? String(err);
+    broadcast(active, { type: "error", data: { message: errMsg, code: "run_crashed" } });
+    try {
+      const draft = assistantDraftState.current;
+      if (draft && getThreadMessageBySeq(thread_id, draft.seq)?.transcript_status === "in_progress") {
+        updateMessageContent(draft.msg_id, draft.visibleContent, {
+          category: draft.visibleContent ? null : "run_error",
+          transcriptStatus: "failed",
+          statusReason: safeTranscriptFailureReason("run_crashed"),
+        });
+      } else if (!draft) {
+        persistRunErrorMarker(thread_id, {
+          errorMessage: errMsg, errorCode: "run_crashed", routeDecision: prepared.route_decision ?? null,
+        });
+      }
+    } catch (persistErr) {
+      console.error("[run] failed to persist run_error marker", persistErr);
+    }
+  } finally {
+    if (perfTelemetryEnabled) logRunPerformance({
+      thread_id, terminal, runStartedAt, ttftMs, toolsUsed, assistantContent,
+      inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens,
+      queueWaitMs, prepDurationMs, streamDurationMs, thinkingTokens,
+      toolResultCount, toolResultBytes, toolResultBytesSpilled, terminalErrorCode,
+    });
+    finishRun(active, terminal);
+    publishNotification({
+      type: "run_completed",
+      thread_id,
+      agent_id: thread?.agent_id ?? null,
+      status: terminal,
+      preview: assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
+      ts: Date.now(),
+    });
+  }
+}
+
+interface RunPerformance {
+  thread_id: string;
+  terminal: "done" | "error";
+  runStartedAt: number;
+  ttftMs: number | null;
+  toolsUsed: Set<string>;
+  assistantContent: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreateTokens: number | null;
+  queueWaitMs: number;
+  prepDurationMs: number;
+  streamDurationMs: number;
+  thinkingTokens: number | null;
+  toolResultCount: number;
+  toolResultBytes: number;
+  toolResultBytesSpilled: number;
+  terminalErrorCode?: string;
+}
+
+function logRunPerformance(metrics: RunPerformance): void {
+  const { thread_id, terminal, runStartedAt, ttftMs, toolsUsed, assistantContent,
+    inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens, queueWaitMs,
+    prepDurationMs, streamDurationMs, thinkingTokens, toolResultCount,
+    toolResultBytes, toolResultBytesSpilled, terminalErrorCode } = metrics;
+  const totalMs = Math.max(0, Date.now() - runStartedAt);
+  const ttftValue = ttftMs ?? totalMs;
+  const toolList = Array.from(toolsUsed).join(",") || "none";
+  const assistantChars = assistantContent.length;
+  const assistantBytes = estimateUtf8Bytes(assistantContent);
+  const inTok = inputTokens ?? -1;
+  const outTok = outputTokens ?? -1;
+  const cacheRead = cacheReadTokens ?? -1;
+  const cacheCreate = cacheCreateTokens ?? -1;
+  const cacheDenom = Math.max(0, inTok) + Math.max(0, cacheRead) + Math.max(0, cacheCreate);
+  const cacheReadPct = cacheDenom > 0 && cacheRead >= 0
+    ? Math.round((cacheRead / cacheDenom) * 1000) / 10
+    : -1;
+  console.info(
+    `[perf.run] thread=${thread_id} status=${terminal}`
+    + ` queue_ms=${queueWaitMs}`
+    + ` prep_ms=${prepDurationMs}`
+    + ` ttft_ms=${ttftValue}`
+    + ` stream_ms=${streamDurationMs}`
+    + ` total_ms=${totalMs}`
+    + ` input_tokens=${inTok}`
+    + ` output_tokens=${outTok}`
+    + ` cache_read_tokens=${cacheRead}`
+    + ` cache_create_tokens=${cacheCreate}`
+    + ` cache_read_pct=${cacheReadPct}`
+    + ` thinking_tokens=${thinkingTokens ?? -1}`
+    + ` assistant_chars=${assistantChars}`
+    + ` assistant_bytes=${assistantBytes}`
+    + ` tool_results=${toolResultCount}`
+    + ` tool_result_bytes=${toolResultBytes}`
+    + ` tool_result_bytes_spilled=${toolResultBytesSpilled}`
+    + ` tools=${toolList}`
+    + ` error_code=${terminalErrorCode ?? "-"}`,
+  );
+}
+
+function persistSubmittedResult(
+  thread_id: string,
+  prepared: Awaited<ReturnType<typeof prepareThreadRun>>,
+  collected: Awaited<ReturnType<typeof collectStream>>,
+  assistantDraftState: DraftState,
+  routeDecision: RouteDecisionMetadata | null,
+): void {
+  const contentToPersist = collected.aborted
+    ? withInterruptMarker(collected.assistantContent)
+    : collected.assistantContent;
+  const noResponse = collected.terminal === "done"
+    && !collected.aborted
+    && !contentToPersist.trim()
+    && !collected.toolEvents.length
+    && !prepared.signal_delivery?.signals.length;
+  const transcriptStatus = collected.aborted
+    ? "interrupted"
+    : collected.terminal === "done" && !noResponse ? "completed" : "failed";
+  const statusReason = transcriptStatus === "interrupted"
+    ? "Stopped by user."
+    : noResponse ? "The model completed without producing a response."
+    : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null;
+  const draft = assistantDraftState.current;
+  persistAssistantMessage(
+    thread_id,
+    contentToPersist,
+    collected.usedTools,
+    collected.toolEvents,
+    null,
+    collected.usage ?? null,
+    prepared.context_snapshot ?? null,
+    prepared.source_manifest ?? null,
+    routeDecision,
+    prepared.memory_recall ? { memory_recall: prepared.memory_recall } : null,
+    collected.terminal === "done" && !collected.aborted ? prepared.signal_delivery : undefined,
+    draft ? { draftMessageId: draft.msg_id, transcriptStatus, statusReason } : undefined,
+  );
+  if (
+    collected.terminal === "error"
+    && !collected.aborted
+    && !collected.assistantContent.trim()
+    && (!collected.toolEvents || collected.toolEvents.length === 0)
+    && !assistantDraftState.current
+  ) {
+    persistRunErrorMarker(thread_id, { ...collected, routeDecision });
+  }
+  // Steering arriving during the final model call needs a queued continuation.
+  if (!collected.aborted) {
+    const undelivered = drainSteering(thread_id);
+    if (undelivered.length > 0) {
+      void runAgentTurn({
+        thread_id,
+        queue_source: "user",
+        message: undelivered.join("\n\n"),
+        skip_persist_user_message: true,
+        history_append_message: STEERING_CONTINUATION_PREFIX + undelivered.join("\n\n"),
+      }).catch((err) => console.error("[run] steering continuation failed", err));
+    }
+  }
 }
 
 // GET is the *query* half of the run lifecycle (ADR-0008). Attaches to an

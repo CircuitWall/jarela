@@ -125,6 +125,74 @@ export class AgentTurnStreamError extends Error {
  * Use this for non-UI callers (bridges, triggers, watchers, schedulers) so
  * they all share the same silent-mode and persistence rules.
  */
+function settleCollectedTurn(
+  req: RunAgentTurnRequest,
+  prepared: Awaited<ReturnType<typeof prepareThreadRun>>,
+  collected: Awaited<ReturnType<typeof collectStream>>,
+  assistantDraft: AssistantTranscriptDraft | null,
+  startedAt: number,
+): boolean {
+  const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
+    durationMs: Date.now() - startedAt,
+    terminal: collected.terminal,
+    errorCode: collected.errorCode,
+    retryCount: collected.routeDecision?.retry_count ?? prepared.route_decision?.retry_count ?? 0,
+  });
+  const trimmed = collected.assistantContent.trim();
+  if (collected.terminal === "error" && !collected.aborted) {
+    throw new AgentTurnStreamError({
+      message: collected.errorMessage,
+      code: collected.errorCode,
+      provider: collected.errorProvider,
+      credentialId: collected.errorCredentialId,
+    });
+  }
+  // Aborted silent turns still need an interruption record for the next turn.
+  const skipSilent = req.silent === true
+    && !collected.aborted
+    && (trimmed.length === 0 || NO_REPLY_RE.test(trimmed));
+  if (!skipSilent) {
+    const contentToPersist = collected.aborted
+      ? withInterruptMarker(collected.assistantContent)
+      : collected.assistantContent;
+    const noResponse = collected.terminal === "done"
+      && !collected.aborted
+      && !contentToPersist.trim()
+      && !collected.toolEvents.length
+      && !prepared.signal_delivery?.signals.length;
+    const transcriptStatus = collected.aborted
+      ? "interrupted"
+      : collected.terminal === "done" && !noResponse ? "completed" : "failed";
+    persistAssistantMessage(
+      req.thread_id,
+      contentToPersist,
+      collected.usedTools,
+      collected.toolEvents,
+      req.assistant_category ?? req.user_category ?? null,
+      collected.usage ?? null,
+      prepared.context_snapshot ?? null,
+      prepared.source_manifest ?? null,
+      routeDecision,
+      prepared.memory_recall
+        ? { ...req.assistant_message_metadata, memory_recall: prepared.memory_recall }
+        : req.assistant_message_metadata ?? null,
+      collected.terminal === "done" && !collected.aborted ? prepared.signal_delivery : undefined,
+      assistantDraft ? {
+        draftMessageId: assistantDraft.msg_id,
+        transcriptStatus,
+        statusReason: transcriptStatus === "interrupted"
+          ? "Stopped by user."
+          : noResponse ? "The model completed without producing a response."
+          : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null,
+      } : undefined,
+    );
+  } else if (prepared.signal_delivery?.signals.length) {
+    persistAssistantMessage(req.thread_id, "", undefined, undefined, "system_signal",
+      undefined, undefined, undefined, undefined, undefined, prepared.signal_delivery);
+  }
+  return skipSilent;
+}
+
 export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTurnResult> {
   const pinnedModelConfigName = snapshotThreadModelConfigName(req.thread_id);
   const contextProfile = resolveTurnProfile(req.queue_source, req.context_profile_override);
@@ -176,70 +244,8 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
           broadcast(active, chunk);
         },
       });
-      const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
-        durationMs: Date.now() - startedAt,
-        terminal: collected.terminal,
-        errorCode: collected.errorCode,
-        retryCount: collected.routeDecision?.retry_count ?? prepared.route_decision?.retry_count ?? 0,
-      });
-      const trimmed = collected.assistantContent.trim();
-      if (collected.terminal === "error" && !collected.aborted) {
-        throw new AgentTurnStreamError({
-          message: collected.errorMessage,
-          code: collected.errorCode,
-          provider: collected.errorProvider,
-          credentialId: collected.errorCredentialId,
-        });
-      }
-      // Silent-mode runners (bridges, watchers, schedulers) skip persistence
-      // when the model emitted nothing meaningful — but if the run was
-      // user-aborted, we still want a record so the next turn isn't blind to
-      // the interruption.
-      const skipSilent = req.silent === true
-        && !collected.aborted
-        && (trimmed.length === 0 || NO_REPLY_RE.test(trimmed));
-
-      if (!skipSilent) {
-        const contentToPersist = collected.aborted
-          ? withInterruptMarker(collected.assistantContent)
-          : collected.assistantContent;
-        const noResponse = collected.terminal === "done"
-          && !collected.aborted
-          && !contentToPersist.trim()
-          && !collected.toolEvents.length
-          && !prepared.signal_delivery?.signals.length;
-        const transcriptStatus = collected.aborted
-          ? "interrupted"
-          : collected.terminal === "done" && !noResponse ? "completed" : "failed";
-        persistAssistantMessage(
-          req.thread_id,
-          contentToPersist,
-          collected.usedTools,
-          collected.toolEvents,
-          req.assistant_category ?? req.user_category ?? null,
-          collected.usage ?? null,
-          prepared.context_snapshot ?? null,
-          prepared.source_manifest ?? null,
-          routeDecision,
-          prepared.memory_recall
-            ? { ...req.assistant_message_metadata, memory_recall: prepared.memory_recall }
-            : req.assistant_message_metadata ?? null,
-          collected.terminal === "done" && !collected.aborted ? prepared.signal_delivery : undefined,
-          assistantDraft ? {
-            draftMessageId: assistantDraft.msg_id,
-            transcriptStatus,
-            statusReason: transcriptStatus === "interrupted"
-              ? "Stopped by user."
-              : noResponse ? "The model completed without producing a response."
-              : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null,
-          } : undefined,
-        );
-        transcriptFinalized = true;
-      } else if (prepared.signal_delivery?.signals.length) {
-        persistAssistantMessage(req.thread_id, "", undefined, undefined, "system_signal",
-          undefined, undefined, undefined, undefined, undefined, prepared.signal_delivery);
-        transcriptFinalized = true;
-      }
+      const skipSilent = settleCollectedTurn(req, prepared, collected, assistantDraft, startedAt);
+      transcriptFinalized = !skipSilent || !!prepared.signal_delivery?.signals.length;
 
       terminal = collected.terminal === "error" ? "error" : "done";
       return {

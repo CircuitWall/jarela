@@ -129,43 +129,62 @@ export function SkillRepoSection({ repos, onChanged }: Props) {
         </p>
       )}
 
-      {repos.map((r) => (
-        <div key={r.id} className="rounded-lg border border-border bg-surface-2 px-3 py-2.5 flex items-center gap-2">
-          <FolderOpen size={13} className="text-fg-subtle shrink-0" />
-          <span className="font-mono text-xs text-fg break-all flex-1">
-            {r.label ? <strong>{r.label}</strong> : null}
-            {r.label ? <span className="text-fg-faint"> — </span> : null}
-            {r.path}
-          </span>
-          <button
-            onClick={() => void withBusy(r.id, () => api.skills.repos.update(r.id, { writable: true }).then(() => undefined))}
-            disabled={busy[r.id] || r.writable}
-            title={r.writable ? "This is the writable repo — new/edited skills save here" : "Make this the writable repo"}
-            className={r.writable
-              ? "text-emerald-700 dark:text-emerald-400"
-              : "text-fg-faint hover:text-fg-subtle disabled:opacity-40"}
-          >
-            {r.writable ? <Pin size={13} /> : <PinOff size={13} />}
-          </button>
-          <label className="text-[11px] text-fg-faint flex items-center gap-1 select-none">
-            <input
-              type="checkbox"
-              checked={r.enabled}
-              disabled={busy[r.id]}
-              onChange={() => void withBusy(r.id, () => api.skills.repos.update(r.id, { enabled: !r.enabled }).then(() => undefined))}
-            />
-            enabled
-          </label>
-          <button
-            onClick={() => void remove(r)}
-            disabled={busy[r.id]}
-            title={busy[r.id] ? "Processing…" : "Remove repo"}
-            className="p-1 text-fg-faint hover:text-red-600 dark:hover:text-red-400 disabled:opacity-40"
-          >
-            {busy[r.id] ? <Loader2 size={13} className="animate-spin text-red-600 dark:text-red-400" /> : <Trash2 size={13} />}
-          </button>
-        </div>
+      {repos.map((repo) => (
+        <SkillRepoRow
+          key={repo.id}
+          repo={repo}
+          busy={busy[repo.id] ?? false}
+          onWritable={() => void withBusy(repo.id, () => api.skills.repos.update(repo.id, { writable: true }).then(() => undefined))}
+          onToggle={() => void withBusy(repo.id, () => api.skills.repos.update(repo.id, { enabled: !repo.enabled }).then(() => undefined))}
+          onRemove={() => void remove(repo)}
+        />
       ))}
     </section>
+  );
+}
+
+function SkillRepoRow({ repo: r, busy, onWritable, onToggle, onRemove }: {
+  repo: SkillRepo;
+  busy: boolean;
+  onWritable: () => void;
+  onToggle: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-surface-2 px-3 py-2.5 flex items-center gap-2">
+      <FolderOpen size={13} className="text-fg-subtle shrink-0" />
+      <span className="font-mono text-xs text-fg break-all flex-1">
+        {r.label ? <strong>{r.label}</strong> : null}
+        {r.label ? <span className="text-fg-faint"> — </span> : null}
+        {r.path}
+      </span>
+      <button
+        onClick={onWritable}
+        disabled={busy || r.writable}
+        title={r.writable ? "This is the writable repo — new/edited skills save here" : "Make this the writable repo"}
+        className={r.writable
+          ? "text-emerald-700 dark:text-emerald-400"
+          : "text-fg-faint hover:text-fg-subtle disabled:opacity-40"}
+      >
+        {r.writable ? <Pin size={13} /> : <PinOff size={13} />}
+      </button>
+      <label className="text-[11px] text-fg-faint flex items-center gap-1 select-none">
+        <input
+          type="checkbox"
+          checked={r.enabled}
+          disabled={busy}
+          onChange={onToggle}
+        />
+            enabled
+      </label>
+      <button
+        onClick={onRemove}
+        disabled={busy}
+        title={busy ? "Processing…" : "Remove repo"}
+        className="p-1 text-fg-faint hover:text-red-600 dark:hover:text-red-400 disabled:opacity-40"
+      >
+        {busy ? <Loader2 size={13} className="animate-spin text-red-600 dark:text-red-400" /> : <Trash2 size={13} />}
+      </button>
+    </div>
   );
 }

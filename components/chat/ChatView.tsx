@@ -37,18 +37,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   const { state, dispatch } = useAppContext();
   const hideInternalOperations = useIsFirstRunThread(threadId);
   const [attachments, setAttachments] = useState<ContentPart[]>([]);
-  const controlsRef = useRef<HTMLDivElement>(null);
-  const [controlsHeight, setControlsHeight] = useState(0);
-  useLayoutEffect(() => {
-    const controls = controlsRef.current;
-    if (!controls) return;
-    const measure = () => setControlsHeight(controls.getBoundingClientRect().height);
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(controls);
-    return () => observer.disconnect();
-  }, []);
+  const { controlsRef, controlsHeight } = useComposerOverlay();
+
   const [compacting, setCompacting] = useState(false);
   const { userProfile, profileLoading, agentConfig, agentConfigLoading } =
     useUserProfileAndAgent(agentId);
@@ -68,15 +58,149 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   const thread = useThreadData({ threadId, attach: stableAttach });
   const currentThreadMessages = thread.messagesThreadId === threadId ? thread.messages : [];
 
+  const { pendingAutoSpeakRef, drainQueueRef, queueApiRef, sse } = useChatRunCompletion({ threadId, thread, onMessageSent, attachRef });
+
+  // `compacting` lives in this component, which remounts per agent; the
+  // server flag keeps a /compact started before an agent switch visible.
+  const sessionCompacting = compacting || thread.manualCompactionPending;
+
+  const { backgroundCompaction, currentThreadIdRef } = useChatSynchronization({ threadId, stableAttach, sse, thread, sessionCompacting, sessionError, agentId });
+
+  useChatProgress({ sessionLoading, sse, sessionCompacting, thread, agentConfigLoading, backgroundCompaction, profileLoading });
+
+  const { launchRun, steerRun } = useChatRunActions({ threadId, thread, messageFilters, hideInternalOperations, sse, state, queueApiRef });
+
+  const queue = useChatQueue({ threadId, streaming: sse.streaming, compacting: sessionCompacting, launchRun });
+  queueApiRef.current = queue;
+  drainQueueRef.current = queue.drainQueueRef.current;
+
+  const { handleCompact } = useChatCompaction({ agentId, threadId, setCompacting, currentThreadIdRef, thread, queue });
+
+  const {
+    handleSubmit,
+    handleQueue,
+    handleVoiceTranscript,
+    handleRetryMessage,
+    handleProposalResolved,
+    queuedMessages,
+  } = useChatSubmitHandlers({
+    agentId,
+    steerRun,
+    attachments,
+    setAttachments,
+    queue,
+    launchRun,
+    stopStreaming: sse.stop,
+    streaming: sse.streaming,
+    onCompact: handleCompact,
+    pendingAutoSpeakRef,
+    agentConfig,
+  });
+  const { retryWithHiddenPrevious } = useRetryWithHiddenPrevious({ thread, threadId, agentId, handleRetryMessage });
+
+  useFirstRunChatKickoff({
+    kickoff: state.firstRunChatKickoff,
+    activeTab: state.activeTab,
+    agentId,
+    threadId,
+    sessionLoading: !!sessionLoading,
+    messagesLoading: thread.messagesLoading,
+    messageCount: currentThreadMessages.length,
+    submit: (message, options) => launchRun(message, [], options),
+    onConsumed: () => {
+      clearFirstRunChatKickoff();
+      dispatch({ type: "SET_FIRST_RUN_CHAT_KICKOFF", kickoff: null });
+    },
+    onError: (error) => pushErrorToast({
+      title: "Could not start the setup chat",
+      error,
+      context: { panel: "chat", action: "first_run_onboarding", agent_id: agentId, thread_id: threadId },
+    }),
+  });
+
+  return (
+    <div className="relative flex h-full min-h-0 w-full min-w-0 flex-col">
+      <MessageList
+        bottomOverlayHeight={controlsHeight}
+        threadId={threadId}
+        messages={currentThreadMessages}
+        loadingMessages={!!sessionLoading || thread.messagesLoading}
+        steeredSegments={sse.steeredSegments}
+        agentConfig={agentConfig}
+        userProfile={userProfile}
+        // streamingContent stays visible past `streaming=false` so the bubble
+        // doesn't disappear before the refetch arrives. Cleared atomically
+        // via clearStreamingRef once the persisted message lands.
+        streamingContent={sse.streamingContent || undefined}
+        // Keep the live thinking line visible past `streaming=false` so a
+        // user who's still reading isn't yanked out mid-sentence.
+        thinkingContent={sse.thinkingContent || undefined}
+        // Same reasoning as streamingContent/thinkingContent above: keep the
+        // tool trail visible past `streaming=false` so it doesn't flash away
+        // before the refetch swaps in the persisted message's tool_events.
+        // Cleared atomically alongside clearStreamingRef via handleDone.
+        toolEvents={sse.toolEvents.length ? sse.toolEvents : undefined}
+        hasMore={thread.hasMore}
+        loadingMore={thread.loadingMore}
+        onLoadMore={thread.loadOlder}
+        queuedMessages={queuedMessages}
+        onRemoveQueued={queue.removeQueued}
+        hotSinceSeq={thread.hotSinceSeq}
+        warmSummary={thread.warmSummary}
+        warmSummaryBeforeSeq={thread.warmSummaryBeforeSeq}
+        warmSummaryComputedAt={thread.warmSummaryComputedAt}
+        warmSummarySourceMessages={thread.warmSummarySourceMessages}
+        warmSummarySourceChars={thread.warmSummarySourceChars}
+        warmSummaryTopics={thread.warmSummaryTopics}
+        warmChannelSummaries={thread.warmChannelSummaries}
+        warmSummaryPending={thread.warmSummaryPending}
+        compactionPending={thread.compactionPending || sessionCompacting}
+        onSetContextPin={thread.setContextPin}
+        streaming={sse.streaming}
+        contextWindowTokens={thread.contextWindowTokens}
+        onRetryMessage={retryWithHiddenPrevious}
+        filters={messageFilters.filters}
+        hideInternalOperations={hideInternalOperations}
+        onToggleFilter={messageFilters.toggle}
+        onResetFilters={messageFilters.reset}
+      />
+
+      <ChatComposerControls controlsRef={controlsRef} agentId={agentId} handleProposalResolved={handleProposalResolved} sse={sse} attachments={attachments} setAttachments={setAttachments} handleSubmit={handleSubmit} handleQueue={handleQueue} agentConfig={agentConfig} handleVoiceTranscript={handleVoiceTranscript} sessionCompacting={sessionCompacting} sessionLoading={sessionLoading} />
+</div>
+  );
+}
+
+function useComposerOverlay() {
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const [controlsHeight, setControlsHeight] = useState(0);
+  useLayoutEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    const measure = () => setControlsHeight(controls.getBoundingClientRect().height);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, []);
+  return { controlsRef, controlsHeight };
+}
+
+function useChatRunCompletion({ threadId, thread, onMessageSent, attachRef }: {
+  threadId: string | null;
+  thread: ReturnType<typeof useThreadData>;
+  onMessageSent: () => void;
+  attachRef: import("react").RefObject<((id: string, quietActivity?: boolean) => Promise<unknown>) | null>;
+}) {
   // When the next user turn came from a voice transcription, arm this flag
   // so handleDone can fire a `jarela:speak-message` event at the new
   // assistant message id and the bubble auto-plays the TTS reply once.
   const pendingAutoSpeakRef = useRef(false);
   // Need clearStreamingContent/clearToolEvents before useSSE returns them.
   // Use refs so handleDone isn't dependent on the hook's return value.
-  const clearStreamingRef = useRef<() => void>(() => {});
-  const clearToolEventsRef = useRef<() => void>(() => {});
-  const drainQueueRef = useRef<() => void>(() => {});
+  const clearStreamingRef = useRef<() => void>(() => { });
+  const clearToolEventsRef = useRef<() => void>(() => { });
+  const drainQueueRef = useRef<() => void>(() => { });
   const queueApiRef = useRef<ChatQueueApi | null>(null);
 
   const handleDone = useCallback(() => {
@@ -104,57 +228,18 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   attachRef.current = sse.attach;
   clearStreamingRef.current = sse.clearStreamingContent;
   clearToolEventsRef.current = sse.clearToolEvents;
-  // `compacting` lives in this component, which remounts per agent; the
-  // server flag keeps a /compact started before an agent switch visible.
-  const sessionCompacting = compacting || thread.manualCompactionPending;
+  return { pendingAutoSpeakRef, drainQueueRef, queueApiRef, sse };
+}
 
-  const activity = useThreadActivity({
-    threadId,
-    attach: stableAttach,
-    isLive: sse.isLive,
-    lastSettledAt: sse.lastSettledAt,
-    metaApplier: thread.metaApplier,
-  });
-  // Run phases come through the attached stream; background compaction
-  // outside a run has no stream, so label it from the polled activity.
-  const backgroundCompaction = !sse.streaming && !sessionCompacting ? activity?.compaction?.kind ?? null : null;
-
-  useChatErrorReporting({ sessionError, streamError: sse.error, authError: sse.authError, agentId, threadId });
-
-  const streamingRef = useRef(false);
-  streamingRef.current = sse.streaming;
-  const currentThreadIdRef = useRef(threadId);
-  currentThreadIdRef.current = threadId;
-
-  useThreadMetadataPolling(
-    threadId,
-    sse.streaming || thread.warmSummaryPending || thread.compactionPending || thread.manualCompactionPending,
-    thread.metaApplier,
-  );
-
-  useThreadCrossDeviceSync({
-    threadId,
-    streamingRef,
-    messagesRef: thread.messagesRef,
-    setMessages: thread.setMessages,
-    setHasMore: thread.setHasMore,
-    applyMeta: thread.metaApplier,
-  });
-
-  useTrackLoading(!!sessionLoading);
-  useTrackLoading(sse.streaming);
-  useTrackLoading(sessionCompacting);
-  useTrackLoading(thread.loadingMore);
-  useTrackLoading(thread.messagesLoading);
-  useTrackLoading(agentConfigLoading);
-
-  useActivityWhile(sessionCompacting, "Compacting session…");
-  useActivityWhile(backgroundCompaction === "auto", "Compacting earlier messages…");
-  useActivityWhile(backgroundCompaction === "refresh", "Updating summary…");
-  useActivityWhile(thread.messagesLoading, "Loading chat history…");
-  useActivityWhile(agentConfigLoading, "Loading agent…");
-  useActivityWhile(profileLoading, "Loading profile…");
-
+function useChatRunActions({ threadId, thread, messageFilters, hideInternalOperations, sse, state, queueApiRef }: {
+  threadId: string | null;
+  thread: ReturnType<typeof useThreadData>;
+  messageFilters: ReturnType<typeof useMessageFilters>;
+  hideInternalOperations: boolean;
+  sse: ReturnType<typeof useSSE>;
+  state: ReturnType<typeof useAppContext>["state"];
+  queueApiRef: import("react").RefObject<ChatQueueApi | null>;
+}) {
   // Actually fire a run for one message. Used by direct submit and by the
   // queue's drain after a previous run finishes.
   const launchRun = useCallback(async (
@@ -239,10 +324,50 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);
 
-  const queue = useChatQueue({ threadId, streaming: sse.streaming, compacting: sessionCompacting, launchRun });
-  queueApiRef.current = queue;
-  drainQueueRef.current = queue.drainQueueRef.current;
+  return { launchRun, steerRun };
+}
 
+function useRetryWithHiddenPrevious({ thread, threadId, agentId, handleRetryMessage }: {
+  thread: ReturnType<typeof useThreadData>;
+  threadId: string | null;
+  agentId: string | null;
+  handleRetryMessage: (text: string, atts: ContentPart[]) => void;
+}) {
+  const setThreadMessages = thread.setMessages;
+
+  const retryWithHiddenPrevious = useCallback(async (
+    text: string,
+    atts: ContentPart[],
+    messageId?: string,
+  ) => {
+    if (messageId && threadId) {
+      setThreadMessages((current) => current.map((message) => message.id === messageId
+        ? { ...message, metadata: { ...message.metadata, hidden_from_chat: true } }
+        : message));
+      try {
+        await api.threads.setMessageHiddenFromChat(threadId, messageId, true);
+      } catch (error) {
+        pushErrorToast({
+          title: "Could not hide the previous attempt",
+          error,
+          context: { panel: "chat", action: "message.hide_for_retry", agent_id: agentId, thread_id: threadId },
+        });
+      }
+    }
+    handleRetryMessage(text, atts);
+  }, [agentId, handleRetryMessage, setThreadMessages, threadId]);
+
+  return { retryWithHiddenPrevious };
+}
+
+function useChatCompaction({ agentId, threadId, setCompacting, currentThreadIdRef, thread, queue }: {
+  agentId: string | null;
+  threadId: string | null;
+  setCompacting: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  currentThreadIdRef: import("react").RefObject<string | null>;
+  thread: ReturnType<typeof useThreadData>;
+  queue: ReturnType<typeof useChatQueue>;
+}) {
   async function handleCompact() {
     if (!agentId) return;
     const notifyCompaction = (result: CompactionOutcome) => {
@@ -295,139 +420,120 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     }
   }
 
-  const {
-    handleSubmit,
-    handleQueue,
-    handleVoiceTranscript,
-    handleRetryMessage,
-    handleProposalResolved,
-    queuedMessages,
-  } = useChatSubmitHandlers({
-    agentId,
-    steerRun,
-    attachments,
-    setAttachments,
-    queue,
-    launchRun,
-    stopStreaming: sse.stop,
-    streaming: sse.streaming,
-    onCompact: handleCompact,
-    pendingAutoSpeakRef,
-    agentConfig,
-  });
-  const setThreadMessages = thread.setMessages;
+  return { handleCompact };
+}
 
-  const retryWithHiddenPrevious = useCallback(async (
-    text: string,
-    atts: ContentPart[],
-    messageId?: string,
-  ) => {
-    if (messageId && threadId) {
-      setThreadMessages((current) => current.map((message) => message.id === messageId
-        ? { ...message, metadata: { ...message.metadata, hidden_from_chat: true } }
-        : message));
-      try {
-        await api.threads.setMessageHiddenFromChat(threadId, messageId, true);
-      } catch (error) {
-        pushErrorToast({
-          title: "Could not hide the previous attempt",
-          error,
-          context: { panel: "chat", action: "message.hide_for_retry", agent_id: agentId, thread_id: threadId },
-        });
-      }
-    }
-    handleRetryMessage(text, atts);
-  }, [agentId, handleRetryMessage, setThreadMessages, threadId]);
+function useChatProgress({ sessionLoading, sse, sessionCompacting, thread, agentConfigLoading, backgroundCompaction, profileLoading }: {
+  sessionLoading: boolean | undefined;
+  sse: ReturnType<typeof useSSE>;
+  sessionCompacting: boolean;
+  thread: ReturnType<typeof useThreadData>;
+  agentConfigLoading: boolean;
+  backgroundCompaction: "manual" | "auto" | "refresh" | null;
+  profileLoading: boolean;
+}) {
+  useTrackLoading(!!sessionLoading);
+  useTrackLoading(sse.streaming);
+  useTrackLoading(sessionCompacting);
+  useTrackLoading(thread.loadingMore);
+  useTrackLoading(thread.messagesLoading);
+  useTrackLoading(agentConfigLoading);
 
-  useFirstRunChatKickoff({
-    kickoff: state.firstRunChatKickoff,
-    activeTab: state.activeTab,
-    agentId,
+  useActivityWhile(sessionCompacting, "Compacting session…");
+  useActivityWhile(backgroundCompaction === "auto", "Compacting earlier messages…");
+  useActivityWhile(backgroundCompaction === "refresh", "Updating summary…");
+  useActivityWhile(thread.messagesLoading, "Loading chat history…");
+  useActivityWhile(agentConfigLoading, "Loading agent…");
+  useActivityWhile(profileLoading, "Loading profile…");
+
+}
+
+function useChatSynchronization({ threadId, stableAttach, sse, thread, sessionCompacting, sessionError, agentId }: {
+  threadId: string | null;
+  stableAttach: (id: string) => Promise<unknown>;
+  sse: ReturnType<typeof useSSE>;
+  thread: ReturnType<typeof useThreadData>;
+  sessionCompacting: boolean;
+  sessionError: string | null | undefined;
+  agentId: string | null;
+}) {
+  const activity = useThreadActivity({
     threadId,
-    sessionLoading: !!sessionLoading,
-    messagesLoading: thread.messagesLoading,
-    messageCount: currentThreadMessages.length,
-    submit: (message, options) => launchRun(message, [], options),
-    onConsumed: () => {
-      clearFirstRunChatKickoff();
-      dispatch({ type: "SET_FIRST_RUN_CHAT_KICKOFF", kickoff: null });
-    },
-    onError: (error) => pushErrorToast({
-      title: "Could not start the setup chat",
-      error,
-      context: { panel: "chat", action: "first_run_onboarding", agent_id: agentId, thread_id: threadId },
-    }),
+    attach: stableAttach,
+    isLive: sse.isLive,
+    lastSettledAt: sse.lastSettledAt,
+    metaApplier: thread.metaApplier,
+  });
+  // Run phases come through the attached stream; background compaction
+  // outside a run has no stream, so label it from the polled activity.
+  const backgroundCompaction = !sse.streaming && !sessionCompacting ? activity?.compaction?.kind ?? null : null;
+
+  useChatErrorReporting({ sessionError, streamError: sse.error, authError: sse.authError, agentId, threadId });
+
+  const streamingRef = useRef(false);
+  streamingRef.current = sse.streaming;
+  const currentThreadIdRef = useRef(threadId);
+  currentThreadIdRef.current = threadId;
+
+  useThreadMetadataPolling(
+    threadId,
+    sse.streaming || thread.warmSummaryPending || thread.compactionPending || thread.manualCompactionPending,
+    thread.metaApplier,
+  );
+
+  useThreadCrossDeviceSync({
+    threadId,
+    streamingRef,
+    messagesRef: thread.messagesRef,
+    setMessages: thread.setMessages,
+    setHasMore: thread.setHasMore,
+    applyMeta: thread.metaApplier,
   });
 
-  return (
-    <div className="relative flex h-full min-h-0 w-full min-w-0 flex-col">
-      <MessageList
-        bottomOverlayHeight={controlsHeight}
-        threadId={threadId}
-        messages={currentThreadMessages}
-        loadingMessages={!!sessionLoading || thread.messagesLoading}
-        steeredSegments={sse.steeredSegments}
-        agentConfig={agentConfig}
-        userProfile={userProfile}
-        // streamingContent stays visible past `streaming=false` so the bubble
-        // doesn't disappear before the refetch arrives. Cleared atomically
-        // via clearStreamingRef once the persisted message lands.
-        streamingContent={sse.streamingContent || undefined}
-        // Keep the live thinking line visible past `streaming=false` so a
-        // user who's still reading isn't yanked out mid-sentence.
-        thinkingContent={sse.thinkingContent || undefined}
-        // Same reasoning as streamingContent/thinkingContent above: keep the
-        // tool trail visible past `streaming=false` so it doesn't flash away
-        // before the refetch swaps in the persisted message's tool_events.
-        // Cleared atomically alongside clearStreamingRef via handleDone.
-        toolEvents={sse.toolEvents.length ? sse.toolEvents : undefined}
-        hasMore={thread.hasMore}
-        loadingMore={thread.loadingMore}
-        onLoadMore={thread.loadOlder}
-        queuedMessages={queuedMessages}
-        onRemoveQueued={queue.removeQueued}
-        hotSinceSeq={thread.hotSinceSeq}
-        warmSummary={thread.warmSummary}
-        warmSummaryBeforeSeq={thread.warmSummaryBeforeSeq}
-        warmSummaryComputedAt={thread.warmSummaryComputedAt}
-        warmSummarySourceMessages={thread.warmSummarySourceMessages}
-        warmSummarySourceChars={thread.warmSummarySourceChars}
-        warmSummaryTopics={thread.warmSummaryTopics}
-        warmChannelSummaries={thread.warmChannelSummaries}
-        warmSummaryPending={thread.warmSummaryPending}
-        compactionPending={thread.compactionPending || sessionCompacting}
-        onSetContextPin={thread.setContextPin}
+  return { backgroundCompaction, currentThreadIdRef };
+}
+
+function ChatComposerControls({
+  controlsRef, agentId, handleProposalResolved, sse,
+  attachments, setAttachments, handleSubmit, handleQueue,
+  agentConfig, handleVoiceTranscript, sessionCompacting, sessionLoading,
+}: {
+  controlsRef: import("react").RefObject<HTMLDivElement | null>;
+  agentId: string | null;
+  handleProposalResolved: (action: import("@/api/types").PendingAction) => Promise<void>;
+  sse: ReturnType<typeof useSSE>;
+  attachments: ContentPart[];
+  setAttachments: import("react").Dispatch<import("react").SetStateAction<ContentPart[]>>;
+  handleSubmit: (rawInput: string) => Promise<void>;
+  handleQueue: (rawInput: string) => Promise<void>;
+  agentConfig: import("@/api/types").AgentConfig | null;
+  handleVoiceTranscript: (text: string) => void;
+  sessionCompacting: boolean;
+  sessionLoading: boolean | undefined;
+}) {
+  return (<>
+    <div ref={controlsRef} className="chat-controls-overlay absolute inset-x-0 bottom-0 z-30">
+      <ApprovalsBanner agentId={agentId} onResolved={handleProposalResolved} />
+      <AuthErrorBanner authError={sse.authError} onDismiss={sse.dismissAuthError} />
+
+      <InputBar
+        attachments={attachments}
+        onAttachmentsChange={setAttachments}
+        onSubmit={handleSubmit}
+        onQueue={handleQueue}
+        onStop={sse.stop}
         streaming={sse.streaming}
-        contextWindowTokens={thread.contextWindowTokens}
-        onRetryMessage={retryWithHiddenPrevious}
-        filters={messageFilters.filters}
-        hideInternalOperations={hideInternalOperations}
-        onToggleFilter={messageFilters.toggle}
-        onResetFilters={messageFilters.reset}
+        voiceEnabled={!!agentConfig?.voice_enabled}
+        agentId={agentId}
+        onVoiceTranscript={handleVoiceTranscript}
+        disabled={!agentId}
+        placeholder={composerPlaceholder({
+          compacting: sessionCompacting,
+          sessionLoading: !!sessionLoading,
+          streaming: sse.streaming,
+        })}
       />
-
-      <div ref={controlsRef} className="chat-controls-overlay absolute inset-x-0 bottom-0 z-30">
-        <ApprovalsBanner agentId={agentId} onResolved={handleProposalResolved} />
-        <AuthErrorBanner authError={sse.authError} onDismiss={sse.dismissAuthError} />
-
-        <InputBar
-          attachments={attachments}
-          onAttachmentsChange={setAttachments}
-          onSubmit={handleSubmit}
-          onQueue={handleQueue}
-          onStop={sse.stop}
-          streaming={sse.streaming}
-          voiceEnabled={!!agentConfig?.voice_enabled}
-          agentId={agentId}
-          onVoiceTranscript={handleVoiceTranscript}
-          disabled={!agentId}
-          placeholder={composerPlaceholder({
-            compacting: sessionCompacting,
-            sessionLoading: !!sessionLoading,
-            streaming: sse.streaming,
-          })}
-        />
-      </div>
     </div>
-  );
+
+  </>);
 }

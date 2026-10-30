@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import { errorMessage } from "@/lib/utils/error";
 import { isMaskedSecret } from "@/lib/utils/secret-mask";
 import { sanitizeOAuthInput } from "@/lib/utils/oauth-input";
+import type { CredentialEditorMode } from "@/hooks/useIntegrationCredential";
 
 type OAuthProvider = "gmail" | "outlook";
 
@@ -14,6 +15,7 @@ interface OAuthSession {
 interface IntegrationOAuthOptions {
   integrationName: string;
   credentialId: string | null;
+  editorMode?: CredentialEditorMode["kind"];
   configured?: boolean;
   values: Record<string, string>;
   onChanged: () => void;
@@ -23,7 +25,7 @@ interface IntegrationOAuthOptions {
 
 /** Owns one card's OAuth session; stale requests cannot affect a later session. */
 export function useIntegrationOAuth({
-  integrationName, credentialId, configured, values, onChanged, onError, onResult,
+  integrationName, credentialId, editorMode, configured, values, onChanged, onError, onResult,
 }: IntegrationOAuthOptions) {
   const [connecting, setConnecting] = useState(false);
   const activeRef = useRef<OAuthSession | null>(null);
@@ -37,7 +39,7 @@ export function useIntegrationOAuth({
       if (activeRef.current?.timer) clearInterval(activeRef.current.timer);
       activeRef.current = null;
     };
-  }, [integrationName, credentialId]);
+  }, [integrationName, credentialId, editorMode]);
 
   async function connectOAuth(provider: OAuthProvider) {
     if (activeRef.current) return;

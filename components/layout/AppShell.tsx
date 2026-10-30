@@ -98,91 +98,107 @@ export function AppShell() {
   // identities. ChatView's hooks re-derive cascading useCallbacks (handleDone
   // → useSSE.consume → useSSE.attach), and effects keyed on `attach` re-fire,
   // forcing a message refetch + chat-window scroll. Stable refs break the cascade.
-  const onMessageSent = useCallback(() => {}, []);
+  const onMessageSent = useCallback(() => { }, []);
   const onSelectAgent = useCallback((agentId: string) => {
     setShowMenu(false);
     dispatch({ type: "SET_AGENT", agentId });
     dispatch({ type: "SET_TAB", tab: "chat" });
   }, [dispatch]);
 
-  // Click on an OS Web Notification → useEventNotifications fires a custom
-  // event; handle it here to switch to the relevant agent's chat. Prefers
-  // landing on the exact thread the event happened in (run reply, scheduled
-  // task, bridge message) so the user sees the originating message, not just
-  // the agent's last-active thread.
-  useEffect(() => {
-    function handler(e: Event) {
-      const detail = (e as CustomEvent<{ agentId?: string; threadId?: string | null }>).detail;
-      if (!detail?.agentId) return;
-      if (detail.threadId) {
-        dispatch({ type: "SELECT_THREAD", threadId: detail.threadId, agentId: detail.agentId });
-      } else {
-        dispatch({ type: "SET_AGENT", agentId: detail.agentId });
-        dispatch({ type: "SET_TAB", tab: "chat" });
-      }
-    }
-    window.addEventListener("jarela:focus-agent", handler);
-    return () => window.removeEventListener("jarela:focus-agent", handler);
-  }, [dispatch]);
+  useShellNotifications({ dispatch, state, unreadCount, showMenu, stateRef, agentsRef });
 
-  // When the user is actively viewing an agent's chat, drain that agent's
-  // unread bucket. This keeps the per-agent breakdown honest: badges only
-  // count notifications the user hasn't yet seen in context.
-  useEffect(() => {
-    if (state.activeTab === "chat") {
-      clearUnreadForAgent(state.activeAgentId ?? null);
-    }
-  }, [state.activeTab, state.activeAgentId, unreadCount]);
+  const { screenLocked, setScreenLocked, masterKeyLocked, setMasterKeyLocked, bootSeq, landOnAgentPicker } = useSessionLockRecovery({ agentsLoaded, agents, state, dispatch, stateRef, refreshAgents });
 
-  // Opening the menu is the only place where global/system alerts are
-  // visible when they aren't tied to a specific agent. Consume the null
-  // bucket here so the header badge doesn't stay sticky.
-  useEffect(() => {
-    if (!showMenu) return;
-    clearUnreadForAgent(null);
-  }, [showMenu]);
+  return (
+    // `dvh` natively tracks the visible viewport on iOS 16.4+ / modern
+    // Chromium, including the on-screen keyboard. The `--actual-vh`
+    // override (set by the iOS-standalone-PWA shim in layout.tsx) covers
+    // the separate WebKit bug where 100dvh under-reports the physical
+    // screen by ~safe-area-inset-top, which leaves a white strip above
+    // the home indicator. Inline style instead of `h-[...]` because
+    // Tailwind arbitrary values choke on commas inside `var(...)`.
+    <div
+      className="app-shell flex flex-col text-fg overflow-hidden"
+      style={{ height: "var(--actual-vh, 100dvh)" }}
+    >
+      <SessionGates bootSeq={bootSeq} agents={agents} agentsLoaded={agentsLoaded} state={state} dispatch={dispatch} screenLocked={screenLocked} masterKeyLocked={masterKeyLocked} landOnAgentPicker={landOnAgentPicker} setScreenLocked={setScreenLocked} setMasterKeyLocked={setMasterKeyLocked} />
+<NotificationStatus />
+      <Toaster />
+      <ServerStatus />
+      {/*
+        Spacer reserving the slot the floating header visually occupies.
+        Keeps the flex layout intact so panel content doesn't slide under
+        the bar — the bar itself is `fixed` (like TopProgressBar) so it
+        always sits on top of scrolling content with a glassy backdrop.
 
-  useEventNotifications({
-    shouldNotify: (ev) => {
-      // Scheduled task firings ALWAYS notify. The user explicitly set them up
-      // out-of-band — "remind me at 3pm", "every weekday morning". Even if
-      // they happen to be on that agent's chat, they may not be actively
-      // reading right when the task fires; the whole point is the ping.
-      if (ev.type === "task_completed") return true;
+        Omitted on the chat tab: the MessageList scroll viewport has a
+        top mask-image fade designed to dissolve messages under the glass
+        header. Reserving the slot would defeat that — messages would
+        butt against an empty band beneath the header instead of scrolling
+        behind it.
+      */}
+      {state.activeTab !== "chat" && (
+        <div
+          className="shrink-0"
+          aria-hidden
+          style={{ height: "calc(3rem + var(--app-safe-top))" }}
+        />
+      )}
+      <CryptoFallbackBanner />
+      <UpdateAvailableBanner />
+      <WorkspaceNavigation
+        agents={agents}
+        state={state}
+        agentsLoading={agentsLoading}
+        onSelectAgent={onSelectAgent}
+        showMenu={showMenu}
+        setShowMenu={setShowMenu}
+        unreadCount={unreadCount}
+      />
+      <div
+        data-testid="workspace-content"
+        className="workspace-content mx-auto min-h-0 flex-1 relative w-full overflow-hidden"
+      >
+        <WorkspacePanels
+          mountedTabs={mountedTabs}
+          state={state}
+          threadId={threadId}
+          sessionLoading={sessionLoading}
+          sessionError={sessionError}
+          onMessageSent={onMessageSent}
+          isFullMode={isFullMode}
+        />
+        {showMenu && (
+          <div
+            className="fixed left-0 right-0 bottom-0 bg-black/20 z-30 xl:hidden"
+            style={{ top: "calc(3rem + var(--app-safe-top))" }}
+            onClick={() => setShowMenu(false)}
+          />
+        )}
 
-      // For ordinary run completions (the agent finished a turn the user
-      // just sent), suppress only when the user is actively reading that
-      // exact chat — the new message is already on screen.
-      //
-      // Otherwise notify in either of two cases:
-      //   1. The PWA isn't focused (background tab, minimized, focused on
-      //      another app). Detected via document.hidden + !hasFocus().
-      //   2. The PWA IS focused but the user is on a different agent / a
-      //      different tab inside the app (Memory, Tasks, Models, …).
-      const pwaUnfocused =
-        typeof document !== "undefined" &&
-        (document.hidden || !document.hasFocus());
+      </div>
+      <MenuPanel
+        open={showMenu}
+        activeTab={state.activeTab}
+        activeAgent={agents.find((agent) => agent.id === state.activeAgentId)}
+        agentsLoading={agentsLoading}
+        agentsError={agentsError}
+        onUpdateAgent={updateAgent}
+        onClose={() => setShowMenu(false)}
+        onSetTab={(tab) => dispatch({ type: "SET_TAB", tab })}
+      />
+    </div>
+  );
+}
 
-      const evAgentId = ev.agent_id;
-      const onSameAgentChat =
-        stateRef.current.activeTab === "chat" &&
-        evAgentId !== null &&
-        evAgentId === stateRef.current.activeAgentId;
-
-      return pwaUnfocused || !onSameAgentChat;
-    },
-    resolveAgentName: (agentId) => {
-      if (!agentId) return getAppName();
-      const a = agentsRef.current.find((x) => x.id === agentId);
-      return a?.name ?? getAppName();
-    },
-    resolveAgentIcon: (agentId) => {
-      if (!agentId) return null;
-      const a = agentsRef.current.find((x) => x.id === agentId);
-      return a?.icon ?? null;
-    },
-  });
-
+function useSessionLockRecovery({ agentsLoaded, agents, state, dispatch, stateRef, refreshAgents }: {
+  agentsLoaded: boolean;
+  agents: AgentConfig[];
+  state: ReturnType<typeof useAppContext>["state"];
+  dispatch: ReturnType<typeof useAppContext>["dispatch"];
+  stateRef: import("react").RefObject<ReturnType<typeof useAppContext>["state"]>;
+  refreshAgents: () => Promise<void>;
+}) {
   // Screen-lock overlay (presence check) AND master-key-locked overlay
   // (decrypt). Distinct from the boot-time gate in `app/page.tsx`:
   // those mounts are triggered mid-session — either by an idle timer
@@ -271,255 +287,266 @@ export function AppShell() {
     setBootSeq((n) => n + 1);
     setPostUnlockPreferredAgentId(preferredAgentId ?? null);
     void refreshAgents();
-  }, [dispatch, refreshAgents]);
+  }, [dispatch, refreshAgents, stateRef]);
 
-  return (
-    // `dvh` natively tracks the visible viewport on iOS 16.4+ / modern
-    // Chromium, including the on-screen keyboard. The `--actual-vh`
-    // override (set by the iOS-standalone-PWA shim in layout.tsx) covers
-    // the separate WebKit bug where 100dvh under-reports the physical
-    // screen by ~safe-area-inset-top, which leaves a white strip above
-    // the home indicator. Inline style instead of `h-[...]` because
-    // Tailwind arbitrary values choke on commas inside `var(...)`.
-    <div
-      className="app-shell flex flex-col text-fg overflow-hidden"
-      style={{ height: "var(--actual-vh, 100dvh)" }}
+  return { screenLocked, setScreenLocked, masterKeyLocked, setMasterKeyLocked, bootSeq, landOnAgentPicker };
+}
+
+function WorkspacePanels({ mountedTabs, state, threadId, sessionLoading, sessionError, onMessageSent, isFullMode }: {
+  mountedTabs: Set<string>;
+  state: ReturnType<typeof useAppContext>["state"];
+  threadId: string | null;
+  sessionLoading: boolean;
+  sessionError: string | null;
+  onMessageSent: () => void;
+  isFullMode: boolean;
+}) {
+  return (<>
+    {mountedTabs.has("chat") && (
+      <Activity mode={state.activeTab === "chat" ? "visible" : "hidden"}>
+        <ChatView
+          key={state.activeAgentId ?? "no-agent"}
+          threadId={threadId}
+          agentId={state.activeAgentId}
+          sessionLoading={sessionLoading}
+          sessionError={sessionError}
+          onMessageSent={onMessageSent}
+        />
+      </Activity>
+    )}
+    {WORKSPACE_PANELS.filter(({ tab, fullOnly }) =>
+      mountedTabs.has(tab) && (!fullOnly || isFullMode),
+    ).map(({ tab, Panel, inset }) => (
+      <Activity key={tab} mode={state.activeTab === tab ? "visible" : "hidden"}>
+        {inset ? <div className="workspace-panel h-full"><Panel /></div> : <Panel />}
+      </Activity>
+    ))}
+  </>);
+}
+
+const WORKSPACE_PANELS: Array<{ tab: string; Panel: React.ComponentType; fullOnly?: boolean; inset?: boolean }> = [
+  { tab: "dashboard", Panel: DashboardPanel },
+  { tab: "agents", Panel: AgentsPanel },
+  { tab: "memory", Panel: UnifiedMemoryPanel, fullOnly: true },
+  { tab: "models", Panel: ModelsPanel, inset: true },
+  { tab: "credentials", Panel: CredentialsPanel, inset: true },
+  { tab: "mcp", Panel: MCPPanel },
+  { tab: "tools", Panel: ToolsPanel },
+  { tab: "tasks", Panel: ScheduledTasksPanel },
+  { tab: "bridges", Panel: BridgesPanel, fullOnly: true },
+  { tab: "profile", Panel: ProfilePanel },
+  { tab: "logs", Panel: LogsPanel, fullOnly: true, inset: true },
+  { tab: "env", Panel: EnvVarsPanel, fullOnly: true, inset: true },
+  { tab: "settings", Panel: SettingsPanel },
+];
+
+function WorkspaceNavigation({ agents, state, agentsLoading, onSelectAgent, showMenu, setShowMenu, unreadCount }: {
+  agents: AgentConfig[];
+  state: ReturnType<typeof useAppContext>["state"];
+  agentsLoading: boolean;
+  onSelectAgent: (agentId: string) => void;
+  showMenu: boolean;
+  setShowMenu: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  unreadCount: number;
+}) {
+  return (<>
+    <header
+      className="glass app-header fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60"
+      style={{
+        // Top safe-area is mobile-scoped via --app-safe-top so desktop
+        // windows stay flush to the edge.
+        paddingTop: "var(--app-safe-top)",
+        paddingLeft: "calc(env(safe-area-inset-left) + var(--workspace-gutter))",
+        paddingRight: "calc(env(safe-area-inset-right) + var(--workspace-gutter))",
+        height: "calc(3rem + var(--app-safe-top))",
+      }}
     >
-      <BootScreen
-        key={bootSeq}
+      <AgentSwitcher
         agents={agents}
-        agentsLoaded={agentsLoaded}
         activeAgentId={state.activeAgentId}
-        preferredThreadId={state.activeThreadId}
-        onPickAgent={(id) => {
-          dispatch({ type: "SET_AGENT", agentId: id });
-          dispatch({ type: "SET_TAB", tab: "chat" });
-        }}
-        onCreateAgent={() => dispatch({ type: "SET_TAB", tab: "agents" })}
-        suppressed={state.activeTab !== "chat"}
+        loading={agentsLoading}
+        onSelect={onSelectAgent}
       />
-      {screenLocked && !masterKeyLocked && (
-        <ScreenLock
-          onUnlock={() => {
-            // Drop the user back on the picker so they consciously
-            // re-enter their workspace rather than landing mid-chat.
-            landOnAgentPicker();
-            setScreenLocked(false);
-          }}
-        />
-      )}
-      {masterKeyLocked && (
-        // Master key got re-locked mid-session (e.g. external lock
-        // command). Mount the decrypt splash — same shared keypad as
-        // boot — and on success drop back to the agent picker. The
-        // existing components below stay mounted underneath; once
-        // unlocked they resume against the now-unlocked DB.
-        //
-        // If the screen-lock flag is also up (idle overlap), the
-        // decrypt route clears it server-side, so we also drop the
-        // screen-lock flag here. One PIN entry covers both.
-        <UnlockScreen
-          onUnlock={() => {
-            landOnAgentPicker();
-            setMasterKeyLocked(false);
-            if (screenLocked) setScreenLocked(false);
-          }}
-        />
-      )}
-      <NotificationStatus />
-      <Toaster />
-      <ServerStatus />
-      {/*
-        Spacer reserving the slot the floating header visually occupies.
-        Keeps the flex layout intact so panel content doesn't slide under
-        the bar — the bar itself is `fixed` (like TopProgressBar) so it
-        always sits on top of scrolling content with a glassy backdrop.
-
-        Omitted on the chat tab: the MessageList scroll viewport has a
-        top mask-image fade designed to dissolve messages under the glass
-        header. Reserving the slot would defeat that — messages would
-        butt against an empty band beneath the header instead of scrolling
-        behind it.
-      */}
-      {state.activeTab !== "chat" && (
-        <div
-          className="shrink-0"
-          aria-hidden
-          style={{ height: "calc(3rem + var(--app-safe-top))" }}
-        />
-      )}
-      <CryptoFallbackBanner />
-      <UpdateAvailableBanner />
-      <header
-        className="glass app-header fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60"
-        style={{
-          // Top safe-area is mobile-scoped via --app-safe-top so desktop
-          // windows stay flush to the edge.
-          paddingTop: "var(--app-safe-top)",
-          paddingLeft: "calc(env(safe-area-inset-left) + var(--workspace-gutter))",
-          paddingRight: "calc(env(safe-area-inset-right) + var(--workspace-gutter))",
-          height: "calc(3rem + var(--app-safe-top))",
-        }}
+      <HeaderActivity />
+      <button
+        aria-label="Menu"
+        aria-expanded={showMenu}
+        aria-controls="main-navigation"
+        onClick={() => { setShowMenu((v) => !v); }}
+        className={`control-tap ml-auto relative shrink-0 p-2.5 rounded transition-colors xl:hidden ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
+        title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
       >
-        <AgentSwitcher
-          agents={agents}
-          activeAgentId={state.activeAgentId}
-          loading={agentsLoading}
-          onSelect={onSelectAgent}
-        />
-        <HeaderActivity />
-        <button
-          aria-label="Menu"
-          aria-expanded={showMenu}
-          aria-controls="main-navigation"
-          onClick={() => { setShowMenu((v) => !v); }}
-          className={`control-tap ml-auto relative shrink-0 p-2.5 rounded transition-colors xl:hidden ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
-          title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
-        >
-          <Menu size={21} />
-          {unreadCount > 0 && (
-            <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-rose-500 border border-surface-2 text-[9px] font-bold text-white flex items-center justify-center leading-none animate-pulse">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-        </button>
-      </header>
-      <aside
-        aria-label="Agents"
-        className="glass fixed bottom-0 left-0 z-40 hidden w-[var(--workspace-agents-width)] border-r border-border/60 pb-safe 2xl:block"
-        style={{ top: "calc(3rem + var(--app-safe-top))" }}
-      >
-        <AgentSwitcher
-          layout="sidebar"
-          agents={agents}
-          activeAgentId={state.activeAgentId}
-          loading={agentsLoading}
-          onSelect={onSelectAgent}
-        />
-      </aside>
-
-      <div
-        data-testid="workspace-content"
-        className="workspace-content mx-auto min-h-0 flex-1 relative w-full overflow-hidden"
-      >
-        {/*
-          Each tab is wrapped in <Activity> on its first visit, then kept
-          mounted so scroll position, expanded rows, and local form/filter
-          state survive tab switches. Background panels stay in the DOM but
-          their effects pause until shown again, so data refreshes on focus
-          rather than going stale. ChatView keeps its `key={activeAgentId}`
-          so picking a different agent still forces a clean remount with
-          that agent's thread.
-
-          We lazy-mount on first visit (not eagerly on app start) because
-          rendering all 8 panel trees up front blocks Safari/iOS PWA long
-          enough to stall the very first paint.
-        */}
-        {mountedTabs.has("chat") && (
-          <Activity mode={state.activeTab === "chat" ? "visible" : "hidden"}>
-            <ChatView
-              key={state.activeAgentId ?? "no-agent"}
-              threadId={threadId}
-              agentId={state.activeAgentId}
-              sessionLoading={sessionLoading}
-              sessionError={sessionError}
-              onMessageSent={onMessageSent}
-            />
-          </Activity>
+        <Menu size={21} />
+        {unreadCount > 0 && (
+          <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-rose-500 border border-surface-2 text-[9px] font-bold text-white flex items-center justify-center leading-none animate-pulse">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
         )}
-        {mountedTabs.has("dashboard") && (
-          <Activity mode={state.activeTab === "dashboard" ? "visible" : "hidden"}>
-            <DashboardPanel />
-          </Activity>
-        )}
-        {mountedTabs.has("agents") && (
-          <Activity mode={state.activeTab === "agents" ? "visible" : "hidden"}>
-            <AgentsPanel />
-          </Activity>
-        )}
-        {isFullMode && mountedTabs.has("memory") && (
-          <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
-            <UnifiedMemoryPanel />
-          </Activity>
-        )}
-        {mountedTabs.has("models") && (
-          <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
-            <div className="workspace-panel h-full">
-              <ModelsPanel />
-            </div>
-          </Activity>
-        )}
-        {mountedTabs.has("credentials") && (
-          <Activity mode={state.activeTab === "credentials" ? "visible" : "hidden"}>
-            <div className="workspace-panel h-full">
-              <CredentialsPanel />
-            </div>
-          </Activity>
-        )}
-        {mountedTabs.has("mcp") && (
-          <Activity mode={state.activeTab === "mcp" ? "visible" : "hidden"}>
-            <MCPPanel />
-          </Activity>
-        )}
-        {mountedTabs.has("tools") && (
-          <Activity mode={state.activeTab === "tools" ? "visible" : "hidden"}>
-            <ToolsPanel />
-          </Activity>
-        )}
-        {mountedTabs.has("tasks") && (
-          <Activity mode={state.activeTab === "tasks" ? "visible" : "hidden"}>
-            <ScheduledTasksPanel />
-          </Activity>
-        )}
-        {isFullMode && mountedTabs.has("bridges") && (
-          <Activity mode={state.activeTab === "bridges" ? "visible" : "hidden"}>
-            <BridgesPanel />
-          </Activity>
-        )}
-        {mountedTabs.has("profile") && (
-          <Activity mode={state.activeTab === "profile" ? "visible" : "hidden"}>
-            <ProfilePanel />
-          </Activity>
-        )}
-        {isFullMode && mountedTabs.has("logs") && (
-          <Activity mode={state.activeTab === "logs" ? "visible" : "hidden"}>
-            <div className="workspace-panel h-full">
-              <LogsPanel />
-            </div>
-          </Activity>
-        )}
-        {isFullMode && mountedTabs.has("env") && (
-          <Activity mode={state.activeTab === "env" ? "visible" : "hidden"}>
-            <div className="workspace-panel h-full">
-              <EnvVarsPanel />
-            </div>
-          </Activity>
-        )}
-        {mountedTabs.has("settings") && (
-          <Activity mode={state.activeTab === "settings" ? "visible" : "hidden"}>
-            <SettingsPanel />
-          </Activity>
-        )}
-
-        {showMenu && (
-          <div
-            className="fixed left-0 right-0 bottom-0 bg-black/20 z-30 xl:hidden"
-            style={{ top: "calc(3rem + var(--app-safe-top))" }}
-            onClick={() => setShowMenu(false)}
-          />
-        )}
-
-      </div>
-      <MenuPanel
-        open={showMenu}
-        activeTab={state.activeTab}
-        activeAgent={agents.find((agent) => agent.id === state.activeAgentId)}
-        agentsLoading={agentsLoading}
-        agentsError={agentsError}
-        onUpdateAgent={updateAgent}
-        onClose={() => setShowMenu(false)}
-        onSetTab={(tab) => dispatch({ type: "SET_TAB", tab })}
+      </button>
+    </header>
+    <aside
+      aria-label="Agents"
+      className="glass fixed bottom-0 left-0 z-40 hidden w-[var(--workspace-agents-width)] border-r border-border/60 pb-safe 2xl:block"
+      style={{ top: "calc(3rem + var(--app-safe-top))" }}
+    >
+      <AgentSwitcher
+        layout="sidebar"
+        agents={agents}
+        activeAgentId={state.activeAgentId}
+        loading={agentsLoading}
+        onSelect={onSelectAgent}
       />
-    </div>
-  );
+    </aside>
+
+</>);
+}
+
+function useShellNotifications({ dispatch, state, unreadCount, showMenu, stateRef, agentsRef }: {
+  dispatch: ReturnType<typeof useAppContext>["dispatch"];
+  state: ReturnType<typeof useAppContext>["state"];
+  unreadCount: number;
+  showMenu: boolean;
+  stateRef: import("react").RefObject<ReturnType<typeof useAppContext>["state"]>;
+  agentsRef: import("react").RefObject<AgentConfig[]>;
+}) {
+  // Click on an OS Web Notification → useEventNotifications fires a custom
+  // event; handle it here to switch to the relevant agent's chat. Prefers
+  // landing on the exact thread the event happened in (run reply, scheduled
+  // task, bridge message) so the user sees the originating message, not just
+  // the agent's last-active thread.
+  useEffect(() => {
+    function handler(e: Event) {
+      const detail = (e as CustomEvent<{ agentId?: string; threadId?: string | null }>).detail;
+      if (!detail?.agentId) return;
+      if (detail.threadId) {
+        dispatch({ type: "SELECT_THREAD", threadId: detail.threadId, agentId: detail.agentId });
+      } else {
+        dispatch({ type: "SET_AGENT", agentId: detail.agentId });
+        dispatch({ type: "SET_TAB", tab: "chat" });
+      }
+    }
+    window.addEventListener("jarela:focus-agent", handler);
+    return () => window.removeEventListener("jarela:focus-agent", handler);
+  }, [dispatch]);
+
+  // When the user is actively viewing an agent's chat, drain that agent's
+  // unread bucket. This keeps the per-agent breakdown honest: badges only
+  // count notifications the user hasn't yet seen in context.
+  useEffect(() => {
+    if (state.activeTab === "chat") {
+      clearUnreadForAgent(state.activeAgentId ?? null);
+    }
+  }, [state.activeTab, state.activeAgentId, unreadCount]);
+
+  // Opening the menu is the only place where global/system alerts are
+  // visible when they aren't tied to a specific agent. Consume the null
+  // bucket here so the header badge doesn't stay sticky.
+  useEffect(() => {
+    if (!showMenu) return;
+    clearUnreadForAgent(null);
+  }, [showMenu]);
+
+  useEventNotifications({
+    shouldNotify: (ev) => {
+      // Scheduled task firings ALWAYS notify. The user explicitly set them up
+      // out-of-band — "remind me at 3pm", "every weekday morning". Even if
+      // they happen to be on that agent's chat, they may not be actively
+      // reading right when the task fires; the whole point is the ping.
+      if (ev.type === "task_completed") return true;
+
+      // For ordinary run completions (the agent finished a turn the user
+      // just sent), suppress only when the user is actively reading that
+      // exact chat — the new message is already on screen.
+      //
+      // Otherwise notify in either of two cases:
+      //   1. The PWA isn't focused (background tab, minimized, focused on
+      //      another app). Detected via document.hidden + !hasFocus().
+      //   2. The PWA IS focused but the user is on a different agent / a
+      //      different tab inside the app (Memory, Tasks, Models, …).
+      const pwaUnfocused =
+        typeof document !== "undefined" &&
+        (document.hidden || !document.hasFocus());
+
+      const evAgentId = ev.agent_id;
+      const onSameAgentChat =
+        stateRef.current.activeTab === "chat" &&
+        evAgentId !== null &&
+        evAgentId === stateRef.current.activeAgentId;
+
+      return pwaUnfocused || !onSameAgentChat;
+    },
+    resolveAgentName: (agentId) => {
+      if (!agentId) return getAppName();
+      const a = agentsRef.current.find((x) => x.id === agentId);
+      return a?.name ?? getAppName();
+    },
+    resolveAgentIcon: (agentId) => {
+      if (!agentId) return null;
+      const a = agentsRef.current.find((x) => x.id === agentId);
+      return a?.icon ?? null;
+    },
+  });
+
+}
+
+function SessionGates({
+  bootSeq, agents, agentsLoaded, state,
+  dispatch, screenLocked, masterKeyLocked, landOnAgentPicker,
+  setScreenLocked, setMasterKeyLocked,
+}: {
+  bootSeq: number;
+  agents: AgentConfig[];
+  agentsLoaded: boolean;
+  state: ReturnType<typeof useAppContext>["state"];
+  dispatch: import("react").Dispatch<{ type: "SELECT_THREAD"; threadId: string; agentId: string; } | { type: "NEW_CHAT"; } | { type: "SET_AGENT"; agentId: string; } | { type: "SET_TAB"; tab: import("@/contexts/AppContext").Tab; } | { type: "SET_EXPERIENCE_MODE"; mode: import("@/contexts/AppContext").ExperienceMode; } | { type: "SET_FIRST_RUN_CHAT_KICKOFF"; kickoff: import("@/contexts/AppContext").FirstRunChatKickoff | null; } | { type: "SET_SELECTION"; tab: import("@/contexts/AppContext").Tab; itemId: string | null; }>;
+  screenLocked: boolean;
+  masterKeyLocked: boolean;
+  landOnAgentPicker: () => void;
+  setScreenLocked: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+  setMasterKeyLocked: import("react").Dispatch<import("react").SetStateAction<boolean>>;
+}) {
+  return (<>
+    <BootScreen
+      key={bootSeq}
+      agents={agents}
+      agentsLoaded={agentsLoaded}
+      activeAgentId={state.activeAgentId}
+      preferredThreadId={state.activeThreadId}
+      onPickAgent={(id) => {
+        dispatch({ type: "SET_AGENT", agentId: id });
+        dispatch({ type: "SET_TAB", tab: "chat" });
+      }}
+      onCreateAgent={() => dispatch({ type: "SET_TAB", tab: "agents" })}
+      suppressed={state.activeTab !== "chat"}
+    />
+    {screenLocked && !masterKeyLocked && (
+      <ScreenLock
+        onUnlock={() => {
+          // Drop the user back on the picker so they consciously
+          // re-enter their workspace rather than landing mid-chat.
+          landOnAgentPicker();
+          setScreenLocked(false);
+        }}
+      />
+    )}
+    {masterKeyLocked && (
+      // Master key got re-locked mid-session (e.g. external lock
+      // command). Mount the decrypt splash — same shared keypad as
+      // boot — and on success drop back to the agent picker. The
+      // existing components below stay mounted underneath; once
+      // unlocked they resume against the now-unlocked DB.
+      //
+      // If the screen-lock flag is also up (idle overlap), the
+      // decrypt route clears it server-side, so we also drop the
+      // screen-lock flag here. One PIN entry covers both.
+      <UnlockScreen
+        onUnlock={() => {
+          landOnAgentPicker();
+          setMasterKeyLocked(false);
+          if (screenLocked) setScreenLocked(false);
+        }}
+      />
+    )}
+
+  </>);
 }

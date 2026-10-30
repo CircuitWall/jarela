@@ -19,86 +19,23 @@ type State = {
 type Mode = "idle" | "enable" | "change" | "disable";
 
 export function SecurityPanel() {
-  const [state, setState] = useState<State | null>(null);
-  const [mode, setMode] = useState<Mode>("idle");
-  const [currentPin, setCurrentPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [confirmPin, setConfirmPin] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [okMsg, setOkMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    refresh();
-  }, []);
-
-  async function refresh() {
-    try {
-      const res = await fetch("/api/v1/security/state");
-      if (res.ok) setState(await res.json());
-    } catch { /* ignore */ }
-  }
-
-  function reset() {
-    setMode("idle");
-    setCurrentPin("");
-    setNewPin("");
-    setConfirmPin("");
-    setError(null);
-  }
-
-  async function submit() {
-    setError(null);
-    setOkMsg(null);
-
-    if (mode === "enable" || mode === "change") {
-      if (!/^\d{6}$/.test(newPin)) {
-        setError("PIN must be exactly 6 digits.");
-        return;
-      }
-      if (newPin !== confirmPin) {
-        setError("PIN entries don't match.");
-        return;
-      }
-    }
-    if ((mode === "change" || mode === "disable") && !/^\d{6}$/.test(currentPin)) {
-      setError("Current PIN must be exactly 6 digits.");
-      return;
-    }
-
-    const body: Record<string, string> = { action: mode };
-    if (mode === "enable") body.newPin = newPin;
-    if (mode === "change") { body.currentPin = currentPin; body.newPin = newPin; }
-    if (mode === "disable") body.currentPin = currentPin;
-
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/v1/security/pin", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        const successMsg = mode === "enable"
-          ? "PIN enabled. You'll be asked for it on next launch."
-          : mode === "change"
-            ? "PIN changed."
-            : "PIN disabled.";
-        setOkMsg(successMsg);
-        reset();
-        await refresh();
-      } else {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        if (res.status === 401) setError("Current PIN is incorrect.");
-        else if (res.status === 429) setError("Too many attempts. Try again later.");
-        else setError(data.error ?? `Error (${res.status})`);
-      }
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const {
+    state,
+    okMsg,
+    mode,
+    reset,
+    setMode,
+    setOkMsg,
+    currentPin,
+    setCurrentPin,
+    submitting,
+    newPin,
+    setNewPin,
+    confirmPin,
+    setConfirmPin,
+    error,
+    submit,
+  } = useSecurityPin();
 
   if (!state) {
     return (
@@ -218,4 +155,105 @@ function PinInput({
       />
     </label>
   );
+}
+
+function useSecurityPin() {
+  const [state, setState] = useState<State | null>(null);
+  const [mode, setMode] = useState<Mode>("idle");
+  const [currentPin, setCurrentPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function refresh() {
+    try {
+      const res = await fetch("/api/v1/security/state");
+      if (res.ok) setState(await res.json());
+    } catch { /* ignore */ }
+  }
+
+  function reset() {
+    setMode("idle");
+    setCurrentPin("");
+    setNewPin("");
+    setConfirmPin("");
+    setError(null);
+  }
+
+  async function submit() {
+    setError(null);
+    setOkMsg(null);
+
+    if (mode === "enable" || mode === "change") {
+      if (!/^\d{6}$/.test(newPin)) {
+        setError("PIN must be exactly 6 digits.");
+        return;
+      }
+      if (newPin !== confirmPin) {
+        setError("PIN entries don't match.");
+        return;
+      }
+    }
+    if ((mode === "change" || mode === "disable") && !/^\d{6}$/.test(currentPin)) {
+      setError("Current PIN must be exactly 6 digits.");
+      return;
+    }
+
+    const body: Record<string, string> = { action: mode };
+    if (mode === "enable") body.newPin = newPin;
+    if (mode === "change") { body.currentPin = currentPin; body.newPin = newPin; }
+    if (mode === "disable") body.currentPin = currentPin;
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/v1/security/pin", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const successMsg = mode === "enable"
+          ? "PIN enabled. You'll be asked for it on next launch."
+          : mode === "change"
+            ? "PIN changed."
+            : "PIN disabled.";
+        setOkMsg(successMsg);
+        reset();
+        await refresh();
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (res.status === 401) setError("Current PIN is incorrect.");
+        else if (res.status === 429) setError("Too many attempts. Try again later.");
+        else setError(data.error ?? `Error (${res.status})`);
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return {
+    state,
+    okMsg,
+    mode,
+    reset,
+    setMode,
+    setOkMsg,
+    currentPin,
+    setCurrentPin,
+    submitting,
+    newPin,
+    setNewPin,
+    confirmPin,
+    setConfirmPin,
+    error,
+    submit,
+  };
 }

@@ -14,8 +14,6 @@ import { DialogError } from "@/components/ui/DialogFooter";
 import { errorMessage } from "@/lib/utils/error";
 
 export function ProfileEditor() {
-  const { state, dispatch } = useAppContext();
-  const mode = state.experienceMode;
   const fileRef = useRef<HTMLInputElement>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [name, setName] = useState("");
@@ -126,48 +124,7 @@ export function ProfileEditor() {
         in the agent&apos;s Identity settings.
       </p>
 
-      <div className="pt-4 border-t border-border">
-        <div className="rounded-xl border border-border bg-surface-1/40 p-3 space-y-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-fg">Experience mode</h3>
-          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-border bg-surface-3 text-fg-faint">
-            {mode}
-          </span>
-        </div>
-        <p className="text-[11px] text-fg-faint leading-snug">
-          Choose how much configuration detail is shown in the app.
-          Essential hides technical panels and advanced model controls.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "essential" })}
-            aria-pressed={mode === "essential"}
-            className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
-              mode === "essential"
-                ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
-                : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
-            }`}
-          >
-            <div className="text-xs font-medium">Essential</div>
-            <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Cleaner layout, fewer technical controls</div>
-          </button>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "full" })}
-            aria-pressed={mode === "full"}
-            className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
-              mode === "full"
-                ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
-                : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
-            }`}
-          >
-            <div className="text-xs font-medium">Full</div>
-            <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Per-function controls and full tuning</div>
-          </button>
-        </div>
-        </div>
-      </div>
+      <ExperienceModeSettings />
 
       <DialogError message={saveError} />
       <StickyActionBar
@@ -511,3 +468,52 @@ function TailscaleServe() {
 // Companion to the access whitelist: surfaces whether `tailscale serve` is
 // currently forwarding to this node, the tailnet FQDN, and a one-click
 // copy of the configuration recipe. See ADR-0008 for the recipe rationale.
+
+function ExperienceModeSettings() {
+  const { state, dispatch } = useAppContext();
+  const mode = state.experienceMode;
+  return (
+    <div className="pt-4 border-t border-border">
+      <div className="rounded-xl border border-border bg-surface-1/40 p-3 space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-fg">Experience mode</h3>
+        <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-border bg-surface-3 text-fg-faint">
+          {mode}
+        </span>
+      </div>
+      <p className="text-[11px] text-fg-faint leading-snug">
+        Choose how much configuration detail is shown in the app.
+        Essential hides technical panels and advanced model controls.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "essential" })}
+          aria-pressed={mode === "essential"}
+          className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
+            mode === "essential"
+              ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
+              : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
+          }`}
+        >
+          <div className="text-xs font-medium">Essential</div>
+          <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Cleaner layout, fewer technical controls</div>
+        </button>
+        <button
+          type="button"
+          onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "full" })}
+          aria-pressed={mode === "full"}
+          className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
+            mode === "full"
+              ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
+              : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
+          }`}
+        >
+          <div className="text-xs font-medium">Full</div>
+          <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Per-function controls and full tuning</div>
+        </button>
+      </div>
+      </div>
+    </div>
+  );
+}

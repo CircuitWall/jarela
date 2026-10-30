@@ -45,6 +45,23 @@ const MODES: Record<PinKeypadMode, ModeConfig> = {
 
 export function PinKeypad({ mode, onSuccess }: PinKeypadProps) {
   const cfg = MODES[mode];
+  const { digits, error, submitting, retryAfterSec, append, backspace } = usePinEntry(cfg.endpoint, onSuccess);
+
+  return (
+    <PinKeypadView
+      mode={mode}
+      cfg={cfg}
+      digits={digits}
+      error={error}
+      submitting={submitting}
+      retryAfterSec={retryAfterSec}
+      append={append}
+      backspace={backspace}
+    />
+  );
+}
+
+function usePinEntry(endpoint: string, onSuccess: () => void) {
   const [digits, setDigits] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -63,7 +80,7 @@ export function PinKeypad({ mode, onSuccess }: PinKeypadProps) {
       setSubmitting(true);
       setError(null);
       try {
-        const res = await fetch(cfg.endpoint, {
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ pin }),
@@ -103,7 +120,7 @@ export function PinKeypad({ mode, onSuccess }: PinKeypadProps) {
         setSubmitting(false);
       }
     },
-    [cfg.endpoint, onSuccess],
+    [endpoint, onSuccess],
   );
 
   const append = useCallback(
@@ -150,6 +167,15 @@ export function PinKeypad({ mode, onSuccess }: PinKeypadProps) {
     return () => clearInterval(t);
   }, [retryAfterSec]);
 
+  return { digits, error, submitting, retryAfterSec, append, backspace };
+}
+
+function PinKeypadView({
+  mode, cfg, digits, error, submitting, retryAfterSec, append, backspace,
+}: {
+  mode: PinKeypadMode;
+  cfg: ModeConfig;
+} & ReturnType<typeof usePinEntry>) {
   return (
     <div
       className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-6 bg-surface text-fg animate-in fade-in duration-200"

@@ -47,7 +47,7 @@ const DEFAULT_LEVELS: ReadonlySet<LogEntry["level"]> = new Set(["log", "info", "
  * reconnect so the server replays only what we missed since the last
  * seen entry — no duplicates across drops.
  */
-export function LogsPanel() {
+function useLogPanel() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [paused, setPaused] = useState(false);
   const [autoscroll, setAutoscroll] = useState(true);
@@ -142,6 +142,17 @@ export function LogsPanel() {
     lastSeqRef.current = 0;
   }
 
+  return {
+    entries, paused, setPaused, autoscroll, setAutoscroll, search, setSearch,
+    levels, connected, scrollRef, filtered, toggleLevel, copyAll, clearLocal,
+  };
+}
+
+export function LogsPanel() {
+  const {
+    entries, paused, setPaused, autoscroll, setAutoscroll, search, setSearch,
+    levels, connected, scrollRef, filtered, toggleLevel, copyAll, clearLocal,
+  } = useLogPanel();
   return (
     <div className="workspace-gutter flex flex-col h-full min-h-0 py-4">
       <div className="mb-2 flex items-center gap-2 flex-wrap">

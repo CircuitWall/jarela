@@ -283,91 +283,43 @@ export async function indexSource(
   for (const f of files) {
     if (processed >= maxThisRun) break;
     const existing = indexed.get(f.abs);
-    if (existing && existing.mtime_ms === f.mtime_ms && existing.size_bytes === f.size) {
-      if (opts?.forceReembed) {
-        try {
-          const text = await readTextFile(f.abs);
-          if (text === null) continue;
-          const r = await upsertLocalDocument(source.id, f, text, hashContent(text), existing.id);
-          embedFailed += r.chunks - r.embedded;
-          if (r.embedError && !embedError) embedError = r.embedError;
-          processed++;
-          stats.updated++;
-        } catch (err) {
-          lastError = errorMessage(err);
-          stats.errors++;
-        }
-        continue;
-      }
-      // Root-cause fix: if a file was indexed while embeddings were
-      // unavailable, unchanged files used to be skipped forever and never
-      // backfilled. Try to embed any still-null chunks on unchanged docs.
-      try {
-        const r = await backfillDocumentEmbeddings(existing.id);
-        if (r.missing > 0) {
-          embedFailed += Math.max(r.missing - r.embedded, 0);
-          if (r.embedError && !embedError) embedError = r.embedError;
-          processed++;
-        }
-      } catch (err) {
-        lastError = errorMessage(err);
-        stats.errors++;
-      }
-      stats.unchanged++;
-      continue;
-    }
-
-    let text: string | null;
-    try { text = await readTextFile(f.abs); } catch {
-      stats.errors++;
-      continue;
-    }
-    if (text === null) continue; // binary / unreadable — skip silently.
-
-    const hash = hashContent(text);
-    if (existing && existing.content_hash === hash) {
-      if (opts?.forceReembed) {
-        try {
-          const r = await upsertLocalDocument(source.id, f, text, hash, existing.id);
-          embedFailed += r.chunks - r.embedded;
-          if (r.embedError && !embedError) embedError = r.embedError;
-          processed++;
-          stats.updated++;
-        } catch (err) {
-          lastError = errorMessage(err);
-          stats.errors++;
-        }
-        continue;
-      }
-      // Mtime/size changed but content didn't — just touch the row.
-      db.prepare("UPDATE documents SET mtime_ms=?, size_bytes=?, last_indexed_at=? WHERE id=?")
-        .run(f.mtime_ms, f.size, new Date().toISOString(), existing.id);
-      try {
-        const r = await backfillDocumentEmbeddings(existing.id);
-        if (r.missing > 0) {
-          embedFailed += Math.max(r.missing - r.embedded, 0);
-          if (r.embedError && !embedError) embedError = r.embedError;
-          processed++;
-        }
-      } catch (err) {
-        lastError = errorMessage(err);
-        stats.errors++;
-      }
-      stats.unchanged++;
-      continue;
-    }
-
+    let unchanged = false;
     try {
-      const r = await upsertLocalDocument(source.id, f, text, hash, existing?.id);
-      embedFailed += r.chunks - r.embedded;
-      if (r.embedError && !embedError) embedError = r.embedError;
-      processed++;
-      if (existing) stats.updated++;
-      else stats.added++;
+      const metadataUnchanged = existing?.mtime_ms === f.mtime_ms && existing?.size_bytes === f.size;
+      let content: { text: string; hash: string } | null = null;
+      if (!metadataUnchanged || opts?.forceReembed) {
+        const text = await readTextFile(f.abs);
+        if (text === null) continue;
+        content = { text, hash: hashContent(text) };
+      }
+
+      unchanged = !!existing && !opts?.forceReembed
+        && (metadataUnchanged || existing.content_hash === content?.hash);
+      if (existing && unchanged) {
+        if (!metadataUnchanged) {
+          db.prepare("UPDATE documents SET mtime_ms=?, size_bytes=?, last_indexed_at=? WHERE id=?")
+            .run(f.mtime_ms, f.size, new Date().toISOString(), existing.id);
+        }
+        // Missing embeddings still need backfill even when content is unchanged.
+        const r = await backfillDocumentEmbeddings(existing.id);
+        if (r.missing > 0) {
+          embedFailed += Math.max(r.missing - r.embedded, 0);
+          if (r.embedError && !embedError) embedError = r.embedError;
+          processed++;
+        }
+      } else if (content) {
+        const r = await upsertLocalDocument(source.id, f, content.text, content.hash, existing?.id);
+        embedFailed += r.chunks - r.embedded;
+        if (r.embedError && !embedError) embedError = r.embedError;
+        processed++;
+        if (existing) stats.updated++;
+        else stats.added++;
+      }
     } catch (err) {
       lastError = errorMessage(err);
       stats.errors++;
     }
+    if (unchanged) stats.unchanged++;
   }
 
   // Embed failures are not fetch failures — but if everything else

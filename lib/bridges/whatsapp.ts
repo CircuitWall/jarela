@@ -197,7 +197,34 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
 
     sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on("connection.update", async (...args: unknown[]) => {
+    sock.ev.on("connection.update", (...args: unknown[]) => this.handleConnectionUpdate(sock, baileys, qrcode, ...args));
+
+    sock.ev.on("messages.upsert", (...args: unknown[]) => this.handleMessageUpsert(sock, baileys, ...args));
+
+    // ---- Chat cache: populated from history sync + live chat/contact events ----
+    //
+    // `messaging-history.set` carries the recent chats Baileys received
+    // during the initial sync. `chats.upsert` / `chats.update` fire for
+    // brand-new chats and metadata changes. `contacts.upsert` gives us
+    // display names for personal contacts.
+    sock.ev.on("messaging-history.set", (...args: unknown[]) => this.handleHistorySync(...args));
+
+    sock.ev.on("chats.upsert", (...args: unknown[]) => this.handleChatUpdates(...args));
+
+    sock.ev.on("chats.update", (...args: unknown[]) => this.handleChatUpdates(...args));
+
+    sock.ev.on("contacts.upsert", (...args: unknown[]) => this.handleContactUpdates(...args));
+
+    // Group profile/settings updates (subject/description/permissions/etc.).
+    // These are not user-authored chat lines; we emit them as synthetic
+    // inbound events so the agent can reason about context changes.
+    sock.ev.on("groups.update", (...args: unknown[]) => this.handleGroupUpdates(...args));
+
+    // Group membership / role transitions (add/remove/promote/demote).
+    sock.ev.on("group-participants.update", (...args: unknown[]) => this.handleGroupParticipants(...args));
+  }
+
+  private async handleConnectionUpdate(sock: WASocket, baileys: UnsafeBaileys, qrcode: typeof import("qrcode"), ...args: unknown[]) {
       const u = (args[0] ?? {}) as Record<string, unknown>;
       const conn = u.connection as string | undefined;
       const qr = u.qr as string | undefined;
@@ -271,9 +298,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           }
         }, 5_000).unref?.();
       }
-    });
+    }
 
-    sock.ev.on("messages.upsert", async (...args: unknown[]) => {
+
+  private async handleMessageUpsert(sock: WASocket, baileys: UnsafeBaileys, ...args: unknown[]) {
       const payload = (args[0] ?? {}) as { messages?: unknown[]; type?: string };
       // Accept both `notify` (real-time inbound) AND `append` (server
       // backlog replayed after a reconnect / catch-up). Dropping `append`
@@ -397,15 +425,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // out-of-order appends don't roll it backward.
         if (ts > 0) bumpRouteLastSeenTs(this.bridge_id, remote_jid, ts);
       }
-    });
+    }
 
-    // ---- Chat cache: populated from history sync + live chat/contact events ----
-    //
-    // `messaging-history.set` carries the recent chats Baileys received
-    // during the initial sync. `chats.upsert` / `chats.update` fire for
-    // brand-new chats and metadata changes. `contacts.upsert` gives us
-    // display names for personal contacts.
-    sock.ev.on("messaging-history.set", (...args: unknown[]) => {
+
+  private handleHistorySync(...args: unknown[]) {
       const payload = (args[0] ?? {}) as { chats?: unknown[]; contacts?: unknown[] };
       for (const raw of payload.chats ?? []) {
         const c = raw as { id?: string; name?: string; conversationTimestamp?: number };
@@ -427,27 +450,20 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         const name = [ct.name, ct.verifiedName, ct.notify].find((n) => n?.trim()) ?? null;
         this.observeChat(chatJid, name, null);
       }
-    });
+    }
 
-    sock.ev.on("chats.upsert", (...args: unknown[]) => {
+
+  private handleChatUpdates(...args: unknown[]) {
       const list = (args[0] ?? []) as Array<{ id?: string; name?: string; conversationTimestamp?: number }>;
       for (const c of list) {
         if (!c.id) continue;
         const ts = c.conversationTimestamp ? c.conversationTimestamp * 1000 : null;
         this.observeChat(c.id, c.name ?? null, ts);
       }
-    });
+    }
 
-    sock.ev.on("chats.update", (...args: unknown[]) => {
-      const list = (args[0] ?? []) as Array<{ id?: string; name?: string; conversationTimestamp?: number }>;
-      for (const c of list) {
-        if (!c.id) continue;
-        const ts = c.conversationTimestamp ? c.conversationTimestamp * 1000 : null;
-        this.observeChat(c.id, c.name ?? null, ts);
-      }
-    });
 
-    sock.ev.on("contacts.upsert", (...args: unknown[]) => {
+  private handleContactUpdates(...args: unknown[]) {
       const list = (args[0] ?? []) as Array<{
         id?: string;
         name?: string;
@@ -461,12 +477,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         if (!chatJid) continue;
         this.observeChat(chatJid, [ct.name, ct.verifiedName, ct.notify].find((n) => n?.trim()) ?? null, null);
       }
-    });
+    }
 
-    // Group profile/settings updates (subject/description/permissions/etc.).
-    // These are not user-authored chat lines; we emit them as synthetic
-    // inbound events so the agent can reason about context changes.
-    sock.ev.on("groups.update", async (...args: unknown[]) => {
+
+  private async handleGroupUpdates(...args: unknown[]) {
       const list = (args[0] ?? []) as Array<{
         id?: string;
         author?: string;
@@ -528,10 +542,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           }, `${actor} ${mode}`, actorJid);
         }
       }
-    });
+    }
 
-    // Group membership / role transitions (add/remove/promote/demote).
-    sock.ev.on("group-participants.update", async (...args: unknown[]) => {
+
+  private async handleGroupParticipants(...args: unknown[]) {
       const u = (args[0] ?? {}) as {
         id?: string;
         author?: string;
@@ -569,8 +583,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         type: "group_participants_update",
         subtype: action,
       }, sentence, actorJid);
-    });
-  }
+    }
+
 
   async stop(): Promise<void> {
     this.stopping = true;

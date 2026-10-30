@@ -42,6 +42,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Remove the remaining grandfathered function-size exceptions through typed
+  lifecycle, stage, and view ownership boundaries; retain the 150-line guard.
+- Separate backend configuration normalization, migration schema data, bridge
+  event/typing lifecycles, and contribution worktree staging; share dashboard
+  attribution accumulation and currency response paths without changing their
+  persistence, approval, or response contracts.
+- Split agent admission, preparation, streaming, retry, persistence, accounting,
+  and delegation validation into typed stages while preserving assembled prompt
+  bytes and existing queue and transcript behavior.
+- Separate UI lifecycle/mutation controllers from cohesive chat, configuration,
+  approval, setup, package, and notification views, retaining existing public
+  hook contracts and interaction behavior.
+- Consolidate document-search SQL, exclusion lookup, and substring fallback;
+  preserve semantic thresholds, fail-closed topic filtering, and reindex repair.
+- Consolidate local document sweep upsert/backfill and per-file error handling,
+  preserving unchanged chunks, forced rescans, embedding retries, and tick limits.
+- Separate credential editor modes, form state/actions, controls, and provider
+  setup guides; keep the card free of credential API calls and remove its
+  function-size exception. Preserve successful save and OAuth contracts while
+  surfacing default-label/Clear failures and ignoring stale editor updates.
 - Extract credential-card OAuth lifecycle into a tested UI hook; prevent
   overlapping status polls and stale authorization responses after unmount,
   credential changes, timeout, or retry without changing API payloads.

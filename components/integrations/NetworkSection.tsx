@@ -15,6 +15,153 @@ const SECRET_MASK = "********";
 // the Integrations tab so all credential-bearing config sits in one place
 // rather than getting its own top-level menu entry.
 export function NetworkSection() {
+  const {
+    loading,
+    envOverride,
+    mode,
+    setMode,
+    host,
+    setHost,
+    port,
+    setPort,
+    scheme,
+    setScheme,
+    username,
+    setUsername,
+    password,
+    setPassword,
+    noProxy,
+    setNoProxy,
+    fileInputRef,
+    onCaFile,
+    caLabel,
+    removeCa,
+    error,
+    result,
+    save,
+    saving,
+    configured,
+    clear,
+    dirty,
+    env,
+    seed,
+  } = useProxySettings();
+
+  return (
+    <div className="mb-3 rounded-lg border border-border bg-surface-2 overflow-hidden">
+      <div className="px-3 py-2.5 border-b border-border/60 flex items-start gap-2">
+        <Globe size={14} className="text-fg-subtle mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-medium text-fg">Network proxy</h3>
+          <p className="text-[11px] text-fg-faint mt-0.5 leading-snug">
+            HTTP proxy for outbound calls (LLM providers, MCP servers, integrations). Stored encrypted.
+            Changes apply to new requests immediately; in-flight streams finish on the previous proxy.
+          </p>
+        </div>
+      </div>
+
+      <div className="px-3 py-3 space-y-2">
+        {loading && <p className="text-fg-faint text-xs py-2">Loading…</p>}
+
+        {envOverride && (
+          <div className="px-2 py-1.5 rounded bg-amber-950/30 border border-amber-800 text-[11px] text-amber-700 dark:text-amber-300">
+            <code>HTTPS_PROXY</code> is set in the process environment. The in-app config is saved but not applied
+            while the env var is present.
+          </div>
+        )}
+
+        {!loading && (
+          <>
+            <label className="block text-xs text-fg-subtle">
+              Mode
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as ProxyMode)}
+                className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
+              >
+                <option value="off">Off — direct connection</option>
+                <option value="manual">Manual — host / port below</option>
+                <option value="system">System (macOS) — import from scutil --proxy</option>
+              </select>
+            </label>
+
+            {mode === "manual" && (
+              <ManualProxyFields
+                host={host}
+                setHost={setHost}
+                port={port}
+                setPort={setPort}
+                scheme={scheme}
+                setScheme={setScheme}
+                username={username}
+                setUsername={setUsername}
+                password={password}
+                setPassword={setPassword}
+              />
+            )}
+
+            {mode !== "off" && (
+              <ProxyTrustFields
+                noProxy={noProxy}
+                setNoProxy={setNoProxy}
+                mode={mode}
+                fileInputRef={fileInputRef}
+                onCaFile={onCaFile}
+                caLabel={caLabel}
+                removeCa={removeCa}
+              />
+            )}
+
+            {error && (
+              <div className="px-2 py-1.5 rounded bg-rose-950/40 border border-rose-800 text-xs text-rose-700 dark:text-rose-300">
+                {error}
+              </div>
+            )}
+
+            {result && <ProxyApplyStatus result={result} />}
+
+            <div className="flex items-center gap-2 pt-1">
+              {mode === "system" && (
+                <button
+                  onClick={save}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded border border-border text-fg-muted hover:text-fg disabled:opacity-50"
+                  title="Re-extract the macOS keychain trust store"
+                >
+                  <RefreshCw size={11} /> Refresh trust store
+                </button>
+              )}
+              {configured && (
+                <button
+                  onClick={clear}
+                  className="ml-auto inline-flex items-center gap-1 px-2 py-1.5 text-xs text-fg-faint hover:text-rose-700 dark:hover:text-rose-400"
+                  title="Clear saved proxy configuration"
+                >
+                  <Trash2 size={11} /> Clear
+                </button>
+              )}
+            </div>
+            <StickyActionBar
+              dirty={dirty}
+              saving={saving}
+              onSave={() => void save()}
+              onDiscard={() => { if (env) seed(env); }}
+              saveLabel="Save & apply"
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function humanBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function useProxySettings() {
   const [env, setEnv] = useState<ProxyConfigEnvelope | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -29,12 +176,7 @@ export function NetworkSection() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [noProxy, setNoProxy] = useState("");
-  // CA bundle: caBundle holds the PEM text (in-memory only between
-  // save/load); caLabel describes its origin so the user can see
-  // "Loaded: corp-ca.pem" or "Saved CA bundle (1.2 KB)" after a reload.
-  const [caBundle, setCaBundle] = useState<string | null>(null);
-  const [caLabel, setCaLabel] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { caBundle, caLabel, fileInputRef, onCaFile, removeCa, seedCertificate } = useProxyCertificate(setError);
 
   const seed = useCallback((r: ProxyConfigEnvelope) => {
     const c = r.config;
@@ -45,9 +187,8 @@ export function NetworkSection() {
     setUsername(c.username ?? "");
     setPassword(c.password ?? "");
     setNoProxy(c.no_proxy ?? "");
-    setCaBundle(c.ca_bundle ?? null);
-    setCaLabel(c.ca_bundle ? `Saved CA bundle (${humanBytes(c.ca_bundle.length)})` : null);
-  }, []);
+    seedCertificate(c.ca_bundle ?? null);
+  }, [seedCertificate]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,8 +242,59 @@ export function NetworkSection() {
     }
   }
 
-  async function onCaFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  const envOverride = env?.env_override ?? false;
+  const dirty = useDirty(
+    { mode, scheme, host, port, username, password, noProxy, caBundle },
+    !loading && env !== null,
+    env,
+  );
+  const configured = env?.config.mode !== "off" && env?.config.updated_at != null;
+
+  return {
+    loading,
+    envOverride,
+    mode,
+    setMode,
+    host,
+    setHost,
+    port,
+    setPort,
+    scheme,
+    setScheme,
+    username,
+    setUsername,
+    password,
+    setPassword,
+    noProxy,
+    setNoProxy,
+    fileInputRef,
+    onCaFile,
+    caLabel,
+    removeCa,
+    error,
+    result,
+    save,
+    saving,
+    configured,
+    clear,
+    dirty,
+    env,
+    seed,
+  };
+}
+
+function useProxyCertificate(setError: (message: string | null) => void) {
+  const [caBundle, setCaBundle] = useState<string | null>(null);
+  const [caLabel, setCaLabel] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const seedCertificate = useCallback((bundle: string | null) => {
+    setCaBundle(bundle);
+    setCaLabel(bundle ? `Saved CA bundle (${humanBytes(bundle.length)})` : null);
+  }, []);
+
+  async function onCaFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
     if (!file) return;
     try {
       const text = await file.text();
@@ -113,10 +305,10 @@ export function NetworkSection() {
       setCaBundle(text);
       setCaLabel(`Loaded: ${file.name}`);
       setError(null);
-    } catch (err) {
-      setError(errorMessage(err));
+    } catch (error) {
+      setError(errorMessage(error));
     } finally {
-      // Reset the input so the same file can be picked again after removal.
+      // Allow selecting the same file again after removal.
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
@@ -127,232 +319,168 @@ export function NetworkSection() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  const envOverride = env?.env_override ?? false;
-  const dirty = useDirty(
-    { mode, scheme, host, port, username, password, noProxy, caBundle },
-    !loading && env !== null,
-    env,
-  );
-  const configured = env?.config.mode !== "off" && env?.config.updated_at != null;
+  return { caBundle, caLabel, fileInputRef, onCaFile, removeCa, seedCertificate };
+}
 
+function ProxyApplyStatus({ result }: { result: ProxyApplyResult }) {
   return (
-    <div className="mb-3 rounded-lg border border-border bg-surface-2 overflow-hidden">
-      <div className="px-3 py-2.5 border-b border-border/60 flex items-start gap-2">
-        <Globe size={14} className="text-fg-subtle mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-medium text-fg">Network proxy</h3>
-          <p className="text-[11px] text-fg-faint mt-0.5 leading-snug">
-            HTTP proxy for outbound calls (LLM providers, MCP servers, integrations). Stored encrypted.
-            Changes apply to new requests immediately; in-flight streams finish on the previous proxy.
-          </p>
+    <>
+      <div className="px-2 py-1.5 rounded bg-surface-3 border border-border text-[11px] text-fg-muted">
+        Applied: <code className="text-fg">{result.source}</code>
+        {result.proxyUrl && <> → <code className="text-fg">{result.proxyUrl}</code></>}
+        {result.note && <span className="text-fg-faint"> — {result.note}</span>}
+      </div>
+      {result.caBundlePath && (
+        <div className="px-2 py-1.5 rounded bg-emerald-950/30 border border-emerald-800 text-[11px] text-emerald-700 dark:text-emerald-300 inline-flex items-start gap-1.5">
+          <ShieldCheck size={12} className="mt-0.5 shrink-0" />
+          <span>
+            System trust: <strong>{result.caBundleCertCount}</strong> certs from the macOS
+            keychain →{" "}
+            <code className="text-emerald-700 dark:text-emerald-200">{result.caBundlePath}</code>
+          </span>
         </div>
-      </div>
-
-      <div className="px-3 py-3 space-y-2">
-        {loading && <p className="text-fg-faint text-xs py-2">Loading…</p>}
-
-        {envOverride && (
-          <div className="px-2 py-1.5 rounded bg-amber-950/30 border border-amber-800 text-[11px] text-amber-700 dark:text-amber-300">
-            <code>HTTPS_PROXY</code> is set in the process environment. The in-app config is saved but not applied
-            while the env var is present.
-          </div>
-        )}
-
-        {!loading && (
-          <>
-            <label className="block text-xs text-fg-subtle">
-              Mode
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as ProxyMode)}
-                className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
-              >
-                <option value="off">Off — direct connection</option>
-                <option value="manual">Manual — host / port below</option>
-                <option value="system">System (macOS) — import from scutil --proxy</option>
-              </select>
-            </label>
-
-            {mode === "manual" && (
-              <>
-                <div className="grid grid-cols-4 gap-2">
-                  <label className="col-span-2 block text-xs text-fg-subtle">
-                    Host
-                    <input
-                      type="text"
-                      value={host}
-                      onChange={(e) => setHost(e.target.value)}
-                      placeholder="proxy.corp.example"
-                      className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
-                    />
-                  </label>
-                  <label className="block text-xs text-fg-subtle">
-                    Port
-                    <input
-                      type="number"
-                      value={port}
-                      onChange={(e) => setPort(e.target.value)}
-                      placeholder="8080"
-                      className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
-                    />
-                  </label>
-                  <label className="block text-xs text-fg-subtle">
-                    Scheme
-                    <select
-                      value={scheme}
-                      onChange={(e) => setScheme(e.target.value as ProxyScheme)}
-                      className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
-                    >
-                      <option value="http">http</option>
-                      <option value="https">https</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="block text-xs text-fg-subtle">
-                    Username (optional)
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder=""
-                      className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
-                    />
-                  </label>
-                  <label className="block text-xs text-fg-subtle">
-                    Password (optional)
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onFocus={(e) => {
-                        // Clicking the masked sentinel clears the field so the
-                        // user can type a new password without manually erasing
-                        // the dots.
-                        if (e.target.value === SECRET_MASK) setPassword("");
-                      }}
-                      placeholder=""
-                      className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
-                    />
-                  </label>
-                </div>
-              </>
-            )}
-
-            {mode !== "off" && (
-              <>
-                <label className="block text-xs text-fg-subtle">
-                  No proxy (comma-separated, optional; localhost is always direct)
-                  <input
-                    type="text"
-                    value={noProxy}
-                    onChange={(e) => setNoProxy(e.target.value)}
-                    placeholder=".internal,corp.example"
-                    className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
-                  />
-                </label>
-
-                {/* In system mode the keychain extraction is the trust source — the
-                    user-paste textarea would conflict with it (ADR-0020). Hide it. */}
-                {mode !== "system" && (
-                  <div className="block text-xs text-fg-subtle">
-                    CA bundle (optional — for proxies that intercept TLS with an internal CA)
-                    <div className="mt-1 flex items-center gap-2 flex-wrap">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".pem,.crt,.cer,.cert,application/x-x509-ca-cert,application/x-pem-file"
-                        onChange={onCaFile}
-                        className="text-[11px] text-fg-faint file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-surface-3 file:text-fg file:text-[11px] file:cursor-pointer"
-                      />
-                      {caLabel && (
-                        <span className="inline-flex items-center gap-2 text-[11px] text-fg-muted">
-                          <code className="text-fg">{caLabel}</code>
-                          <button
-                            onClick={removeCa}
-                            className="text-rose-700 dark:text-rose-400 hover:underline"
-                          >
-                            remove
-                          </button>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {mode === "system" && (
-                  <p className="text-[11px] text-fg-faint leading-snug">
-                    Trust store comes from the macOS keychain (System + login). MDM-pushed
-                    corporate roots are picked up automatically. Use “Refresh trust store”
-                    after a cert rotation.
-                  </p>
-                )}
-              </>
-            )}
-
-            {error && (
-              <div className="px-2 py-1.5 rounded bg-rose-950/40 border border-rose-800 text-xs text-rose-700 dark:text-rose-300">
-                {error}
-              </div>
-            )}
-
-            {result && (
-              <div className="px-2 py-1.5 rounded bg-surface-3 border border-border text-[11px] text-fg-muted">
-                Applied: <code className="text-fg">{result.source}</code>
-                {result.proxyUrl && <> → <code className="text-fg">{result.proxyUrl}</code></>}
-                {result.note && <span className="text-fg-faint"> — {result.note}</span>}
-              </div>
-            )}
-
-            {result?.caBundlePath && (
-              <div className="px-2 py-1.5 rounded bg-emerald-950/30 border border-emerald-800 text-[11px] text-emerald-700 dark:text-emerald-300 inline-flex items-start gap-1.5">
-                <ShieldCheck size={12} className="mt-0.5 shrink-0" />
-                <span>
-                  System trust: <strong>{result.caBundleCertCount}</strong> certs from the macOS
-                  keychain →{" "}
-                  <code className="text-emerald-700 dark:text-emerald-200">{result.caBundlePath}</code>
-                </span>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 pt-1">
-              {mode === "system" && (
-                <button
-                  onClick={save}
-                  disabled={saving}
-                  className="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded border border-border text-fg-muted hover:text-fg disabled:opacity-50"
-                  title="Re-extract the macOS keychain trust store"
-                >
-                  <RefreshCw size={11} /> Refresh trust store
-                </button>
-              )}
-              {configured && (
-                <button
-                  onClick={clear}
-                  className="ml-auto inline-flex items-center gap-1 px-2 py-1.5 text-xs text-fg-faint hover:text-rose-700 dark:hover:text-rose-400"
-                  title="Clear saved proxy configuration"
-                >
-                  <Trash2 size={11} /> Clear
-                </button>
-              )}
-            </div>
-            <StickyActionBar
-              dirty={dirty}
-              saving={saving}
-              onSave={() => void save()}
-              onDiscard={() => { if (env) seed(env); }}
-              saveLabel="Save & apply"
-            />
-          </>
-        )}
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
-function humanBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+function ManualProxyFields({ host, setHost, port, setPort, scheme, setScheme, username, setUsername, password, setPassword }: {
+  host: string;
+  setHost: React.Dispatch<React.SetStateAction<string>>;
+  port: string;
+  setPort: React.Dispatch<React.SetStateAction<string>>;
+  scheme: ProxyScheme;
+  setScheme: React.Dispatch<React.SetStateAction<ProxyScheme>>;
+  username: string;
+  setUsername: React.Dispatch<React.SetStateAction<string>>;
+  password: string;
+  setPassword: React.Dispatch<React.SetStateAction<string>>;
+}) {
+  return (
+    <>
+      <div className="grid grid-cols-4 gap-2">
+        <label className="col-span-2 block text-xs text-fg-subtle">
+          Host
+          <input
+            type="text"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            placeholder="proxy.corp.example"
+            className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
+          />
+        </label>
+        <label className="block text-xs text-fg-subtle">
+          Port
+          <input
+            type="number"
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="8080"
+            className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
+          />
+        </label>
+        <label className="block text-xs text-fg-subtle">
+          Scheme
+          <select
+            value={scheme}
+            onChange={(e) => setScheme(e.target.value as ProxyScheme)}
+            className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
+          >
+            <option value="http">http</option>
+            <option value="https">https</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block text-xs text-fg-subtle">
+          Username (optional)
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder=""
+            className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
+          />
+        </label>
+        <label className="block text-xs text-fg-subtle">
+          Password (optional)
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onFocus={(e) => {
+              // Clicking the masked sentinel clears the field so the
+              // user can type a new password without manually erasing
+              // the dots.
+              if (e.target.value === SECRET_MASK) setPassword("");
+            }}
+            placeholder=""
+            className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
+          />
+        </label>
+      </div>
+    </>
+  );
+}
+
+function ProxyTrustFields({ noProxy, setNoProxy, mode, fileInputRef, onCaFile, caLabel, removeCa }: {
+  noProxy: string;
+  setNoProxy: React.Dispatch<React.SetStateAction<string>>;
+  mode: ProxyMode;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  onCaFile: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
+  caLabel: string | null;
+  removeCa: () => void;
+}) {
+  return (
+    <>
+      <label className="block text-xs text-fg-subtle">
+        No proxy (comma-separated, optional; localhost is always direct)
+        <input
+          type="text"
+          value={noProxy}
+          onChange={(e) => setNoProxy(e.target.value)}
+          placeholder=".internal,corp.example"
+          className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
+        />
+      </label>
+
+      {/* In system mode the keychain extraction is the trust source — the
+          user-paste textarea would conflict with it (ADR-0020). Hide it. */}
+      {mode !== "system" && (
+        <div className="block text-xs text-fg-subtle">
+          CA bundle (optional — for proxies that intercept TLS with an internal CA)
+          <div className="mt-1 flex items-center gap-2 flex-wrap">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pem,.crt,.cer,.cert,application/x-x509-ca-cert,application/x-pem-file"
+              onChange={onCaFile}
+              className="text-[11px] text-fg-faint file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-surface-3 file:text-fg file:text-[11px] file:cursor-pointer"
+            />
+            {caLabel && (
+              <span className="inline-flex items-center gap-2 text-[11px] text-fg-muted">
+                <code className="text-fg">{caLabel}</code>
+                <button
+                  onClick={removeCa}
+                  className="text-rose-700 dark:text-rose-400 hover:underline"
+                >
+                  remove
+                </button>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {mode === "system" && (
+        <p className="text-[11px] text-fg-faint leading-snug">
+          Trust store comes from the macOS keychain (System + login). MDM-pushed
+          corporate roots are picked up automatically. Use “Refresh trust store”
+          after a cert rotation.
+        </p>
+      )}
+    </>
+  );
 }

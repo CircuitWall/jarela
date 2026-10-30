@@ -76,78 +76,23 @@ export function AdvertisementSection({ agentId, models }: { agentId?: string; mo
 }
 
 function AdvertisementControls({ agentId, models }: { agentId: string; models: ModelConfig[] }) {
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [draft, setDraft] = useState<Policy | null>(null);
-  const [busy, setBusy] = useState<Operation | null>("refresh");
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const controller = useRef<AbortController | null>(null);
-  const enabledModels = models.filter(isModelEnabled);
-  const policy = draft ?? defaults;
-  const selectedModelAvailable = enabledModels.some((model) => model.name === policy.model_config_name);
-  const dirty = snapshot !== null && JSON.stringify(policy) !== JSON.stringify(snapshot.policy);
-  const invalidLimit = limits.find(({ key, min, max }) => !Number.isInteger(policy[key]) || policy[key] < min || policy[key] > max);
-  const policyError = invalidLimit
-    ? `${invalidLimit.label} must be a whole number from ${invalidLimit.min} to ${invalidLimit.max}.`
-    : ((policy.enabled || policy.model_config_name !== null) && !selectedModelAvailable)
-      ? "Choose an enabled configured model by name; there is no automatic fallback."
-      : null;
-
-  const run = useCallback(async (operation: Operation, nextPolicy?: Policy) => {
-    if (controller.current) return;
-    const current = new AbortController();
-    controller.current = current;
-    setBusy(operation);
-    setError(null);
-    setMessage(null);
-    try {
-      if (operation === "save") {
-        const result = await requestJson(endpoint, current.signal, { policy: nextPolicy }, "PUT");
-        const saved = z.object({ policy: policySchema }).parse(result).policy;
-        if (current.signal.aborted) return;
-        setDraft(saved);
-        setMessage("Generation settings saved.");
-      }
-      const result = operation === "refresh" || operation === "save"
-        ? await requestJson(`${endpoint}?agent_id=${encodeURIComponent(agentId)}`, current.signal)
-        : await requestJson(endpoint, current.signal, { agent_id: agentId, action: operation }, "POST");
-      const parsed = snapshotSchema.safeParse(result);
-      if (!parsed.success || (parsed.data.advertisement && parsed.data.advertisement.agent_id !== agentId)) {
-        throw new Error("Invalid advertisement response. Refresh to try again.");
-      }
-      if (current.signal.aborted) return;
-      setSnapshot(parsed.data);
-      setDraft((previous) => previous ?? parsed.data.policy);
-      if (operation !== "refresh" && operation !== "save") {
-        setMessage(operation === "regenerate" ? "Regeneration requested." : `Advertisement ${operation}d.`);
-      }
-    } catch (err) {
-      if (!current.signal.aborted) setError(errorMessage(err));
-    } finally {
-      if (controller.current === current) {
-        controller.current = null;
-        if (!current.signal.aborted) setBusy(null);
-      }
-    }
-  }, [agentId]);
-
-  useEffect(() => {
-    void run("refresh");
-    return () => {
-      controller.current?.abort();
-      controller.current = null;
-    };
-  }, [run]);
-
-  useEffect(() => {
-    if (snapshot?.advertisement?.status !== "pending") return;
-    const timer = setInterval(() => { void run("refresh"); }, 3_000);
-    return () => clearInterval(timer);
-  }, [snapshot?.advertisement?.status, run]);
-
-  const advertisement = snapshot?.advertisement;
-  const metadata = advertisement?.advertisement;
-  const savedModelAvailable = enabledModels.some((model) => model.name === snapshot?.policy.model_config_name);
+  const {
+    error,
+    message,
+    busy,
+    snapshot,
+    policy,
+    setDraft,
+    setMessage,
+    selectedModelAvailable,
+    enabledModels,
+    policyError,
+    dirty,
+    run,
+    savedModelAvailable,
+    advertisement,
+    metadata,
+  } = useAdvertisementPolicy({ agentId, models });
 
   return (
     <div className="space-y-3">
@@ -246,4 +191,97 @@ function AdvertisementControls({ agentId, models }: { agentId: string; models: M
 
 function MetadataList({ items }: { items: string[] }) {
   return items.length ? <ul className="list-inside list-disc">{items.map((item, index) => <li key={index}>{item}</li>)}</ul> : <>None listed</>;
+}
+
+function useAdvertisementPolicy({ agentId, models }: { agentId: string; models: ModelConfig[] }) {
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [draft, setDraft] = useState<Policy | null>(null);
+  const [busy, setBusy] = useState<Operation | null>("refresh");
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  const enabledModels = models.filter(isModelEnabled);
+  const policy = draft ?? defaults;
+  const selectedModelAvailable = enabledModels.some((model) => model.name === policy.model_config_name);
+  const dirty = snapshot !== null && JSON.stringify(policy) !== JSON.stringify(snapshot.policy);
+  const invalidLimit = limits.find(({ key, min, max }) => !Number.isInteger(policy[key]) || policy[key] < min || policy[key] > max);
+  const policyError = invalidLimit
+    ? `${invalidLimit.label} must be a whole number from ${invalidLimit.min} to ${invalidLimit.max}.`
+    : ((policy.enabled || policy.model_config_name !== null) && !selectedModelAvailable)
+      ? "Choose an enabled configured model by name; there is no automatic fallback."
+      : null;
+
+  const run = useCallback(async (operation: Operation, nextPolicy?: Policy) => {
+    if (controller.current) return;
+    const current = new AbortController();
+    controller.current = current;
+    setBusy(operation);
+    setError(null);
+    setMessage(null);
+    try {
+      if (operation === "save") {
+        const result = await requestJson(endpoint, current.signal, { policy: nextPolicy }, "PUT");
+        const saved = z.object({ policy: policySchema }).parse(result).policy;
+        if (current.signal.aborted) return;
+        setDraft(saved);
+        setMessage("Generation settings saved.");
+      }
+      const result = operation === "refresh" || operation === "save"
+        ? await requestJson(`${endpoint}?agent_id=${encodeURIComponent(agentId)}`, current.signal)
+        : await requestJson(endpoint, current.signal, { agent_id: agentId, action: operation }, "POST");
+      const parsed = snapshotSchema.safeParse(result);
+      if (!parsed.success || (parsed.data.advertisement && parsed.data.advertisement.agent_id !== agentId)) {
+        throw new Error("Invalid advertisement response. Refresh to try again.");
+      }
+      if (current.signal.aborted) return;
+      setSnapshot(parsed.data);
+      setDraft((previous) => previous ?? parsed.data.policy);
+      if (operation !== "refresh" && operation !== "save") {
+        setMessage(operation === "regenerate" ? "Regeneration requested." : `Advertisement ${operation}d.`);
+      }
+    } catch (err) {
+      if (!current.signal.aborted) setError(errorMessage(err));
+    } finally {
+      if (controller.current === current) {
+        controller.current = null;
+        if (!current.signal.aborted) setBusy(null);
+      }
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    void run("refresh");
+    return () => {
+      controller.current?.abort();
+      controller.current = null;
+    };
+  }, [run]);
+
+  useEffect(() => {
+    if (snapshot?.advertisement?.status !== "pending") return;
+    const timer = setInterval(() => { void run("refresh"); }, 3_000);
+    return () => clearInterval(timer);
+  }, [snapshot?.advertisement?.status, run]);
+
+  const advertisement = snapshot?.advertisement;
+  const metadata = advertisement?.advertisement;
+  const savedModelAvailable = enabledModels.some((model) => model.name === snapshot?.policy.model_config_name);
+
+  return {
+    error,
+    message,
+    busy,
+    snapshot,
+    policy,
+    setDraft,
+    setMessage,
+    selectedModelAvailable,
+    enabledModels,
+    policyError,
+    dirty,
+    run,
+    savedModelAvailable,
+    advertisement,
+    metadata,
+  };
 }

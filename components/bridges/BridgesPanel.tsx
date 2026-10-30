@@ -21,77 +21,25 @@ import { confirmAction } from "@/lib/ui/confirm";
  * the shared BridgeEditor and the capabilities declared by its module.
  */
 export function BridgesPanel() {
-  const { bridges, loading, refresh, create, update, remove } = useBridges();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newKind, setNewKind] = useState("");
-  const [bridgeModules, setBridgeModules] = useState<BridgeModuleInfo[]>([]);
-  const containerRef = useRef<HTMLDivElement>(null);
-  useDeepLinkScroll("bridges", "bridge", containerRef);
-
-  useEffect(() => {
-    let active = true;
-    void api.bridges.kinds().then((modules) => {
-      if (!active) return;
-      setBridgeModules(modules);
-      setNewKind((current) => current || modules[0]?.kind || "");
-    }).catch(() => {});
-    return () => { active = false; };
-  }, []);
-
-  // Poll the list so status pills reflect asynchronous adapter updates.
-  useEffect(() => {
-    const t = setInterval(() => void refresh(), 5_000);
-    return () => clearInterval(t);
-  }, [refresh]);
-
-  async function onCreate() {
-    const name = newName.trim();
-    if (!name || !newKind) return;
-    const b = await create({ kind: newKind, name });
-    setNewName("");
-    setCreating(false);
-    setSelectedId(b.id);
-  }
-
-  async function onDelete(b: Bridge) {
-    if (!(await confirmAction({ message: `Delete bridge "${b.name}"? This removes its saved connection data and all routes.`, destructive: true }))) return;
-    if (selectedId === b.id) setSelectedId(null);
-    try {
-      await remove(b.id);
-      pushToast({
-        kind: "info",
-        source: "system",
-        sourceLabel: "Bridges",
-        title: "Bridge deleted",
-        body: `"${b.name}"`,
-        agent_id: null,
-        thread_id: null,
-        ttl: 3000,
-      });
-    } catch (e) {
-      pushErrorToast({ title: "Couldn't delete bridge", error: e, context: { panel: "bridges", action: "delete", bridge_id: b.id } });
-    }
-  }
-
-  async function onToggleEnabled(b: Bridge) {
-    try {
-      await update(b.id, { enabled: !b.enabled });
-      pushToast({
-        kind: "info",
-        source: "system",
-        sourceLabel: "Bridges",
-        title: b.enabled ? "Bridge paused" : "Bridge enabled",
-        body: `"${b.name}"`,
-        agent_id: null,
-        thread_id: null,
-        ttl: 3000,
-      });
-    } catch (e) {
-      pushErrorToast({ title: "Couldn't toggle bridge", error: e, context: { panel: "bridges", action: "toggle", bridge_id: b.id } });
-    }
-  }
+  const {
+    selectedId,
+    bridges,
+    setSelectedId,
+    bridgeModules,
+    refresh,
+    update,
+    onToggleEnabled,
+    setCreating,
+    containerRef,
+    creating,
+    newKind,
+    setNewKind,
+    newName,
+    setNewName,
+    onCreate,
+    loading,
+    onDelete,
+  } = useBridgeManagement();
 
   if (selectedId) {
     const b = bridges.find((x) => x.id === selectedId);
@@ -254,4 +202,98 @@ export function StatusPill({ status }: { status: Bridge["status"] }) {
       {cfg.label}
     </span>
   );
+}
+
+function useBridgeManagement() {
+  const { bridges, loading, refresh, create, update, remove } = useBridges();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newKind, setNewKind] = useState("");
+  const [bridgeModules, setBridgeModules] = useState<BridgeModuleInfo[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("bridges", "bridge", containerRef);
+
+  useEffect(() => {
+    let active = true;
+    void api.bridges.kinds().then((modules) => {
+      if (!active) return;
+      setBridgeModules(modules);
+      setNewKind((current) => current || modules[0]?.kind || "");
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  // Poll the list so status pills reflect asynchronous adapter updates.
+  useEffect(() => {
+    const t = setInterval(() => void refresh(), 5_000);
+    return () => clearInterval(t);
+  }, [refresh]);
+
+  async function onCreate() {
+    const name = newName.trim();
+    if (!name || !newKind) return;
+    const b = await create({ kind: newKind, name });
+    setNewName("");
+    setCreating(false);
+    setSelectedId(b.id);
+  }
+
+  async function onDelete(b: Bridge) {
+    if (!(await confirmAction({ message: `Delete bridge "${b.name}"? This removes its saved connection data and all routes.`, destructive: true }))) return;
+    if (selectedId === b.id) setSelectedId(null);
+    try {
+      await remove(b.id);
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Bridges",
+        title: "Bridge deleted",
+        body: `"${b.name}"`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
+    } catch (e) {
+      pushErrorToast({ title: "Couldn't delete bridge", error: e, context: { panel: "bridges", action: "delete", bridge_id: b.id } });
+    }
+  }
+
+  async function onToggleEnabled(b: Bridge) {
+    try {
+      await update(b.id, { enabled: !b.enabled });
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Bridges",
+        title: b.enabled ? "Bridge paused" : "Bridge enabled",
+        body: `"${b.name}"`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
+    } catch (e) {
+      pushErrorToast({ title: "Couldn't toggle bridge", error: e, context: { panel: "bridges", action: "toggle", bridge_id: b.id } });
+    }
+  }
+
+  return {
+    selectedId,
+    bridges,
+    setSelectedId,
+    bridgeModules,
+    refresh,
+    update,
+    onToggleEnabled,
+    setCreating,
+    containerRef,
+    creating,
+    newKind,
+    setNewKind,
+    newName,
+    setNewName,
+    onCreate,
+    loading,
+    onDelete,
+  };
 }

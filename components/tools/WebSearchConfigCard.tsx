@@ -32,7 +32,7 @@ const PRESETS: Array<{ id: string; label: string; value: string; description: st
   },
 ];
 
-export function WebSearchConfigCard() {
+function useWebSearchConfig() {
   const { rows, error, setError, save: saveEnv } = useEnvSettings();
   const [value, setValue] = useState("");
   const [googleEngineId, setGoogleEngineId] = useState("");
@@ -62,7 +62,6 @@ export function WebSearchConfigCard() {
   }, [value]);
 
   const invalid = normalized.filter((v) => !VALID.includes(v as (typeof VALID)[number]));
-  const canSave = row !== null && invalid.length === 0 && normalized.length > 0 && value.trim().length > 0;
 
   async function save(next: string) {
     setSaving(true);
@@ -107,6 +106,24 @@ export function WebSearchConfigCard() {
     }
   }
 
+  function clearGoogleEngine() {
+    setGoogleEngineId("");
+    void saveEnv(GOOGLE_ENGINE_VAR, null)
+      .then(() => setStatus("Google search engine id cleared."))
+      .catch((e: Error) => setError(e.message));
+  }
+
+  return {
+    row, googleEngineRow, value, setValue, googleEngineId, setGoogleEngineId, saving,
+    status, error, normalized, invalid, save, saveGoogleEngine, resetToDefault, clearGoogleEngine,
+  };
+}
+
+export function WebSearchConfigCard() {
+  const {
+    row, googleEngineRow, value, setValue, googleEngineId, setGoogleEngineId, saving,
+    status, error, normalized, invalid, save, saveGoogleEngine, resetToDefault, clearGoogleEngine,
+  } = useWebSearchConfig();
   return (
     <SettingsCard
       title="Web search fallback"
@@ -189,10 +206,7 @@ export function WebSearchConfigCard() {
           saving={saving}
           saveLabel="Save Google id"
           savingLabel="Saving..."
-          onReset={() => {
-            setGoogleEngineId("");
-            void saveEnv(GOOGLE_ENGINE_VAR, null).then(() => setStatus("Google search engine id cleared.")).catch((e: Error) => setError(e.message));
-          }}
+          onReset={clearGoogleEngine}
           resetLabel="Clear"
           resetDisabled={!googleEngineRow?.overridden && googleEngineId.trim().length === 0}
         />

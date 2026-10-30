@@ -23,17 +23,17 @@ class FakeEventSource {
   close() {}
 }
 
+beforeEach(() => {
+  eventSources.length = 0;
+  pushToastMock.mockReset();
+  window.localStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("useEventNotifications contract", () => {
-  beforeEach(() => {
-    eventSources.length = 0;
-    pushToastMock.mockReset();
-    window.localStorage.clear();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("exposes unified contract and reconnect command", async () => {
     vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
 
@@ -124,5 +124,74 @@ describe("useEventNotifications contract", () => {
 
     unmount();
     window.removeEventListener("jarela:thread-updated", updated);
+  });
+
+});
+
+describe("useEventNotifications routing", () => {
+  it("uses the latest options without reconnecting and advances only supported replay events", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { result, rerender } = renderHook(({ name }) =>
+      useEventNotifications({
+        shouldNotify: () => true,
+        resolveAgentName: () => name,
+      }),
+    { initialProps: { name: "Old" } });
+    rerender({ name: "Current" });
+    expect(eventSources).toHaveLength(1);
+    const source = eventSources[0];
+    act(() => {
+      source.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "bridge_status", ts: 99 }),
+      }));
+    });
+    expect(result.current.lastEventTs).toBe(99);
+    expect(window.localStorage.getItem("jarela.notif.lastTs")).toBeNull();
+    expect(pushToastMock).not.toHaveBeenCalled();
+
+    act(() => {
+      source.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({
+          type: "run_completed", thread_id: "t1", agent_id: "a1",
+          status: "done", preview: "Ready", ts: 100,
+        }),
+      }));
+    });
+    expect(pushToastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "Current replied" }));
+    expect(window.localStorage.getItem("jarela.notif.lastTs")).toBe("100");
+  });
+
+  it("refreshes extension activity without toasts and replaces health failures with recovery", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    renderHook(() => useEventNotifications({
+      shouldNotify: () => false,
+      resolveAgentName: () => "Agent",
+    }));
+    const source = eventSources[0];
+    act(() => {
+      source.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({
+          type: "thread_message_added", thread_id: "t1", agent_id: "a1",
+          source: "extension", ts: 100,
+        }),
+      }));
+    });
+    expect(pushToastMock).not.toHaveBeenCalled();
+    for (const status of ["auth_failed", "recovered"]) {
+      act(() => {
+        source.onmessage?.(new MessageEvent("message", {
+          data: JSON.stringify({
+            type: "health_alert", category: "integration", label: "Example",
+            probe: "example", status, error: null, ts: 101,
+          }),
+        }));
+      });
+    }
+    expect(pushToastMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      kind: "error", ttl: 0, dedupeKey: "health:integration:Example",
+    }));
+    expect(pushToastMock).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      kind: "success", ttl: 6000, dedupeKey: "health:integration:Example",
+    }));
   });
 });

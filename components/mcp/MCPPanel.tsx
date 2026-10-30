@@ -4,7 +4,7 @@ import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { Dialog } from "@/components/ui/Dialog";
 import { DialogError, DialogFooter } from "@/components/ui/DialogFooter";
 import { useDirty, useDismissGuard } from "@/hooks/useDismissGuard";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "@/api/client";
 import type { McpRegistryEntry, McpServer } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
@@ -27,6 +27,63 @@ type EditState =
 
 interface EnvironmentDraft extends McpEnvironmentEntry {
   id: string;
+}
+
+function useMcpSpecDraft(initialSpecJSON: string, transport: "stdio" | "http") {
+  const [specJSON, setSpecJSON] = useState(initialSpecJSON);
+  const [environmentDrafts, setEnvironmentDrafts] = useState<EnvironmentDraft[]>(() => environmentDraftsFromSpec(initialSpecJSON));
+  const [environmentEdited, setEnvironmentEdited] = useState(false);
+  const nextEnvironmentId = useRef(0);
+  const [revealedEnvironmentValues, setRevealedEnvironmentValues] = useState<Set<string>>(() => new Set());
+  const [showAdvancedSpec, setShowAdvancedSpec] = useState(transport === "http");
+  const environmentError = transport === "stdio" ? validateMcpEnvironment(environmentDrafts) : null;
+
+  function seedSpec(value: string) {
+    setSpecJSON(value);
+    setEnvironmentDrafts(environmentDraftsFromSpec(value));
+    setEnvironmentEdited(false);
+  }
+
+  function editSpec(value: string) {
+    seedSpec(value);
+    setRevealedEnvironmentValues(new Set());
+  }
+
+  function updateEnvironmentDrafts(next: EnvironmentDraft[]) {
+    setEnvironmentDrafts(next);
+    setEnvironmentEdited(true);
+    if (validateMcpEnvironment(next)) return;
+    try {
+      const spec: unknown = JSON.parse(specJSON);
+      if (!spec || typeof spec !== "object" || Array.isArray(spec)) return;
+      setSpecJSON(JSON.stringify(mergeMcpEnvironment(spec as Record<string, unknown>, next), null, 2));
+    } catch {
+      // Save reports invalid JSON from the advanced editor.
+    }
+  }
+
+  function addEnvironmentVariable() {
+    updateEnvironmentDrafts([...environmentDrafts, {
+      id: `new-${nextEnvironmentId.current++}`,
+      name: "",
+      value: "",
+    }]);
+  }
+
+  return {
+    specJSON,
+    environmentDrafts,
+    environmentEdited,
+    addEnvironmentVariable,
+    revealedEnvironmentValues,
+    setRevealedEnvironmentValues,
+    showAdvancedSpec,
+    setShowAdvancedSpec,
+    environmentError,
+    updateEnvironmentDrafts,
+    seedSpec,
+    editSpec,
+  };
 }
 
 function environmentDraftsFromSpec(specJSON: string): EnvironmentDraft[] {
@@ -151,132 +208,37 @@ function MCPEditor({
   onClose: () => void;
   onBack?: () => void;
 }) {
-  const [activeRegistryEntry, setActiveRegistryEntry] = useState(registryEntry);
-  const [manifestJSON, setManifestJSON] = useState("");
-  const [manifestImported, setManifestImported] = useState(false);
-  const [importing, setImporting] = useState(false);
-  // If we came from the registry picker, pre-fill name + transport + spec.
-  // The user fills in `${VAR}` values via the variables form below; we render
-  // the spec with substitutions applied at save time.
-  const [name, setName] = useState(server?.name ?? activeRegistryEntry?.id ?? "");
-  const [transport, setTransport] = useState<"stdio" | "http">(server?.transport ?? activeRegistryEntry?.transport ?? "stdio");
-  const [varValues, setVarValues] = useState<Record<string, string>>(() => {
-    const init: Record<string, string> = {};
-    for (const v of activeRegistryEntry?.variables ?? []) init[v.key] = v.default ?? "";
-    return init;
-  });
-
-  const initialSpecJSON = useMemo(() => {
-    if (server) return JSON.stringify(server.spec, null, 2);
-    if (activeRegistryEntry) return JSON.stringify(activeRegistryEntry.spec, null, 2);
-    return JSON.stringify(
-      transport === "stdio"
-        ? { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] }
-        : { url: "https://example.com/mcp", headers: {} },
-      null, 2,
-    );
-  // initialSpecJSON should only compute once per editor instance.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const [specJSON, setSpecJSON] = useState(initialSpecJSON);
-  const [environmentDrafts, setEnvironmentDrafts] = useState<EnvironmentDraft[]>(() => environmentDraftsFromSpec(initialSpecJSON));
-  const [environmentEdited, setEnvironmentEdited] = useState(false);
-  const nextEnvironmentId = useRef(0);
-  const [revealedEnvironmentValues, setRevealedEnvironmentValues] = useState<Set<string>>(() => new Set());
-  const [showAdvancedSpec, setShowAdvancedSpec] = useState(transport === "http");
-  const [enabled, setEnabled] = useState(server?.enabled ?? true);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const environmentError = transport === "stdio" ? validateMcpEnvironment(environmentDrafts) : null;
-
-  function updateEnvironmentDrafts(next: EnvironmentDraft[]) {
-    setEnvironmentDrafts(next);
-    setEnvironmentEdited(true);
-    if (validateMcpEnvironment(next)) return;
-    try {
-      const spec: unknown = JSON.parse(specJSON);
-      if (!spec || typeof spec !== "object" || Array.isArray(spec)) return;
-      setSpecJSON(JSON.stringify(mergeMcpEnvironment(spec as Record<string, unknown>, next), null, 2));
-    } catch {
-      // Save reports invalid JSON from the advanced editor.
-    }
-  }
-
-  // When transport switches, suggest a fresh spec template if user hasn't customized.
-  function switchTransport(t: "stdio" | "http") {
-    setTransport(t);
-    const template = t === "stdio"
-      ? { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] }
-      : { url: "https://example.com/mcp", headers: {} };
-    const nextSpec = JSON.stringify(template, null, 2);
-    setSpecJSON(nextSpec);
-    setEnvironmentDrafts(environmentDraftsFromSpec(nextSpec));
-    setEnvironmentEdited(false);
-    setShowAdvancedSpec(t === "http");
-    setRevealedEnvironmentValues(new Set());
-  }
-
-  async function save() {
-    setError(null);
-    if (!name.trim()) { setError("name is required"); return; }
-    let spec: Record<string, unknown>;
-    try { spec = JSON.parse(specJSON); }
-    catch (e) { setError(`spec is not valid JSON: ${errorMessage(e)}`); return; }
-    if (transport === "stdio" && environmentEdited) {
-      if (environmentError) { setError(environmentError); return; }
-      spec = mergeMcpEnvironment(spec, environmentDrafts);
-    }
-    // Apply registry variable substitutions if any are declared.
-    if (activeRegistryEntry?.variables?.length) {
-      const missing = activeRegistryEntry.variables.filter((v) => v.required && !varValues[v.key]?.trim());
-      if (missing.length > 0) {
-        setError(`Fill in: ${missing.map((m) => m.label).join(", ")}`);
-        return;
-      }
-      spec = substituteVars(spec, varValues);
-    }
-    setSaving(true);
-    try {
-      if (server) {
-        await api.mcp.update(server.name, { transport, spec, enabled });
-      } else {
-        await api.mcp.create({ name: name.trim(), transport, spec, enabled });
-      }
-      onClose();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function importManifest() {
-    setError(null);
-    if (!manifestJSON.trim()) { setError("Paste a server.json manifest first."); return; }
-    setImporting(true);
-    try {
-      const { entry } = await api.mcp.importManifest(manifestJSON);
-      setActiveRegistryEntry(entry);
-      setManifestImported(true);
-      setName(entry.id);
-      setTransport(entry.transport);
-      setEnabled(false);
-      setVarValues(Object.fromEntries((entry.variables ?? []).map((variable) => [variable.key, variable.default ?? ""])));
-      const nextSpec = JSON.stringify(entry.spec, null, 2);
-      setSpecJSON(nextSpec);
-      setEnvironmentDrafts(environmentDraftsFromSpec(nextSpec));
-      setEnvironmentEdited(false);
-      setShowAdvancedSpec(entry.transport === "http");
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  const dirty = useDirty({ name, transport, specJSON, environmentDrafts, enabled, varValues });
-  const requestClose = useDismissGuard({ dirty, busy: saving, onClose });
+  const {
+    requestClose,
+    activeRegistryEntry,
+    dirty,
+    save,
+    saving,
+    manifestJSON,
+    setManifestJSON,
+    importManifest,
+    importing,
+    manifestImported,
+    varValues,
+    setVarValues,
+    name,
+    setName,
+    switchTransport,
+    transport,
+    updateEnvironmentDrafts,
+    environmentDrafts,
+    addEnvironmentVariable,
+    revealedEnvironmentValues,
+    setRevealedEnvironmentValues,
+    environmentError,
+    showAdvancedSpec,
+    setShowAdvancedSpec,
+    specJSON,
+    editSpec,
+    enabled,
+    setEnabled,
+    error,
+  } = useMcpEditor({ server, registryEntry, onClose });
 
   return (
     <Dialog
@@ -290,31 +252,18 @@ function MCPEditor({
       ) : undefined}
       size="md"
       align="top"
-      footer={<DialogFooter onCancel={requestClose} onDiscard={onClose} dirty={dirty} canSave={!server || dirty} onSave={() => void save()} saving={saving} />}
+      footer={<DialogFooter
+        onCancel={requestClose}
+        onDiscard={onClose}
+        dirty={dirty}
+        canSave={!server || dirty}
+        onSave={() => void save()}
+        saving={saving}
+      />}
     >
       <div className="space-y-3">
           {!server && !activeRegistryEntry && (
-            <div className="space-y-2">
-              <label className="block text-xs text-fg-subtle">
-                Paste an MCP Registry <code>server.json</code>
-                <textarea
-                  value={manifestJSON}
-                  onChange={(event) => setManifestJSON(event.target.value)}
-                  rows={5}
-                  placeholder={'{\n  "name": "io.example/server",\n  "version": "1.0.0",\n  "packages": [...]\n}'}
-                  className="mt-1 w-full px-2 py-1.5 text-xs font-mono rounded border border-border bg-surface-3 text-fg"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => void importManifest()}
-                disabled={importing || !manifestJSON.trim()}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-50"
-              >
-                {importing ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-                Import server.json
-              </button>
-            </div>
+            <McpManifestImport manifestJSON={manifestJSON} setManifestJSON={setManifestJSON} importManifest={importManifest} importing={importing} />
           )}
           {activeRegistryEntry && (
             <div className="px-3 py-2 rounded bg-surface-3/40 border border-border text-[11px] text-fg-subtle">
@@ -334,33 +283,7 @@ function MCPEditor({
           )}
 
           {activeRegistryEntry?.variables?.length ? (
-            <div className="space-y-2">
-              <p className="text-xs text-fg-subtle font-medium">Configure</p>
-              {activeRegistryEntry.variables.map((v) => (
-                <label key={v.key} className="block text-xs text-fg-subtle">
-                  {v.label}
-                  {v.choices?.length || v.format === "boolean" ? (
-                    <select
-                      value={varValues[v.key] ?? ""}
-                      onChange={(e) => setVarValues((prev) => ({ ...prev, [v.key]: e.target.value }))}
-                      className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
-                    >
-                      <option value="" disabled={v.required}>{v.required ? "Select a value" : "Optional"}</option>
-                      {(v.choices ?? ["true", "false"]).map((choice) => <option key={choice} value={choice}>{choice}</option>)}
-                    </select>
-                  ) : (
-                    <input
-                      type={v.secret ? "password" : v.format === "number" ? "number" : "text"}
-                      value={varValues[v.key] ?? ""}
-                      onChange={(e) => setVarValues((prev) => ({ ...prev, [v.key]: e.target.value }))}
-                      placeholder={v.placeholder}
-                      required={v.required}
-                      className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
-                    />
-                  )}
-                </label>
-              ))}
-            </div>
+            <McpRegistryVariables variables={activeRegistryEntry.variables} varValues={varValues} setVarValues={setVarValues} />
           ) : null}
 
           <label className="block text-xs text-fg-subtle">
@@ -394,106 +317,23 @@ function MCPEditor({
           </div>
 
           {transport === "stdio" && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-fg-subtle font-medium">Environment variables</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateEnvironmentDrafts([...environmentDrafts, {
-                      id: `new-${nextEnvironmentId.current++}`,
-                      name: "",
-                      value: "",
-                    }]);
-                  }}
-                  className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:bg-surface-3"
-                >
-                  <Plus size={11} /> Add variable
-                </button>
-              </div>
-              {environmentDrafts.map((entry) => (
-                <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto_auto] gap-1.5 items-center">
-                  <input
-                    value={entry.name}
-                    onChange={(event) => {
-                      updateEnvironmentDrafts(environmentDrafts.map((row) => row.id === entry.id ? { ...row, name: event.target.value } : row));
-                    }}
-                    aria-label="Environment variable name"
-                    placeholder="VARIABLE_NAME"
-                    className="min-w-0 px-2 py-1.5 text-xs font-mono rounded border border-border bg-surface-3 text-fg"
-                  />
-                  <input
-                    type={revealedEnvironmentValues.has(entry.id) ? "text" : "password"}
-                    value={entry.value}
-                    onChange={(event) => {
-                      updateEnvironmentDrafts(environmentDrafts.map((row) => row.id === entry.id ? { ...row, value: event.target.value } : row));
-                    }}
-                    aria-label={`${entry.name || "Environment variable"} value`}
-                    placeholder="Value"
-                    className="min-w-0 px-2 py-1.5 text-xs font-mono rounded border border-border bg-surface-3 text-fg"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setRevealedEnvironmentValues((current) => {
-                      const next = new Set(current);
-                      if (next.has(entry.id)) next.delete(entry.id);
-                      else next.add(entry.id);
-                      return next;
-                    })}
-                    aria-label={`${revealedEnvironmentValues.has(entry.id) ? "Hide" : "Show"} ${entry.name || "environment variable"} value`}
-                    title={revealedEnvironmentValues.has(entry.id) ? "Hide value" : "Show value"}
-                    className="p-1.5 rounded border border-border text-fg-faint hover:bg-surface-3 hover:text-fg"
-                  >
-                    {revealedEnvironmentValues.has(entry.id) ? <EyeOff size={12} /> : <Eye size={12} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateEnvironmentDrafts(environmentDrafts.filter((row) => row.id !== entry.id));
-                    }}
-                    aria-label={`Remove ${entry.name || "environment variable"}`}
-                    title="Remove variable"
-                    className="p-1.5 rounded border border-border text-fg-faint hover:bg-surface-3 hover:text-fg"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))}
-              {environmentError && <p role="alert" className="text-[11px] text-rose-700 dark:text-rose-300">{environmentError}</p>}
-            </div>
+            <McpEnvironmentFields
+              updateEnvironmentDrafts={updateEnvironmentDrafts}
+              environmentDrafts={environmentDrafts}
+              onAdd={addEnvironmentVariable}
+              revealedEnvironmentValues={revealedEnvironmentValues}
+              setRevealedEnvironmentValues={setRevealedEnvironmentValues}
+              environmentError={environmentError}
+            />
           )}
 
-          <div>
-            <button
-              type="button"
-              aria-expanded={showAdvancedSpec}
-              onClick={() => setShowAdvancedSpec((shown) => !shown)}
-              className="inline-flex items-center gap-2 text-xs text-fg-subtle hover:text-fg"
-            >
-              <span>Advanced spec (JSON)</span>
-              <span className="text-[11px] text-fg-faint">{showAdvancedSpec ? "Hide" : "Show"}</span>
-            </button>
-            {showAdvancedSpec && (
-              <label className="block mt-1 text-xs text-fg-subtle">
-                <p className="mb-1 text-[11px] text-fg-faint">
-                  {transport === "stdio"
-                    ? <>Keys: <code>command</code>, <code>args[]</code>, <code>env{}</code>. Environment rows sync with <code>env</code>; values appear here in plain text.</>
-                    : <>Keys: <code>url</code>, <code>headers{}</code>.</>}
-                </p>
-                <textarea
-                  value={specJSON}
-                  onChange={(e) => {
-                    setSpecJSON(e.target.value);
-                    setEnvironmentDrafts(environmentDraftsFromSpec(e.target.value));
-                    setEnvironmentEdited(false);
-                    setRevealedEnvironmentValues(new Set());
-                  }}
-                  rows={8}
-                  className="w-full px-2 py-1.5 text-xs font-mono rounded border border-border bg-surface-3 text-fg"
-                />
-              </label>
-            )}
-          </div>
+          <McpAdvancedSpec
+            showAdvancedSpec={showAdvancedSpec}
+            setShowAdvancedSpec={setShowAdvancedSpec}
+            transport={transport}
+            specJSON={specJSON}
+            onChange={editSpec}
+          />
 
           <label className="inline-flex items-center gap-2 text-xs text-fg-muted">
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
@@ -610,65 +450,20 @@ function RegistryPicker({
   onCustom: () => void;
   onClose: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [entries, setEntries] = useState<McpRegistryEntry[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Default to the hand-picked allowlist of well-known vendor servers;
-  // toggle off to see the broader Official + Vendor list from the upstream
-  // registry. Hidden behind a small switch so the curated default is the
-  // obvious, recommended path.
-  const [curatedOnly, setCuratedOnly] = useState(true);
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query.trim()), 250);
-    return () => clearTimeout(t);
-  }, [query]);
-
-  const runSearch = useCallback(async (q: string, fresh = false) => {
-    setLoading(true); setError(null);
-    try {
-      const res = await api.mcp.registry({ q: q || undefined, fresh, curated: curatedOnly });
-      setEntries(res.entries);
-      setNextCursor(res.nextCursor);
-    } catch (e) {
-      setEntries([]); setNextCursor(undefined);
-      // Inline error preserves the Retry button at the picker; the toast
-      // gives the user a one-click path to report the failure.
-      setError(errorMessage(e));
-      pushErrorToast({
-        title: "Couldn't search MCP registry",
-        error: e,
-        context: { panel: "mcp", action: "registry.search", query: q || null },
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [curatedOnly]);
-
-  useEffect(() => { void runSearch(debouncedQuery); }, [debouncedQuery, runSearch]);
-
-  async function loadMore() {
-    if (!nextCursor || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const res = await api.mcp.registry({ q: debouncedQuery || undefined, cursor: nextCursor, curated: curatedOnly });
-      setEntries((prev) => [...prev, ...res.entries]);
-      setNextCursor(res.nextCursor);
-    } catch (e) {
-      setError(errorMessage(e));
-      pushErrorToast({
-        title: "Couldn't load more registry entries",
-        error: e,
-        context: { panel: "mcp", action: "registry.loadMore", cursor: nextCursor ?? null },
-      });
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const {
+    query,
+    setQuery,
+    curatedOnly,
+    setCuratedOnly,
+    loading,
+    entries,
+    error,
+    runSearch,
+    debouncedQuery,
+    nextCursor,
+    loadMore,
+    loadingMore,
+  } = useMcpRegistrySearch();
 
   return (
     <div className="absolute inset-0 bg-black/60 z-30 flex items-center justify-center p-4" onClick={onClose}>
@@ -789,6 +584,414 @@ function RegistryPicker({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function McpAdvancedSpec({ showAdvancedSpec, setShowAdvancedSpec, transport, specJSON, onChange }: {
+  showAdvancedSpec: boolean;
+  setShowAdvancedSpec: Dispatch<SetStateAction<boolean>>;
+  transport: "stdio" | "http";
+  specJSON: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={showAdvancedSpec}
+        onClick={() => setShowAdvancedSpec((shown) => !shown)}
+        className="inline-flex items-center gap-2 text-xs text-fg-subtle hover:text-fg"
+      >
+        <span>Advanced spec (JSON)</span>
+        <span className="text-[11px] text-fg-faint">{showAdvancedSpec ? "Hide" : "Show"}</span>
+      </button>
+      {showAdvancedSpec && (
+        <label className="block mt-1 text-xs text-fg-subtle">
+          <p className="mb-1 text-[11px] text-fg-faint">
+            {transport === "stdio"
+              ? <>Keys: <code>command</code>, <code>args[]</code>, <code>env{}</code>. Environment rows sync with <code>env</code>; values appear here in plain text.</>
+              : <>Keys: <code>url</code>, <code>headers{}</code>.</>}
+          </p>
+          <textarea
+            value={specJSON}
+            onChange={(e) => onChange(e.target.value)}
+            rows={8}
+            className="w-full px-2 py-1.5 text-xs font-mono rounded border border-border bg-surface-3 text-fg"
+          />
+        </label>
+      )}
+    </div>
+  );
+}
+
+function McpEnvironmentFields({
+  updateEnvironmentDrafts,
+  environmentDrafts,
+  onAdd,
+  revealedEnvironmentValues,
+  setRevealedEnvironmentValues,
+  environmentError,
+}: {
+  updateEnvironmentDrafts: (next: EnvironmentDraft[]) => void;
+  environmentDrafts: EnvironmentDraft[];
+  onAdd: () => void;
+  revealedEnvironmentValues: Set<string>;
+  setRevealedEnvironmentValues: Dispatch<SetStateAction<Set<string>>>;
+  environmentError: string | null;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-fg-subtle font-medium">Environment variables</p>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:bg-surface-3"
+        >
+          <Plus size={11} /> Add variable
+        </button>
+      </div>
+      {environmentDrafts.map((entry) => (
+        <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto_auto] gap-1.5 items-center">
+          <input
+            value={entry.name}
+            onChange={(event) => {
+              updateEnvironmentDrafts(environmentDrafts.map((row) => row.id === entry.id ? { ...row, name: event.target.value } : row));
+            }}
+            aria-label="Environment variable name"
+            placeholder="VARIABLE_NAME"
+            className="min-w-0 px-2 py-1.5 text-xs font-mono rounded border border-border bg-surface-3 text-fg"
+          />
+          <input
+            type={revealedEnvironmentValues.has(entry.id) ? "text" : "password"}
+            value={entry.value}
+            onChange={(event) => {
+              updateEnvironmentDrafts(environmentDrafts.map((row) => row.id === entry.id ? { ...row, value: event.target.value } : row));
+            }}
+            aria-label={`${entry.name || "Environment variable"} value`}
+            placeholder="Value"
+            className="min-w-0 px-2 py-1.5 text-xs font-mono rounded border border-border bg-surface-3 text-fg"
+          />
+          <button
+            type="button"
+            onClick={() => setRevealedEnvironmentValues((current) => {
+              const next = new Set(current);
+              if (next.has(entry.id)) next.delete(entry.id);
+              else next.add(entry.id);
+              return next;
+            })}
+            aria-label={`${revealedEnvironmentValues.has(entry.id) ? "Hide" : "Show"} ${entry.name || "environment variable"} value`}
+            title={revealedEnvironmentValues.has(entry.id) ? "Hide value" : "Show value"}
+            className="p-1.5 rounded border border-border text-fg-faint hover:bg-surface-3 hover:text-fg"
+          >
+            {revealedEnvironmentValues.has(entry.id) ? <EyeOff size={12} /> : <Eye size={12} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              updateEnvironmentDrafts(environmentDrafts.filter((row) => row.id !== entry.id));
+            }}
+            aria-label={`Remove ${entry.name || "environment variable"}`}
+            title="Remove variable"
+            className="p-1.5 rounded border border-border text-fg-faint hover:bg-surface-3 hover:text-fg"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      ))}
+      {environmentError && <p role="alert" className="text-[11px] text-rose-700 dark:text-rose-300">{environmentError}</p>}
+    </div>
+  );
+}
+
+function useMcpRegistrySearch() {
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [entries, setEntries] = useState<McpRegistryEntry[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Default to the hand-picked allowlist of well-known vendor servers;
+  // toggle off to see the broader Official + Vendor list from the upstream
+  // registry. Hidden behind a small switch so the curated default is the
+  // obvious, recommended path.
+  const [curatedOnly, setCuratedOnly] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const runSearch = useCallback(async (q: string, fresh = false) => {
+    setLoading(true); setError(null);
+    try {
+      const res = await api.mcp.registry({ q: q || undefined, fresh, curated: curatedOnly });
+      setEntries(res.entries);
+      setNextCursor(res.nextCursor);
+    } catch (e) {
+      setEntries([]); setNextCursor(undefined);
+      // Inline error preserves the Retry button at the picker; the toast
+      // gives the user a one-click path to report the failure.
+      setError(errorMessage(e));
+      pushErrorToast({
+        title: "Couldn't search MCP registry",
+        error: e,
+        context: { panel: "mcp", action: "registry.search", query: q || null },
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [curatedOnly]);
+
+  useEffect(() => { void runSearch(debouncedQuery); }, [debouncedQuery, runSearch]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await api.mcp.registry({ q: debouncedQuery || undefined, cursor: nextCursor, curated: curatedOnly });
+      setEntries((prev) => [...prev, ...res.entries]);
+      setNextCursor(res.nextCursor);
+    } catch (e) {
+      setError(errorMessage(e));
+      pushErrorToast({
+        title: "Couldn't load more registry entries",
+        error: e,
+        context: { panel: "mcp", action: "registry.loadMore", cursor: nextCursor ?? null },
+      });
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  return {
+    query,
+    setQuery,
+    curatedOnly,
+    setCuratedOnly,
+    loading,
+    entries,
+    error,
+    runSearch,
+    debouncedQuery,
+    nextCursor,
+    loadMore,
+    loadingMore,
+  };
+}
+
+function useMcpEditor({
+  server, registryEntry, onClose,
+}: {
+  server: McpServer | null;
+  registryEntry?: McpRegistryEntry;
+  onClose: () => void;
+}) {
+  const [activeRegistryEntry, setActiveRegistryEntry] = useState(registryEntry);
+  const [manifestJSON, setManifestJSON] = useState("");
+  const [manifestImported, setManifestImported] = useState(false);
+  const [importing, setImporting] = useState(false);
+  // If we came from the registry picker, pre-fill name + transport + spec.
+  // The user fills in `${VAR}` values via the variables form below; we render
+  // the spec with substitutions applied at save time.
+  const [name, setName] = useState(server?.name ?? activeRegistryEntry?.id ?? "");
+  const [transport, setTransport] = useState<"stdio" | "http">(server?.transport ?? activeRegistryEntry?.transport ?? "stdio");
+  const [varValues, setVarValues] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const v of activeRegistryEntry?.variables ?? []) init[v.key] = v.default ?? "";
+    return init;
+  });
+
+  const initialSpecJSON = useMemo(() => {
+    if (server) return JSON.stringify(server.spec, null, 2);
+    if (activeRegistryEntry) return JSON.stringify(activeRegistryEntry.spec, null, 2);
+    return JSON.stringify(
+      transport === "stdio"
+        ? { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] }
+        : { url: "https://example.com/mcp", headers: {} },
+      null, 2,
+    );
+  // initialSpecJSON should only compute once per editor instance.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const {
+    specJSON, environmentDrafts, environmentEdited,
+    addEnvironmentVariable, revealedEnvironmentValues, setRevealedEnvironmentValues,
+    showAdvancedSpec, setShowAdvancedSpec, environmentError, updateEnvironmentDrafts, seedSpec, editSpec,
+  } = useMcpSpecDraft(initialSpecJSON, transport);
+  const [enabled, setEnabled] = useState(server?.enabled ?? true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // When transport switches, suggest a fresh spec template if user hasn't customized.
+  function switchTransport(t: "stdio" | "http") {
+    setTransport(t);
+    const template = t === "stdio"
+      ? { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] }
+      : { url: "https://example.com/mcp", headers: {} };
+    const nextSpec = JSON.stringify(template, null, 2);
+    seedSpec(nextSpec);
+    setShowAdvancedSpec(t === "http");
+    setRevealedEnvironmentValues(new Set());
+  }
+
+  async function save() {
+    setError(null);
+    if (!name.trim()) { setError("name is required"); return; }
+    let spec: Record<string, unknown>;
+    try { spec = JSON.parse(specJSON); }
+    catch (e) { setError(`spec is not valid JSON: ${errorMessage(e)}`); return; }
+    if (transport === "stdio" && environmentEdited) {
+      if (environmentError) { setError(environmentError); return; }
+      spec = mergeMcpEnvironment(spec, environmentDrafts);
+    }
+    // Apply registry variable substitutions if any are declared.
+    if (activeRegistryEntry?.variables?.length) {
+      const missing = activeRegistryEntry.variables.filter((v) => v.required && !varValues[v.key]?.trim());
+      if (missing.length > 0) {
+        setError(`Fill in: ${missing.map((m) => m.label).join(", ")}`);
+        return;
+      }
+      spec = substituteVars(spec, varValues);
+    }
+    setSaving(true);
+    try {
+      if (server) {
+        await api.mcp.update(server.name, { transport, spec, enabled });
+      } else {
+        await api.mcp.create({ name: name.trim(), transport, spec, enabled });
+      }
+      onClose();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function importManifest() {
+    setError(null);
+    if (!manifestJSON.trim()) { setError("Paste a server.json manifest first."); return; }
+    setImporting(true);
+    try {
+      const { entry } = await api.mcp.importManifest(manifestJSON);
+      setActiveRegistryEntry(entry);
+      setManifestImported(true);
+      setName(entry.id);
+      setTransport(entry.transport);
+      setEnabled(false);
+      setVarValues(Object.fromEntries((entry.variables ?? []).map((variable) => [variable.key, variable.default ?? ""])));
+      const nextSpec = JSON.stringify(entry.spec, null, 2);
+      seedSpec(nextSpec);
+      setShowAdvancedSpec(entry.transport === "http");
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  const dirty = useDirty({ name, transport, specJSON, environmentDrafts, enabled, varValues });
+  const requestClose = useDismissGuard({ dirty, busy: saving, onClose });
+
+  return {
+    requestClose,
+    activeRegistryEntry,
+    dirty,
+    save,
+    saving,
+    manifestJSON,
+    setManifestJSON,
+    importManifest,
+    importing,
+    manifestImported,
+    varValues,
+    setVarValues,
+    name,
+    setName,
+    switchTransport,
+    transport,
+    updateEnvironmentDrafts,
+    environmentDrafts,
+    addEnvironmentVariable,
+    revealedEnvironmentValues,
+    setRevealedEnvironmentValues,
+    environmentError,
+    showAdvancedSpec,
+    setShowAdvancedSpec,
+    specJSON,
+    editSpec,
+    enabled,
+    setEnabled,
+    error,
+  };
+}
+
+function McpRegistryVariables({ variables, varValues, setVarValues }: {
+  variables: NonNullable<McpRegistryEntry["variables"]>;
+  varValues: Record<string, string>;
+  setVarValues: Dispatch<SetStateAction<Record<string, string>>>;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-fg-subtle font-medium">Configure</p>
+      {variables.map((v) => (
+        <label key={v.key} className="block text-xs text-fg-subtle">
+          {v.label}
+          {v.choices?.length || v.format === "boolean" ? (
+            <select
+              value={varValues[v.key] ?? ""}
+              onChange={(e) => setVarValues((prev) => ({ ...prev, [v.key]: e.target.value }))}
+              className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
+            >
+              <option value="" disabled={v.required}>{v.required ? "Select a value" : "Optional"}</option>
+              {(v.choices ?? ["true", "false"]).map((choice) => <option key={choice} value={choice}>{choice}</option>)}
+            </select>
+          ) : (
+            <input
+              type={v.secret ? "password" : v.format === "number" ? "number" : "text"}
+              value={varValues[v.key] ?? ""}
+              onChange={(e) => setVarValues((prev) => ({ ...prev, [v.key]: e.target.value }))}
+              placeholder={v.placeholder}
+              required={v.required}
+              className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
+            />
+          )}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function McpManifestImport({ manifestJSON, setManifestJSON, importManifest, importing }: {
+  manifestJSON: string;
+  setManifestJSON: Dispatch<SetStateAction<string>>;
+  importManifest: () => Promise<void>;
+  importing: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs text-fg-subtle">
+        Paste an MCP Registry <code>server.json</code>
+        <textarea
+          value={manifestJSON}
+          onChange={(event) => setManifestJSON(event.target.value)}
+          rows={5}
+          placeholder={'{\n  "name": "io.example/server",\n  "version": "1.0.0",\n  "packages": [...]\n}'}
+          className="mt-1 w-full px-2 py-1.5 text-xs font-mono rounded border border-border bg-surface-3 text-fg"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => void importManifest()}
+        disabled={importing || !manifestJSON.trim()}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-50"
+      >
+        {importing ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+        Import server.json
+      </button>
     </div>
   );
 }

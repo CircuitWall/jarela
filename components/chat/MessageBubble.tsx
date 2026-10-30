@@ -1040,6 +1040,139 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
   const messageId = "id" in message ? message.id : null;
   const containsImageAttachment = hasImageAttachment(parsed);
 
+  const { handleInAppLink, copyLink, category, canRetry, handleRetry, copiedMessage, copyMessage } = useMessageActions({ dispatch, messageId, threadId, message, isUser, onRetry, streaming, parsed });
+
+  // —— TTS playback ——
+  // The Play button is rendered for assistant bubbles whose agent has
+  // voice_enabled. We don't pre-generate audio — the first click POSTs the
+  // plain-text body to /api/v1/voice/tts and plays the returned WAV. The
+  // <audio> element is created lazily and the object URL is revoked on
+  // unmount to avoid leaks. Auto-speak listens for a window event keyed by
+  // messageId so ChatView can arm it from outside the bubble.
+  const { voiceEnabled, ttsAbleText, audioState, audioError, speak } = useMessageVoice({ isUser, agentConfig, message, streaming, messageId });
+
+  const { refs, renderedString, citations, redactionSummary, routingDecision, memoryRecall, automationActivity, unverifiedLinks, sourceManifest } = useMessageReferences({ isUser, parsed, streaming, message });
+
+  // Format created_at for the hover timestamp. Streaming bubbles don't have
+  // one — we show "now" so the hover affordance is still consistent.
+  const createdAt = "created_at" in message ? message.created_at : null;
+  const timeLabel = createdAt
+    ? new Date(createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : null;
+
+  if (automationActivity) {
+    return <AutomationActivityRow activity={automationActivity} />;
+  }
+
+  // Compact chip for `run_error` marker rows persisted by the run route
+  // when a turn ended in error without producing any assistant content.
+  // See ADR-0069.
+  if (category === "run_error" && !isUser) {
+    return <MessageFailureRow parsed={parsed} statusReason={statusReason} timeLabel={timeLabel} />;
+  }
+
+  return (
+    <div className={`group flex ${isUser ? "flex-row-reverse" : "flex-row"} gap-2 mb-1.5 items-end`}>
+      {/* Avatar — spacer when not shown to maintain alignment */}
+      <div className="shrink-0 w-7">
+        {showAvatar && (isUser
+          ? <UserAvatar profile={userProfile} />
+          : <AgentAvatar config={agentConfig} />
+        )}
+      </div>
+
+      <div className={`flex flex-col min-w-0 ${!isUser ? "flex-1 items-start" : containsImageAttachment ? "max-w-[calc(100%-2.25rem)] sm:max-w-[92%] md:max-w-[86%] items-end" : "max-w-[calc(100%-2.25rem)] sm:max-w-[75%] items-end"}`}>
+        <MessageActionBar
+          timeLabel={timeLabel}
+          messageId={messageId}
+          isUser={isUser}
+          copyLink={copyLink}
+          copyMessage={copyMessage}
+          copiedMessage={copiedMessage}
+          canRetry={canRetry}
+          handleRetry={handleRetry}
+          voiceEnabled={voiceEnabled}
+          streaming={streaming}
+          ttsAbleText={ttsAbleText}
+          speak={speak}
+          audioState={audioState}
+          audioError={audioError}
+        />
+        <div
+          className={`rounded-2xl ${containsImageAttachment ? "p-1.5" : "px-4 py-3"} text-sm leading-relaxed max-w-full overflow-hidden ${isUser ? "glass-bubble-accent text-white rounded-br-sm" : "glass-bubble text-fg rounded-bl-sm"
+            }`}
+        >
+          {attachedActivity && !isUser ? (
+            <div className="mb-2 rounded-md border border-border/50 bg-surface-2/50 px-2 py-1.5 text-[11px] text-fg-muted">
+              <div className="flex flex-wrap items-center gap-1.5" role="status">
+                <span className="font-medium">{AUTOMATION_ACTIVITY_SOURCE[attachedActivity.source_kind].label}</span>
+                <span aria-hidden>·</span>
+                <span className="truncate" title={attachedActivity.label}>{attachedActivity.label}</span>
+                <span aria-hidden>·</span>
+                <span>{activityStatus(attachedActivity).copy}</span>
+                {attachedActivity.occurrence_count > 1 ? (
+                  <span className="opacity-70">· {attachedActivity.occurrence_count} checks</span>
+                ) : null}
+              </div>
+              {attachedActivity.detail ? (
+                <details className="mt-1 border-t border-border/40 pt-1">
+                  <summary className="cursor-pointer text-[10px] uppercase tracking-wide text-fg-faint">Trigger</summary>
+                  <div className="mt-1 whitespace-pre-wrap break-words text-fg-muted">{attachedActivity.detail}</div>
+                </details>
+              ) : null}
+            </div>
+          ) : null}
+          <MessageBodyContent
+            parsed={parsed}
+            isUser={isUser}
+            category={category}
+            attachedActivity={attachedActivity}
+            handleInAppLink={handleInAppLink}
+            threadId={threadId}
+            streaming={streaming}
+            isLatest={isLatest}
+            renderedString={renderedString}
+            unverifiedLinks={unverifiedLinks}
+            sourceManifest={sourceManifest}
+          />
+          {diagnosticsVisible && !isUser && !streaming && "usage" in message && message.usage && (contextWindowTokens ?? message.usage.context_window_tokens) ? (
+            <div className="-mx-4 -mb-3 mt-3">
+              <ContextUsageBar
+                usage={message.usage}
+                fallbackContextWindow={contextWindowTokens ?? 0}
+              />
+            </div>
+          ) : null}
+        </div>
+        <MessageStatusAndDiagnostics
+          isUser={isUser}
+          streaming={streaming}
+          transcriptStatus={transcriptStatus}
+          statusReason={statusReason}
+          message={message}
+          diagnosticsVisible={diagnosticsVisible}
+          routingDecision={routingDecision}
+          memoryRecall={memoryRecall}
+          showToolEvents={showToolEvents}
+          citations={citations}
+          redactionSummary={redactionSummary}
+          refs={refs}
+        />
+      </div>
+    </div>
+  );
+});
+
+function useMessageActions({ dispatch, messageId, threadId, message, isUser, onRetry, streaming, parsed }: {
+  dispatch: ReturnType<typeof useAppContext>["dispatch"];
+  messageId: string | null;
+  threadId: string | null;
+  message: Props["message"];
+  isUser: boolean;
+  onRetry: ((text: string, attachments: ContentPart[], messageId?: string) => void) | undefined;
+  streaming: boolean | undefined;
+  parsed: string | ContentPart[];
+}) {
   const handleInAppLink = useCallback((href: string) => {
     const p = parseHref(href);
     // A `thread`+`agent` pair (emitted by delegate_to_agent's cite_as link
@@ -1126,13 +1259,16 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
     }).catch(console.error);
   }, [parsed, threadId]);
 
-  // —— TTS playback ——
-  // The Play button is rendered for assistant bubbles whose agent has
-  // voice_enabled. We don't pre-generate audio — the first click POSTs the
-  // plain-text body to /api/v1/voice/tts and plays the returned WAV. The
-  // <audio> element is created lazily and the object URL is revoked on
-  // unmount to avoid leaks. Auto-speak listens for a window event keyed by
-  // messageId so ChatView can arm it from outside the bubble.
+  return { handleInAppLink, copyLink, category, canRetry, handleRetry, copiedMessage, copyMessage };
+}
+
+function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }: {
+  isUser: boolean;
+  agentConfig: AgentConfig | null | undefined;
+  message: Props["message"];
+  streaming: boolean | undefined;
+  messageId: string | null;
+}) {
   const voiceEnabled = !isUser && !!agentConfig?.voice_enabled;
   const ttsAbleText = !isUser ? plainTextForTts(message.content) : "";
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -1207,6 +1343,15 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
     return () => window.removeEventListener("jarela:speak-message", onSpeak as EventListener);
   }, [voiceEnabled, messageId, speak]);
 
+  return { voiceEnabled, ttsAbleText, audioState, audioError, speak };
+}
+
+function useMessageReferences({ isUser, parsed, streaming, message }: {
+  isUser: boolean;
+  parsed: string | ContentPart[];
+  streaming: boolean | undefined;
+  message: Props["message"];
+}) {
   // Extract <refs> from assistant messages so they render as a compact footer
   // under the bubble instead of inline. While streaming, only show them after
   // the closing </refs> tag has arrived (otherwise we'd flicker partial refs).
@@ -1266,21 +1411,246 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
     return new Map(citations.sources.map((s) => [s.n, { href: s.href, label: s.label }]));
   }, [citations]);
 
-  // Format created_at for the hover timestamp. Streaming bubbles don't have
-  // one — we show "now" so the hover affordance is still consistent.
-  const createdAt = "created_at" in message ? message.created_at : null;
-  const timeLabel = createdAt
-    ? new Date(createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-    : null;
+  return { refs, renderedString, citations, redactionSummary, routingDecision, memoryRecall, automationActivity, unverifiedLinks, sourceManifest };
+}
 
-  if (automationActivity) {
-    return <AutomationActivityRow activity={automationActivity} />;
-  }
+function MessageActionBar({
+  timeLabel, messageId, isUser, copyLink,
+  copyMessage, copiedMessage, canRetry, handleRetry,
+  voiceEnabled, streaming, ttsAbleText, speak,
+  audioState, audioError,
+}: {
+  timeLabel: string | null;
+  messageId: string | null;
+  isUser: boolean;
+  copyLink: () => void;
+  copyMessage: () => void;
+  copiedMessage: boolean;
+  canRetry: boolean;
+  handleRetry: () => void;
+  voiceEnabled: boolean;
+  streaming: boolean | undefined;
+  ttsAbleText: string;
+  speak: () => Promise<void>;
+  audioState: "error" | "idle" | "loading" | "playing" | "paused";
+  audioError: string | null;
+}) {
+  return (<>
+    {(timeLabel || messageId) && (
+      <div className={`flex items-center gap-1 mb-0.5 px-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity ${isUser ? "flex-row-reverse" : ""}`}>
+        {timeLabel && (
+          <span className="text-[10px] text-fg-faint" aria-hidden>{timeLabel}</span>
+        )}
+        {messageId && (
+          <button
+            onClick={copyLink}
+            className="text-fg-faint hover:text-fg p-0.5 rounded"
+            title="Copy link to this message"
+            aria-label="Copy link to this message"
+          >
+            <Link2 size={11} />
+          </button>
+        )}
+        <button
+          onClick={copyMessage}
+          className="text-fg-faint hover:text-fg p-0.5 rounded"
+          title={copiedMessage ? "Copied" : "Copy message text"}
+          aria-label="Copy message text"
+        >
+          {copiedMessage ? <Check size={11} /> : <Copy size={11} />}
+        </button>
+        {canRetry && (
+          <button
+            onClick={handleRetry}
+            className="text-fg-faint hover:text-fg p-0.5 rounded"
+            title="Resend this prompt as a new turn"
+            aria-label="Resend this prompt as a new turn"
+          >
+            <RotateCcw size={11} />
+          </button>
+        )}
+        {voiceEnabled && !streaming && ttsAbleText.trim() && (
+          <button
+            onClick={() => void speak()}
+            className={`p-0.5 rounded ${audioState === "error" ? "text-rose-500" : "text-fg-faint hover:text-fg"}`}
+            title={audioError ?? (audioState === "playing" ? "Pause" : audioState === "loading" ? "Loading…" : "Play voice")}
+            aria-label={audioState === "playing" ? "Pause voice" : "Play voice"}
+            disabled={audioState === "loading"}
+          >
+            {audioState === "loading" ? <Loader2 size={11} className="animate-spin" />
+              : audioState === "playing" ? <Pause size={11} />
+                : <Play size={11} />}
+          </button>
+        )}
+      </div>
+    )}
 
-  // Compact chip for `run_error` marker rows persisted by the run route
-  // when a turn ended in error without producing any assistant content.
-  // See ADR-0069.
-  if (category === "run_error" && !isUser) {
+  </>);
+}
+
+function MessageBodyContent({
+  parsed, isUser, category, attachedActivity,
+  handleInAppLink, threadId, streaming, isLatest,
+  renderedString, unverifiedLinks, sourceManifest,
+}: {
+  parsed: string | ContentPart[];
+  isUser: boolean;
+  category: string | null | undefined;
+  attachedActivity: AutomationActivityMetadata | undefined;
+  handleInAppLink: (href: string) => void;
+  threadId: string | null;
+  streaming: boolean | undefined;
+  isLatest: boolean;
+  renderedString: string | null;
+  unverifiedLinks: ReadonlySet<string> | undefined;
+  sourceManifest: ReadonlyMap<number, { href: string; label: string; }> | undefined;
+}) {
+  return (<>
+    {typeof parsed === "string" ? (
+      isUser ? (
+        (() => {
+          const trigger = parseTriggerMessage(category, parsed);
+          if (trigger) return <TriggerMessageCard data={trigger} />;
+          const bridge = parseBridgeContext(parsed);
+          if (bridge) return <BridgeMessageCard ctx={bridge} activity={attachedActivity} />;
+          const ext = parseExtensionTurn(parsed);
+          if (ext) return <ExtensionTurnCard ctx={ext} accent={true} />;
+          const ctx = parseCapturedContext(parsed);
+          if (ctx) return <CapturedContextCard ctx={ctx} accent={true} />;
+          return (
+            <CollapsibleLong accent={true}>
+              <MarkdownContent text={parsed} onInAppLink={handleInAppLink} threadId={threadId} />
+            </CollapsibleLong>
+          );
+        })()
+      ) : (
+        <div className="flex flex-col">
+          {category && <CategorySourceBadge category={category} />}
+          <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
+            <MarkdownContent
+              text={renderedString ?? parsed}
+              streaming={streaming}
+              onInAppLink={handleInAppLink}
+              unverifiedLinks={unverifiedLinks}
+              sourceManifest={sourceManifest}
+              threadId={threadId}
+            />
+
+          </CollapsibleLong>
+        </div>
+      )
+    ) : (
+      <div className="flex flex-col gap-1.5">
+        {(() => {
+          // Bridge messages that carry attachments get persisted as a
+          // ContentPart[] whose first text part holds the bracketed
+          // [bridge:.] header + body. Detect that case so the user
+          // bubble shows the card on top of the media parts instead of
+          // a raw bracket dump above them.
+          const firstText = isUser && parsed[0]?.type === "text" && typeof parsed[0].text === "string"
+            ? parsed[0].text
+            : null;
+          const bridge = firstText ? parseBridgeContext(firstText) : null;
+          if (bridge) {
+            return (
+              <>
+                <BridgeMessageCard ctx={bridge} activity={attachedActivity} />
+                {parsed.slice(1).map((part, i) => (
+                  <ContentPartView key={i + 1} part={part} isUser={isUser} onInAppLink={handleInAppLink} threadId={threadId} />
+                ))}
+              </>
+            );
+          }
+          return parsed.map((part, i) => (
+            <ContentPartView
+              key={i}
+              part={part}
+              isUser={isUser}
+              onInAppLink={handleInAppLink}
+              unverifiedLinks={unverifiedLinks}
+              sourceManifest={sourceManifest}
+              threadId={threadId}
+            />
+
+          ));
+        })()}
+        {streaming && <span className="jarela-stream-caret" aria-hidden="true" />}
+      </div>
+    )}
+
+  </>);
+}
+
+function MessageStatusAndDiagnostics({
+  isUser, streaming, transcriptStatus, statusReason,
+  message, diagnosticsVisible, routingDecision, memoryRecall,
+  showToolEvents, citations, redactionSummary, refs,
+}: {
+  isUser: boolean;
+  streaming: boolean | undefined;
+  transcriptStatus: "failed" | "in_progress" | "completed" | "interrupted" | undefined;
+  statusReason: string | null | undefined;
+  message: Props["message"];
+  diagnosticsVisible: boolean;
+  routingDecision: RouteDecisionMetadata | null;
+  memoryRecall: { memory_hits: number; message_hits: number; } | null;
+  showToolEvents: boolean;
+  citations: ReturnType<typeof useMessageReferences>["citations"];
+  redactionSummary: { type_hint: string; count: number; }[] | null;
+  refs: ExtractedRef[];
+}) {
+  return (<>
+    {!isUser && !streaming && transcriptStatus && transcriptStatus !== "completed" && (
+      <div
+        role="status"
+        className={`flex items-center gap-1 text-xs px-1 mt-1 ${transcriptStatus === "failed" ? "text-rose-700 dark:text-rose-300" : "text-fg-faint"}`}
+      >
+        {transcriptStatus === "in_progress" ? <Loader2 size={11} className="animate-spin" />
+          : transcriptStatus === "interrupted" ? <Pause size={11} />
+            : <AlertTriangle size={11} />}
+        <span>{transcriptStatus === "in_progress" ? "Response in progress"
+          : transcriptStatus === "interrupted" ? "Response interrupted"
+            : "Response failed"}</span>
+        {statusReason && <span className="break-words">· {statusReason}</span>}
+      </div>
+    )}
+    {isUser && "status" in message && (message.status === 'pending' || message.status === 'steering') && (
+      <span className="flex items-center gap-1 text-xs opacity-50 px-1 self-end">
+        {message.status === 'steering' ? <CornerDownRight size={10} /> : <Clock size={10} />}
+        {message.status === 'steering' ? "Steering…" : "Sending…"}
+      </span>
+    )}
+    {((!isUser && !streaming && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0)
+      || (diagnosticsVisible && (routingDecision || memoryRecall))) && (
+        <div className="mt-1 flex w-full min-w-0 flex-col items-start gap-1">
+          {!isUser && !streaming && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
+            <ToolList events={message.tool_events} errorsOnly={!diagnosticsVisible || !showToolEvents} />
+          )}
+          {diagnosticsVisible && routingDecision && <RoutingDecisionSummary decision={routingDecision} />}
+          {diagnosticsVisible && memoryRecall && (
+            <MemoryRecallBadge memoryHits={memoryRecall.memory_hits} messageHits={memoryRecall.message_hits} />
+          )}
+        </div>
+      )}
+    {citations && Array.isArray(citations.sources) && citations.sources.length > 0 && (
+      <ReferencesPanel sources={citations.sources} />
+    )}
+    {citations && Array.isArray(citations.claims) && citations.claims.length > 0 && (
+      <CitationsSummary claims={citations.claims} checkerModel={citations.checker_model ?? ""} />
+    )}
+    {redactionSummary && redactionSummary.length > 0 && (
+      <RedactionShield summary={redactionSummary} />
+    )}
+    {refs.length > 0 && <RefsFooter refs={refs} />}
+
+  </>);
+}
+
+function MessageFailureRow({ parsed, statusReason, timeLabel }: {
+  parsed: string | ContentPart[];
+  statusReason: string | null | undefined;
+  timeLabel: string | null;
+}) {
     const text = typeof parsed === "string"
       ? parsed
       : parsed.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim();
@@ -1300,198 +1670,4 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
         </div>
       </div>
     );
-  }
-
-  return (
-    <div className={`group flex ${isUser ? "flex-row-reverse" : "flex-row"} gap-2 mb-1.5 items-end`}>
-      {/* Avatar — spacer when not shown to maintain alignment */}
-      <div className="shrink-0 w-7">
-        {showAvatar && (isUser
-          ? <UserAvatar profile={userProfile} />
-          : <AgentAvatar config={agentConfig} />
-        )}
-      </div>
-
-      <div className={`flex flex-col min-w-0 ${!isUser ? "flex-1 items-start" : containsImageAttachment ? "max-w-[calc(100%-2.25rem)] sm:max-w-[92%] md:max-w-[86%] items-end" : "max-w-[calc(100%-2.25rem)] sm:max-w-[75%] items-end"}`}>
-        {(timeLabel || messageId) && (
-          <div className={`flex items-center gap-1 mb-0.5 px-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity ${isUser ? "flex-row-reverse" : ""}`}>
-            {timeLabel && (
-              <span className="text-[10px] text-fg-faint" aria-hidden>{timeLabel}</span>
-            )}
-            {messageId && (
-              <button
-                onClick={copyLink}
-                className="text-fg-faint hover:text-fg p-0.5 rounded"
-                title="Copy link to this message"
-                aria-label="Copy link to this message"
-              >
-                <Link2 size={11} />
-              </button>
-            )}
-            <button
-              onClick={copyMessage}
-              className="text-fg-faint hover:text-fg p-0.5 rounded"
-              title={copiedMessage ? "Copied" : "Copy message text"}
-              aria-label="Copy message text"
-            >
-              {copiedMessage ? <Check size={11} /> : <Copy size={11} />}
-            </button>
-            {canRetry && (
-              <button
-                onClick={handleRetry}
-                className="text-fg-faint hover:text-fg p-0.5 rounded"
-                title="Resend this prompt as a new turn"
-                aria-label="Resend this prompt as a new turn"
-              >
-                <RotateCcw size={11} />
-              </button>
-            )}
-            {voiceEnabled && !streaming && ttsAbleText.trim() && (
-              <button
-                onClick={() => void speak()}
-                className={`p-0.5 rounded ${audioState === "error" ? "text-rose-500" : "text-fg-faint hover:text-fg"}`}
-                title={audioError ?? (audioState === "playing" ? "Pause" : audioState === "loading" ? "Loading…" : "Play voice")}
-                aria-label={audioState === "playing" ? "Pause voice" : "Play voice"}
-                disabled={audioState === "loading"}
-              >
-                {audioState === "loading" ? <Loader2 size={11} className="animate-spin" />
-                  : audioState === "playing" ? <Pause size={11} />
-                  : <Play size={11} />}
-              </button>
-            )}
-          </div>
-        )}
-        <div
-          className={`rounded-2xl ${containsImageAttachment ? "p-1.5" : "px-4 py-3"} text-sm leading-relaxed max-w-full overflow-hidden ${
-            isUser ? "glass-bubble-accent text-white rounded-br-sm" : "glass-bubble text-fg rounded-bl-sm"
-          }`}
-        >
-          {attachedActivity && !isUser ? (
-            <div className="mb-2 rounded-md border border-border/50 bg-surface-2/50 px-2 py-1.5 text-[11px] text-fg-muted">
-              <div className="flex flex-wrap items-center gap-1.5" role="status">
-                <span className="font-medium">{AUTOMATION_ACTIVITY_SOURCE[attachedActivity.source_kind].label}</span>
-                <span aria-hidden>·</span>
-                <span className="truncate" title={attachedActivity.label}>{attachedActivity.label}</span>
-                <span aria-hidden>·</span>
-                <span>{activityStatus(attachedActivity).copy}</span>
-                {attachedActivity.occurrence_count > 1 ? (
-                  <span className="opacity-70">· {attachedActivity.occurrence_count} checks</span>
-                ) : null}
-              </div>
-              {attachedActivity.detail ? (
-                <details className="mt-1 border-t border-border/40 pt-1">
-                  <summary className="cursor-pointer text-[10px] uppercase tracking-wide text-fg-faint">Trigger</summary>
-                  <div className="mt-1 whitespace-pre-wrap break-words text-fg-muted">{attachedActivity.detail}</div>
-                </details>
-              ) : null}
-            </div>
-          ) : null}
-          {typeof parsed === "string" ? (
-            isUser ? (
-              (() => {
-                const trigger = parseTriggerMessage(category, parsed);
-                if (trigger) return <TriggerMessageCard data={trigger} />;
-                const bridge = parseBridgeContext(parsed);
-                if (bridge) return <BridgeMessageCard ctx={bridge} activity={attachedActivity} />;
-                const ext = parseExtensionTurn(parsed);
-                if (ext) return <ExtensionTurnCard ctx={ext} accent={true} />;
-                const ctx = parseCapturedContext(parsed);
-                if (ctx) return <CapturedContextCard ctx={ctx} accent={true} />;
-                return (
-                  <CollapsibleLong accent={true}>
-                    <MarkdownContent text={parsed} onInAppLink={handleInAppLink} threadId={threadId} />
-                  </CollapsibleLong>
-                );
-              })()
-            ) : (
-              <div className="flex flex-col">
-                {category && <CategorySourceBadge category={category} />}
-                <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
-                  <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} threadId={threadId} />
-                </CollapsibleLong>
-              </div>
-            )
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {(() => {
-                // Bridge messages that carry attachments get persisted as a
-                // ContentPart[] whose first text part holds the bracketed
-                // [bridge:.] header + body. Detect that case so the user
-                // bubble shows the card on top of the media parts instead of
-                // a raw bracket dump above them.
-                const firstText = isUser && parsed[0]?.type === "text" && typeof parsed[0].text === "string"
-                  ? parsed[0].text
-                  : null;
-                const bridge = firstText ? parseBridgeContext(firstText) : null;
-                if (bridge) {
-                  return (
-                    <>
-                      <BridgeMessageCard ctx={bridge} activity={attachedActivity} />
-                      {parsed.slice(1).map((part, i) => (
-                        <ContentPartView key={i + 1} part={part} isUser={isUser} onInAppLink={handleInAppLink} threadId={threadId} />
-                      ))}
-                    </>
-                  );
-                }
-                return parsed.map((part, i) => (
-                  <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} threadId={threadId} />
-                ));
-              })()}
-              {streaming && <span className="jarela-stream-caret" aria-hidden="true" />}
-            </div>
-          )}
-          {diagnosticsVisible && !isUser && !streaming && "usage" in message && message.usage && (contextWindowTokens ?? message.usage.context_window_tokens) ? (
-            <div className="-mx-4 -mb-3 mt-3">
-              <ContextUsageBar
-                usage={message.usage}
-                fallbackContextWindow={contextWindowTokens ?? 0}
-              />
-            </div>
-          ) : null}
-        </div>
-        {!isUser && !streaming && transcriptStatus && transcriptStatus !== "completed" && (
-          <div
-            role="status"
-            className={`flex items-center gap-1 text-xs px-1 mt-1 ${transcriptStatus === "failed" ? "text-rose-700 dark:text-rose-300" : "text-fg-faint"}`}
-          >
-            {transcriptStatus === "in_progress" ? <Loader2 size={11} className="animate-spin" />
-              : transcriptStatus === "interrupted" ? <Pause size={11} />
-              : <AlertTriangle size={11} />}
-            <span>{transcriptStatus === "in_progress" ? "Response in progress"
-              : transcriptStatus === "interrupted" ? "Response interrupted"
-              : "Response failed"}</span>
-            {statusReason && <span className="break-words">· {statusReason}</span>}
-          </div>
-        )}
-        {isUser && "status" in message && (message.status === 'pending' || message.status === 'steering') && (
-          <span className="flex items-center gap-1 text-xs opacity-50 px-1 self-end">
-            {message.status === 'steering' ? <CornerDownRight size={10} /> : <Clock size={10} />}
-            {message.status === 'steering' ? "Steering…" : "Sending…"}
-          </span>
-        )}
-        {((!isUser && !streaming && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0)
-          || (diagnosticsVisible && (routingDecision || memoryRecall))) && (
-          <div className="mt-1 flex w-full min-w-0 flex-col items-start gap-1">
-            {!isUser && !streaming && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
-              <ToolList events={message.tool_events} errorsOnly={!diagnosticsVisible || !showToolEvents} />
-            )}
-            {diagnosticsVisible && routingDecision && <RoutingDecisionSummary decision={routingDecision} />}
-            {diagnosticsVisible && memoryRecall && (
-              <MemoryRecallBadge memoryHits={memoryRecall.memory_hits} messageHits={memoryRecall.message_hits} />
-            )}
-          </div>
-        )}
-        {citations && Array.isArray(citations.sources) && citations.sources.length > 0 && (
-          <ReferencesPanel sources={citations.sources} />
-        )}
-        {citations && Array.isArray(citations.claims) && citations.claims.length > 0 && (
-          <CitationsSummary claims={citations.claims} checkerModel={citations.checker_model ?? ""} />
-        )}
-        {redactionSummary && redactionSummary.length > 0 && (
-          <RedactionShield summary={redactionSummary} />
-        )}
-        {refs.length > 0 && <RefsFooter refs={refs} />}
-      </div>
-    </div>
-  );
-});
+}

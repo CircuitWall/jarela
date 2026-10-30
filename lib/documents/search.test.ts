@@ -8,10 +8,13 @@ const mocks = vi.hoisted(() => ({
   rows: [] as Array<Record<string, unknown>>,
   recallPolicy: vi.fn(),
   cosine: vi.fn((_query: number[], vector: number[]) => vector[0]),
+  all: vi.fn(),
+  run: vi.fn(() => ({ changes: 1 })),
+  prepare: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
-  getDb: () => ({ prepare: () => ({ all: () => mocks.rows }) }),
+  getDb: () => ({ prepare: mocks.prepare }),
 }));
 vi.mock("@/lib/embeddings", () => ({
   embedQueryOne: mocks.embedQueryOne,
@@ -43,6 +46,9 @@ function row(id: string, score: number | null, text: string) {
 
 describe("searchDocuments similarity threshold", () => {
   beforeEach(() => {
+    mocks.all.mockReset().mockImplementation(() => mocks.rows);
+    mocks.run.mockClear();
+    mocks.prepare.mockReset().mockImplementation(() => ({ all: mocks.all, run: mocks.run }));
     mocks.localEmbeddingsEnabled.mockReturnValue(true);
     mocks.recallPolicy.mockReturnValue(defaultDocumentRecallPolicy());
     mocks.cosine.mockImplementation((_query, vector) => vector[0]);
@@ -141,5 +147,97 @@ describe("searchDocuments similarity threshold", () => {
     mocks.recallPolicy.mockReturnValue({ ...defaultDocumentRecallPolicy(), topics: ["private topic"] });
     mocks.rows = [{ ...row("high", 0.9, "needle"), embedding_model_signature: signature }];
     await expect(searchDocuments("needle")).rejects.toThrow("Document search blocked");
+  });
+
+  it.each([undefined, "synthetic-source"])("binds the source filter and scan limit: %s", async (sourceId) => {
+    await searchDocuments("needle", { sourceId });
+    const sql = mocks.prepare.mock.calls[0][0] as string;
+    expect(sql).toContain("ds.enabled = 1");
+    expect(sql).toContain("LIMIT ?");
+    if (sourceId) {
+      expect(sql).toContain("d.source_id = ?");
+      expect(mocks.all).toHaveBeenCalledWith(sourceId, 20_000);
+      expect(sql).not.toContain(sourceId);
+    } else {
+      expect(mocks.all).toHaveBeenCalledWith(20_000);
+    }
+  });
+
+  it("executes both query forms against SQLite without returning disabled or other sources", async () => {
+    const { default: Database } = await import("better-sqlite3");
+    const db = new Database(":memory:");
+    try {
+      db.exec(`
+        CREATE TABLE document_sources (id TEXT, label TEXT, enabled INTEGER);
+        CREATE TABLE documents (id TEXT, source_id TEXT, rel_path TEXT, path TEXT);
+        CREATE TABLE document_chunks (
+          id TEXT, document_id TEXT, chunk_index INTEGER, text TEXT,
+          embedding TEXT, embedding_model_signature TEXT
+        );
+        INSERT INTO document_sources VALUES
+          ('source-a', 'A', 1), ('source-b', 'B', 1), ('source-off', 'Off', 0);
+        INSERT INTO documents VALUES
+          ('doc-a', 'source-a', 'a.md', '/a.md'),
+          ('doc-b', 'source-b', 'b.md', '/b.md'),
+          ('doc-off', 'source-off', 'off.md', '/off.md');
+        INSERT INTO document_chunks VALUES
+          ('a', 'doc-a', 0, 'needle', NULL, NULL),
+          ('b', 'doc-b', 0, 'needle', NULL, NULL),
+          ('off', 'doc-off', 0, 'needle', NULL, NULL);
+      `);
+      mocks.prepare.mockImplementation((sql: string) => db.prepare(sql));
+      expect((await searchDocuments("needle")).map((hit) => hit.document_id).sort())
+        .toEqual(["doc-a", "doc-b"]);
+      expect(await searchDocuments("needle", { sourceId: "source-b" }))
+        .toMatchObject([{ document_id: "doc-b", source_label: "B", match: "substring" }]);
+      expect(await searchDocuments("needle", { sourceId: "source-off" })).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it.each([0, -0.5, 0.86, 0.9])("only falls back for nonpositive semantic scores: %s", async (score) => {
+    mocks.rows = [row("score-boundary", score, "needle literal")];
+    const hits = await searchDocuments("needle");
+    if (score <= 0) {
+      expect(hits).toMatchObject([{ score: 0.6, match: "substring" }]);
+    } else if (score <= 0.86) {
+      expect(hits).toEqual([]);
+    } else {
+      expect(hits).toMatchObject([{ score, match: "semantic" }]);
+    }
+  });
+
+  it("uses substring matching without a query embedding", async () => {
+    mocks.embedQueryOne.mockResolvedValue(null);
+    mocks.rows = [row("no-query-vector", 0.9, "needle literal")];
+    expect(await searchDocuments("needle")).toMatchObject([{ score: 0.6, match: "substring" }]);
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
+
+  it("falls back and queues one reindex per mismatched document", async () => {
+    const document_id = "synthetic-mismatched-search-doc";
+    mocks.rows = [
+      { ...row("mismatch-a", null, "needle first"), document_id, embedding: "[1,0,0]" },
+      { ...row("mismatch-b", null, "needle second"), document_id, embedding: "[1]" },
+    ];
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      expect(await searchDocuments("needle")).toMatchObject([
+        { score: 0.6, match: "substring" }, { score: 0.6, match: "substring" },
+      ]);
+      expect(mocks.run).toHaveBeenCalledExactlyOnceWith(document_id);
+      await searchDocuments("needle");
+      expect(mocks.run).toHaveBeenCalledOnce();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("does not queue repairs or return partial results when topic validation fails", async () => {
+    mocks.recallPolicy.mockReturnValue({ ...defaultDocumentRecallPolicy(), topics: ["private topic"] });
+    mocks.rows = [{ ...row("blocked-mismatch", null, "needle"), embedding: "[1,0,0]" }];
+    await expect(searchDocuments("needle")).rejects.toThrow("Document search blocked");
+    expect(mocks.run).not.toHaveBeenCalled();
   });
 });

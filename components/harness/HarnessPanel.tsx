@@ -17,74 +17,18 @@ import { PanelMessage } from "@/components/ui/PanelMessage";
 import { confirmAction } from "@/lib/ui/confirm";
 
 export function HarnessPanel() {
-  const [harnesses, setHarnesses] = useState<Harness[]>([]);
-  const [defaultId, setDefaultId] = useState<string>("builtin:default");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Harness | "new" | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.harnesses.list();
-      setHarnesses(res.harnesses);
-      setDefaultId(res.default_harness_id);
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function handleSetDefault(id: string) {
-    try {
-      await api.harnesses.setDefault(id);
-      setDefaultId(id);
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
-
-  async function handleDelete(id: string) {
-    if (!(await confirmAction({ message: "Delete this harness? Agents pointing at it will fall back to the global default.", destructive: true }))) return;
-    try {
-      await api.harnesses.delete(id);
-      await load();
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
-
-  async function handleClone(source: Harness) {
-    const data: HarnessIn = {
-      name: `${source.name} (copy)`,
-      description: source.description,
-      sections: Object.fromEntries(
-        HARNESS_SECTION_KEYS.map((k) => [k, { ...source.sections[k] }]),
-      ),
-    };
-    try {
-      const created = await api.harnesses.create(data);
-      await load();
-      setEditing(created);
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
-
-  async function handleSave(input: HarnessIn | HarnessPatch, id?: string) {
-    if (id) {
-      await api.harnesses.update(id, input as HarnessPatch);
-    } else {
-      await api.harnesses.create(input as HarnessIn);
-    }
-    await load();
-  }
+  const {
+    setEditing,
+    loading,
+    harnesses,
+    error,
+    defaultId,
+    handleSetDefault,
+    handleClone,
+    handleDelete,
+    editing,
+    handleSave,
+  } = useHarnessLibrary();
 
   return (
     <div className="flex flex-col h-full">
@@ -179,4 +123,88 @@ export function HarnessPanel() {
       )}
     </div>
   );
+}
+
+function useHarnessLibrary() {
+  const [harnesses, setHarnesses] = useState<Harness[]>([]);
+  const [defaultId, setDefaultId] = useState<string>("builtin:default");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Harness | "new" | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.harnesses.list();
+      setHarnesses(res.harnesses);
+      setDefaultId(res.default_harness_id);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleSetDefault(id: string) {
+    try {
+      await api.harnesses.setDefault(id);
+      setDefaultId(id);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!(await confirmAction({ message: "Delete this harness? Agents pointing at it will fall back to the global default.", destructive: true }))) return;
+    try {
+      await api.harnesses.delete(id);
+      await load();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function handleClone(source: Harness) {
+    const data: HarnessIn = {
+      name: `${source.name} (copy)`,
+      description: source.description,
+      sections: Object.fromEntries(
+        HARNESS_SECTION_KEYS.map((k) => [k, { ...source.sections[k] }]),
+      ),
+    };
+    try {
+      const created = await api.harnesses.create(data);
+      await load();
+      setEditing(created);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function handleSave(input: HarnessIn | HarnessPatch, id?: string) {
+    if (id) {
+      await api.harnesses.update(id, input as HarnessPatch);
+    } else {
+      await api.harnesses.create(input as HarnessIn);
+    }
+    await load();
+  }
+
+  return {
+    setEditing,
+    loading,
+    harnesses,
+    error,
+    defaultId,
+    handleSetDefault,
+    handleClone,
+    handleDelete,
+    editing,
+    handleSave,
+  };
 }
