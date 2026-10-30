@@ -2,6 +2,12 @@
 
 Status: **Proposed; implementation blocked on boundary review**
 
+Implementation note (2026-10-30): [ADR-0113](0113-gated-workflow-runtime.md)
+permits internal orchestration and deterministic fixtures behind inactive
+production gates. This does not approve production executable staging/launch,
+new approval authority or platform cleanup claims. Earlier implementation-gate
+wording below continues to govern activation and acceptance.
+
 Date: 2026-10-28
 
 Related work: [W0 / 3.1.0](https://github.com/CircuitWall/jarela/issues/826),

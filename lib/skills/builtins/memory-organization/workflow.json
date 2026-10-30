@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "id": "memory-cleanup-review",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "now": { "type": "string", "minLength": 1 },
+      "entries": {
+        "type": "array", "maxItems": 100,
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string", "minLength": 1 },
+            "kind": { "type": "string", "enum": ["preference", "fact", "decision", "constraint", "project_context", "contact", "task"] },
+            "subject": { "type": "string", "minLength": 1 },
+            "content": { "type": "string", "minLength": 1 },
+            "status": { "type": "string", "enum": ["active", "archived"] },
+            "expires_at": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] }
+          },
+          "required": ["key", "kind", "subject", "content", "status", "expires_at"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["now", "entries"],
+    "additionalProperties": false
+  },
+  "steps": [
+    {
+      "id": "plan",
+      "kind": "script",
+      "action": "plan_memory_cleanup",
+      "effect": "read",
+      "maxAttempts": 1,
+      "timeoutMs": 5000,
+      "input": { "from": "invocation" },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "now": { "type": "string", "minLength": 1 },
+          "entries": {
+            "type": "array", "maxItems": 100,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string", "minLength": 1 },
+                "kind": { "type": "string", "enum": ["preference", "fact", "decision", "constraint", "project_context", "contact", "task"] },
+                "subject": { "type": "string", "minLength": 1 },
+                "content": { "type": "string", "minLength": 1 },
+                "status": { "type": "string", "enum": ["active", "archived"] },
+                "expires_at": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] }
+              },
+              "required": ["key", "kind", "subject", "content", "status", "expires_at"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["now", "entries"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "ok": { "type": "boolean", "enum": [true] },
+          "expired_keys": { "type": "array", "maxItems": 100, "items": { "type": "string" } },
+          "duplicate_groups": {
+            "type": "array", "maxItems": 50,
+            "items": { "type": "array", "minItems": 2, "maxItems": 100, "items": { "type": "string" } }
+          },
+          "checks": { "type": "array", "items": { "type": "string" } },
+          "limitation": { "type": "string", "minLength": 1 }
+        },
+        "required": ["ok", "expired_keys", "duplicate_groups", "checks", "limitation"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "review",
+      "kind": "choice",
+      "action": "ask_choice",
+      "effect": "read",
+      "maxAttempts": 1,
+      "input": { "from": "step", "step": "plan" },
+      "inputSchema": { "type": "object", "properties": {}, "additionalProperties": true },
+      "outputSchema": {
+        "type": "object",
+        "properties": { "decision": { "type": "string", "enum": ["keep", "review"] } },
+        "required": ["decision"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

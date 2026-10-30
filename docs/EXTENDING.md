@@ -331,6 +331,67 @@ to stop the owned process. This helper neither terminates nor observes processes
 Diagnostics are untrusted, potentially sensitive script output; the helper
 does not sanitize them or authorize display/persistence.
 
+### Gated staged runner and durable coordinator (Unreleased)
+
+[ADR-0113](adr/0113-gated-workflow-runtime.md) describes the internal implementation,
+not an activated execution feature. There is no new callable tool, route,
+environment opt-in, startup migration or production process-owner adapter.
+The exported production-availability constants remain false.
+
+- `lib/stores/skill-run-staging.ts` creates unique run-owned directories under
+  `JARELA_DB_DIR/skill-runs`, writes captured bytes exclusively and verifies
+  content, directory identity and absence of unexpected entries before launch.
+  The writable workspace is separate and its canonical filesystem identity is
+  checked twice. Mode bits do not provide same-user isolation or Windows ACL
+  guarantees. A hostile same-user path race is outside this contract.
+- `lib/skills/execution-runner.ts` orchestrates strict input validation,
+  exact revision/input/runtime/limit binding, live policy rechecks, one-use
+  consent consumption, direct `process.execPath`/argv and an empty environment.
+  A required trusted host adapter owns launch, raw pipes, completion and
+  descendant termination. There is deliberately no default backend claiming
+  arbitrary-code process-tree cleanup from immediate-child exit alone.
+- The runner bounds execution and cleanup waits, withholds results after
+  failed exit, cancellation, timeout, protocol failure or unverified cleanup,
+  and disposes staging only after verified process cleanup. Unverified cleanup
+  retains staging and reports failure; restart never executes leftover files.
+  Retention/cleanup of crash leftovers still needs production review.
+- `lib/workflows/definition.ts` parses inert strict version-1 JSON, limited to
+  32 sequential steps and 64 KiB. Tool/script/validate/choice steps each declare
+  input/output schemas and either literal input, separately schema-checked run
+  invocation data, or a backward-only checked output/path binding. No expression language, dynamic imports or graph loops
+  are evaluated. Required inputs remain objects.
+- `lib/workflows/runtime.ts` checks every binding and output before downstream
+  consumption. Its sole retry coordinator permits at most three attempts for
+  declared read operations and six retries per run. Script launches, choices
+  and writes do not automatically retry. The trusted host must independently
+  verify operation replay classification and permissions; declarations cannot
+  make full-trust script code read-only.
+- `lib/stores/workflow-runs.ts` is an explicitly constructed SQLite store
+  with versioned compare-and-swap updates and 512 KiB state bounds. It is not
+  connected to the active application database on startup. Choices persist
+  with exact run/revision/step/version checks, but answers are never script
+  consent. Interrupted writes become uncertain and require validated observed
+  reconciliation, not replay. Recovery of an interrupted owner requires a
+  host attestation that the old owner is dead. Model-generated outputs retain
+  their label; schema validity is not factual verification.
+
+Tests combine real reviewed memory-cleanup CLI execution through staged runner
+orchestration with a deterministic failed check/retry, tool steps, human choice
+and synthetic archival/read-back. They also cover policy/binding refusal,
+timeout/cancel, cleanup refusal, database reopen, stale/duplicate answers,
+owner claims, retry budgets and uncertain writes. Test adapters know the
+reviewed fixture never spawns descendants; these results are not platform
+process-tree certification, live provider evaluation or milestone completion.
+Production adapter/approval/UI wiring, durable-state deployment/retention review,
+cross-host checks and human walkthroughs remain activation/acceptance work.
+
+The Memory Organization bundle also includes an inert `workflow.json` example:
+supplied fact projections flow into the existing planner, then a typed keep/review
+choice. It never archives or deletes. Its invocation and planner schemas are
+checked against `execution.json` in tests to detect drift. Sharing/reading this
+definition neither runs it nor authorizes its script step. The workflow definition
+has its own content revision, separate from the script artifact/consent revision.
+
 ### Internal in-memory artifact capture (Unreleased)
 
 `SkillExecutionArtifact.capture` is an internal, opt-in content-capture helper,

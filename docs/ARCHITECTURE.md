@@ -155,6 +155,28 @@ over bounded copied pipe bytes with strict UTF-8. It creates no process and
 cannot attest exit status, authorization or process-tree cleanup; a captured
 schema-valid value is not a successful execution.
 
+Inactive runner/workflow modules implement the orchestration proposed in
+[ADR-0113](adr/0113-gated-workflow-runtime.md). `lib/stores/skill-run-staging.ts`
+owns explicit run directories under the data directory;
+`lib/skills/execution-runner.ts` consumes the existing artifact, consent and
+output contracts but requires a trusted process-owner adapter. No production
+adapter or callable execution surface is registered. The bounded sequential
+definition/coordinator under `lib/workflows/` uses an explicitly constructed
+`lib/stores/workflow-runs.ts` SQLite CAS store, not generic memory or a second
+retry loop around model workflow progress. This table is not created by active
+startup/migrations. Production activation remains false.
+
+```mermaid
+flowchart LR
+  Host["Inactive trusted host adapter"] --> Coordinator["Bounded workflow coordinator"]
+  Coordinator --> RunStore["Explicit workflow CAS store"]
+  Coordinator --> Runner["Gated staged skill orchestration"]
+  Runner --> Staging["Run-owned captured bytes"]
+  Runner --> Consent["Exact one-use consent and current policy"]
+  Runner --> Owner["Required process-tree owner (no production backend)"]
+  Owner --> Capture["Bounded raw output and schema checks"]
+```
+
 Unreleased skill execution consent policy is managed by the Security UI through
 `app/api/v1/security/skill-execution/route.ts`, restricted to unlocked loopback
 requests. `lib/stores/app-settings.ts` validates and persists it in the existing
