@@ -41,6 +41,31 @@ Meaning:
 - [hooks/useUrlSync.ts](../hooks/useUrlSync.ts)
 - [hooks/useLocationSharing.ts](../hooks/useLocationSharing.ts)
 - [hooks/useEventNotifications.ts](../hooks/useEventNotifications.ts)
+- [hooks/useIntegrationOAuth.ts](../hooks/useIntegrationOAuth.ts) (unreleased)
+
+### Integration OAuth lifecycle (unreleased)
+
+[IntegrationCard](../components/credentials/IntegrationCard.tsx) retains credential
+fields, Save/Test/Delete actions, and shared error/result feedback.
+`useIntegrationOAuth` owns Gmail/Outlook authorization start, the popup, and status
+polling through the existing typed API client. It accepts the integration name,
+optional bound credential ID, configured status, current field values, and
+feedback/refresh callbacks; it returns `state.connecting` and
+`commands.connectOAuth`, with matching flat fields. Errors and results use the
+card's callbacks rather than duplicate feedback state in the hook.
+
+The hook preserves bundled Gmail setup, Outlook's app-input guard, input
+sanitization, saved-mask omission, targeted credential IDs, existing messages,
+1.5-second polling, and expiry on the first poll tick after ten minutes.
+Only one status request runs at a time. Unmounting, changing integration or
+credential identity, completion, expiry, and failure invalidate the session, so
+late responses cannot update the card or a later authorization attempt.
+Expiry is checked even while a status request is pending.
+
+Validate the return contract with
+[hook tests](../hooks/useIntegrationOAuth.test.ts) and user-visible behavior with
+[card tests](../components/credentials/IntegrationCard.test.tsx). These are mocked
+local checks, not proof of vendor consent or resource authorization.
 
 ## Behavioral guarantees
 

@@ -1,11 +1,11 @@
 "use client";
 import { CheckCircle2, ExternalLink, Link as LinkIcon, Loader2, Star, Terminal, Trash2, XCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition, IntegrationField, IntegrationStatus } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
 import { isMaskedSecret } from "@/lib/utils/secret-mask";
-import { sanitizeOAuthInput } from "@/lib/utils/oauth-input";
+import { useIntegrationOAuth } from "@/hooks/useIntegrationOAuth";
 
 import { confirmAction } from "@/lib/ui/confirm";
 
@@ -30,7 +30,7 @@ import { confirmAction } from "@/lib/ui/confirm";
  * Owns default, named, and new integration credential editing.
  * OAuth completion refreshes the parent; masked fields are omitted on named
  * credential saves so reconnecting cannot replace a saved secret with its mask.
- * Polling is stopped on unmount, completion, expiry, or failure.
+ * The OAuth hook owns polling, cleanup, and stale-response isolation.
  */
 export function IntegrationCard({
   definition: def,
@@ -61,90 +61,15 @@ export function IntegrationCard({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
-  const popupRef = useRef<Window | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Stop any in-flight OAuth polling on unmount.
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-
-  async function connectOAuth(provider: "gmail" | "outlook") {
-    setError(null);
-    setTestResult(null);
-    // Strip ALL whitespace (incl. zero-width chars from password-manager
-    // paste) — `.trim()` alone leaves them and Google then rejects with
-    // `invalid_client`. Same sanitizer runs server-side as a backstop.
-    const clientId = sanitizeOAuthInput(values.client_id);
-    const clientSecret = sanitizeOAuthInput(values.client_secret);
-    // Gmail ships a bundled Jarela Desktop OAuth client (PKCE-protected),
-    // so Connect works with no user input. Outlook still requires a BYO
-    // Azure app registration until that side is verified — keep the
-    // explicit guard for the outlook path only.
-    const hasSavedSource = !!editingId || !!status?.configured;
-    if (provider === "outlook" && !hasSavedSource && (!clientId || !clientSecret)) {
-      setError("Enter the OAuth client ID and client secret first.");
-      return;
-    }
-    setConnecting(true);
-    try {
-      const startFn = provider === "gmail"
-        ? api.integrations.gmailOauthStart
-        : api.integrations.outlookOauthStart;
-      const statusFn = provider === "gmail"
-        ? api.integrations.gmailOauthStatus
-        : api.integrations.outlookOauthStatus;
-      const label = provider === "gmail"
-        ? "Gmail"
-        : "Outlook";
-
-      const r = await startFn({
-        client_id: clientId && !isMaskedSecret(clientId) ? clientId : undefined,
-        client_secret: clientSecret && !isMaskedSecret(clientSecret) ? clientSecret : undefined,
-        credential_id: editingId ?? undefined,
-      });
-      popupRef.current = window.open(r.authorize_url, `jarela-${provider}-oauth`, "width=560,height=720");
-      if (!popupRef.current) {
-        setError("Browser blocked the OAuth popup. Allow popups for this site and retry.");
-        setConnecting(false);
-        return;
-      }
-      const startedAt = Date.now();
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(async () => {
-        if (Date.now() - startedAt > 10 * 60_000) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setConnecting(false);
-          setError("Timed out waiting for authorization.");
-          return;
-        }
-        try {
-          const s = await statusFn(r.state);
-          if (s.status === "done") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            setConnecting(false);
-            setTestResult({ ok: true, message: `Connected to ${label}. Refresh token saved.` });
-            try { popupRef.current?.close(); } catch { /* ignore */ }
-            onChanged();
-          } else if (s.status === "error") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            setConnecting(false);
-            setError(s.error ?? "Authorization failed.");
-          } else if (s.status === "unknown") {
-            if (pollRef.current) clearInterval(pollRef.current);
-            setConnecting(false);
-            setError("Authorization session expired.");
-          }
-        } catch (e) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setConnecting(false);
-          setError(errorMessage(e));
-        }
-      }, 1500);
-    } catch (e) {
-      setConnecting(false);
-      setError(errorMessage(e));
-    }
-  }
+  const { state: { connecting }, commands: { connectOAuth } } = useIntegrationOAuth({
+    integrationName: def.name,
+    credentialId: editingId,
+    configured: status?.configured,
+    values,
+    onChanged,
+    onError: setError,
+    onResult: setTestResult,
+  });
 
   // Re-seed when the status changes (e.g. after save returns updated mask).
   useEffect(() => {

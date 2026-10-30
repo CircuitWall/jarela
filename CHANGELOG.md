@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Extract credential-card OAuth lifecycle into a tested UI hook; prevent
+  overlapping status polls and stale authorization responses after unmount,
+  credential changes, timeout, or retry without changing API payloads.
 - Separate caller argument errors from suspected tool defects, exclude them
   from telemetry complaints, and require the configured escalation threshold
   for internal validation failures.

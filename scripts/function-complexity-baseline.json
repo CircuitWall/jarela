@@ -17,7 +17,7 @@
     "components/chat/useThreadData.ts::useThreadData#1": 159,
     "components/credentials/AddCredentialDialog.tsx::AddCredentialDialog#1": 224,
     "components/credentials/CredentialsPanel.tsx::CredentialsListPanel#1": 248,
-    "components/credentials/IntegrationCard.tsx::IntegrationCard#1": 373,
+    "components/credentials/IntegrationCard.tsx::IntegrationCard#1": 298,
     "components/env/EnvVarsPanel.tsx::EnvVarsPanel#1": 308,
     "components/harness/HarnessPanel.tsx::HarnessPanel#1": 164,
     "components/integrations/AllowedSitesSection.tsx::AllowedSitesSection#1": 159,
