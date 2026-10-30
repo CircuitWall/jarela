@@ -29,6 +29,7 @@ import { renderDocumentationPrompt } from "../../scripts/release-docs.mjs";
 import { RELEASE_DOCUMENTATION_GUIDANCE } from "@/lib/lifecycle/changesets";
 import { buildAdoptionPrompt } from "@/lib/stores/version-adoption";
 import { buildProposalResponseMessage } from "@/lib/proposals/response-message";
+import { buildAdvertisementMessages } from "@/lib/agents/advertisement-prompt";
 
 export interface StaticPrompt {
   id: string;
@@ -67,6 +68,15 @@ export function listStaticPrompts(): StaticPrompt[] {
   const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
   const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
   const prompts: StaticPrompt[] = [
+    {
+      id: "agent-advertisement",
+      source: "lib/agents/advertisement-prompt.ts",
+      purpose: "Derive bounded specialization data from explicitly authorized committed configuration.",
+      text: renderMessages(buildAdvertisementMessages({
+        name: "Synthetic specialist", identity: "Example role", instructions: "Summarize synthetic fixtures",
+        authorized_tools: [{ name: "example_read", description: "Read synthetic fixture", capability: "read" }],
+      })),
+    },
     {
       id: "interaction.proposal-response",
       source: "lib/proposals/response-message.ts",
@@ -253,6 +263,9 @@ export const SYSTEM_PROMPT_SOURCE_PREFIXES = [
   "lib/agents/usage-strategy.ts",
   "lib/agents/usage-profile.ts",
   "lib/agents/prompt-variants.ts",
+  "lib/agents/delegate-catalog.ts",
+  "lib/agents/advertisement-contract.ts",
+  "lib/agents/advertisement-service.ts",
   "lib/skills/index.ts",
   "lib/skills/frontmatter.ts",
   "lib/tools/system/skills.ts",

@@ -8,7 +8,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-tool-filter-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { getAllTools, executeTool, getAllToolCatalogAsync, applyAgentPermissionsToCatalog, applyProviderToolLimitToCatalog } = await import("../index");
+const { getAllTools, executeTool, getAllToolCatalogAsync, applyAgentPermissionsToCatalog, applyProviderToolLimitToCatalog, authorizedAgentToolNames, markProxyOnlyTools } = await import("../index");
 const { setCategoryEnabled } = await import("@/lib/stores/builtin-tools");
 const { registeredCategory } = await import("./registry");
 const { _setIntegrationReadiness, invalidateIntegrationReadiness } = await import("@/lib/health/probe-cache");
@@ -18,6 +18,19 @@ afterAll(() => {
 });
 
 describe("built-in tool category filter (runtime layer)", () => {
+  it("shares canonical authority across transient readiness and proxy binding without enabling denied tools", async () => {
+    const catalog = await getAllToolCatalogAsync();
+    const cfg = { tools: JSON.stringify(["icloud_mail_send_email"]) };
+    const granted = authorizedAgentToolNames(catalog, cfg);
+    expect(granted).toContain("icloud_mail_send_email");
+    const permissions = applyAgentPermissionsToCatalog(catalog, cfg);
+    const proxy = markProxyOnlyTools(permissions, ["invoke_tool"], granted);
+    expect(authorizedAgentToolNames(proxy, cfg)).toEqual(granted);
+    expect(authorizedAgentToolNames(catalog, { tools: "[]" })).not.toContain("icloud_mail_send_email");
+    setCategoryEnabled("Mail", false);
+    expect(authorizedAgentToolNames(await getAllToolCatalogAsync(), cfg)).not.toContain("icloud_mail_send_email");
+    setCategoryEnabled("Mail", true);
+  });
   beforeEach(() => {
     // Re-enable everything between cases.
     setCategoryEnabled("Web", true);

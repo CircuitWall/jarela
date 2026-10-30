@@ -48,6 +48,15 @@ describe("parseMockDirectives", () => {
 });
 
 describe("mockProvider.chat", () => {
+  it("uses an explicitly named synthetic advertisement fixture without echoing private input", async () => {
+    const res = await mockProvider.chat("mock-advertisement-fixture", [{ role: "user", content: "PRIVATE SOURCE MUST NOT BE ECHOED" }], {});
+    const output = await collectStream(res.stream);
+    expect(JSON.parse(output)).toMatchObject({ purpose: "Review synthetic fixtures", tools: [] });
+    expect(output).not.toContain("PRIVATE SOURCE");
+    const controller = new AbortController();
+    controller.abort();
+    await expect(mockProvider.chat("mock-advertisement-fixture", [], {}, controller.signal)).rejects.toThrow();
+  });
   it("streams the default greeting echoing the user message", async () => {
     const res = await mockProvider.chat("mock-1", [
       { role: "user", content: "ping" },

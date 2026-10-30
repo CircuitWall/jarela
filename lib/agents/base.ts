@@ -1,4 +1,5 @@
 import type { RouteDecisionMetadata } from "@/api/types";
+import type { DelegationBudget } from "@/lib/agents/delegation-budget";
 
 export interface StreamFilters {
   include_tools?: boolean;
@@ -28,6 +29,8 @@ export interface AgentRunConfig {
    *  when the model config does not explicitly set one, so the provider never
    *  over-allocates output tokens beyond what the context budget reserved. */
   output_reserve_tokens?: number;
+  /** Effective hard input-context ceiling for this run, after model and strategy limits. */
+  context_window_tokens?: number;
   /** Adaptive per-turn output ceiling, bounded by explicit model and context limits. */
   max_output_tokens?: number;
   /** Provider params that lower reasoning for this run (usage strategy); never overrides explicit model config. */
@@ -50,6 +53,8 @@ export interface AgentRunConfig {
     depth: number;
     ancestors: readonly string[]; // chain of parent agent ids, oldest first
   };
+  /** Opaque runtime-only budget shared by every descendant in this root turn. */
+  delegation_budget?: DelegationBudget;
 }
 
 export interface StreamOptions {

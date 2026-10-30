@@ -25,6 +25,30 @@ deprecate in `0.X.0`, remove no earlier than `0.(X+1).0`.
 
 ---
 
+## Agent advertisements (Unreleased, UI-internal)
+
+All `/api/v1/agent-advertisements` methods require unlocked loopback access and
+return `Cache-Control: no-store`. Strict input schemas reject unknown fields;
+request bodies are bounded to 16 KiB. See
+`lib/agents/advertisement-contract.ts` and the owning route.
+
+- `GET ?agent_id=<saved-id>` returns `{ policy, advertisement }`, checking
+  current sources before exposing generated claims; omit the query for policy.
+- `PUT { policy }` saves the full explicit generation policy, requiring an
+  existing enabled named model if enabled. No provider fallback.
+- `POST { agent_id, action }`, with `regenerate`, `disable` or `enable`,
+  performs one operator control and returns current policy/state.
+
+Policy: `{ enabled, model_config_name, max_calls_per_hour, max_input_chars,
+max_output_tokens, timeout_ms }`. Advertisement state includes agent ID,
+generation ID, source/policy fingerprints, enabled flag, timestamp, safe error
+code, `pending|ready|failed|stale|disabled` status and nullable generated data.
+Generated data: `{ purpose, call_when, do_not_call_for, inputs, output, tools }`.
+Descriptions are descriptive untrusted data, not execution authority.
+Config saves use committed sources and never accept caller-supplied fingerprints
+or generated claims. Generation is separate asynchronous work; a successful
+policy/config response is not a claim that generation succeeded.
+
 ## Health
 
 ### `GET /api/v1/health`

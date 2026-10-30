@@ -7,6 +7,7 @@ export const SENSITIVE_MEMORY_NAMESPACES: ReadonlySet<string> = new Set([
   "integrations",         // Atlassian / Gmail OAuth / Gemini keys
   "github-copilot-auth",  // GitHub Copilot device-flow OAuth token
   "tool-secrets",         // Secrets for external tools (ADR-0023)
+  "agent-advertisements", // Private derived routing metadata; excluded from general recall
 ]);
 
 export function isSensitiveMemoryNamespace(ns: string): boolean {

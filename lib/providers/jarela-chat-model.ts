@@ -24,6 +24,7 @@ interface Fields {
   modelId: string;
   params: ProviderParams;
   boundTools?: StructuredToolInterface[];
+  maxRetries?: number;
 }
 
 export class JarelaChatModel extends BaseChatModel {
@@ -34,13 +35,15 @@ export class JarelaChatModel extends BaseChatModel {
   private _modelId: string;
   private _params: ProviderParams;
   private _boundTools: StructuredToolInterface[];
+  private _maxRetries?: number;
 
   constructor(fields: Fields) {
-    super({});
+    super({ maxRetries: fields.maxRetries });
     this._provider = fields.provider;
     this._modelId = fields.modelId;
     this._params = fields.params;
     this._boundTools = fields.boundTools ?? [];
+    this._maxRetries = fields.maxRetries;
   }
 
   _llmType(): string {
@@ -54,6 +57,7 @@ export class JarelaChatModel extends BaseChatModel {
       modelId: this._modelId,
       params: this._params,
       boundTools: tools,
+      maxRetries: this._maxRetries,
     });
   }
 

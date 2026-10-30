@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StreamChunk } from "@/lib/agents/base";
+import { createDelegationBudget } from "@/lib/agents/delegation-budget";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-run-thread-retry-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -23,10 +24,16 @@ const { deleteModelConfig, upsertModelConfig } = await import("@/lib/stores/mode
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 const { resetConfigCache } = await import("@/lib/env/config");
 const { createThread, getMessagesPage, getMessages } = await import("@/lib/stores/threads");
+const { setThreadContextPin, setThreadWarmSummary } = await import("@/lib/stores/threads");
+const prepareApi = await import("@/lib/agents/prepare");
+const warmSummaryBackground = await import("@/lib/agents/warm-summary-background");
 const { createAssistantTranscriptDraft, persistAssistantDraftChunk } = await import("./transcript-draft");
 const { spillFileBuffer } = await import("@/lib/attachments/spill");
 const { transientRetryStream } = await import("./run-retry");
+const retryModule = await import("./run-retry");
 const stallClassifier = await import("./hallucination-classifier");
+const citationChecker = await import("./citation-checker");
+const embeddings = await import("@/lib/embeddings");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -41,6 +48,82 @@ function chunks(...items: StreamChunk[]): AsyncIterable<StreamChunk> {
 }
 
 describe("prepareThreadRun transient retry", () => {
+  it("does not start an unbudgeted citation-checker inference for delegated output", async () => {
+    upsertAgentConfig({
+      id: "delegated-no-citation-inference",
+      name: "Delegate",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      citation_strictness: "strict",
+      anti_hallucination_model_config: "checker",
+    });
+    const thread = createThread("delegated-no-citation-inference");
+    const checkerSpy = vi.spyOn(citationChecker, "classifyCitations").mockResolvedValue(null);
+
+    try {
+      persistAssistantMessage(
+        thread.thread_id,
+        "The delegate completed the task. [1]",
+        ["delegate_to_agent"],
+        [{
+          id: "delegate-result",
+          phase: "result",
+          name: "delegate_to_agent",
+          payload: { ok: true, agent_name: "Helper", thread_id: "child-thread" },
+        }],
+        "delegation",
+      );
+
+      expect(checkerSpy).not.toHaveBeenCalled();
+    } finally {
+      checkerSpy.mockRestore();
+    }
+  });
+
+  it("does not start unbudgeted warm-summary inference for delegated runs", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "delegated-no-warm-inference", name: "Delegate", identity: "helper", instructions: "Be helpful.",
+      tools: [], model_config_name: null, usage_strategy: "high_reasoning",
+    });
+    const thread = createThread("delegated-no-warm-inference");
+    setThreadContextPin(thread.thread_id, "old boundary", 1);
+    setThreadWarmSummary(thread.thread_id, "stale summary", "previous boundary", null, null, null, 0);
+    const historyWindowSpy = vi.spyOn(prepareApi, "buildHistoryWindow");
+    const refreshSpy = vi.spyOn(warmSummaryBackground, "kickWarmSummaryRefresh");
+    const boundarySpy = vi.spyOn(warmSummaryBackground, "kickBoundaryCompaction");
+    const qualityGateSpy = vi.spyOn(retryModule, "stallRetryStream");
+    const recallSpy = vi.spyOn(embeddings, "recall");
+    streamWithConfigMock.mockReturnValue(chunks({ type: "done", data: {} }));
+
+    try {
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id,
+        message: "A bounded delegated task",
+        user_category: "delegation",
+        context_profile: { include_hot: true, include_warm: true, include_facts: false, include_recall: false },
+        _delegation_depth: 1,
+        _delegation_ancestors: ["parent-agent"],
+        _delegation_budget: createDelegationBudget(),
+      });
+
+      expect(historyWindowSpy.mock.calls[0]?.[6]).toMatchObject({ includeWarm: false });
+      expect(refreshSpy).not.toHaveBeenCalled();
+      expect(boundarySpy).not.toHaveBeenCalled();
+      expect(qualityGateSpy).not.toHaveBeenCalled();
+      expect(recallSpy).not.toHaveBeenCalled();
+      await collectStream(prepared.stream);
+    } finally {
+      historyWindowSpy.mockRestore();
+      refreshSpy.mockRestore();
+      boundarySpy.mockRestore();
+      qualityGateSpy.mockRestore();
+      recallSpy.mockRestore();
+    }
+  });
+
   it("cancels backoff without preparing another attempt", async () => {
     vi.useFakeTimers();
     const controller = new AbortController();

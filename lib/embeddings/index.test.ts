@@ -376,6 +376,15 @@ describe("searchMemory", () => {
     embedSpy.mockResolvedValue([[1, 0, 0, 0]]);
     expect(await searchMemory("private needle", { sources: "memory", literal: true })).toEqual([]);
   });
+  it.each([null, [1, 0, 0, 0]])("never recalls advertisement policy, usage or identities with vector %j", async (vector) => {
+    const { searchMemory } = await import("./index");
+    seed("app-settings", "agent-advertisement-policy", '{"model_config_name":"private advertisement needle"}', vector);
+    seed("app-settings", "agent-advertisement-usage", '"private advertisement needle"', vector);
+    seed("agent-advertisements", "private advertisement needle", '"private advertisement needle"', vector);
+    embedSpy.mockResolvedValue([[1, 0, 0, 0]]);
+    expect(await searchMemory("private advertisement needle", { sources: "memory", literal: true })).toEqual([]);
+    expect(await searchMemory("private advertisement needle", { sources: "memory", namespace: "app-settings" })).toEqual([]);
+  });
 
   it("allows a lower semantic floor without filtering literal fallbacks", async () => {
     const { searchMemory } = await import("./index");

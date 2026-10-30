@@ -3,6 +3,7 @@ import { withDbTransaction } from "@/lib/db/transaction";
 import type { MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { DEFAULT_PERSONA_STYLE } from "@/lib/agents/usage-profile";
 import type { UsageProfile } from "@/lib/agents/usage-profile";
+import { deleteAdvertisement, notifyAdvertisementSourceChanged } from "@/lib/stores/agent-advertisements";
 
 const now = () => new Date().toISOString();
 
@@ -218,6 +219,7 @@ export function compareAndSetAgentTools(id: string, expected: string, tools: str
   const updated = getDb().prepare("UPDATE agent_configs SET tools=?, updated_at=? WHERE id=? AND tools=?")
     .run(JSON.stringify([...new Set(tools)]), now(), id, expected);
   if (updated.changes !== 1) throw new Error("Agent permissions changed; request fresh review");
+  if (expected !== JSON.stringify([...new Set(tools)])) notifyAdvertisementSourceChanged(id);
 }
 
 export function parseDelegateTargets(raw: string | null | undefined): string[] {
@@ -405,7 +407,12 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
       created_at,
       t,
     );
-  return getAgentConfig(input.id)!;
+  const saved = getAgentConfig(input.id)!;
+  if (!existing || ["name", "identity", "instructions", "tools"].some((key) =>
+    saved[key as "name" | "identity" | "instructions" | "tools"] !== existing[key as "name" | "identity" | "instructions" | "tools"])) {
+    notifyAdvertisementSourceChanged(input.id);
+  }
+  return saved;
 }
 
 function clampPercent(next: number | undefined, fallback: number): number {
@@ -430,9 +437,11 @@ function serialiseToolCredentials(
 
 
 export function deleteAgentConfig(id: string): boolean {
-  return (
+  const deleted = (
     (getDb().prepare("DELETE FROM agent_configs WHERE id=?").run(id) as { changes: number }).changes > 0
   );
+  if (deleted) deleteAdvertisement(id);
+  return deleted;
 }
 
 export function generateAgentId(name: string): string {
@@ -472,6 +481,7 @@ export function duplicateAgentConfig(sourceId: string, name?: string): AgentConf
       `INSERT INTO agent_configs (id, name, is_default, created_at, updated_at, ${columns})
        SELECT ?, ?, 0, ?, ?, ${columns} FROM agent_configs WHERE id = ?`,
     ).run(id, newName, t, t, sourceId);
+    notifyAdvertisementSourceChanged(id);
     return getAgentConfig(id);
   });
 }

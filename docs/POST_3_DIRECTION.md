@@ -796,7 +796,7 @@ behavior against R11; implement only the demonstrated gaps.
 | 3.1.0 | W2. File workflow and interaction | [#828](https://github.com/CircuitWall/jarela/issues/828) | Planned; W1 needed only for script steps |
 | 3.2.0 | W3. Extension-development workflow | [#829](https://github.com/CircuitWall/jarela/issues/829) | Engineering implemented (Unreleased): exact reviewed stages, owned tests, installation denial, actual synthetic verification 10/10 and failed-update/disable/removal/restoration exercised; named ownership and second-author walkthrough remain |
 | 3.2.0 | W4. Contribution workflow | [#830](https://github.com/CircuitWall/jarela/issues/830) | Engineering implemented (Unreleased): repository-observed isolated tests/local bundles and separate commit/create-only push/draft-PR gates; named ownership and separately authorized live-remote acceptance remain |
-| 3.3.0 | W5. Agent advertisements | [#831](https://github.com/CircuitWall/jarela/issues/831) | Planned; routing baseline/design can proceed independently |
+| 3.3.0 | W5. Agent advertisements | [#831](https://github.com/CircuitWall/jarela/issues/831) | Engineering implemented (Unreleased): ADR-0116, configured generation, freshness/catalog controls and bounded handoffs; actual isolated generation 10/10 and all 164 configured production browser cases passed; named ownership, live semantic-selection evaluation and human release acceptance remain |
 
 Related items share three GitHub milestones: 3.1.0 foundations (W0-W2),
 3.2.0 authoring and contribution (W3-W4), and 3.3.0 advertisements (W5).

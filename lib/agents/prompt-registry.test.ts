@@ -40,6 +40,19 @@ const variants = await buildVariants();
 const staticPrompts = listStaticPrompts();
 
 describe("usage profile audit fixtures", () => {
+  it("assembles generated/legacy delegation as untrusted data without changing shared cache boundaries", () => {
+    const variant = variants.find((entry) => entry.id === "generated-delegate-catalog")!.prompt;
+    expect(variant).toContain("model-generated, not verified");
+    expect(variant).toContain('"provenance":"legacy"');
+    expect(variant).toContain("untrusted descriptive data");
+    expect(variant).toContain("a delegate's success is not task completion");
+    expect(variant).toContain("clarify materially overlapping specialties");
+    expect(variant).toContain("--- Enabled tools ---");
+    expect(variant).toMatch(/delegate_to_agent: execute\/builtin\/enabled/);
+    expect(variant.indexOf('"id":"fixture-reviewer"')).toBeGreaterThan(variant.indexOf(CACHE_SHARED_SPLIT_SENTINEL));
+    const prefix = variant.split(CACHE_SHARED_SPLIT_SENTINEL)[0];
+    expect(prefix).not.toContain("fixture-reviewer");
+  });
   it("renders editable profile defaults in a single persona chapter in both navigation modes", async () => {
     const { USAGE_PROFILES, USAGE_PROFILE_VALUES } = await import("./usage-profile");
     for (const profile of USAGE_PROFILE_VALUES) {
@@ -364,6 +377,7 @@ describe("prompt registry coverage", () => {
       "lib/agents/citation-checker.ts",
       "lib/agents/hallucination-classifier.ts",
       "lib/agents/conversation-summary.ts",
+      "lib/agents/advertisement-prompt.ts",
       "lib/agents/compaction-pipeline.ts",
       "lib/pricing/llm-extract.ts",
       "lib/tools/claude-delegate.ts",

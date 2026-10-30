@@ -6,6 +6,7 @@ import {
 } from "@/lib/stores/app-settings";
 import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
+import { isAdvertisementMemory } from "@/lib/agents/advertisement-contract";
 import { CHAT_ARCHIVE_NAMESPACE, parseChatArchiveKey } from "@/lib/stores/chat-archive-key";
 import {
   claimMessageEmbeddingJobs,
@@ -468,6 +469,7 @@ type MemoryRowLike = { namespace: string; key: string; value: string; created_at
 // buildRecallContext renders them exactly like a live message (role, thread
 // tag, date). A malformed archive key falls through to a plain memory hit.
 function toRecalled(r: MemoryRowLike, score: number, policy: MemoryPolicy, wantMem: boolean, wantMsg: boolean): RecalledMemory | null {
+  if (isAdvertisementMemory(r.namespace, r.key)) return null;
   if (r.namespace === "app-settings" && r.key === "document_recall_policy") return null;
   if (r.namespace === CHAT_ARCHIVE_NAMESPACE) {
     const parsed = parseChatArchiveKey(r.key);

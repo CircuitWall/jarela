@@ -157,6 +157,7 @@ export function applyAgentPermissionsToCatalog(
   catalog: readonly ToolCatalogEntry[],
   cfg: Pick<AgentConfigRow, "tools"> | null | undefined,
 ): ToolCatalogEntry[] {
+  const authorized = new Set(authorizedAgentToolNames(catalog, cfg));
   const explicitlyAllowed = new Set(getAgentTools(cfg));
   return catalog.map((entry) => {
     if (entry.status !== "enabled") {
@@ -174,7 +175,7 @@ export function applyAgentPermissionsToCatalog(
         permission_reason: unconfigured,
       };
     }
-    if (explicitlyAllowed.has(entry.name) || isDefaultBasicTool(entry.name, entry.category)) {
+    if (authorized.has(entry.name)) {
       return {
         ...entry,
         permission: "enabled" as const,
@@ -183,6 +184,7 @@ export function applyAgentPermissionsToCatalog(
           : "agent_allowed",
       };
     }
+
     return {
       ...entry,
       permission: "disabled" as const,
@@ -195,6 +197,15 @@ export function allowedToolNamesFromPermissionMap(catalog: readonly ToolCatalogE
   return catalog
     .filter((entry) => entry.permission === "enabled")
     .map((entry) => entry.name);
+}
+
+/** Authority before temporary credential/readiness checks and provider binding limits. */
+export function authorizedAgentToolNames(
+  catalog: readonly ToolCatalogEntry[], cfg: Pick<AgentConfigRow, "tools"> | null | undefined,
+): string[] {
+  const allowed = new Set(getAgentTools(cfg));
+  return catalog.filter((entry) => entry.status === "enabled"
+    && (allowed.has(entry.name) || isDefaultBasicTool(entry.name, entry.category))).map((entry) => entry.name);
 }
 
 export interface ToolBindBudgetInput {

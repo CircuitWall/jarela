@@ -96,6 +96,12 @@ async function runShutdown(): Promise<void> {
 
   // 2. Stop the scheduler so no firing kicks off mid-drain.
   try {
+    const { advertisementService } = await import("@/lib/agents/advertisement-service");
+    await advertisementService().close();
+  } catch {
+    console.error("[jarela] draining advertisement generation failed");
+  }
+  try {
     const { stopScheduler } = await import("@/lib/scheduler");
     stopScheduler();
   } catch (err) {
