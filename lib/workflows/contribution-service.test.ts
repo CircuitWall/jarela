@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, rmSync, writeFileSync, chmodSync, readFileSync, 
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
+import { PassThrough } from "node:stream";
+import type { SkillProcessOwner } from "@/lib/skills/execution-runner";
 
 const root = join(process.cwd(), "node_modules", ".cache", `contribution-tests-${randomUUID().slice(0, 8)}`);
 mkdirSync(root, { recursive: true });
@@ -18,7 +20,8 @@ resetConfigCache();
 const { closeDb } = await import("@/lib/db");
 const { getPendingAction, setActionStatus } = await import("@/lib/stores/pending-actions");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
-const { getSkillProcessOwnerAvailability, createSkillProcessOwner } = await import("@/lib/skills/process-owner");
+const processOwners = await import("@/lib/skills/process-owner");
+const { getSkillProcessOwnerAvailability, createSkillProcessOwner } = processOwners;
 const { ContributionService } = await import("./contribution-service");
 
 const agentId = "synthetic-contribution-agent";
@@ -81,9 +84,40 @@ function input(repo: ReturnType<typeof makeRepo>, override: Record<string, unkno
   };
 }
 
+// Test adapter for these fixed, cooperative fixture scripts only. This is not a
+// production containment backend and makes no hostile-descendant cleanup claim.
+function fixtureProcessOwner(): SkillProcessOwner {
+  return {
+    launch(input) {
+      const child = spawn(input.executable, [...input.args], {
+        cwd: input.cwd,
+        env: process.platform === "win32" ? { ...input.env, SystemRoot: process.env.SystemRoot } : input.env,
+        windowsHide: true, stdio: ["pipe", "pipe", "pipe"],
+      });
+      child.stdin.on("error", () => {});
+      child.stdin.end(input.stdin);
+      let closed = false;
+      const completion = new Promise<{ exitCode: number | null; signal: string | null }>((done, reject) => {
+        child.once("error", reject);
+        child.once("close", (exitCode, signal) => { closed = true; done({ exitCode, signal }); });
+      });
+      return {
+        stdout: child.stdout, stderr: child.stderr, completion,
+        async stopAndVerifyTree() {
+          if (!closed) child.kill();
+          await completion.catch(() => undefined);
+          return closed;
+        },
+      };
+    },
+  };
+}
+
 function service(overrides: Partial<ConstructorParameters<typeof ContributionService>[0]> = {}) {
   const instance = new ContributionService({
     allowed: () => true,
+    ownedProcessAvailable: () => true,
+    processOwner: fixtureProcessOwner,
     githubAuth: () => ({ token: "synthetic-github-token-not-a-real-credential" }),
     githubFetch: async (_auth, path, init) => path.endsWith("/pulls") && init?.method === "POST"
       ? {
@@ -235,9 +269,25 @@ describe("trusted repository contribution lifecycle", { timeout: 120_000 }, () =
 
   it("fails closed when the owned process host is unavailable", async () => {
     const repo = makeRepo();
-    const instance = service({ ownedProcessAvailable: () => false });
+    const processOwner = vi.fn(fixtureProcessOwner);
+    const instance = service({ ownedProcessAvailable: () => false, processOwner });
     await expect(instance.start(agentId, repo.workspace, input(repo))).rejects.toThrow(/Owned process execution is unavailable/);
+    expect(processOwner).not.toHaveBeenCalled();
+    expect(execFileSync("git", ["branch", "--list", input(repo).branch], { cwd: repo.workspace, encoding: "utf8" })).toBe("");
     expect(getSkillProcessOwnerAvailability().available).toBeTypeOf("boolean");
+  });
+
+  it("uses the native unavailable-host check when no capability override is supplied", async () => {
+    const availability = vi.spyOn(processOwners, "getSkillProcessOwnerAvailability")
+      .mockReturnValue({ available: false, reason: "Synthetic unsupported native host" });
+    const processOwner = vi.fn(fixtureProcessOwner);
+    try {
+      const repo = makeRepo();
+      const instance = service({ ownedProcessAvailable: undefined, processOwner });
+      await expect(start(instance, repo)).rejects.toThrow(/Owned process execution is unavailable/);
+      expect(processOwner).not.toHaveBeenCalled();
+      expect(execFileSync("git", ["branch", "--list", input(repo).branch], { cwd: repo.workspace, encoding: "utf8" })).toBe("");
+    } finally { availability.mockRestore(); }
   });
 
   it("builds a local exact preview without testing or publishing before approval", async () => {
@@ -488,7 +538,56 @@ describe("trusted repository contribution lifecycle", { timeout: 120_000 }, () =
     expect(getPendingAction(request.proposal_id)?.status).toBe("denied");
   });
 
-  it.each(["cancel", "shutdown"] as const)("awaits real owned hook descendant settlement on %s", async (action) => {
+  it.each(["cancel", "shutdown"] as const)("awaits injected owner settlement on %s even after state becomes unknown", async (action) => {
+    const repo = makeRepo();
+    let launched!: () => void;
+    let reachedCleanup!: () => void;
+    let releaseCleanup!: () => void;
+    const started = new Promise<void>((done) => { launched = done; });
+    const cleanupReached = new Promise<void>((done) => { reachedCleanup = done; });
+    const cleanupGate = new Promise<void>((done) => { releaseCleanup = done; });
+    let held = false;
+    const instance = service({
+      processOwner: () => {
+        const owner = fixtureProcessOwner();
+        return { launch(input) {
+          const invocation = JSON.parse(input.stdin) as { argv?: string[] };
+          if (invocation.argv?.[0] !== "commit") return owner.launch(input);
+          held = true;
+          launched();
+          const stdout = new PassThrough();
+          const stderr = new PassThrough();
+          return {
+            stdout, stderr, completion: new Promise(() => {}),
+            async stopAndVerifyTree() {
+              reachedCleanup();
+              await cleanupGate;
+              stdout.end(); stderr.end();
+              return true;
+            },
+          };
+        } };
+      },
+    });
+    const testedResult = await tested(instance, repo);
+    const pending = await instance.requestCommit(testedResult.pending.operation_id);
+    const approval = instance.approve(pending.operation_id).catch((error: unknown) => error);
+    await started;
+    expect(held).toBe(true);
+    expect(instance.inspectOperation(pending.operation_id).status).toBe("unknown");
+    let returned = false;
+    const stop = (action === "cancel" ? instance.cancel(pending.operation_id) : instance.close()).then(() => { returned = true; });
+    try {
+      await cleanupReached;
+      expect(returned).toBe(false);
+    } finally { releaseCleanup(); }
+    await stop;
+    expect(await approval).toBeInstanceOf(Error);
+    expect(instance.inspectOperation(pending.operation_id)).toMatchObject({ status: "unknown", outcome: null });
+    await expect(instance.approve(pending.operation_id)).rejects.toThrow(/not pending/);
+  });
+
+  it.skipIf(!getSkillProcessOwnerAvailability().available).each(["cancel", "shutdown"] as const)("awaits real owned hook descendant settlement on %s", async (action) => {
     const repo = makeRepo();
     let reachedCleanup!: () => void;
     let releaseCleanup!: () => void;
@@ -539,9 +638,9 @@ describe("trusted repository contribution lifecycle", { timeout: 120_000 }, () =
     await expect(instance.approve(pending.operation_id)).rejects.toThrow(/not pending/);
   });
 
-  it("times out an owned hook and reaps its child before reporting unknown", async () => {
+  it.skipIf(!getSkillProcessOwnerAvailability().available)("times out an owned hook and reaps its child before reporting unknown", async () => {
     const repo = makeRepo();
-    const instance = service({ gitTimeoutMs: 5_000 });
+    const instance = service({ gitTimeoutMs: 5_000, processOwner: createSkillProcessOwner });
     const result = await tested(instance, repo);
     hook(repo.workspace, "pre-commit", hangingHook);
     const pending = await instance.requestCommit(result.pending.operation_id);
