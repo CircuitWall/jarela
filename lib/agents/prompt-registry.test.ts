@@ -210,6 +210,19 @@ describe("prompt registry coverage", () => {
     }
   });
 
+  it("keeps authoring evidence and execution/publication authority separate", () => {
+    const extension = staticPrompts.find((prompt) => prompt.id === "skill.extension-development")!.text;
+    const contribution = staticPrompts.find((prompt) => prompt.id === "skill.contribution-review")!.text;
+    expect(extension).toContain("no files, imports, tests or installation occur");
+    expect(extension).toContain("outside every configured tools/providers/skill-repository path");
+    expect(extension).toContain("cannot be passed to `run_skill`");
+    expect(extension).toContain("never bypass a denied/unavailable checked runner with shell");
+    expect(contribution).toContain("does not inspect the repository");
+    expect(contribution).toContain("separate exact authorization for local commit, remote");
+    expect(contribution).toContain("local execution trust or approval");
+    expect(contribution).toContain("never commits, pushes");
+  });
+
   it("keeps assembled memory recovery consistent with the skill's uncertain-write guard", () => {
     for (const { id, prompt } of variants) {
       expect(prompt, id).toContain("read back before retrying");
@@ -226,6 +239,8 @@ describe("prompt registry coverage", () => {
         "browser_screenshot", "browser_click", "browser_fill_many", "browser_fill", "tool_result_get",
         "memory_list", "memory_read", "memory_write",
       ],
+      "extension-development": ["list_tools", "describe_extension_surfaces", "scaffold_extension", "run_skill", "workflow_progress"],
+      "contribution-review": ["list_tools", "prepare_contribution_bundle", "workflow_progress"],
       "jarela-configuration": [
         "read_agent_instruction", "update_agent_instruction", "list_tools", "list_skills",
         "read_skill", "write_skill", "describe_extension_surfaces", "propose_config_change",

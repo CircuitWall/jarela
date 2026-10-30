@@ -48,6 +48,7 @@ describe("describe_extension_surfaces", () => {
     expect(ids).toContain("llm_provider_builtin");
     expect(ids).toContain("llm_provider_external");
     expect(ids).toContain("builtin_tool");
+    expect(ids).toContain("external_tool");
     expect(ids).toContain("mcp_server");
     expect(ids).toContain("agent_harness");
     expect(ids).toContain("integration_manifest");

@@ -278,12 +278,20 @@ Jarela supports explicit extension points for:
 - built-in LLM providers
 - external provider plugins
 - built-in tools
+- external drop-in tools
 - MCP servers
 - custom harnesses
 - integration manifests
 - app branding / runtime config
 
 Use the agent tool `describe_extension_surfaces` and the docs guide for the correct entry point before editing frameworks or config.
+
+**Unreleased W3/W4 starting slice:** the `extension-development` and
+`contribution-review` built-in skills pair with `scaffold_extension` and
+`prepare_contribution_bundle`. They return inert template/review text with exact
+revisions, not installed extensions or published contributions. See the
+[authoring guide](docs/EXTENDING.md#inert-authoring-and-local-contribution-bundles-unreleased)
+for scope, privacy limitations and separate execution/install/publication gates.
 
 ## Repository structure
 

@@ -1,0 +1,10 @@
+{
+  "name": "Reuse blocks unnecessary scaffolding",
+  "tool": "scaffold_extension",
+  "input": {
+    "name": "fixture_echo",
+    "goal": "Read a local fixture",
+    "discovery": { "decision": "reuse", "evidence": "A configured fixture tool already exists" }
+  },
+  "expect": { "ok": false, "issue_paths": ["discovery.decision"] }
+}

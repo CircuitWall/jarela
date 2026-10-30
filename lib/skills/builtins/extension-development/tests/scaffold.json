@@ -1,0 +1,10 @@
+{
+  "name": "Inert local synthetic scaffold",
+  "tool": "scaffold_extension",
+  "input": {
+    "name": "fixture_echo",
+    "goal": "Read an explicitly configured local synthetic fixture",
+    "discovery": { "decision": "author", "evidence": "No configured fixture echo tool" }
+  },
+  "expect": { "ok": true }
+}
