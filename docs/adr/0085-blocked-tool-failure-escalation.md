@@ -58,6 +58,25 @@ failures from expected skips without storing raw arguments or user content.
 
 ## More Information
 
+### Amendment: caller input errors and escalation thresholds (2026-10-30, unreleased)
+
+Explicit tool-input schema rejections and the proxy's `invalid_tool_arguments`
+and `bad_args_json` error codes are classified as `caller_argument_error`, with
+normalized reason `caller_arguments`. They remain in local usage statistics and
+failure samples, but are excluded from complaint drafts and the automatic
+global failure metric. Internal or downstream validation errors remain
+`validation` / `suspected_product_gap`; the word "validation" alone is not
+evidence of a caller mistake.
+
+Existing samples with a recognizable input-schema rejection are reclassified
+when read, without rewriting stored evidence or changing the table layout.
+Ambiguous historical samples retain their existing classification.
+
+Every product-gap pattern, including internal validation failures, must meet
+the configured pattern threshold (default 3) before automatic escalation.
+Validation no longer bypasses that threshold. Category, credential, schedule,
+and duplicate-report gates still apply.
+
 * `lib/stores/tool-stats.ts`
 * `lib/tools/system/tool-telemetry-issue.ts`
 * Issue #507

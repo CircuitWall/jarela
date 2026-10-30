@@ -51,7 +51,7 @@ export function buildToolTelemetryComplaintIssue(input: TelemetryIssueInput = {}
   const minFailureCount = Math.max(1, Math.floor(input.min_failure_count ?? DEFAULT_MIN_FAILURE_COUNT));
   const maxTools = Math.min(50, Math.max(1, Math.floor(input.max_tools ?? 10)));
   const statsMap = getToolStatsMap(requestedNames.length > 0 ? requestedNames : undefined);
-  const failureSamples = listToolFailureSamples();
+  const failureSamples = listToolFailureSamples().filter((sample) => sample.failure_class !== "caller_argument_error");
   const failuresByTool = new Map<string, ToolFailureSampleRow[]>();
   for (const sample of failureSamples) {
     const rows = failuresByTool.get(sample.tool_name) ?? [];
@@ -238,7 +238,7 @@ function findEscalationPattern(
   const minimum = Math.max(1, Math.floor(threshold));
   return samples
     .filter((sample) => sample.failure_class === "suspected_product_gap")
-    .filter((sample) => sample.normalized_reason === "validation" || sample.count >= minimum)
+    .filter((sample) => sample.count >= minimum)
     .sort((a, b) => b.count - a.count || b.last_seen_at.localeCompare(a.last_seen_at))[0] ?? null;
 }
 
@@ -296,7 +296,7 @@ function failureCount(row: TelemetryToolRow): number {
 }
 
 function totalFailurePatternCount(samples: readonly ToolFailureSampleRow[]): number {
-  return samples.reduce((sum, sample) => sum + sample.count, 0);
+  return samples.reduce((sum, sample) => sum + (sample.failure_class === "caller_argument_error" ? 0 : sample.count), 0);
 }
 
 function telemetrySeverity(row: TelemetryToolRow): number {

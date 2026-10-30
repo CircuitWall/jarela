@@ -188,4 +188,40 @@ describe("report_tool_telemetry_issue", () => {
     expect(result.skipped).toBe(true);
     expect(result.reason).toBe("threshold_not_met");
   });
+
+  it.each([1, 2, 3])("requires the pattern threshold for internal validation failures (count=%s)", async (count) => {
+    process.env.GH_TOKEN = "ghp_test";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ number: 456 }), { status: 201 }),
+    );
+    for (let i = 0; i < count; i++) {
+      recordToolUsage([
+        { id: `threshold-${i}`, phase: "call", name: "internal_validation", payload: {} },
+        { id: `threshold-${i}`, phase: "result", name: "internal_validation", payload: { error: "response schema validation failed" } },
+      ], "");
+    }
+    const result = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-04T00:00:00.000Z"), {
+      failureThreshold: 100_000, patternFailureThreshold: 3,
+    });
+    expect(result.skipped).toBe(count < 3);
+    expect(fetchMock).toHaveBeenCalledTimes(count < 3 ? 0 : 1);
+  });
+
+  it("keeps repeated caller mistakes out of issue drafts and both automatic thresholds, including old rows", async () => {
+    process.env.GH_TOKEN = "ghp_test";
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    for (let i = 0; i < 3; i++) {
+      recordToolUsage([
+        { id: `caller-${i}`, phase: "call", name: "caller_typo", payload: { context: 6 } },
+        { id: `caller-${i}`, phase: "result", name: "caller_typo", payload: { error: "Received tool input did not match expected schema\ncontext must be <=5" } },
+      ], "");
+    }
+    getDb().prepare("UPDATE tool_failure_samples SET normalized_reason='validation', failure_class='suspected_product_gap' WHERE tool_name='caller_typo'").run();
+    expect(buildToolTelemetryComplaintIssue({ tool_names: ["caller_typo"], min_failure_count: 1 }).tool_count).toBe(0);
+    const result = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-04T00:00:00.000Z"), {
+      failureThreshold: 1, patternFailureThreshold: 1,
+    });
+    expect(result).toMatchObject({ skipped: true, reason: "threshold_not_met", metric: { value: 0 } });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

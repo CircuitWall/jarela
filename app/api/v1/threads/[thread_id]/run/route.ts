@@ -39,7 +39,8 @@ import { createAssistantTranscriptDraft, persistAssistantDraftChunk, type Assist
 type Params = { params: Promise<{ thread_id: string }> };
 
 const enc = new TextEncoder();
-const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
+const sse = (obj: Record<string, unknown>, eventId?: string) =>
+  enc.encode(`${eventId ? `id: ${eventId}\n` : ""}data: ${JSON.stringify(obj)}\n\n`);
 
 // Persist a `run_error` marker row so a failed turn survives reload and
 // cross-device sync even when no assistant content was produced. The row
@@ -534,7 +535,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     }
   }
 
-  return attachStream(thread_id, stream_options);
+  return attachStream(thread_id, stream_options, req.headers.get("last-event-id"));
 }
 
 const SteerBody = z.object({ message: z.string().min(1) });
@@ -578,6 +579,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 function attachStream(
   thread_id: string,
   stream_options?: StreamOptions,
+  lastEventId?: string | null,
 ): Response {
   // Captured by both start() and cancel() so the cancel branch can tear
   // down the poll timer + subscription when the client disconnects.
@@ -595,12 +597,27 @@ function attachStream(
         try { controller.enqueue(chunk); } catch { clientGone = true; }
       };
 
-      const onEvent = (ev: StreamChunk) => {
+      const onEvent = (ev: StreamChunk, eventId: string) => {
         if (!shouldEmitChunk(ev.type, stream_options)) return;
-        safeEnqueue(sse({ type: ev.type, ...ev.data }));
+        safeEnqueue(sse({ type: ev.type, ...ev.data }, eventId));
       };
 
-      const sub = subscribe(thread_id, onEvent);
+      const sub = subscribe(thread_id, onEvent, lastEventId, (run) => {
+        const toolEvents = run.events.filter((event) =>
+          ["tool_call", "tool_result", "tool_progress"].includes(event.type)
+          && shouldEmitChunk(event.type, stream_options));
+        safeEnqueue(sse({
+          type: "stream_snapshot",
+          text: run.final_text,
+          tool_events: toolEvents.map((event) => ({ type: event.type, ...event.data })),
+          message: "The replay cursor expired or changed. Restored current response; earlier tool details may be unavailable. No actions were restarted.",
+        }, `${run.id}:${run.event_sequence}`));
+        if (run.status !== "running") {
+          const terminal = [...run.events].reverse().find((event) => event.type === "error")
+            ?? [...run.events].reverse().find((event) => event.type === "done");
+          safeEnqueue(sse(terminal ? { type: terminal.type, ...terminal.data } : { type: "done" }));
+        }
+      });
       unsubscribe = sub.unsubscribe;
       if (!sub.run) {
         try { controller.close(); } catch { /* */ }

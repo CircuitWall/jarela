@@ -177,6 +177,50 @@ describe("tool usefulness telemetry", () => {
     });
   });
 
+  it("separates caller schema rejections from internal validation failures", () => {
+    const name = `caller_schema_${Date.now()}`;
+    recordToolUsage([
+      { id: "caller", phase: "call", name, payload: { context: 6 } },
+      { id: "caller", phase: "result", name, payload: { error: "Received tool input did not match expected schema\ncontext must be <=5" } },
+      { id: "internal", phase: "call", name, payload: { context: 1 } },
+      { id: "internal", phase: "result", name, payload: { error: "response schema validation failed" } },
+    ], "");
+
+    expect(listToolFailureSamples(name)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ normalized_reason: "caller_arguments", failure_class: "caller_argument_error", count: 1 }),
+      expect.objectContaining({ normalized_reason: "validation", failure_class: "suspected_product_gap", count: 1 }),
+    ]));
+  });
+
+  it.each(["invalid_tool_arguments", "bad_args_json"])("recognizes structured caller errors (%s)", (code) => {
+    for (const payload of [{ error_code: code, error: "invalid field" }, JSON.stringify({ error_code: code, error: "invalid field" })]) {
+      const samples = summarizeToolFailureSamples([{ id: "typed", phase: "result", name: "invoke_tool", payload }]);
+      expect(samples[0]).toMatchObject({ reason: "caller_arguments", failureClass: "caller_argument_error" });
+    }
+  });
+
+  it.each(["", "Error: "])("recognizes SDK and ToolNode input rejections (prefix=%s)", (prefix) => {
+    const samples = summarizeToolFailureSamples([{
+      id: "plain", phase: "result", name: "file_grep",
+      payload: `${prefix}Received tool input did not match expected schema\ncontext must be <=5`,
+    }]);
+    expect(samples[0]).toMatchObject({ reason: "caller_arguments", failureClass: "caller_argument_error" });
+  });
+
+  it("reclassifies historical boundary rejections on read without rewriting stored evidence", () => {
+    const name = `historical_schema_${Date.now()}`;
+    recordToolUsage([
+      { id: "old", phase: "call", name, payload: { context: 6 } },
+      { id: "old", phase: "result", name, payload: { error: "Error: Received tool input did not match expected schema" } },
+    ], "");
+    getDb().prepare("UPDATE tool_failure_samples SET normalized_reason='validation', failure_class='suspected_product_gap' WHERE tool_name=?").run(name);
+    expect(listToolFailureSamples(name)[0]).toMatchObject({
+      normalized_reason: "caller_arguments", failure_class: "caller_argument_error", count: 1,
+    });
+    expect(getDb().prepare("SELECT normalized_reason FROM tool_failure_samples WHERE tool_name=?").get(name))
+      .toMatchObject({ normalized_reason: "validation" });
+  });
+
   it("prunes stale failure samples by TTL", () => {
     const old = "2026-01-01T00:00:00.000Z";
     const current = "2026-02-15T00:00:00.000Z";

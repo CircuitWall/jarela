@@ -62,6 +62,21 @@ whole skill directory, not just its Markdown. Tests copy bundles outside the
 app and compare standalone results with typed-tool results; this is portability
 evidence under Node, not Claude Code or other-host certification.
 
+Resolve the script relative to the loaded `SKILL.md`, never relative to the
+workspace or a hard-coded Jarela checkout. For example, a host may install the
+whole bundle under `.github/skills/`, `.agents/skills/`, `.claude/skills/` or a
+personal skill directory. Pass the resolved absolute script path as one Node
+argument (quote it when using a shell), stream JSON to stdin and close stdin.
+Read JSON stdout on both success and validation-failure exits. Tests exercise
+both bundles' fixtures under these layouts, including paths with spaces and
+metacharacters, from an unrelated working directory.
+
+Outside Jarela, tool names in the playbooks refer to Jarela's APIs, not shell
+commands or universally available tools. Use the host's authorized retrieval
+and memory capabilities; if equivalent capabilities or record fields are
+missing, report a blocker. The portable scripts supply only validation/planning,
+not retrieval, persistent memory, host permissions or automatic tool discovery.
+
 The memory tool accepts at most 100 projections from retrieved `facts` records:
 `key`, `kind`, `subject`, `content`, `status`, `expires_at`, plus explicit UTC
 `now` at the top level. It does not retrieve memory itself. Archived entries are

@@ -25,6 +25,7 @@
 
 import { z } from "zod";
 import { tool, type StructuredToolInterface } from "@langchain/core/tools";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import {
   startOwnedAsyncCall,
   completeAsyncCall,
@@ -74,6 +75,12 @@ const STREAM_DESCRIPTION =
   "that's normally quiet, or false to silence one that normally streams " +
   "(e.g. a claude_delegate call whose intermediate steps you don't want " +
   "surfaced to the user this time).";
+
+export const toolExecutionControls = {
+  deadline_ms: z.number().int().positive().optional().describe(DEADLINE_DESCRIPTION),
+  async_run: z.boolean().optional().describe(ASYNC_RUN_DESCRIPTION),
+  stream: z.boolean().optional().describe(STREAM_DESCRIPTION),
+};
 
 interface WallclockedFunc {
   (args: Record<string, unknown>, config?: unknown): Promise<unknown>;
@@ -154,16 +161,17 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
   const schema = (t as unknown as { schema: unknown }).schema;
   let extendedSchema: unknown = null;
   if (schema instanceof z.ZodObject) {
-    extendedSchema = schema.extend({
-      deadline_ms: z.number().int().positive().optional().describe(DEADLINE_DESCRIPTION),
-      async_run: z.boolean().optional().describe(ASYNC_RUN_DESCRIPTION),
-      stream: z.boolean().optional().describe(STREAM_DESCRIPTION),
-    });
+    extendedSchema = schema.extend(toolExecutionControls);
   } else if (isJsonObjectSchema(schema)) {
     extendedSchema = extendJsonObjectSchema(schema);
   }
 
   const wrappedFunc: WallclockedFunc = async (args, config) => {
+    // The target owns execution controls; a second race would abandon valid
+    // long-running calls and lose their background receipt.
+    if (t.name === "invoke_tool") {
+      return postProcessToolResult(t.name, await t.invoke(args, { ...(config as RunnableConfig | undefined), toolCall: undefined }));
+    }
     const requested = readDeadlineMs(args) ?? DEFAULT_DEADLINE_MS;
     const ceiling = getMaxDeadlineMs();
     const deadlineMs = Math.min(requested, ceiling);

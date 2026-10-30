@@ -36,6 +36,8 @@ writeFileSync(
 
 const { getAllTools, executeTool } = await import("../index");
 const { _resetExternalCache } = await import("./external");
+const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
+const { createThread } = await import("@/lib/stores/threads");
 
 describe("external tools get wallclock protection via getAllTools", () => {
   it("retains workflow execution when a parent LangChain tool supplies an inherited abort signal", async () => {
@@ -100,5 +102,17 @@ describe("external tools get wallclock protection via getAllTools", () => {
     const tool = getAllTools().find((t) => t.name === "slow_ext_tool");
     const out = await tool!.invoke({ deadline_ms: 1000 } as never);
     expect(JSON.parse(out as string)).toEqual({ ok: true });
+  });
+
+  it("uses the external target's timeout through invoke_tool", async () => {
+    upsertAgentConfig({ id: "external-proxy-agent", name: "External Proxy", identity: "test", instructions: "", tools: ["slow_ext_tool"] });
+    const thread = createThread("external-proxy-agent");
+    const out = await executeTool("invoke_tool", {
+      name: "slow_ext_tool", deadline_ms: 20,
+    }, { thread_id: thread.thread_id });
+    expect(out).toMatchObject({
+      status: "done", tool: "slow_ext_tool",
+      result: { error_code: "tool_timeout", message: expect.stringContaining("slow_ext_tool"), deadline_ms: 20 },
+    });
   });
 });

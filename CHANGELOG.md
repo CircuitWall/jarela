@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   independent commit, topic-push and draft-PR gates, exact worktree/source/hook
   baselines, sensitive-content blockers and explicit missing-credential failures.
 
+### Fixed
+
+- Separate caller argument errors from suspected tool defects, exclude them
+  from telemetry complaints, and require the configured escalation threshold
+  for internal validation failures.
+- Let proxied tools own execution deadlines, background receipts, and streaming
+  controls while preserving workspace, progress, cancellation, credentials,
+  permissions, and coordinator settlement through `invoke_tool`.
+
 ## [3.2.0] - 2026-10-30
 
 ### Added

@@ -33,6 +33,29 @@ const valid = () => ({
 });
 
 describe("portable built-in script contracts", () => {
+  it.each([
+    ["built-in", ["lib", "skills", "builtins"]],
+    ["copilot workspace", [".github", "skills"]],
+    ["shared workspace", [".agents", "skills"]],
+    ["claude personal", ["home", ".claude", "skills"]],
+  ] as const)("runs both installed bundles and preserves validation failures in the %s layout", (_host, layout) => {
+    for (const name of ["personal-briefing", "memory-organization"]) {
+      const installed = join(root, "installed skills & resources", ...layout, name);
+      cpSync(join(root, name), installed, { recursive: true });
+      for (const fixture of loadSkillFixtures(installed)) {
+        const child = spawnSync(process.execPath, [join(installed, "scripts", "run.mjs")], {
+          input: JSON.stringify(fixture.input), cwd: tmpdir(), encoding: "utf8",
+          timeout: 5000, maxBuffer: 1024 * 1024, env: {}, shell: false,
+        });
+        expect(child.error).toBeUndefined();
+        expect(child.status).toBe(fixture.expect.ok ? 0 : 1);
+        expect(child.stderr).toBe("");
+        const validate = name === "personal-briefing" ? validatePersonalBriefing : planMemoryCleanup;
+        expect(JSON.parse(child.stdout)).toEqual(validate(fixture.input));
+      }
+    }
+  });
+
   it.each(loadSkillFixtures(join(process.cwd(), "lib", "skills", "builtins", "personal-briefing")))(
     "runs briefing fixture $name outside Jarela and matches the typed tool exactly",
     async (fixture) => {

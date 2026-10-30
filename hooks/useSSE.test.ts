@@ -64,6 +64,46 @@ function streamWithProgress(): AsyncIterable<string> {
 }
 
 describe("useSSE contract", () => {
+  it("recovers a replay gap without releasing active-run controls or completing the turn", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    submitRunMock.mockResolvedValue({ accepted: true });
+    subscribeRunMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield JSON.stringify({ type: "text_delta", delta: "Incomplete prefix." });
+        yield JSON.stringify({
+          type: "stream_snapshot", text: "Recovered full response.",
+          tool_events: [{ type: "tool_call", id: "write-1", name: "file_write", arguments: {} }],
+          message: "Response restored; no actions restarted.",
+        });
+        await gate;
+        yield JSON.stringify({ type: "text_delta", delta: " Finished." });
+        yield JSON.stringify({ type: "done" });
+      },
+    });
+    const onDone = vi.fn();
+    const { result } = renderHook(() => useSSE(onDone));
+    let run!: Promise<{ accepted: boolean }>;
+    try {
+      act(() => { run = result.current.start("recovering-thread", "Continue existing work."); });
+      await waitFor(() => expect(result.current.streamingContent).toBe("Recovered full response."));
+      expect(result.current.streaming).toBe(true);
+      expect(result.current.isLive()).toBe(true);
+      expect(onDone).not.toHaveBeenCalled();
+      expect(result.current.toolEvents).toEqual([{ id: "write-1", phase: "call", name: "file_write", payload: {} }]);
+      expect(submitRunMock).toHaveBeenCalledTimes(1);
+      expect(subscribeRunMock).toHaveBeenCalledTimes(1);
+      expect(abortRunMock).not.toHaveBeenCalled();
+      await act(async () => { release(); await run; });
+      expect(result.current.streamingContent).toBe("Recovered full response. Finished.");
+      expect(result.current.streaming).toBe(false);
+      expect(onDone).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      await act(async () => { await run; });
+    }
+  });
+
   it("exposes unified and compatibility surfaces", async () => {
     submitRunMock.mockResolvedValue({ accepted: true });
     subscribeRunMock.mockReturnValue(streamDone());

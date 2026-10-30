@@ -8,6 +8,23 @@ description: "Use when: saving durable knowledge, retrieving prior context, cons
 Use this skill when the user asks to remember information, retrieve prior
 context, clean up accumulated memory, or tune how proactively Jarela remembers.
 
+## Host and installation
+
+Resolve this bundle from the actual loaded `SKILL.md`, not the workspace or
+current working directory. Its script is [scripts/run.mjs](./scripts/run.mjs);
+keep the whole directory together, including scripts, schemas and fixtures.
+Built-in, workspace and personal installations use identical relative resources.
+
+The memory tool names, record format and policy controls below describe Jarela.
+On another host, inspect its authorized memory API before reading or writing;
+do not assume Jarela tools or a `facts` namespace exist. Never substitute file
+writes or a different memory store to bypass unavailable tools or permissions.
+For read-only cleanup planning, map retrieved records to the projection below
+only when their stable identity, kind, status and expiry are known. If that
+mapping is unsupported, report the blocker; do not invent missing fields.
+Use the portable planner only with host-authorized Node execution. It does not
+provide persistence or authorize archival on any host.
+
 ## Input
 
 The fact/preference or retrieval question, its source and confidence, existing
@@ -117,8 +134,9 @@ and can miss details.
 1. Retrieve the relevant structured `facts` records with existing memory tools.
    Do not send protected settings, secrets or raw transcripts. Results cover
    only supplied entries; a limited search is not a complete memory scan.
-2. Discover `plan_memory_cleanup` with `list_tools` using the exact name and
-   `include_schema: true`. Supply an explicit current UTC `now` and at most
+2. In Jarela discover `plan_memory_cleanup` with `list_tools` using the exact
+   name and `include_schema: true`; elsewhere use the portable planner below.
+   Supply an explicit current UTC `now` and at most
    100 projections with `key`, `kind`, `subject`, `content`, `status` and
    `expires_at`. This read-only tool uses `scripts/plan-cleanup.mjs` directly.
    Example input (projection, not the full stored record):
@@ -139,6 +157,12 @@ and can miss details.
    }
    ```
 
+   Each key must identify one retrieved record and occur only once. Overlapping
+   retrieval results may repeat a record: verify its full value and include it
+   once, or re-read conflicting versions before planning. Never rename repeated
+   keys to manufacture separate records. Duplicate candidates are different
+   keys with matching projected values, not repeated copies of one key.
+
 3. Check `ok` and field issues before using the plan. `expired_keys` are active
    entries whose expiry is at or before `now`; `duplicate_groups` match kind,
    trimmed subject/content and the exact expiry string, excluding archived and
@@ -151,12 +175,18 @@ and can miss details.
    never replay uncertain writes. The planner itself never reads the database,
    merges facts, archives records, deletes entries or changes Security policy.
 
-On another host with authorized Node execution, run
-`node <skill-root>/scripts/run.mjs` with the JSON input on stdin and close stdin.
+On another host with authorized Node execution, resolve the absolute script
+path from this loaded skill's directory and invoke Node with that path as one
+argument: `node "<resolved-skill-directory>/scripts/run.mjs"`.
+The placeholder is not literal, an environment variable or a fixed install path.
+Quote paths in a shell, or use an argument array without a shell; do not assume
+a particular skills folder or change the working directory to find imports.
+Send the JSON input on stdin and close stdin.
 It needs only the sibling script, no packages, network or credentials.
 Input is bounded to 64 KiB of valid UTF-8. Stdout is one JSON result; exit 0
 means a valid plan, exit 1 reports `ok: false` field issues or transport errors
-on stderr. Inside Jarela use the typed tool, never terminal execution to bypass
+on stderr. Read stdout even on exit 1 and correct rejected inputs before retrying.
+Inside Jarela use the typed tool, never terminal execution to bypass
 an unavailable checked runner. Bundle sharing does not grant host permissions.
 
 ## Proactivity Policy

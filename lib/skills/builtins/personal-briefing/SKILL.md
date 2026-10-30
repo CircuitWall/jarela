@@ -11,6 +11,19 @@ an autonomous workflow engine or a guarantee of factual accuracy.
 Its validation step is backed by the portable, dependency-free
 `scripts/validate.mjs`; the Jarela tool calls that same implementation.
 
+## Host and installation
+
+Resolve this bundle from the actual loaded `SKILL.md`, not the workspace or
+current working directory. Its script is [scripts/run.mjs](./scripts/run.mjs);
+keep the whole directory together, including scripts and fixtures. Built-in,
+workspace and personal installations use the same relative resource paths.
+
+In Jarela, discover and use the typed tools named below. On another host, use
+its authorized read-only retrieval tools and the portable validator below;
+Jarela tool names are not commands to run in a shell. If retrieval, Node or
+script execution is unavailable or denied, report the blocker rather than
+inventing results or bypassing the host's approval rules.
+
 ## Input
 
 The owner's requested sources/time window, existing read permissions and
@@ -33,8 +46,9 @@ permission to broaden access or replay an external write.
 
 ## Procedure
 
-1. Establish the owner's requested sources and time window. Use `list_tools`
-   to discover available typed read-only tools. Do not request extra access or
+1. Establish the owner's requested sources and time window. In Jarela use
+   `list_tools`; elsewhere use the host's tool discovery to find authorized
+   read-only retrieval tools. Do not request extra access or
    enable an integration merely to complete a briefing.
 2. Retrieve each requested source using its existing capability policy. Use
    only observed results, preserve their identifiers, and explicitly record
@@ -59,7 +73,8 @@ permission to broaden access or replay an external write.
    Every item needs references to available retrieved inputs. Include every
    unavailable source in the gaps list. Never invent a source ID or mark an
    unavailable source available to make validation pass.
-4. Call `validate_personal_briefing` with that object. Its input is the
+4. In Jarela call `validate_personal_briefing`; on another authorized host run
+   the portable validator below with that object. Its input is the
    retrieval manifest and draft; its output is either a checked draft or field
    issues. If validation fails, correct the issues from the original results
    and retry at most twice. Do not present a failed draft as validated. If the
@@ -80,14 +95,21 @@ permission to broaden access or replay an external write.
 
 ## Portable script
 
-On a host that authorizes Node script execution, run
-`node <skill-root>/scripts/run.mjs`. Send the procedure's JSON object on stdin
+On a host that authorizes Node script execution, resolve the absolute script
+path from this loaded skill's directory and invoke Node with that path as one
+argument: `node "<resolved-skill-directory>/scripts/run.mjs"`.
+The placeholder is not literal, an environment variable or a fixed install path.
+Quote paths in a shell, or use an argument array without a shell; do not assume
+a particular skills folder or change the working directory to find imports.
+Send the procedure's JSON object on stdin
 and close stdin. Paths are relative to the bundle, not the current directory.
 The entry point imports only its sibling validator and needs no Jarela packages,
 credentials or network. Input is bounded to 64 KiB of valid UTF-8.
 Stdout contains one JSON result; exit 0 means a structural pass. Exit 1 means
 validation failure (JSON `ok: false` with issues) or malformed/oversized transport
 input (diagnostic on stderr, no success result).
+Read stdout even on exit 1. Correct source references from the original retrieval
+manifest; never invent IDs or mark failed retrievals available to pass validation.
 
 Inside Jarela, use `validate_personal_briefing`; do not launch the script via
 terminal as a substitute for the unavailable checked skill runner. This fixed
