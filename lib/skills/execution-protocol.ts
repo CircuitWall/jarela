@@ -37,6 +37,18 @@ function checkValue(value: SkillJsonValue, schema: ValueSchema): void {
   }
   function visit(current: SkillJsonValue, rule: ValueSchema, path: (string | number)[]) {
     if (issues.length >= MAX_ISSUES) return;
+    if ("anyOf" in rule) {
+      for (const alternative of rule.anyOf) {
+        try {
+          checkValue(current, alternative);
+          return;
+        } catch (error) {
+          if (!(error instanceof z.ZodError)) throw error;
+        }
+      }
+      issue(path, "Value must match at least one anyOf schema");
+      return;
+    }
     switch (rule.type) {
       case "object":
         if (current === null || typeof current !== "object" || Array.isArray(current)) {

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add an experimental Memory Organization execution manifest over the existing
+  read-only planner, with bounded nullable/result schema alternatives and
+  captured-byte CLI contract tests. Checked skill execution remains unavailable.
 - Add internal bounded skill invocation/result schema validation without
   enabling execution; share invocation parsing with exact-byte consent digests.
   Reject reserved manifest property names rather than silently dropping them.

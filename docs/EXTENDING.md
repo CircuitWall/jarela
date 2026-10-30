@@ -84,6 +84,30 @@ retain their existing typed tools and model judgment: no wrapper scripts are
 added merely to duplicate browser actions, credential probes, settings writes
 or document retrieval. Neither converted skill is a fully automated workflow.
 
+#### Memory cleanup execution candidate (Unreleased)
+
+Memory Organization now includes an experimental `execution.json` adapter over
+its existing `scripts/run.mjs` and `scripts/plan-cleanup.mjs`, with a 5,000 ms
+declared timeout and 64 KiB output budget. It is the first checked-runner
+candidate, not an installed runner: ordinary reads are unchanged, and opt-in
+`read_skill` execution inspection still returns `execution_available: false`.
+
+The adapter requires the exact projection fields above and rejects additional
+fields, unlike the existing typed tool's normalization or the standalone CLI's
+tolerant input. Nullable expiry uses bounded `anyOf`; the output declares separate
+success and field-error shapes. Date validity, trimmed text limits, unique keys
+and expiry comparisons remain the planner's semantic checks. A schema-valid
+invocation can therefore return a checked `ok: false` result with exit 1; valid
+JSON is not execution success.
+
+Tests capture the bundle's exact bytes, copy those captured bytes into test-only
+temporary directories, and run fresh Node processes without PATH or credentials
+from a different working directory. They verify fixtures, source mutation
+independence, paths with spaces/metacharacters, record-count boundaries and
+structured failures. This is a local CLI/contract test, not production snapshot
+staging, artifact consent, process-tree cleanup, workflow persistence or
+cross-host acceptance. In Jarela, continue using `plan_memory_cleanup`.
+
 ## Table of contents
 
 - [Adding an LLM provider (built-in)](#adding-an-llm-provider-built-in)
@@ -240,8 +264,12 @@ Schemas use explicit `type`: object (with a `properties` map), array (with
 `items`), string, number, integer, boolean or null. Supported optional fields
 are unique declared `required` properties, boolean `additionalProperties`,
 `minItems`/`maxItems`, `minLength`/`maxLength`, `minimum`/`maximum`, and nonempty
-scalar enums for string/number/integer/boolean. Unknown fields, `$ref`, patterns,
-combinators and executable validators are rejected. Inspection validates schema
+scalar enums for string/number/integer/boolean. Unreleased bounded `anyOf` allows
+two to four alternative schemas, including nullable fields and explicit result
+variants; a value must match at least one branch. Alternative nodes accept only
+`anyOf`, not sibling constraints. The invocation root still requires an explicit
+object schema. Existing depth/node bounds include every branch. Unknown fields,
+`$ref`, patterns, other combinators and executable validators are rejected. Inspection validates schema
 structure, not actual invocation/results or satisfiability of all constraints.
 
 ### Internal invocation/result validation (Unreleased)
@@ -266,6 +294,8 @@ or a callable execution tool. Existing `read_skill` inspection remains inert.
   values. Property paths are still caller data, not sanitized display text.
   The manifest parser explicitly rejects the reserved `__proto__` schema
   property name rather than silently dropping it in the underlying validator.
+  A failed `anyOf` reports one issue at the original value path, not every
+  rejected branch's diagnostics; rejected branches do not pollute a later match.
 - Consent digest calculation reuses the bounded invocation-object parser and
   continues hashing exact original UTF-8 bytes, not a normalized serialization.
   A digest alone does not establish schema-valid input, a snapshot or consent.

@@ -1,14 +1,17 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { validatePersonalBriefing } from "./builtins/personal-briefing/scripts/validate.mjs";
 import { planMemoryCleanup } from "./builtins/memory-organization/scripts/plan-cleanup.mjs";
 import { loadSkillFixtures } from "./fixtures";
 import { validatePersonalBriefingTool } from "@/lib/tools/general/validate-personal-briefing";
 import { planMemoryCleanupTool } from "@/lib/tools/general/plan-memory-cleanup";
 import { registeredCapability } from "@/lib/tools/runtime/registry";
+import { SkillExecutionArtifact } from "./execution-artifact";
+import { inspectSkillExecution } from "./execution-manifest";
+import { validateSkillInvocation, validateSkillResult } from "./execution-protocol";
 
 const root = mkdtempSync(join(tmpdir(), "jarela-portable-builtins-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -62,15 +65,121 @@ describe("portable built-in script contracts", () => {
   it.each(loadSkillFixtures(join(process.cwd(), "lib", "skills", "builtins", "memory-organization")))(
     "runs cleanup fixture $name outside Jarela and matches the typed tool",
     async (fixture) => {
-      const child = run("memory-organization", JSON.stringify(fixture.input));
+      const manifest = SkillExecutionArtifact.capture(join(root, "memory-organization")).getManifest();
+      const input = JSON.stringify(fixture.input);
+      expect(validateSkillInvocation(manifest, input)).toEqual(fixture.input);
+      const child = run("memory-organization", input);
       expect(child.error).toBeUndefined();
       expect(child.status).toBe(fixture.expect.ok ? 0 : 1);
       expect(child.stderr).toBe("");
-      expect(JSON.parse(child.stdout)).toEqual(JSON.parse(String(await planMemoryCleanupTool.invoke(
+      const result = validateSkillResult(manifest, child.stdout);
+      expect(result).toMatchObject({ ok: fixture.expect.ok });
+      expect(result).toEqual(JSON.parse(String(await planMemoryCleanupTool.invoke(
         planMemoryCleanupTool.schema.parse(fixture.input),
       ))));
     },
   );
+
+  it("inspects the memory execution adapter without making execution available", () => {
+    expect(inspectSkillExecution(join(root, "memory-organization"))).toMatchObject({
+      status: "inspected", execution_available: false,
+      manifest: { entrypoint: "scripts/run.mjs", timeoutMs: 5000, maxOutputBytes: 65536 },
+      files: [
+        { path: "scripts/run.mjs", bytes: expect.any(Number) },
+        { path: "scripts/plan-cleanup.mjs", bytes: expect.any(Number) },
+      ],
+    });
+  });
+
+  it("runs captured planner bytes 10/10 from a path with spaces and metacharacters, independent of PATH and mutable source", () => {
+    const source = join(root, "mutable memory source");
+    cpSync(join(root, "memory-organization"), source, { recursive: true });
+    const artifact = SkillExecutionArtifact.capture(source);
+    const manifest = artifact.getManifest();
+    const stagedName = "captured memory & bundle";
+    for (const file of artifact.files) {
+      const target = join(root, stagedName, ...file.path.split("/"));
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, artifact.readFile(file.path));
+    }
+    writeFileSync(join(source, "scripts", "plan-cleanup.mjs"), 'throw new Error("Mutable source must not run");');
+    expect(SkillExecutionArtifact.capture(source).revision).not.toBe(artifact.revision);
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const input = valid();
+      if (attempt % 2) input.entries.reverse();
+      const text = JSON.stringify(input);
+      expect(validateSkillInvocation(manifest, text)).toEqual(input);
+      const child = run(stagedName, text);
+      expect(child.error).toBeUndefined();
+      expect(child.status).toBe(0);
+      expect(child.stderr).toBe("");
+      expect(validateSkillResult(manifest, child.stdout)).toEqual(planMemoryCleanup(input));
+      expect(JSON.parse(child.stdout)).toMatchObject({ expired_keys: ["expired"], duplicate_groups: [["a", "b"]] });
+    }
+  });
+
+  it("rejects malformed cleanup projections at the adapter and semantic errors at the planner", () => {
+    const manifest = SkillExecutionArtifact.capture(join(root, "memory-organization")).getManifest();
+    for (const input of [
+      {},
+      { ...valid(), extra: true },
+      { ...valid(), entries: [entry("a", { expires_at: 1 })] },
+      { ...valid(), entries: [entry("a", { extra: true })] },
+      { ...valid(), entries: Array.from({ length: 101 }, (_, index) => entry(String(index))) },
+    ]) {
+      expect(() => validateSkillInvocation(manifest, JSON.stringify(input))).toThrow();
+    }
+    for (const input of [
+      { ...valid(), now: "2026-02-30T00:00:00Z" },
+      { ...valid(), entries: [entry("a"), entry("a")] },
+      { ...valid(), entries: [entry("a", { expires_at: "yesterday" })] },
+      { ...valid(), entries: [entry(" ")] },
+    ]) {
+      const text = JSON.stringify(input);
+      expect(validateSkillInvocation(manifest, text)).toEqual(input);
+      const child = run("memory-organization", text);
+      expect(child.error).toBeUndefined();
+      expect(child.status).toBe(1);
+      expect(child.stderr).toBe("");
+      expect(validateSkillResult(manifest, child.stdout)).toMatchObject({ ok: false, issues: expect.any(Array) });
+    }
+    for (const result of [{ ok: true }, { ok: false }, { ...planMemoryCleanup(valid()), error: "unexpected" }]) {
+      expect(() => validateSkillResult(manifest, JSON.stringify(result))).toThrow();
+    }
+  });
+
+  it("accepts the maximum projected record count and bounds both output branches", () => {
+    const manifest = SkillExecutionArtifact.capture(join(root, "memory-organization")).getManifest();
+    for (const expired of [true, false]) {
+      const input = {
+        now: valid().now,
+        entries: Array.from({ length: 100 }, (_, index) => entry(String(index).padStart(3, "0"), {
+          content: `Pair ${Math.floor(index / 2)}`,
+          expires_at: expired ? valid().now : null,
+        })),
+      };
+      const text = JSON.stringify(input);
+      validateSkillInvocation(manifest, text);
+      const child = run("memory-organization", text);
+      expect(child.error).toBeUndefined();
+      expect(child.status).toBe(0);
+      expect(validateSkillResult(manifest, child.stdout)).toMatchObject({
+        ok: true,
+        expired_keys: expired ? input.entries.map((record) => record.key) : [],
+        duplicate_groups: expired ? [] : Array.from({ length: 50 }, (_, index) => [
+          String(index * 2).padStart(3, "0"), String(index * 2 + 1).padStart(3, "0"),
+        ]),
+      });
+    }
+    const invalid = { now: "invalid", entries: Array.from({ length: 100 }, () => entry(" ")) };
+    const child = run("memory-organization", JSON.stringify(invalid));
+    expect(child.error).toBeUndefined();
+    expect(child.status).toBe(1);
+    expect(validateSkillResult(manifest, child.stdout)).toMatchObject({
+      ok: false, issues: expect.arrayContaining([{ path: "now", message: expect.any(String) }]),
+    });
+    expect(JSON.parse(child.stdout).issues).toHaveLength(101);
+  });
 
   it.each(["personal-briefing", "memory-organization"])("rejects malformed, oversized and invalid UTF-8 CLI input for %s", (name) => {
     for (const input of ["{", '{"private-value": unexpected}', " ".repeat(65537), Buffer.from([0xff])]) {

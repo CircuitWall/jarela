@@ -29,6 +29,7 @@ describe("execution manifest contract", () => {
         count: { type: "number", minimum: -0.5, maximum: 2 },
         enabled: { type: "boolean", enum: [true] },
         empty: { type: "null" },
+        expiry: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
       },
       required: ["items"],
       additionalProperties: true,
@@ -56,6 +57,12 @@ describe("execution manifest contract", () => {
     { outputSchema: { type: "number", minimum: 2, maximum: 1 } },
     { outputSchema: { type: "integer", enum: [1.5] } },
     { outputSchema: { type: "boolean", enum: [] } },
+    { outputSchema: { anyOf: [] } },
+    { outputSchema: { anyOf: [{ type: "null" }] } },
+    { outputSchema: { anyOf: Array.from({ length: 5 }, () => ({ type: "null" })) } },
+    { outputSchema: { anyOf: [{ type: "null" }, { type: "string", pattern: ".*" }] } },
+    { outputSchema: { type: "string", anyOf: [{ type: "null" }, { type: "string" }] } },
+    { outputSchema: { anyOf: [{ type: "null" }, { type: "string" }], unknown: true } },
     { outputSchema: { type: "object", properties: JSON.parse('{"__proto__":{"type":"string"}}') } },
   ])("rejects unsupported or invalid fields: %j", (override) => {
     expect(() => parseSkillExecutionManifest(JSON.stringify({ ...manifest(), ...override }))).toThrow();
@@ -84,6 +91,19 @@ describe("execution manifest contract", () => {
     expect(() => parseSkillExecutionManifest(JSON.stringify({
       ...manifest(), extra: Array.from({ length: 4096 }, () => null),
     }))).toThrow(/depth or node/);
+  });
+
+  it("bounds nested alternatives before recursive parsing and keeps invocation roots explicit", () => {
+    const alternatives = [{ type: "null" }, { type: "string" }, { type: "number" }, { type: "boolean" }];
+    expect(parseSkillExecutionManifest(JSON.stringify({ ...manifest(), outputSchema: { anyOf: alternatives } })).outputSchema)
+      .toEqual({ anyOf: alternatives });
+    let nested: unknown = { type: "null" };
+    for (let i = 0; i < 20; i++) nested = { anyOf: [nested, { type: "string" }] };
+    expect(() => parseSkillExecutionManifest(JSON.stringify({ ...manifest(), outputSchema: nested })))
+      .toThrow(/depth or node/);
+    expect(() => parseSkillExecutionManifest(JSON.stringify({
+      ...manifest(), inputSchema: { anyOf: [{ type: "object", properties: {} }, { type: "null" }] },
+    }))).toThrow(/Input must use an object schema/);
   });
 
   it("accepts numeric boundaries and rejects excess file count", () => {

@@ -46,6 +46,22 @@ describe("skill tools on the agent path", () => {
     expect(registeredCapability("read_skill")).toBe("read");
   });
 
+  it("exposes the built-in memory planner contract only through inert opt-in inspection", async () => {
+    const ordinary = parse(await readSkillTool.invoke({ id: "memory-organization" }));
+    expect(ordinary).toMatchObject({ id: "memory-organization", source: "builtin" });
+    expect(ordinary).not.toHaveProperty("execution");
+    const inspected = parse(await readSkillTool.invoke({ id: "memory-organization", inspect_execution: true }));
+    expect(inspected.execution).toMatchObject({
+      status: "inspected", execution_available: false,
+      manifest: {
+        entrypoint: "scripts/run.mjs", files: ["scripts/run.mjs", "scripts/plan-cleanup.mjs"],
+        inputSchema: { properties: { entries: { items: { properties: {
+          expires_at: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
+        } } } } },
+      },
+    });
+  });
+
   it("lists a VS Code-style frontmatter skill with its name and description so the agent can pick it", async () => {
     createSkillRepo({ path: repo });
     const content = [
