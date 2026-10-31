@@ -33,6 +33,37 @@ describe("watchers store (ADR-0027)", () => {
     for (const w of listWatchers()) deleteWatcher(w.id);
   });
 
+  it("filters by agent, toggles flags and handles deleted watchers without recreating them", () => {
+    const w = createWatcher({ agent_id: "synthetic-a", label: "Synthetic", tool_name: "synthetic", interval_seconds: 60, silent: true });
+    createWatcher({ agent_id: "synthetic-b", label: "Other", tool_name: "synthetic", interval_seconds: 60 });
+    expect(listWatchers("synthetic-a")).toEqual([w]);
+    expect(updateWatcher(w.id, { enabled: true, silent: false })).toMatchObject({ enabled: 1, silent: 0 });
+    expect(updateWatcher(w.id, { silent: true })).toMatchObject({ silent: 1 });
+    recordWatcherPoll({ id: w.id, fingerprint: "synthetic", result: "", fired: false, error: "Synthetic error" });
+    expect(getWatcher(w.id)?.last_error).toBe("Synthetic error");
+    expect(deleteWatcher(w.id)).toBe(true);
+    expect(deleteWatcher(w.id)).toBe(false);
+    expect(updateWatcher(w.id, {})).toBeNull();
+    recordWatcherPoll({ id: w.id, fingerprint: "synthetic", result: "", fired: true });
+    recordWatcherPollError(w.id, "Synthetic error");
+    expect(getWatcher(w.id)).toBeNull();
+    expect(getDueWatchers()).toEqual([]);
+  });
+
+  it("updates a script reaction without resetting arguments and rejects clearing its script", () => {
+    registerScript("reaction.second", async () => ({ preview: "synthetic" }));
+    const w = createWatcher({
+      agent_id: "synthetic", label: "Synthetic", tool_name: "synthetic", interval_seconds: 60,
+      reaction_kind: "script", reaction_script: "reaction.test", reaction_script_args: { key: "synthetic" },
+    });
+    expect(updateWatcher(w.id, { label: "Renamed" })).toMatchObject({
+      reaction_script: "reaction.test", reaction_script_args: JSON.stringify({ key: "synthetic" }),
+    });
+    expect(updateWatcher(w.id, { reaction_script: "reaction.second" })?.reaction_script).toBe("reaction.second");
+    expect(() => updateWatcher(w.id, { reaction_script: null })).toThrow(/cannot be cleared/);
+    expect(getWatcher(w.id)?.reaction_script).toBe("reaction.second");
+  });
+
   it("clampInterval enforces the 60s floor", () => {
     expect(() => clampInterval(30)).toThrow(/>= 60/);
     expect(() => clampInterval(Number.NaN)).toThrow();

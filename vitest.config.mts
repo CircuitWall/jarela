@@ -71,16 +71,7 @@ export default defineConfig({
         "lib/documents/chunker.ts",
         "lib/documents/search.ts",
         "lib/documents/upsert.ts",
-        // Stores below 80% branches by a small margin. They have unit tests, but
-        // some branches (defensive null/undefined fallbacks for legacy rows) are
-        // hard to exercise without a stale-DB fixture. Tracked for follow-up.
-        "lib/stores/agent-configs.ts",
-        "lib/stores/memory.ts",
-        "lib/stores/tool-stats.ts",
-        "lib/stores/watchers.ts",
-        "lib/stores/document-sources.ts",
         "lib/stores/pending-actions.ts",
-        "lib/stores/allowed-sites.ts",
         // Filesystem document indexer + chokidar-backed handlers — exercised by
         // the documents-watcher e2e spec.
         "lib/documents/reindex-local-file.ts",
