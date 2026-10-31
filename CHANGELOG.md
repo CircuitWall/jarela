@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Share memory write schemas between the editor and create/update endpoints,
   with contract tests for missing values, JSON null, identifier spelling,
   protected settings and save failures. Existing response shapes are unchanged.
+- Consolidate WhatsApp media extraction into one typed download/store loop,
+  preserving per-kind filenames, MIME fallbacks, attachment order, captions
+  and independent failure handling with inbound pipeline regressions.
 - Raise the default adaptive output floor for Balanced and High Reasoning to
   8,192 tokens so short prompts have more room for large tool calls. Provider,
   model and context ceilings still apply; Fast and Cost-saving retain their

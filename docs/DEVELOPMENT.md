@@ -46,6 +46,14 @@ bridge dispatcher/WhatsApp, contribution-service, and dashboard currency route
 tests. Mocked transport checks do not certify live WhatsApp pairing, currency
 providers, or other external services.
 
+The unreleased WhatsApp content cleanup routes image, sticker, audio/voice,
+video and document payloads through one typed download/store loop. Per-kind
+MIME fallbacks and filename rules remain explicit; downloads still use the
+outer Baileys message, run sequentially, and fail independently without losing
+captions or later attachments. Location/contact text handling remains separate.
+Inbound pipeline tests cover each media kind and mixed download/store failures;
+they do not certify live transport behavior.
+
 ## Documentation history chart
 
 `npm run docs:build` regenerates the [project history chart](PROJECT_HISTORY.md)

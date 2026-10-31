@@ -836,8 +836,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     *   - stickerMessage        → canonical image_ref (webp; vision input)
    *   - audioMessage / PTT    → file ContentPart with audio/* mime
    *   - videoMessage          → file ContentPart with video/* mime
-   *   - documentMessage       → file ContentPart (utf-8 text for text/*+json,
-   *                             base64 for everything else)
+   *   - documentMessage       → canonical file reference
    *   - location / liveLoc    → inline text "[location: lat,lng ...]"
    *   - contactMessage(s)     → inline text with the vcard / display names
    *
@@ -921,56 +920,47 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       }
     };
 
-    if (inner.imageMessage) {
-      const buf = await download("image");
-      if (buf) {
-        const mime = sanitizeMediaType(inner.imageMessage.mimetype, "image", "image/jpeg");
-        await spill(buf, `image-${messageId ?? Date.now()}.${mime.split("/")[1] ?? "bin"}`, mime, "image");
-      }
-    }
-
-    if (inner.stickerMessage) {
-      const buf = await download("sticker");
-      if (buf) {
-        // Stickers are webp images — surfacing them as `image` lets vision
-        // models actually describe them. Animated stickers go through as
-        // their raw webp; providers that can't decode animated webp will
-        // typically render the first frame.
-        const mime = sanitizeMediaType(inner.stickerMessage.mimetype, "image", "image/webp");
-        await spill(buf, `sticker-${messageId ?? Date.now()}.webp`, mime, "sticker");
-      }
-    }
-
-    if (inner.audioMessage) {
-      const isVoice = !!inner.audioMessage.ptt;
-      const buf = await download(isVoice ? "voice" : "audio");
-      if (buf) {
-        const mime = sanitizeMediaType(inner.audioMessage.mimetype, "audio", "audio/ogg");
-        const ext = mime.split("/")[1]?.replace(/^x-/, "") ?? "ogg";
-        await spill(buf, `${isVoice ? "voice-note" : "audio"}-${messageId ?? Date.now()}.${ext}`, mime, isVoice ? "voice note" : "audio");
-      }
-    }
-
-    if (inner.videoMessage) {
-      const buf = await download("video");
-      if (buf) {
-        const mime = sanitizeMediaType(inner.videoMessage.mimetype, "video", "video/mp4");
-        const ext = mime.split("/")[1] ?? "mp4";
-        await spill(buf, `video-${messageId ?? Date.now()}.${ext}`, mime, "video");
-      }
-    }
-
-    if (inner.documentMessage) {
-      const buf = await download("document");
-      if (buf) {
-        const mime = sanitizeMediaType(
-          inner.documentMessage.mimetype,
-          "document",
-          "application/octet-stream",
-        );
-        const filename = inner.documentMessage.fileName || inner.documentMessage.title || `document-${messageId ?? Date.now()}`;
-        await spill(buf, filename, mime, "document");
-      }
+    const isVoice = !!inner.audioMessage?.ptt;
+    const media: Array<{
+      message: { mimetype?: string } | undefined;
+      kind: Parameters<typeof sanitizeMediaType>[1];
+      fallback: string;
+      downloadLabel: string;
+      label: string;
+      filename: (mime: string) => string;
+    }> = [
+      {
+        message: inner.imageMessage, kind: "image", fallback: "image/jpeg",
+        downloadLabel: "image", label: "image",
+        filename: (mime) => `image-${messageId ?? Date.now()}.${mime.split("/")[1] ?? "bin"}`,
+      },
+      {
+        message: inner.stickerMessage, kind: "image", fallback: "image/webp",
+        downloadLabel: "sticker", label: "sticker",
+        filename: () => `sticker-${messageId ?? Date.now()}.webp`,
+      },
+      {
+        message: inner.audioMessage, kind: "audio", fallback: "audio/ogg",
+        downloadLabel: isVoice ? "voice" : "audio", label: isVoice ? "voice note" : "audio",
+        filename: (mime) => `${isVoice ? "voice-note" : "audio"}-${messageId ?? Date.now()}.${mime.split("/")[1]?.replace(/^x-/, "") ?? "ogg"}`,
+      },
+      {
+        message: inner.videoMessage, kind: "video", fallback: "video/mp4",
+        downloadLabel: "video", label: "video",
+        filename: (mime) => `video-${messageId ?? Date.now()}.${mime.split("/")[1] ?? "mp4"}`,
+      },
+      {
+        message: inner.documentMessage, kind: "document", fallback: "application/octet-stream",
+        downloadLabel: "document", label: "document",
+        filename: () => inner.documentMessage?.fileName || inner.documentMessage?.title || `document-${messageId ?? Date.now()}`,
+      },
+    ];
+    for (const part of media) {
+      if (!part.message) continue;
+      const buf = await download(part.downloadLabel);
+      if (!buf) continue;
+      const mime = sanitizeMediaType(part.message.mimetype, part.kind, part.fallback);
+      await spill(buf, part.filename(mime), mime, part.label);
     }
 
     if (inner.locationMessage) {
