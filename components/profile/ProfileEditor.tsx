@@ -12,12 +12,14 @@ import { Button } from "@/components/ui/Button";
 import { StickyActionBar } from "@/components/ui/StickyActionBar";
 import { DialogError } from "@/components/ui/DialogFooter";
 import { errorMessage } from "@/lib/utils/error";
+import { useIconFile } from "@/hooks/useIconFile";
 
 export function ProfileEditor() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [name, setName] = useState("");
-  const [icon, setIcon] = useState<string | null>(null);
+  const [icon, updateIcon] = useState<string | null>(null);
+  const { handleIconFile, setIcon, iconError } = useIconFile(updateIcon);
   const [about, setAbout] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -30,15 +32,7 @@ export function ProfileEditor() {
       setIcon(p.icon);
       setAbout(p.about);
     }).catch(console.error);
-  }, []);
-
-  function handleIconFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setIcon(reader.result as string);
-    reader.readAsDataURL(file);
-  }
+  }, [setIcon]);
 
   async function handleSave() {
     setSaving(true);
@@ -93,6 +87,7 @@ export function ProfileEditor() {
             </button>
           )}
         </div>
+        <DialogError message={iconError} />
         <label className="flex-1 block">
           <span className="text-xs text-fg-subtle mb-1 block">Name</span>
           <TextInput

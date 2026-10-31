@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   profileGet: vi.fn(),
@@ -48,8 +48,52 @@ beforeEach(() => {
   mocks.accessList.mockResolvedValue([]);
   mocks.tailscaleStatus.mockResolvedValue(null);
 });
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("ProfileEditor", () => {
+  it("reports icon read errors and clears them on a successful retry", async () => {
+    const readers: FileReader[] = [];
+    vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader) {
+      readers.push(this);
+    });
+    const { container } = render(<ProfileEditor />);
+    await screen.findByDisplayValue(profile.name);
+    const input = container.querySelector('input[type="file"]')!;
+    const file = new File(["synthetic"], "avatar.png");
+    fireEvent.change(input, { target: { files: [file] } });
+    act(() => readers[0].dispatchEvent(new ProgressEvent("error")));
+    expect(screen.getByRole("alert").textContent).toContain("Could not read that image");
+    fireEvent.change(input, { target: { files: [file] } });
+    act(() => {
+      Object.defineProperty(readers[1], "result", { value: "data:image/png;base64,retry" });
+      readers[1].dispatchEvent(new ProgressEvent("load"));
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("img", { name: "avatar" }).getAttribute("src")).toBe("data:image/png;base64,retry");
+  });
+
+  it("keeps a removed avatar removed when an older replacement finishes", async () => {
+    mocks.profileGet.mockResolvedValueOnce({ ...profile, icon: "data:image/png;base64,saved" });
+    let reader!: FileReader;
+    vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader) {
+      reader = this;
+    });
+    const { container } = render(<ProfileEditor />);
+    await screen.findByRole("img", { name: "avatar" });
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [new File(["synthetic"], "replacement.png")] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove", exact: true }));
+    act(() => {
+      Object.defineProperty(reader, "result", { value: "data:image/png;base64,late" });
+      reader.dispatchEvent(new ProgressEvent("load"));
+    });
+    expect(screen.queryByRole("img", { name: "avatar" })).toBeNull();
+  });
+
   it("shows a save error and clears it when retrying successfully", async () => {
     mocks.profileUpdate
       .mockRejectedValueOnce(new Error("Profile save failed. Try again."))

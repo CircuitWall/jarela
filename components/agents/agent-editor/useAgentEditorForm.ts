@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DEFAULT_HOT_TURN_LIMIT, type AgentConfig, type AgentConfigIn } from "@/api/types";
 import { useTools } from "@/hooks/useTools";
+import { useIconFile } from "@/hooks/useIconFile";
 import { isBasicToolCategory } from "@/lib/tools/runtime/categories";
 import type { UsageStrategy } from "@/lib/agents/usage-strategy";
 import { DEFAULT_PERSONA_STYLE, USAGE_PROFILES, type UsageProfile } from "@/lib/agents/usage-profile";
@@ -24,7 +25,8 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const { tools } = useTools();
   const iconInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(agent?.name ?? "");
-  const [icon, setIcon] = useState<string | null>(agent?.icon ?? null);
+  const [icon, updateIcon] = useState<string | null>(agent?.icon ?? null);
+  const { handleIconFile, setIcon, iconError } = useIconFile(updateIcon);
   const [identity, setIdentity] = useState(agent?.identity ?? "");
   const [instructions, setInstructions] = useState(agent?.instructions ?? "");
   const [usageProfile, setUsageProfile] = useState<UsageProfile>(agent?.usage_profile ?? "custom");
@@ -99,7 +101,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const fields = {
     name, setName, icon, setIcon, identity, setIdentity, instructions, setInstructions,
     usageProfile, selectUsageProfile,
-    isDefault, setIsDefault, iconInputRef, handleIconFile: handleIconFileFor(setIcon),
+    isDefault, setIsDefault, iconInputRef, handleIconFile, iconError,
     modelConfigName, setModelConfigName,
     historyLimit, setHistoryLimit, historyWindowHours, setHistoryWindowHours,
     hotTurnLimit, setHotTurnLimit, warmSummaryLimit, setWarmSummaryLimit, tools, selectedTools,
@@ -117,16 +119,6 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
     usageStrategy, setUsageStrategy,
   };
   return { ...fields, ...external, ...handlers, buildPayload: () => buildAgentPayload(fields) };
-}
-
-function handleIconFileFor(setIcon: (v: string | null) => void) {
-  return (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setIcon(reader.result as string);
-    reader.readAsDataURL(file);
-  };
 }
 
 interface PayloadFields {

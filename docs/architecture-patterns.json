@@ -3,6 +3,23 @@
   "purpose": "Curated review aid for recurring Jarela operations. Entries identify canonical implementations and behavior tests; they are not an exhaustive dependency policy.",
   "patterns": [
     {
+      "id": "icon-file-lifecycle",
+      "operation": "Read avatar files through useIconFile so superseded, removed and unmounted selections cannot apply late results, and failures remain visible and retryable.",
+      "canonicalSources": [
+        "hooks/useIconFile.ts"
+      ],
+      "validationSources": [
+        "hooks/useIconFile.test.tsx",
+        "components/agents/agent-editor/useAgentEditorForm.test.tsx",
+        "components/profile/ProfileEditor.test.tsx",
+        "components/setup/wizard/StepAgent.test.tsx"
+      ],
+      "exceptions": [
+        "The first-run picker retains its own 1 MB validation; agent and profile editors do not acquire that limit.",
+        "Chat attachments use a different upload contract and are not avatar selections."
+      ]
+    },
+    {
       "id": "workspace-layout",
       "operation": "Share workspace width, outer horizontal gutters, and docked sidebar dimensions through the workspace CSS tokens.",
       "canonicalSources": [

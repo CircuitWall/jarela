@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep avatar uploads in the agent, profile and first-run editors consistent:
+  report file-read errors, cancel superseded/unmounted reads and prevent late
+  results from overwriting a newer selection or a removed icon.
 - Show agent-list and delete/duplicate failures in the Agents panel, retain
   retryable controls, and provide keyboard-accessible editing with separately
   labeled actions.
