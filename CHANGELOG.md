@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Prioritize targeted file searches and explicit line-range reads in agent
+  guidance, tool descriptions and spill hints. Discourage exhaustive file
+  paging unless the task requires complete inspection; keep existing
+  inline-result and file-read limits unchanged.
 - Raise the default adaptive output floor for Balanced and High Reasoning to
   8,192 tokens so short prompts have more room for large tool calls. Provider,
   model and context ceilings still apply; Fast and Cost-saving retain their

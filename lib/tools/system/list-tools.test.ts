@@ -237,6 +237,10 @@ describe("list_tools", () => {
     const descriptions = new Map(out.tools.map((t) => [t.name, t.description]));
 
     expect(descriptions.get("file_grep")).toContain("Prefer this over local_exec/terminal");
+    expect(descriptions.get("file_read")).toContain("Use explicit 1-based start_line/end_line ranges");
+    expect(descriptions.get("file_read")).toContain("read a known range directly");
+    expect(descriptions.get("file_read")).toContain("unless complete inspection is required by the task");
+    expect(descriptions.get("tool_result_get")).toContain("prefer file_grep and a bounded line-ranged file_read");
     expect(descriptions.get("file_multi_edit")).toContain("multiple file_edit round-trips");
     expect(descriptions.get("local_exec")).toContain("one-shot shell command");
     expect(descriptions.get("local_exec")).toContain("Prefer file_glob/file_grep/file_read/file_edit/file_multi_edit");

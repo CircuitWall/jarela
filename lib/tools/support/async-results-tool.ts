@@ -107,6 +107,7 @@ export const toolResultGetTool = tool(
     description:
       "Retrieve the result of a previously async-fired tool call by its key. " +
       "Also reads result_ref payloads by the full result_ref.name (including extension, not sha256) with offset/limit. Unambiguous legacy content hashes are accepted for text/JSON spills. Owned background output stays encrypted and thread-scoped; protected pages are bounded by the inline output budget. " +
+      "For spilled file_read output, prefer file_grep and a bounded line-ranged file_read on the source. Read only a needed result slice with a small limit; do not exhaust pages unless the task requires complete inspection. " +
       "Pass `wait_ms` to short-poll up to that long for a pending call to finish. " +
       "Pass `consume: true` to delete a finished inline result, or on the final protected page to delete a paged result. " +
       "Status will be 'pending' (still running), 'done' (success — `result` populated), " +

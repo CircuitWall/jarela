@@ -21,8 +21,19 @@ Tools category or through the process environment. Settings changes take effect
 without restarting. The shared limit also bounds async readback and protected
 proxy envelopes; it is not a maximum stored-result size. Preview sizes and
 readback page limits remain separate controls.
-Read it with `tool_result_get({ result_ref: { name: "<full emitted filename>" },
-offset: 0, limit: 2000 })`, then continue using `next_offset` until `done`.
+For file inspection, locate paths with `file_glob`, search with `file_grep`
+using a narrow glob/pattern, then read explicit `start_line`/`end_line` ranges
+around relevant hits. Read an already-known range directly. Prefer a targeted
+source read over paging through a spilled file response. An outline or search
+match does not prove that omitted content was inspected.
+
+When the needed content exists only in a result reference, read a small slice
+with `tool_result_get({ result_ref: { name: "<full emitted filename>" },
+offset: 0, limit: 2000 })`. Use `next_offset` only for necessary additional
+slices; stop when sufficient evidence is obtained. Do not exhaust result pages
+or reconstruct entire files unless the task explicitly requires complete
+inspection. The inline threshold is not a target read size; it is separate
+from the file tool's clipping limit. Both configured limits remain unchanged.
 Copy **`result_ref.name`, including its extension**, not `sha256`. Legacy bare
 SHA-256 values are accepted only when they resolve to one text/JSON file;
 `ambiguous` means to supply the full name. Missing/expired references return

@@ -63,6 +63,25 @@ describe("postProcessToolResult", () => {
     expect(serializeToolResult(undefined)).toBe("undefined");
   });
 
+  it("prioritizes source search and bounded reads for file spills without changing other result contracts", async () => {
+    vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", "64");
+    resetConfigCache();
+    const payload = JSON.stringify({ content: "Synthetic content\n".repeat(100) });
+    const file = parseToolResultReferenceEnvelope(await postProcessToolResult("file_read", payload))!;
+    const other = parseToolResultReferenceEnvelope(await postProcessToolResult("synthetic_tool", payload))!;
+    expect(file.hint).toContain("Prefer file_grep on the source path");
+    expect(file.hint).toContain("file_read with explicit start_line/end_line");
+    expect(file.hint).toContain("unless the task requires complete inspection");
+    expect(other.hint).not.toContain("Prefer file_grep");
+    for (const envelope of [file, other]) {
+      expect(envelope.hint).toContain("a small offset/limit only for the needed slice");
+      expect(envelope.hint).toContain(envelope.result_ref.name);
+      expect(envelope.bytes).toBe(Buffer.byteLength(payload));
+      expect(await readToolResultRef({ name: envelope.result_ref.name, limit: 20 }))
+        .toMatchObject({ ok: true, result: payload.slice(0, 20) });
+    }
+  });
+
   it("measures the limit in bytes, not characters", async () => {
     vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", "10");
     resetConfigCache();
