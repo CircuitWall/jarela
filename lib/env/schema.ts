@@ -10,6 +10,10 @@
 // with name/type/default/description/tier and the rest of the system
 // (UI, persistence, agent tool gating, docs) picks it up automatically.
 
+import { USAGE_STRATEGIES } from "@/lib/agents/usage-strategy";
+
+export { USAGE_STRATEGIES };
+
 export type EnvVarType = "int" | "string" | "bool" | "enum";
 
 export type EnvCategory =
@@ -160,7 +164,6 @@ export const ENV_DEFAULTS = {
 export const HALLUCINATION_DETECTOR_MODES = ["off", "regex", "model"] as const;
 export const MODEL_ROUTER_MODES = ["off", "heuristic"] as const;
 export const MODEL_ROUTER_POLICIES = ["cheap", "fast", "balanced", "quality"] as const;
-export const USAGE_STRATEGIES = ["cost_saving", "fast", "balanced", "high_reasoning"] as const;
 export const TOOL_SAFETY_VALUES = ["safe", "mostly_safe", "bypass"] as const;
 export const LOG_LEVEL_VALUES = ["debug", "info", "warn", "error"] as const;
 

@@ -22,6 +22,9 @@ describe("usage strategy profiles", () => {
 
   it("defaults invalid and missing values to balanced", () => {
     expect(parseUsageStrategy("unknown")).toBeNull();
+    expect(parseUsageStrategy(" FAST ")).toBeNull();
+    expect(parseUsageStrategy("FAST")).toBeNull();
+    expect(parseUsageStrategy(null)).toBeNull();
     expect(resolveUsageStrategy(null, "unknown")).toBe("balanced");
   });
 

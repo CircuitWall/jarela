@@ -15,6 +15,7 @@
 import { getDataDir } from "@/lib/db/data-dir";
 import { getAppName, getAppDescription, getAppIssueUrl } from "./app-config";
 import { ENV_DEFAULTS } from "./schema";
+import { parseUsageStrategy as parseCanonicalUsageStrategy, type UsageStrategy } from "@/lib/agents/usage-strategy";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -95,7 +96,7 @@ export interface JarelaConfig {
   readonly terminalIdleTtlMs: number;
   readonly modelRouterMode: "off" | "heuristic";
   readonly modelRouterPolicy: "cheap" | "fast" | "balanced" | "quality";
-  readonly usageStrategy: "cost_saving" | "fast" | "balanced" | "high_reasoning";
+  readonly usageStrategy: UsageStrategy;
   readonly citationCheckerTailChars: number;
   readonly citationManifestMax: number;
 
@@ -166,10 +167,7 @@ function parseUsageStrategy(
   value: string | undefined,
   fallback: JarelaConfig["usageStrategy"],
 ): JarelaConfig["usageStrategy"] {
-  if (!value) return fallback;
-  const v = value.trim().toLowerCase();
-  if (v === "cost_saving" || v === "fast" || v === "balanced" || v === "high_reasoning") return v;
-  return fallback;
+  return parseCanonicalUsageStrategy(value?.trim().toLowerCase()) ?? fallback;
 }
 
 function parseLogLevel(value: string | undefined, fallback: "debug" | "info" | "warn" | "error"): JarelaConfig["logLevel"] {
