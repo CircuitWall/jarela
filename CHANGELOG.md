@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Report skipped oversized, binary and unreadable `file_grep` candidates so
+  incomplete searches cannot be mistaken for confirmed no-match results.
+- Accept unambiguous legacy content hashes when reading text/JSON tool spills,
+  clarify full reference names and async-list scope, and distinguish read
+  failures from missing references.
 - Keep avatar uploads in the agent, profile and first-run editors consistent:
   report file-read errors, cancel superseded/unmounted reads and prevent late
   results from overwriting a newer selection or a removed icon.

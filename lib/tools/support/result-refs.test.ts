@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, promises as fsp } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +14,10 @@ const {
   serializeToolResult,
 } = await import("./result-refs");
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 afterAll(() => rmSync(tmpRoot, { recursive: true, force: true }));
 
 async function spill(result: unknown, maxBytes = 64) {
@@ -86,6 +89,70 @@ describe("postProcessToolResult", () => {
 });
 
 describe("readToolResultRef", () => {
+  it("retrieves the exact emitted reference through the public readback tool without an async key", async () => {
+    const { toolResultGetTool, toolResultListTool } = await import("./async-results-tool");
+    const body = JSON.stringify({ ok: true, content: "synthetic large file\n".repeat(2000) });
+    const envelope = await spill(body);
+    expect(envelope.result_ref.name).toMatch(/^[a-f0-9]{64}\.json$/);
+    expect(envelope.hint).toContain(envelope.result_ref.name);
+    expect(envelope.hint).toContain('result_ref: { name: "');
+    expect(envelope.hint).toContain("including its extension, not sha256");
+    expect(toolResultGetTool.description).toContain("ambiguous");
+    expect(toolResultListTool.description).toContain("Synchronous spilled results");
+    const page = JSON.parse(await toolResultGetTool.invoke({
+      result_ref: { name: envelope.result_ref.name }, offset: 0, limit: 2000,
+    }) as string);
+    expect(page).toMatchObject({ ok: true, status: "done", result: body.slice(0, 2000), next_offset: 2000 });
+    expect(JSON.parse(await toolResultListTool.invoke({}) as string).count).toBe(0);
+  });
+
+  it("resolves a copied content hash to its stored result filename", async () => {
+    const envelope = await spill(JSON.stringify({ content: "synthetic ".repeat(100) }));
+    const page = await readToolResultRef({ name: envelope.result_ref.sha256!, limit: 20 });
+    expect(page).toMatchObject({ ok: true, name: envelope.result_ref.name, status: "done" });
+  });
+
+  it.each(["file_read", "memory_search"])("reads a real wrapped %s spill by filename and content hash", async (toolName) => {
+    const { tool } = await import("@langchain/core/tools");
+    const { z } = await import("zod");
+    const { wrapWithWallclock } = await import("./wallclock");
+    const { toolResultGetTool } = await import("./async-results-tool");
+    vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", "16384");
+    const contents = JSON.stringify({ ok: true, content: `${toolName} synthetic\n`.repeat(5000) });
+    const wrapped = wrapWithWallclock(tool(async () => contents, {
+      name: toolName, description: "Synthetic shared-spill regression", schema: z.object({}),
+    }));
+    const envelope = parseToolResultReferenceEnvelope(await wrapped.invoke({}));
+    expect(envelope).not.toBeNull();
+    for (const name of [envelope!.result_ref.name, envelope!.result_ref.sha256!]) {
+      const page = JSON.parse(await wrapWithWallclock(toolResultGetTool).invoke({
+        result_ref: { name }, offset: 5000, limit: 2000,
+      }) as string);
+      expect(page).toMatchObject({
+        ok: true, status: "done", result: contents.slice(5000, 7000), next_offset: 7000,
+      });
+    }
+  });
+
+  it("supports text hashes without guessing when JSON and text names both exist", async () => {
+    const { fileAbsPath } = await import("@/lib/files");
+    const envelope = await spill("synthetic text ".repeat(100));
+    expect(await readToolResultRef({ name: envelope.result_ref.sha256!, limit: 9 }))
+      .toMatchObject({ ok: true, name: envelope.result_ref.name, result: "synthetic" });
+    writeFileSync(fileAbsPath(`${envelope.result_ref.sha256}.json`)!, "{}");
+    expect(await readToolResultRef({ name: envelope.result_ref.sha256! }))
+      .toMatchObject({ ok: false, status: "ambiguous", error: expect.stringContaining("full result_ref.name") });
+    expect(await readToolResultRef({ name: envelope.result_ref.name, limit: 9 }))
+      .toMatchObject({ ok: true, result: "synthetic" });
+  });
+
+  it("reports real I/O failures distinctly from an unknown or expired reference", async () => {
+    const envelope = await spill("synthetic denied ".repeat(100));
+    vi.spyOn(fsp, "open").mockRejectedValueOnce(Object.assign(new Error("Synthetic access denied"), { code: "EACCES" }));
+    expect(await readToolResultRef({ name: envelope.result_ref.name }))
+      .toMatchObject({ ok: false, status: "error", error: expect.stringContaining("Synthetic access denied") });
+  });
+
   it("pages multi-byte text without corrupting characters at page edges", async () => {
     const text = "héllo wörld — 日本語のテキスト 😀🎉 ".repeat(4);
     const envelope = await spill(text);

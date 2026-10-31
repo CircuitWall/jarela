@@ -106,11 +106,11 @@ export const toolResultGetTool = tool(
     name: "tool_result_get",
     description:
       "Retrieve the result of a previously async-fired tool call by its key. " +
-      "Also reads result_ref payloads by result_ref.name with offset/limit. Owned background output stays encrypted and thread-scoped; protected pages are bounded by the inline output budget. " +
+      "Also reads result_ref payloads by the full result_ref.name (including extension, not sha256) with offset/limit. Unambiguous legacy content hashes are accepted for text/JSON spills. Owned background output stays encrypted and thread-scoped; protected pages are bounded by the inline output budget. " +
       "Pass `wait_ms` to short-poll up to that long for a pending call to finish. " +
       "Pass `consume: true` to delete a finished inline result, or on the final protected page to delete a paged result. " +
       "Status will be 'pending' (still running), 'done' (success — `result` populated), " +
-      "'error' (failed — `error` populated), or 'unknown' (no such key).",
+      "'error' (failed — `error` populated), 'unknown' (missing key/reference), or 'ambiguous' (a hash matches multiple files; pass the full reference name).",
     schema: z.object({
       key: z.string().optional().describe("The key returned by the original async tool call."),
       wait_ms: z
@@ -125,7 +125,7 @@ export const toolResultGetTool = tool(
         .optional()
         .describe("If true and the call has finished, delete the entry after returning it. Default false."),
       result_ref: z.object({
-        name: z.string().describe("The result_ref.name returned by a truncated tool result."),
+        name: z.string().describe("The full result_ref.name returned by a truncated tool result, including its file extension. Do not substitute sha256."),
       }).optional().describe("Read a spilled tool result by reference instead of an async key."),
       name: z
         .string()
@@ -153,7 +153,7 @@ export const toolResultListTool = tool(
     name: "tool_result_list",
     description:
       "List currently tracked async tool results (newest first). Useful when you've forgotten " +
-      "a key or want a quick status check across pending background calls. Optional `status` " +
+      "a key or want a quick status check across pending background calls. Synchronous spilled results are read directly by result_ref.name and are not tracked in this async list. Optional `status` " +
       "filter narrows to 'pending' / 'done' / 'error'.",
     schema: z.object({
       status: z.enum(["pending", "done", "error"]).optional()

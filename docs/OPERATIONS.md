@@ -2,6 +2,33 @@
 
 Jarela's main operational views are available from the app menu. They let you review usage, inspect tool configuration, manage scheduled work, and continue agent conversations.
 
+## File searches and tool-result references (Unreleased)
+
+`file_grep` scans text candidates up to **1,000,000 bytes** per file. It reports
+`files_skipped`, `skipped_files` (up to 100 path/reason/size details), and
+`skipped_files_truncated` for oversized, binary or unreadable candidates.
+`search_complete` is false if files were skipped or the scan/match cap was
+reached. A successful call with zero matches is not proof that a pattern is
+absent in unscanned files. Check the warning and skipped reasons; use
+`file_read` with `start_line`/`end_line` ranges for large text files. Normal
+hidden-directory, dependency-directory and glob filters still define the
+search scope.
+
+Oversized tool output is persisted in the existing local artifact store.
+Read it with `tool_result_get({ result_ref: { name: "<full emitted filename>" },
+offset: 0, limit: 2000 })`, then continue using `next_offset` until `done`.
+Copy **`result_ref.name`, including its extension**, not `sha256`. Legacy bare
+SHA-256 values are accepted only when they resolve to one text/JSON file;
+`ambiguous` means to supply the full name. Missing/expired references return
+`unknown`, while other read failures return `error`.
+
+`tool_result_list` lists **asynchronous calls**, not synchronous spill files.
+An empty async list does not establish that a synchronous spill was lost.
+Paging retrieves the emitted tool output, not bytes the originating tool
+already omitted: a clipped `file_read` still needs a new line-ranged read to
+reach later source content. Thread-owned background results keep their
+existing encrypted, owner-checked reference path and consume behavior.
+
 ## Agent advertisements (Unreleased)
 
 In the **Agents** panel, configure the shared generation policy once. In an
