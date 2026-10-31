@@ -185,7 +185,7 @@ describe("file_read", () => {
     resetConfigCache();
     writeFileSync(f, "a".repeat(70_000));
     try {
-      const out = parse(await fileReadTool.invoke({ path: f }));
+      const out = parse(await fileReadTool.invoke({ path: f, start_line: 1, end_line: 1 }));
       expect(out.truncated).toBe(true);
       expect((out.content as string).length).toBe(64_000);
     } finally {
@@ -199,6 +199,61 @@ describe("file_read", () => {
     const out = parse(await fileReadTool.invoke({ path: join(scratch, "nope.txt") }));
     expect(out.ok).toBe(false);
     expect(out.error).toMatch(/ENOENT/);
+  });
+
+  it("requires both range endpoints above the shared inline byte threshold", async () => {
+    const { getConfig } = await import("@/lib/env/config");
+    const budget = getConfig().toolResultMaxBytes;
+    const f = join(scratch, "bounded.txt");
+    writeFileSync(f, "a".repeat(budget));
+    expect(parse(await fileReadTool.invoke({ path: f })).ok).toBe(true);
+    writeFileSync(f, "a".repeat(budget + 1));
+    for (const range of [{}, { start_line: 1 }, { end_line: 1 }]) {
+      const out = parse(await fileReadTool.invoke({ path: f, ...range }));
+      expect(out).toMatchObject({ ok: false, error_code: "file_read_range_required", size_bytes: budget + 1 });
+      expect(out).not.toHaveProperty("content");
+      expect(out).not.toHaveProperty("attachment_reference");
+    }
+    writeFileSync(f, "a".repeat(budget) + "\nrelevant\n");
+    expect(parse(await fileReadTool.invoke({ path: f, start_line: 2, end_line: 2 })).content).toBe("relevant");
+  });
+
+  it("measures UTF-8 bytes and prevents wrapped oversized reads from exposing content or spills", async () => {
+    const { getConfig } = await import("@/lib/env/config");
+    const { wrapWithWallclock } = await import("../support/wallclock");
+    const budget = getConfig().toolResultMaxBytes;
+    const f = join(scratch, "outline.ts");
+    const source = Array.from({ length: 300 }, (_, i) =>
+      `export function synthetic${i}${"x".repeat(80)}() { return "é"; }`).join("\n");
+    writeFileSync(f, source);
+    const text = await wrapWithWallclock(fileReadTool).invoke({ path: f });
+    const out = parse(text as string);
+    expect(out).toMatchObject({ ok: false, error_code: "file_read_range_required", outline_truncated: true });
+    expect(out).not.toHaveProperty("content");
+    expect(out).not.toHaveProperty("result_ref");
+    expect(Buffer.byteLength(text as string)).toBeLessThanOrEqual(budget);
+    expect((out.outline as unknown[]).length).toBeGreaterThan(0);
+    const unicode = join(scratch, "unicode.txt");
+    writeFileSync(unicode, "é".repeat(Math.floor(budget / 2) + 1));
+    expect(parse(await fileReadTool.invoke({ path: unicode })).error_code).toBe("file_read_range_required");
+  });
+
+  it("uses the configured shared threshold rather than a separate file limit", async () => {
+    const previous = process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+    const f = join(scratch, "configured-budget.txt");
+    writeFileSync(f, "a".repeat(3_000));
+    try {
+      process.env.JARELA_TOOL_RESULT_MAX_BYTES = "2048";
+      resetConfigCache();
+      expect(parse(await fileReadTool.invoke({ path: f })).error_code).toBe("file_read_range_required");
+      process.env.JARELA_TOOL_RESULT_MAX_BYTES = "4096";
+      resetConfigCache();
+      expect(parse(await fileReadTool.invoke({ path: f })).ok).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+      else process.env.JARELA_TOOL_RESULT_MAX_BYTES = previous;
+      resetConfigCache();
+    }
   });
 
   it("attaches outline on exploration reads of recognised text files", async () => {

@@ -248,6 +248,27 @@ export const fileReadTool = tool(
       assertSafePath(abs, "read");
       const rawBytes = await withFsDeadline("file_read", abs, () => fs.readFile(abs));
       const raw = rawBytes.toString("utf8");
+      const inlineBudget = getConfig().toolResultMaxBytes;
+      if (rawBytes.length > inlineBudget
+        && (start_line === undefined || end_line === undefined)) {
+        const entries = shouldOutline(abs, raw) ? capOutline(buildOutline(abs, raw)) : null;
+        const response = {
+          ok: false,
+          error_code: "file_read_range_required",
+          error: "This file exceeds the inline tool-result budget. Use file_grep to locate relevant lines, then file_read with both start_line and end_line. No file content was returned.",
+          path: abs,
+          size_bytes: rawBytes.length,
+          total_lines: raw.split(/\r?\n/).length,
+          outline: entries?.entries ?? [],
+          outline_truncated: entries?.truncated ?? false,
+        };
+        while (response.outline.length > 0
+          && Buffer.byteLength(JSON.stringify(response)) > inlineBudget) {
+          response.outline.pop();
+          response.outline_truncated = true;
+        }
+        return JSON.stringify(response);
+      }
       let content = raw;
       let lineRange: { start: number; end: number } | null = null;
       if (start_line || end_line) {
@@ -295,7 +316,7 @@ export const fileReadTool = tool(
   {
     name: "file_read",
     description:
-      "Read a UTF-8 text file. Prefer file_glob/file_grep to locate targets before reading; avoid shell cat/type/Get-Content for normal file inspection. Use explicit 1-based start_line/end_line ranges around relevant search hits; read a known range directly. Output clipped at the configured read-file limit (1 MB by default), separately from the inline tool-result budget. Do not walk an entire large file in chunks or reconstruct a spilled response unless complete inspection is required by the task. When called without a line range on a recognised text file, the response also includes an `outline` array of {kind,name,line} entries; use it to select a bounded follow-up range, not to read every section.",
+      "Read a UTF-8 text file. Prefer file_glob/file_grep to locate targets before reading; avoid shell cat/type/Get-Content for normal file inspection. Files larger than the configured inline tool-result budget require both 1-based start_line and end_line; otherwise the tool returns file_read_range_required with metadata and a bounded outline, but no content. Use explicit ranges around relevant search hits and read known ranges directly. Explicit ranges retain the configured read-file clipping limit (1 MB by default), separately from the inline budget. Do not walk an entire large file or reconstruct a spilled response unless complete inspection is required. Small unrestricted reads include an outline when available; for large files the bounded outline guides a range read without returning content.",
     schema: readSchema,
   },
 );
