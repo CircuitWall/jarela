@@ -54,7 +54,7 @@ export async function postProcessToolResult(toolName: string, result: unknown): 
       size: bytes,
       sha256: ref.sha256,
     },
-    hint: `This tool result was shortened. Call tool_result_get with result_ref: { name: "${ref.name}" } and offset/limit to read more. Copy the full name including its extension, not sha256. Synchronous spills are not listed by tool_result_list.`,
+    hint: `This tool result was shortened. ${toolName === "file_read" ? "Prefer file_grep on the source path to locate relevant lines, then file_read with explicit start_line/end_line; do not reconstruct the whole file from result pages unless the task requires complete inspection. " : ""}Call tool_result_get with result_ref: { name: "${ref.name}" } and a small offset/limit only for the needed slice; stop when sufficient evidence is obtained. Copy the full name including its extension, not sha256. Synchronous spills are not listed by tool_result_list.`,
   };
   if (typeof preview.total_count === "number") envelope.total_count = preview.total_count;
   return JSON.stringify(envelope);

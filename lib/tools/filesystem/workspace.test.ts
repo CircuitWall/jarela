@@ -63,7 +63,8 @@ describe("workspace_init", () => {
 
     expect(out.recommended_next_steps).toEqual(expect.arrayContaining([
       expect.stringContaining("Read required docs first with file_read"),
-      expect.stringContaining("Use file_grep with a glob filter"),
+      expect.stringContaining("Use file_grep with a narrow glob filter"),
+      expect.stringContaining("file_read with explicit start_line/end_line"),
       expect.stringContaining("Use local_exec for focused package scripts"),
     ]));
 
@@ -232,7 +233,7 @@ describe("workspace_status / workspace_close", () => {
     expect(out.active).toBe(true);
     expect(out.root).toBe(projectRoot);
     expect(out.recommended_next_steps).toEqual(expect.arrayContaining([
-      expect.stringContaining("Use file_grep with a glob filter"),
+      expect.stringContaining("Use file_grep with a narrow glob filter"),
     ]));
   });
 
