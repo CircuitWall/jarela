@@ -1,7 +1,7 @@
 import { promises as fsp } from "node:fs";
+import { getConfig } from "@/lib/env/config";
 import { errorMessage } from "@/lib/utils/error";
 
-const DEFAULT_MAX_INLINE_BYTES = 16 * 1024;
 const DEFAULT_PREVIEW_BYTES = 4 * 1024;
 const MAX_READ_BYTES = 1024 * 1024;
 const JSON_ARRAY_PREVIEW_ITEMS = 20;
@@ -27,10 +27,7 @@ export interface ToolResultReferenceEnvelope {
 }
 
 export function getToolResultMaxBytes(): number {
-  const raw = process.env.JARELA_TOOL_RESULT_MAX_BYTES;
-  if (!raw) return DEFAULT_MAX_INLINE_BYTES;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_MAX_INLINE_BYTES;
+  return getConfig().toolResultMaxBytes;
 }
 
 export async function postProcessToolResult(toolName: string, result: unknown): Promise<string> {
