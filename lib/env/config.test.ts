@@ -6,6 +6,7 @@ vi.mock("@/lib/db/data-dir", () => ({
 }));
 
 import { getConfig, resetConfigCache } from "./config";
+import { USAGE_STRATEGIES } from "@/lib/agents/usage-strategy";
 
 const KEYS = [
   "JARELA_PORT",
@@ -189,13 +190,11 @@ describe("getConfig", () => {
   });
 
   it("parses valid usage strategies and falls back for invalid values", () => {
-    process.env.JARELA_USAGE_STRATEGY = "fast";
-    resetConfigCache();
-    expect(getConfig().usageStrategy).toBe("fast");
-
-    process.env.JARELA_USAGE_STRATEGY = "high_reasoning";
-    resetConfigCache();
-    expect(getConfig().usageStrategy).toBe("high_reasoning");
+    for (const strategy of USAGE_STRATEGIES) {
+      process.env.JARELA_USAGE_STRATEGY = `  ${strategy.toUpperCase()}  `;
+      resetConfigCache();
+      expect(getConfig().usageStrategy).toBe(strategy);
+    }
 
     process.env.JARELA_USAGE_STRATEGY = "unknown";
     resetConfigCache();
