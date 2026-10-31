@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 const root = mkdtempSync(join(tmpdir(), "jarela-advertisements-"));
 process.env.JARELA_DB_DIR = root;
-const refresh = vi.hoisted(() => vi.fn(async () => null));
-vi.mock("@/lib/agents/advertisement-service", () => ({ advertisementService: () => ({ refresh }) }));
+const refreshAll = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("@/lib/agents/advertisement-service", () => ({ advertisementService: () => ({ refreshAll }) }));
 const { getDb, closeDb } = await import("@/lib/db");
 const { upsertAgentConfig, duplicateAgentConfig, deleteAgentConfig, compareAndSetAgentTools } = await import("./agent-configs");
 const { getAdvertisement, putAdvertisement, getAdvertisementPolicy, setAdvertisementPolicy, reserveAdvertisementCall } = await import("./agent-advertisements");
@@ -19,7 +19,7 @@ const ready = () => putAdvertisement({
 });
 beforeEach(() => {
   getDb().prepare("DELETE FROM memory_store WHERE namespace IN (?,?)").run("agent-advertisements", "app-settings");
-  refresh.mockClear();
+  refreshAll.mockClear();
 });
 afterAll(() => { closeDb(); rmSync(root, { recursive: true, force: true }); });
 describe("advertisement persistence and all shared config writes", () => {
@@ -44,28 +44,30 @@ describe("advertisement persistence and all shared config writes", () => {
     setAdvertisementPolicy({ ...defaultAdvertisementPolicy(), enabled: true, model_config_name: "configured" });
     upsertAgentConfig({ id: agent.id, name: agent.name, identity: agent.identity, instructions: agent.instructions, tools: [], icon: "new-icon" });
     expect(getAdvertisement(agent.id)?.status).toBe("ready");
-    expect(refresh).not.toHaveBeenCalled();
+    expect(refreshAll).not.toHaveBeenCalled();
     upsertAgentConfig({ id: agent.id, name: agent.name, identity: agent.identity, instructions: "A new saved task", tools: [] });
     expect(getAdvertisement(agent.id)?.status).toBe("stale");
     expect(getAdvertisement(agent.id)?.advertisement).toBeNull();
-    await vi.waitFor(() => expect(refresh).toHaveBeenCalledWith(agent.id));
+    await vi.waitFor(() => expect(refreshAll).toHaveBeenCalledExactlyOnceWith());
   });
   it("covers duplicate, atomic tool grants and deletion without copying derived metadata", async () => {
     seed(); ready();
     setAdvertisementPolicy({ ...defaultAdvertisementPolicy(), enabled: true, model_config_name: "configured" });
     const copy = duplicateAgentConfig("specialist")!;
     expect(getAdvertisement(copy.id)).toBeNull();
-    await vi.waitFor(() => expect(refresh).toHaveBeenCalledWith(copy.id));
+    await vi.waitFor(() => expect(refreshAll).toHaveBeenCalledExactlyOnceWith());
     compareAndSetAgentTools("specialist", "[]", ["fixture_read"]);
     expect(getAdvertisement("specialist")?.status).toBe("stale");
+    await vi.waitFor(() => expect(refreshAll).toHaveBeenCalledTimes(2));
     deleteAgentConfig("specialist");
     expect(getAdvertisement("specialist")).toBeNull();
+    await vi.waitFor(() => expect(refreshAll).toHaveBeenCalledTimes(3));
   });
   it("does not invalidate or schedule for a rejected store write", () => {
     seed(); ready();
     expect(() => compareAndSetAgentTools("specialist", '["wrong"]', ["fixture_read"])).toThrow();
     expect(getAdvertisement("specialist")?.status).toBe("ready");
-    expect(refresh).not.toHaveBeenCalled();
+    expect(refreshAll).not.toHaveBeenCalled();
   });
   it("persists hourly reservations across reads and expires them deterministically", () => {
     expect(reserveAdvertisementCall(10000000, 2)).toBe(true);

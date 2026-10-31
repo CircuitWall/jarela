@@ -232,7 +232,11 @@ Unreleased `lib/agents/advertisement-service.ts` is an in-process coalescing
 metadata worker, not a second agent executor. Shared config-store post-save
 hooks invalidate routing sources; the existing canonical tool authority resolver
 separates permission from transient readiness. Explicit configured-model policy
-bounds egress and usage. Encrypted rows use the existing `memory_store`, excluded
+bounds egress and usage. Unreleased advertisement input selects only tools whose
+permission is exclusive to one saved agent; a single-agent roster contributes
+no tools. Config changes refresh all agents, and source fingerprints recheck
+the selected tool metadata before generation and publication without changing
+execution permissions. Encrypted rows use the existing `memory_store`, excluded
 from ordinary memory/recall; fingerprints and generation IDs reject stale
 publication after asynchronous work. The existing delegate catalog consumes
 only currently valid descriptive data with deterministic overflow and explicit

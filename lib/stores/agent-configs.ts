@@ -448,7 +448,10 @@ export function deleteAgentConfig(id: string): boolean {
   const deleted = (
     (getDb().prepare("DELETE FROM agent_configs WHERE id=?").run(id) as { changes: number }).changes > 0
   );
-  if (deleted) deleteAdvertisement(id);
+  if (deleted) {
+    deleteAdvertisement(id);
+    notifyAdvertisementSourceChanged(id);
+  }
   return deleted;
 }
 

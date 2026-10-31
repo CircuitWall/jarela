@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Manage advertisement generation policy once in the Agents panel and keep
+  per-agent enable/regenerate controls in the editor. Refresh untouched global
+  fields from saved settings while preserving unsaved edits.
+- Generate agent advertisements from exclusive permitted tools rather than the
+  full tool catalog. Omit shared tools and omit all tool descriptions for a
+  single saved agent; refresh selection on roster/permission changes without
+  changing execution permissions or the bounded advertisement output.
+
 - Share stored attachment decoding between chat rendering and history assembly,
   best-effort context deadline handling, tolerant app-settings JSON reads and
   telemetry statistics defaults; unify nullable agent enum overrides while
