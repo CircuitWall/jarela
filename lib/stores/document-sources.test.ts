@@ -6,7 +6,12 @@ import { join } from "node:path";
 const root = mkdtempSync(join(tmpdir(), "jarela-source-stats-"));
 process.env.JARELA_DB_DIR = root;
 const { closeDb, getDb } = await import("@/lib/db");
-const { createDocumentSource, getDocumentSourceStats, listDocumentSourcesWithStats } = await import("./document-sources");
+const {
+  createDocumentSource, getDocumentSourceStats, listDocumentSourcesWithStats,
+  listDocumentSources, listEnabledDocumentSources, getDocumentSource,
+  getDocumentSourceByPath, parseSourceConfig, updateDocumentSource,
+  updateDocumentSourceCursor, deleteDocumentSource, markSourceScanned,
+} = await import("./document-sources");
 
 beforeEach(() => {
   getDb().prepare("DELETE FROM document_sources").run();
@@ -68,4 +73,41 @@ it("executes one query for the collection regardless of source count", () => {
 
 it("returns an empty collection without inventing a source", () => {
   expect(listDocumentSourcesWithStats()).toEqual([]);
+});
+
+it("preserves omitted fields, clears explicit values and filters disabled sources", () => {
+  const local = createDocumentSource({ path: "synthetic-local", label: "Local" });
+  const remote = createDocumentSource({ path: "synthetic-remote", kind: "github_repo", config: { branch: "main" } });
+  expect(getDocumentSource(local.id)).toEqual(local);
+  expect(getDocumentSourceByPath(remote.path)).toEqual(remote);
+  expect(getDocumentSource("missing")).toBeNull();
+  expect(getDocumentSourceByPath("missing")).toBeNull();
+  expect(parseSourceConfig(local)).toBeNull();
+  expect(parseSourceConfig(remote)).toEqual({ branch: "main" });
+  expect(parseSourceConfig({ ...remote, config: "invalid JSON" })).toBeNull();
+  expect(updateDocumentSource("missing", {})).toBeNull();
+  expect(updateDocumentSource(local.id, { enabled: false })).toMatchObject({ label: "Local", enabled: 0 });
+  expect(listEnabledDocumentSources()).toEqual([remote]);
+  expect(listDocumentSources()).toHaveLength(2);
+  expect(updateDocumentSource(local.id, { label: null, enabled: true })).toMatchObject({ label: null, enabled: 1 });
+  expect(updateDocumentSource(local.id, {})).toMatchObject({ label: null, enabled: 1 });
+  updateDocumentSourceCursor(remote.id, "synthetic-cursor");
+  expect(getDocumentSource(remote.id)?.last_cursor).toBe("synthetic-cursor");
+  updateDocumentSourceCursor(remote.id, null);
+  expect(getDocumentSource(remote.id)?.last_cursor).toBeNull();
+  markSourceScanned(local.id, "Synthetic scan failure");
+  expect(getDocumentSource(local.id)).toMatchObject({ last_error: "Synthetic scan failure", last_scan_at: expect.any(String) });
+  markSourceScanned(local.id);
+  expect(getDocumentSource(local.id)?.last_error).toBeNull();
+});
+
+it("deletes documents and chunks with their source, without touching siblings", () => {
+  const source = createDocumentSource({ path: "synthetic-delete" });
+  const sibling = createDocumentSource({ path: "synthetic-retain" });
+  document(source.id, "synthetic-document", [null]);
+  expect(deleteDocumentSource(source.id)).toBe(true);
+  expect(deleteDocumentSource(source.id)).toBe(false);
+  expect(getDocumentSource(sibling.id)).toEqual(sibling);
+  expect(getDb().prepare("SELECT id FROM documents WHERE id=?").get("synthetic-document")).toBeUndefined();
+  expect(getDb().prepare("SELECT id FROM document_chunks WHERE document_id=?").get("synthetic-document")).toBeUndefined();
 });
