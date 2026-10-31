@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SQLite-backed lifecycle tests for single reservations, immutable outcomes,
   restart recovery, encrypted results and atomic signal-publication rollback.
   Production approval behavior is unchanged.
+- Reuse canonical usage-strategy choices, types and parsing in environment
+  configuration. Preserve normalized process-env values and strict persisted
+  and per-agent values without changing strategy defaults or profiles.
 - Raise the default adaptive output floor for Balanced and High Reasoning to
   8,192 tokens so short prompts have more room for large tool calls. Provider,
   model and context ceilings still apply; Fast and Cost-saving retain their
