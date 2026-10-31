@@ -89,7 +89,7 @@ export function getUsageStrategyProfile(strategy: UsageStrategy): UsageStrategyP
 export const THINKING_OUTPUT_FLOOR_TOKENS = 32_768;
 // Turn text length is only a size proxy, not a semantic output prediction.
 export const OUTPUT_TOKEN_HEADROOM_MULTIPLIER = 4;
-export const DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP = 4_096;
+export const DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP = 8_192;
 
 export function resolveOutputTokenCap(
   profileCap: number | null,

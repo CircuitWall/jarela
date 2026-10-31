@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Raise the default adaptive output floor for Balanced and High Reasoning to
+  8,192 tokens so short prompts have more room for large tool calls. Provider,
+  model and context ceilings still apply; Fast and Cost-saving retain their
+  2,048-token baselines.
 - Share the scheduled-task and watcher detail-row layout without changing
   editor validation, controls, or in-flight state.
 - Manage advertisement generation policy once in the Agents panel and keep

@@ -4,7 +4,11 @@ import { modelCapabilities } from "@/lib/providers/capabilities";
 import { detectModelFunctionality } from "@/lib/dashboard/classify";
 import type { ProviderRates } from "@/lib/stores/pricing";
 import { getKnownContextLength } from "@/lib/providers/known-context-windows";
-import { computeContextBudget, type ContextTierProportions } from "@/lib/agents/context-budget";
+import {
+  computeContextBudget,
+  DEFAULT_CONTEXT_WINDOW_TOKENS,
+  type ContextTierProportions,
+} from "@/lib/agents/context-budget";
 
 export type ModelRouterPolicy = "cheap" | "fast" | "balanced" | "quality";
 export type ModelRouteClass = "simple-chat" | "factual" | "research" | "complex-reasoning" | "multimodal";
@@ -195,7 +199,9 @@ function modelContextWindowTokens(model: ModelConfig): number {
     ? model.params.context_window_tokens
     : null;
   const known = getKnownContextLength(model.provider, model.model_id);
-  return explicit && known ? Math.min(explicit, known) : explicit ?? known ?? 8_192;
+  return explicit && known
+    ? Math.min(explicit, known)
+    : explicit ?? known ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
 }
 
 function modelHotBudgetTokens(
