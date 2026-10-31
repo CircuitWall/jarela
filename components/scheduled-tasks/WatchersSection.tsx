@@ -9,6 +9,7 @@ import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
 import { agentModelStatus } from "@/lib/agents/effective-model";
 import { AgentModelBadge } from "./AgentModelBadge";
+import { Row } from "./Row";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { Select } from "@/components/ui/Select";
@@ -412,15 +413,6 @@ function WatcherControls({
         {canceling ? <Loader2 size={11} className="animate-spin text-rose-600 dark:text-rose-400" /> : <Trash2 size={11} />}
         {canceling ? "Canceling…" : "Cancel watcher"}
       </button>
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="w-20 shrink-0 text-fg-faint">{label}</span>
-      <div className="flex-1 min-w-0">{children}</div>
     </div>
   );
 }

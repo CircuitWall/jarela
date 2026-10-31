@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Share the scheduled-task and watcher detail-row layout without changing
+  editor validation, controls, or in-flight state.
 - Manage advertisement generation policy once in the Agents panel and keep
   per-agent enable/regenerate controls in the editor. Refresh untouched global
   fields from saved settings while preserving unsaved edits.

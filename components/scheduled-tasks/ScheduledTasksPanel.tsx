@@ -11,6 +11,7 @@ import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
 import { agentModelStatus } from "@/lib/agents/effective-model";
 import { AgentModelBadge } from "./AgentModelBadge";
+import { Row } from "./Row";
 import { WatchersSection } from "./WatchersSection";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 
@@ -275,15 +276,6 @@ function TaskCard({
           <TaskEditor task={task} agents={agents} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} />
         </div>
       )}
-    </div>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="w-20 shrink-0 text-fg-faint">{label}</span>
-      <div className="flex-1 min-w-0">{children}</div>
     </div>
   );
 }
