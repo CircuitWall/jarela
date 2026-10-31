@@ -142,8 +142,7 @@ function SearchEngineSetup() {
 
 export function StepCredentials({ definitions, integrations, onChanged, onConfigured, readOnly = false, firstRun = false }: StepCredentialsProps) {
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const { syncing, syncMsg, handleSyncFromEnv } = useCredentialEnvSync(onChanged);
 
   const claudeDef = useMemo(
     () => definitions.find((def) => def.name === "claude-code") ?? null,
@@ -167,29 +166,56 @@ export function StepCredentials({ definitions, integrations, onChanged, onConfig
   );
 
   if (readOnly) {
-    return (
-      <StepShell
-        icon={<KeyRound size={18} />}
-        eyebrow="Step 2 · Credentials"
-        title="Here's what's connected"
-        description="This is just a review. Your provider connections and search settings will stay as they are."
-      >
-        <div className="divide-y divide-border rounded-xl border border-border bg-surface-3 px-3">
-          {llmDefs.map((definition) => {
-            const configured = statusByName[definition.name]?.configured === true;
-            return (
-              <div key={definition.name} className="flex items-center gap-3 py-3">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
-                <span className="min-w-0 flex-1 truncate text-sm text-fg">{definition.label}</span>
-                <span className="text-xs text-fg-faint">{configured ? "Connected" : "Not connected"}</span>
-              </div>
-            );
-          })}
-        </div>
-      </StepShell>
-    );
+    return <CredentialReview llmDefs={llmDefs} statusByName={statusByName} />;
   }
 
+  return (
+    <CredentialSetup
+      firstRun={firstRun}
+      claudeDef={claudeDef}
+      llmDefs={llmDefs}
+      statusByName={statusByName}
+      activeProvider={activeProvider}
+      setActiveProvider={setActiveProvider}
+      syncing={syncing}
+      syncMsg={syncMsg}
+      handleSyncFromEnv={handleSyncFromEnv}
+      onConfigured={onConfigured}
+      onChanged={onChanged}
+    />
+  );
+}
+
+function CredentialReview({ llmDefs, statusByName }: {
+  llmDefs: IntegrationDefinition[];
+  statusByName: Record<string, IntegrationStatus>;
+}) {
+  return (
+    <StepShell
+      icon={<KeyRound size={18} />}
+      eyebrow="Step 2 · Credentials"
+      title="Here's what's connected"
+      description="This is just a review. Your provider connections and search settings will stay as they are."
+    >
+      <div className="divide-y divide-border rounded-xl border border-border bg-surface-3 px-3">
+        {llmDefs.map((definition) => {
+          const configured = statusByName[definition.name]?.configured === true;
+          return (
+            <div key={definition.name} className="flex items-center gap-3 py-3">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
+              <span className="min-w-0 flex-1 truncate text-sm text-fg">{definition.label}</span>
+              <span className="text-xs text-fg-faint">{configured ? "Connected" : "Not connected"}</span>
+            </div>
+          );
+        })}
+      </div>
+    </StepShell>
+  );
+}
+
+function useCredentialEnvSync(onChanged: () => void) {
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   async function handleSyncFromEnv() {
     setSyncing(true);
     setSyncMsg(null);
@@ -222,6 +248,22 @@ export function StepCredentials({ definitions, integrations, onChanged, onConfig
     }
   }
 
+  return { syncing, syncMsg, handleSyncFromEnv };
+}
+
+function CredentialSetup({
+  firstRun, claudeDef, llmDefs, statusByName, activeProvider, setActiveProvider,
+  syncing, syncMsg, handleSyncFromEnv, onConfigured, onChanged,
+}: {
+  firstRun: boolean;
+  claudeDef: IntegrationDefinition | null;
+  llmDefs: IntegrationDefinition[];
+  statusByName: Record<string, IntegrationStatus>;
+  activeProvider: string | null;
+  setActiveProvider: (name: string | null) => void;
+  onConfigured?: (name: string) => void;
+  onChanged: () => void;
+} & ReturnType<typeof useCredentialEnvSync>) {
   return (
     <StepShell
       icon={<KeyRound size={18} />}
@@ -232,7 +274,7 @@ export function StepCredentials({ definitions, integrations, onChanged, onConfig
         : "Add or update provider connections here. GitHub Copilot signs in from the Models panel."}
     >
       {!firstRun && <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 text-xs text-fg">
-          <p className="font-medium">A simple place to start</p>
+        <p className="font-medium">A simple place to start</p>
         <p className="mt-1 leading-relaxed text-fg-subtle">
           Add a provider here, then we&apos;ll use it to find a model in the next step. If you already have credentials in your environment, you can bring them in too.
         </p>

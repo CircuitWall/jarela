@@ -63,7 +63,7 @@ function humanPhase(phase: string | null): string | null {
   return phase.replace(/_/g, " ");
 }
 
-export function BrowserPanel() {
+function useBrowserPanel() {
   const [status, setStatus] = useState<BrowserExtensionStatus | null>(null);
   const [tabs, setTabs] = useState<BrowserTabsResponse | null>(null);
   const [history, setHistory] = useState<BrowserCommandLogEntry[]>([]);
@@ -151,8 +151,12 @@ export function BrowserPanel() {
     }
   }
 
-  const tabRows = tabs?.tabs ?? [];
+  return { status, tabs, history, loading, refreshing, activating, retrying, error, load, activate, retry };
+}
 
+export function BrowserPanel() {
+  const { status, tabs, history, loading, refreshing, activating, retrying, error, load, activate, retry } = useBrowserPanel();
+  const tabRows = tabs?.tabs ?? [];
   return (
     <div className="flex flex-col h-full">
       <PanelHeader icon={<Globe2 size={14} />} title="Browser">

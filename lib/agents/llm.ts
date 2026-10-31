@@ -263,21 +263,28 @@ export function streamWithConfig(
   return withMaskRun(() => streamWithConfigImpl(threadId, messages, options, signal));
 }
 
-async function* streamWithConfigImpl(
+type RunnableModelConfig = NonNullable<ReturnType<typeof resolveRunnableModelConfig>>;
+type AgentRunConfig = StreamOptions["agent_run_config"];
+
+interface InferenceBudget {
+  delegationBudget: DelegationBudget | null;
+  activeInference: {
+    current: {
+      reservation: DelegationCostReservation;
+      rates: ProviderRates;
+      usage: InferenceUsage;
+    } | null;
+  };
+  settleInferenceReservation: (retainFullReservation?: boolean) => void;
+  preModelHook: () => { messages?: HumanMessage[] };
+}
+
+async function prepareInference(
   threadId: string,
-  messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
+  cfg: RunnableModelConfig,
   options?: StreamOptions,
-  signal?: AbortSignal,
-): AsyncGenerator<StreamChunk> {
+) {
   const runCfg = options?.agent_run_config;
-
-  const cfgName = runCfg?.model_config_name ?? null;
-  const cfg = resolveRunnableModelConfig(cfgName);
-
-  if (!cfg) {
-    yield { type: "error", data: { message: "No model configured. Add a model in the Models panel.", code: "no_model" } };
-    return;
-  }
 
   const baseParams: ProviderParams = getModelParams(cfg);
   // If the model config doesn't set max_tokens explicitly, use the budget-
@@ -347,15 +354,22 @@ async function* streamWithConfigImpl(
     }
   }
 
+  return { baseParams, strategyOutputCap, params, includeImages, tools, isDelegatedRun, model, store, checkpointer };
+}
+
+function createInferenceBudget(
+  threadId: string,
+  cfg: RunnableModelConfig,
+  params: ProviderParams,
+  runCfg: AgentRunConfig,
+  signal: AbortSignal | undefined,
+  isDelegatedRun: boolean,
+): InferenceBudget {
   const delegationBudget = isDelegatedRun
     && isDelegationBudget(runCfg?.delegation_budget)
     ? runCfg.delegation_budget
     : null;
-  const activeInference: { current: {
-    reservation: DelegationCostReservation;
-    rates: ProviderRates;
-    usage: InferenceUsage;
-  } | null } = { current: null };
+  const activeInference: InferenceBudget["activeInference"] = { current: null };
   const settleInferenceReservation = (retainFullReservation = false): void => {
     if (!delegationBudget || !activeInference.current) return;
     const active = activeInference.current;
@@ -433,54 +447,159 @@ async function* streamWithConfigImpl(
     if (steering.length === 0) return {};
     return { messages: steering.map((text) => new HumanMessage(text)) };
   };
-  const agent = createReactAgent({ llm: model, tools, store, checkpointer, preModelHook });
+  return { delegationBudget, activeInference, settleInferenceReservation, preModelHook };
+}
 
-  // Track which AIMessageChunk-tool-call-chunks we've already announced (by id).
-  // We emit a tool_call event once per id when both id+name are known and
-  // the assistant turn ends, so callers see structured tool calls (not partial ones).
-  const announcedToolIds = new Set<string>();
-  let pendingAIChunk: AIMessageChunk | null = null;
-  let totalOutputTokens = 0;
-  // ADR-0041: accumulate real per-call provider usage across the react loop
-  // so the `done` chunk can carry authoritative token counts for snapshot.
-  // Each LLM call inside the multi-step loop yields its own usage chunk via
-  // JarelaChatModel; we sum them so the final figure covers the whole turn.
-  let usageInputTokens = 0;
-  let usageOutputTokens = 0;
-  // PR #181 + cache-fidelity follow-up: Anthropic prompt-cache reads/writes
-  // arrive as a separate breakdown via `input_token_details`. Sum them
-  // independently so the dashboard can report cost correctly (cache reads
-  // are 10× cheaper, cache writes 1.25× more expensive than fresh input).
-  let usageCacheCreationTokens = 0;
-  let usageCacheReadTokens = 0;
-  let usageThinkingTokens = 0;
-  let sawUsage = false;
-  // Tracks whether the model hit max_tokens mid-stream. JarelaChatModel tags
-  // the final chunk with additional_kwargs.stop_reason="length" when this
-  // happens; we surface a non-fatal warning before `done` so the user knows
-  // their (visibly truncated) response was cut off — and can ask to continue.
-  let truncatedByLength = false;
-  // Tracks whether the previous emitted chunk was a tool result. When the next
-  // AI message starts producing text, we prepend a paragraph break so the
-  // pre-tool plan acknowledgment and the post-tool reply don't visually merge.
-  let needsParagraphBreak = false;
-  let textEmittedSinceLastBreak = false;
-  // Stream-aware rehydrator: replaces «SECRET:<id> type=<hint>»
-  // placeholders the model echoes back with the original values. Holds
-  // partial placeholders across deltas to avoid leaking a half-token to
-  // the UI. Bound to the current MaskRunContext; no-op outside one.
-  const maskRun = getMaskRunContext();
-  const textRehydrator = maskRun ? new StreamRehydrator(maskRun.ctx) : null;
+class InferenceStreamProjection {
+  private readonly announcedToolIds = new Set<string>();
+  private pendingAIChunk: AIMessageChunk | null = null;
+  private totalOutputTokens = 0;
+  private usageInputTokens = 0;
+  private usageOutputTokens = 0;
+  private usageCacheCreationTokens = 0;
+  private usageCacheReadTokens = 0;
+  private usageThinkingTokens = 0;
+  private sawUsage = false;
+  private needsParagraphBreak = false;
+  private textEmittedSinceLastBreak = false;
+  readonly textRehydrator: StreamRehydrator | null;
+  truncatedByLength = false;
 
-  const flushPendingToolCalls = function* (): Iterable<StreamChunk> {
-    if (!pendingAIChunk) return;
-    for (const tc of collectToolCalls(pendingAIChunk)) {
-      if (announcedToolIds.has(tc.id)) continue;
-      announcedToolIds.add(tc.id);
+  constructor(
+    private readonly activeInference: InferenceBudget["activeInference"],
+    private readonly delegationBudget: DelegationBudget | null,
+  ) {
+    const maskRun = getMaskRunContext();
+    this.textRehydrator = maskRun ? new StreamRehydrator(maskRun.ctx) : null;
+  }
+
+  private recordUsage(chunk: AIMessageChunk): void {
+    const usage = chunk.usage_metadata;
+    if (!usage || !(usage.input_tokens > 0 || usage.output_tokens > 0)) return;
+    this.usageInputTokens += usage.input_tokens ?? 0;
+    this.usageOutputTokens += usage.output_tokens ?? 0;
+    const details = usage.input_token_details;
+    this.usageCacheCreationTokens += details?.cache_creation ?? 0;
+    this.usageCacheReadTokens += details?.cache_read ?? 0;
+    this.usageThinkingTokens += usage.output_token_details?.reasoning ?? 0;
+    if (this.delegationBudget && this.activeInference.current) {
+      const active = this.activeInference.current.usage;
+      active.inputTokens += usage.input_tokens ?? 0;
+      active.outputTokens += usage.output_tokens ?? 0;
+      active.cacheCreationTokens += details?.cache_creation ?? 0;
+      active.cacheReadTokens += details?.cache_read ?? 0;
+    }
+    this.sawUsage = true;
+  }
+
+  private *projectAIChunk(chunk: AIMessageChunk): Iterable<StreamChunk> {
+    this.recordUsage(chunk);
+    let emittedVisibleChunk = false;
+    if (typeof chunk.content === "string" && chunk.content) {
+      let delta = this.textRehydrator ? this.textRehydrator.push(chunk.content) : chunk.content;
+      if (delta) {
+        if (this.needsParagraphBreak && this.textEmittedSinceLastBreak) {
+          delta = "\n\n" + delta;
+        }
+        this.needsParagraphBreak = false;
+        this.textEmittedSinceLastBreak = true;
+        this.totalOutputTokens += 1;
+        yield { type: "text_delta", data: { delta } };
+        emittedVisibleChunk = true;
+      }
+    }
+    const reasoning = chunk.additional_kwargs?.reasoning_content;
+    if (typeof reasoning === "string" && reasoning) {
+      yield { type: "thinking_delta", data: { delta: reasoning } };
+      emittedVisibleChunk = true;
+    }
+    if (chunk.additional_kwargs?.stop_reason === "length") this.truncatedByLength = true;
+    this.pendingAIChunk = this.pendingAIChunk ? this.pendingAIChunk.concat(chunk) : chunk;
+    // Tool argument fragments and held secret placeholders still advance the watchdog.
+    if (!emittedVisibleChunk) yield { type: "heartbeat", data: {} };
+  }
+
+  *flushPendingToolCalls(): Iterable<StreamChunk> {
+    if (!this.pendingAIChunk) return;
+    for (const tc of collectToolCalls(this.pendingAIChunk)) {
+      if (this.announcedToolIds.has(tc.id)) continue;
+      this.announcedToolIds.add(tc.id);
       yield { type: "tool_call", data: { id: tc.id, name: tc.name, arguments: tc.args } };
     }
-    pendingAIChunk = null;
-  };
+    this.pendingAIChunk = null;
+  }
+
+  *project(mode: string, payload: unknown): Iterable<StreamChunk> {
+    if (mode === "messages") {
+      const [chunk] = payload as [BaseMessage, unknown];
+      if (chunk instanceof AIMessageChunk) {
+        yield* this.projectAIChunk(chunk);
+      } else if (chunk instanceof ToolMessage) {
+        yield* this.flushPendingToolCalls();
+        let result: unknown = chunk.content;
+        if (typeof result === "string") {
+          try { result = JSON.parse(result); } catch { /* keep string */ }
+        }
+        yield {
+          type: "tool_result",
+          data: { id: chunk.tool_call_id, name: chunk.name ?? "", result, status: chunk.status },
+        };
+        this.needsParagraphBreak = true;
+      }
+    } else if (mode === "updates") {
+      yield* this.flushPendingToolCalls();
+    } else if (mode === "custom") {
+      const c = payload as { id?: string; name?: string; text?: string };
+      if (c && typeof c.text === "string" && c.text) {
+        yield { type: "tool_progress", data: { id: c.id ?? "", name: c.name ?? "", text: c.text } };
+      }
+    }
+  }
+
+  done(threadId: string, cfg: RunnableModelConfig, runCfg: AgentRunConfig, aborted = false): StreamChunk {
+    return {
+      type: "done",
+      data: {
+        message_id: `llm-${threadId}-${Date.now()}`,
+        usage: this.sawUsage
+          ? {
+              input_tokens: this.usageInputTokens,
+              output_tokens: this.usageOutputTokens,
+              cache_creation_input_tokens: this.usageCacheCreationTokens,
+              cache_read_input_tokens: this.usageCacheReadTokens,
+              thinking_tokens: this.usageThinkingTokens || undefined,
+              source: "provider",
+            }
+          : { input_tokens: 0, output_tokens: this.totalOutputTokens, source: "estimate" },
+        provider: cfg.provider,
+        model_id: cfg.model_id,
+        model_config_name: cfg.name,
+        route_decision: runCfg?.route_decision ?? null,
+        ...(aborted ? { aborted: true } : {}),
+      },
+    };
+  }
+}
+
+async function* streamWithConfigImpl(
+  threadId: string,
+  messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
+  options?: StreamOptions,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamChunk> {
+  const runCfg = options?.agent_run_config;
+  const cfg = resolveRunnableModelConfig(runCfg?.model_config_name ?? null);
+  if (!cfg) {
+    yield { type: "error", data: { message: "No model configured. Add a model in the Models panel.", code: "no_model" } };
+    return;
+  }
+  const { baseParams, strategyOutputCap, params, includeImages, tools, isDelegatedRun,
+    model, store, checkpointer } = await prepareInference(threadId, cfg, options);
+  const { delegationBudget, activeInference, settleInferenceReservation, preModelHook } =
+    createInferenceBudget(threadId, cfg, params, runCfg, signal, isDelegatedRun);
+  const agent = createReactAgent({ llm: model, tools, store, checkpointer, preModelHook });
+
+  const projection = new InferenceStreamProjection(activeInference, delegationBudget);
 
   try {
     const agentStream = await agent.stream(
@@ -510,109 +629,16 @@ async function* streamWithConfigImpl(
     );
 
     for await (const [mode, payload] of agentStream as AsyncIterable<[string, unknown]>) {
-      if (mode === "messages") {
-        const [chunk] = payload as [BaseMessage, unknown];
-        if (chunk instanceof AIMessageChunk) {
-          // ADR-0041: capture provider-reported token usage when present.
-          const usage = chunk.usage_metadata;
-          if (usage && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
-            usageInputTokens += usage.input_tokens ?? 0;
-            usageOutputTokens += usage.output_tokens ?? 0;
-            const details = usage.input_token_details;
-            if (details) {
-              usageCacheCreationTokens += details.cache_creation ?? 0;
-              usageCacheReadTokens += details.cache_read ?? 0;
-            }
-            const outDetails = usage.output_token_details;
-            if (outDetails) {
-              usageThinkingTokens += outDetails.reasoning ?? 0;
-            }
-            if (delegationBudget && activeInference.current) {
-              activeInference.current.usage.inputTokens += usage.input_tokens ?? 0;
-              activeInference.current.usage.outputTokens += usage.output_tokens ?? 0;
-              activeInference.current.usage.cacheCreationTokens += details?.cache_creation ?? 0;
-              activeInference.current.usage.cacheReadTokens += details?.cache_read ?? 0;
-            }
-            sawUsage = true;
-          }
-          let emittedVisibleChunk = false;
-          if (typeof chunk.content === "string" && chunk.content) {
-            // After a tool result, the next AI text starts a new conceptual
-            // turn. Insert a paragraph break so the pre-tool plan and the
-            // post-tool reply don't visually merge into one run-on sentence.
-            let delta = textRehydrator ? textRehydrator.push(chunk.content) : chunk.content;
-            if (delta) {
-              if (needsParagraphBreak && textEmittedSinceLastBreak) {
-                delta = "\n\n" + delta;
-              }
-              needsParagraphBreak = false;
-              textEmittedSinceLastBreak = true;
-              totalOutputTokens += 1;
-              yield { type: "text_delta", data: { delta } };
-              emittedVisibleChunk = true;
-            } else if (textRehydrator) {
-              // Held back as part of an unfinished placeholder — keep the
-              // run alive so the watchdog doesn't fire while we wait for
-              // the close character.
-              emittedVisibleChunk = false;
-            }
-          }
-          const reasoning = chunk.additional_kwargs?.reasoning_content;
-          if (typeof reasoning === "string" && reasoning) {
-            yield { type: "thinking_delta", data: { delta: reasoning } };
-            emittedVisibleChunk = true;
-          }
-          if (chunk.additional_kwargs?.stop_reason === "length") {
-            truncatedByLength = true;
-          }
-          pendingAIChunk = pendingAIChunk ? pendingAIChunk.concat(chunk) : chunk;
-          // Silent provider progress (most often partial tool-call args
-          // streaming — e.g. the model is mid-way through emitting a
-          // large file_write body and each chunk carries only an
-          // argument delta, no content). Without a heartbeat the idle
-          // watchdog at JARELA_RUN_IDLE_MS (default 120s) would kill
-          // the run despite steady forward progress. Heartbeats are
-          // dropped by broadcast() after bumping last_chunk_at — they
-          // never reach subscribers or the SSE wire.
-          if (!emittedVisibleChunk) {
-            yield { type: "heartbeat", data: {} };
-          }
-        } else if (chunk instanceof ToolMessage) {
-          yield* flushPendingToolCalls();
-          let result: unknown = chunk.content;
-          if (typeof result === "string") {
-            try { result = JSON.parse(result); } catch { /* keep string */ }
-          }
-          yield {
-            type: "tool_result",
-            data: { id: chunk.tool_call_id, name: chunk.name ?? "", result, status: chunk.status },
-          };
-          // Next AI text should be visually separated from the pre-tool prose.
-          needsParagraphBreak = true;
-        }
-      } else if (mode === "updates") {
-        // End of an agent step — flush any unflushed tool calls (e.g. final assistant message
-        // with no follow-up tool execution).
-        yield* flushPendingToolCalls();
-      } else if (mode === "custom") {
-        // Emitted by a tool via config.writer() (see reportToolProgress in
-        // lib/tools/workspace-context.ts) — incremental status from inside a
-        // still-running tool call, e.g. claude_delegate relaying the
-        // sub-agent's own turns. See ADR-0073.
-        const c = payload as { id?: string; name?: string; text?: string };
-        if (c && typeof c.text === "string" && c.text) {
-          yield { type: "tool_progress", data: { id: c.id ?? "", name: c.name ?? "", text: c.text } };
-        }
-      }
+      yield* projection.project(mode, payload);
     }
 
     settleInferenceReservation();
     // Final flush in case stream ended without an "updates" tick.
-    yield* flushPendingToolCalls();
+    yield* projection.flushPendingToolCalls();
     // Flush any text the rehydrator was still holding (an unclosed
     // placeholder — emitted as-is rather than silently dropped).
-    if (textRehydrator) {
-      const trailing = textRehydrator.flush();
+    if (projection.textRehydrator) {
+      const trailing = projection.textRehydrator.flush();
       if (trailing) {
         yield { type: "text_delta", data: { delta: trailing } };
       }
@@ -624,204 +650,169 @@ async function* streamWithConfigImpl(
     } catch (settlementError) {
       caughtError = settlementError;
     }
-    const name = caughtError instanceof Error ? caughtError.name : "";
-    const baseMsg = errorMessage(caughtError);
-    const stack = caughtError instanceof Error && caughtError.stack ? caughtError.stack : "";
-    // undici surfaces network failures as a bare "fetch failed" with the
-    // real reason (ECONNREFUSED, EAI_AGAIN, UND_ERR_SOCKET, cert issues,
-    // proxy CONNECT rejects, …) hidden under err.cause. Walk the chain so
-    // operators get a useful log line and the UI shows something actionable.
-    const causeChain: string[] = [];
-    let cur: unknown = err;
-    let depth = 0;
-    while (cur && typeof cur === "object" && "cause" in cur && depth < 4) {
-      const c = (cur as { cause?: unknown }).cause;
-      if (!c) break;
-      const cMsg = c instanceof Error ? `${c.name}: ${c.message}` : String(c);
-      const cCode = c && typeof c === "object" && "code" in c ? ` [${(c as { code?: string }).code}]` : "";
-      causeChain.push(`${cMsg}${cCode}`);
-      cur = c;
-      depth += 1;
-    }
-    const rawMsg = causeChain.length > 0
-      ? `${baseMsg} (cause: ${causeChain.join(" → ")})`
-      : baseMsg;
+    yield* inferenceFailure(err, caughtError, cfg, baseParams, signal, projection, threadId, runCfg);
+    return;
+  }
+  yield* completeInference(projection, cfg, params, strategyOutputCap, threadId, runCfg);
+}
 
-    // User-initiated abort (Stop button / client disconnect): emit a
-    // short error chunk and let the route fall through to `done` so the
-    // queued-message drain in the UI fires normally.
-    if (signal?.aborted || name === "AbortError" || /aborted/i.test(rawMsg)) {
-      yield { type: "error", data: { message: "Run interrupted by user.", code: "aborted" } };
-      yield {
-        type: "done",
-        data: {
-          message_id: `llm-${threadId}-${Date.now()}`,
-          usage: sawUsage
-            ? {
-                input_tokens: usageInputTokens,
-                output_tokens: usageOutputTokens,
-                cache_creation_input_tokens: usageCacheCreationTokens,
-                cache_read_input_tokens: usageCacheReadTokens,
-                thinking_tokens: usageThinkingTokens || undefined,
-                source: "provider",
-              }
-            : { input_tokens: 0, output_tokens: totalOutputTokens, source: "estimate" },
-          provider: cfg.provider,
-          model_id: cfg.model_id,
-          model_config_name: cfg.name,
-          route_decision: runCfg?.route_decision ?? null,
-          aborted: true,
-        },
-      };
-      return;
-    }
+function* inferenceFailure(
+  err: unknown,
+  caughtError: unknown,
+  cfg: RunnableModelConfig,
+  baseParams: ProviderParams,
+  signal: AbortSignal | undefined,
+  projection: InferenceStreamProjection,
+  threadId: string,
+  runCfg: AgentRunConfig,
+): Iterable<StreamChunk> {
+  const name = caughtError instanceof Error ? caughtError.name : "";
+  const baseMsg = errorMessage(caughtError);
+  const stack = caughtError instanceof Error && caughtError.stack ? caughtError.stack : "";
+  // undici hides actionable network errors under cause; retain the bounded chain.
+  const causeChain: string[] = [];
+  let cur: unknown = err;
+  let depth = 0;
+  while (cur && typeof cur === "object" && "cause" in cur && depth < 4) {
+    const c = (cur as { cause?: unknown }).cause;
+    if (!c) break;
+    const cMsg = c instanceof Error ? `${c.name}: ${c.message}` : String(c);
+    const cCode = c && typeof c === "object" && "code" in c ? ` [${(c as { code?: string }).code}]` : "";
+    causeChain.push(`${cMsg}${cCode}`);
+    cur = c;
+    depth += 1;
+  }
+  const rawMsg = causeChain.length > 0
+    ? `${baseMsg} (cause: ${causeChain.join(" → ")})`
+    : baseMsg;
 
-    console.error("[agent_error]", stack || rawMsg);
-
-    // Translate LangGraph's recursion limit into a friendly explanation —
-    // the raw stack mentions internal Pregel paths users can't act on. They
-    // CAN act on knowing the agent loop didn't converge (likely chasing tool
-    // results in a loop or a genuinely deep multi-step task).
-    let friendly = rawMsg;
-    let code = "agent_error";
-    let errPayloadRetryAfterMs: number | undefined;
-    if (
-      name === "DelegationCostBudgetError"
-      || /delegated inference refused|delegation cost budget|reserved per-inference delegation cost/i.test(rawMsg)
-    ) {
-      code = "delegation_cost_budget";
-    } else if (name === "GraphRecursionError" || /recursion limit/i.test(rawMsg)) {
-      const limit = getConfig().recursionLimit;
-      friendly =
-        `The agent took too many tool-calling steps without finishing (hit the ${limit}-step limit). ` +
-        `If the task is legitimately deep, raise JARELA_RECURSION_LIMIT in the env. ` +
-        `If the agent looked stuck in a loop (calling the same tool repeatedly), simplify the prompt or ` +
-        `try /new to start fresh — long histories of tool results sometimes make the model re-attempt the same step.`;
-      code = "recursion_limit";
-    } else if (/Received empty response from chat model call/i.test(rawMsg)) {
-      // Defense in depth: JarelaChatModel._streamFromProvider already guards
-      // against this by emitting a sentinel empty chunk, but if a future
-      // provider bypasses that path we still want a useful message instead of
-      // the raw LangChain stack.
-      friendly =
-        "The model returned an empty response. This usually means a content filter triggered, " +
-        "max_tokens was too low for a reasoning model, or the connection dropped mid-stream. " +
-        "Check the model config and retry.";
-      code = "empty_response";
-    } else if (isContextOverflowError(rawMsg)) {
-      // Hit the model's input window. Either the assumed/known context size
-      // is bigger than what the provider actually serves on this tier, the
-      // user's plan is throttled, or the conversation legitimately overflowed.
-      // Either way the budget calculator's assumption was optimistic — tell
-      // the user how to recover instead of dumping the provider stack.
-      const observed = parseContextLimitFromError(rawMsg);
-      if (observed && observed.limit > 0) {
-        // Self-correct: persist the provider-reported limit back to the
-        // model config so the next turn's budget calculator uses it. We
-        // shrink by 10% as a safety margin (tokenisers disagree and tool
-        // results we don't yet count add overhead). Only writes when the
-        // new value is smaller than what's stored — never grows blindly.
-        try {
-          const current = typeof baseParams.context_window_tokens === "number"
-            ? baseParams.context_window_tokens
-            : Number.POSITIVE_INFINITY;
-          const corrected = Math.max(2048, Math.floor(observed.limit * 0.9));
-          if (corrected < current) {
-            const nextParams = { ...baseParams, context_window_tokens: corrected };
-            upsertModelConfig(cfg.name, cfg.provider, cfg.model_id, nextParams, cfg.is_default === 1);
-            console.warn(
-              `[llm] context-window self-correct for ${cfg.name} (${cfg.provider}/${cfg.model_id}): ` +
-              `provider reported ${observed.limit} tokens; persisted context_window_tokens=${corrected}`,
-            );
-          }
-        } catch (persistErr) {
-          console.error("[llm] failed to self-correct context_window_tokens", persistErr);
-        }
-        friendly =
-          `The request exceeded the model's context window (provider reported ~${observed.limit.toLocaleString()} tokens` +
-          (observed.requested ? `, request had ~${observed.requested.toLocaleString()}` : "") +
-          `). Persisted the corrected window on this model config; retry the turn or trim history.`;
-      } else {
-        // No parseable limit in the error string. Halve the currently
-        // persisted `context_window_tokens` (or halve a safe assumption
-        // when nothing is pinned) and store it back. The next turn will
-        // use the smaller value; if it still overflows we halve again.
-        // Convergence takes at most log2(assumed / 2048) turns.
-        try {
-          const current = typeof baseParams.context_window_tokens === "number" && baseParams.context_window_tokens > 0
-            ? baseParams.context_window_tokens
-            : 128_000; // Assume mid-size window when nothing is pinned.
-          const corrected = Math.max(2048, Math.floor(current / 2));
-          if (corrected < current) {
-            const nextParams = { ...baseParams, context_window_tokens: corrected };
-            upsertModelConfig(cfg.name, cfg.provider, cfg.model_id, nextParams, cfg.is_default === 1);
-            console.warn(
-              `[llm] context-window halve-fallback for ${cfg.name} (${cfg.provider}/${cfg.model_id}): ` +
-              `no limit parsed from error; halved ${current} -> ${corrected}`,
-            );
-          }
-        } catch (persistErr) {
-          console.error("[llm] failed halve-fallback for context_window_tokens", persistErr);
-        }
-        friendly =
-          "The request exceeded the model's context window. Halved the model's " +
-          "`context_window_tokens` and persisted it — retry the turn. " +
-          "If this recurs, trim history (lower `history_limit` / `history_window_hours` on the agent) " +
-          "or pin a smaller value explicitly in the model config.";
-      }
-      code = "context_length_exceeded";
-    } else if (err instanceof ProviderAuthError || isAuthErrorMessage(rawMsg)) {
-      // Auth failure: the credential is wrong / revoked / expired.
-      // Surface a targeted banner in the UI that deep-links to the
-      // credential editor. Carry the credential_id in the SSE payload
-      // so the UI can pre-open the right row. See ADR-0068.
-      const providerLabel = err instanceof ProviderAuthError
-        ? err.provider
-        : cfg.provider;
-      friendly =
-        `${providerLabel}: the credential the model uses was rejected as invalid or expired. ` +
-        `Open the credential in Settings → Credentials and re-enter or refresh the key, then retry.`;
-      code = "auth_failed";
-    } else if (isRetryableProviderStreamError(rawMsg)) {
-      friendly =
-        `${cfg.provider}: the streaming connection ended before the model produced output. ` +
-        "This is usually a temporary network or upstream failure; retrying may recover it.";
-      code = "stream_error";
-    } else if (isRateLimitError(err, rawMsg)) {
-      // Provider throttled us. The raw SDK message is often useless
-      // ("429 status code (no body)"), so replace it with something the
-      // user can act on. Read `retry-after` from the SDK exception when
-      // present so we can tell them how long to wait.
-      const retryAfterSec = parseRetryAfterSeconds(err, rawMsg);
-      const waitHint = retryAfterSec != null
-        ? ` The provider asked us to wait ~${retryAfterSec}s before retrying.`
-        : "";
-      friendly =
-        `${cfg.provider}: rate-limited (HTTP 429). The provider's per-minute/per-day quota for this ` +
-        `credential is exhausted.${waitHint} Wait and retry, or switch to a different model / credential ` +
-        `in Settings → Models.`;
-      code = "rate_limited";
-      if (retryAfterSec !== null) errPayloadRetryAfterMs = retryAfterSec * 1000;
-      if (retryAfterSec !== null) errPayloadRetryAfterMs = retryAfterSec * 1000;
-    } else if (/max_tokens/i.test(rawMsg) && /no content|before hitting/i.test(rawMsg)) {
-      code = "max_tokens_exhausted";
-    }
-    // Pull out the FIRST in-app frame from the stack so the user sees what
-    // module triggered it, without dumping the full Pregel/webpack trace.
-    const firstAppFrame = stack.split("\n").find((l) => /\(rsc\)\.\/lib\//.test(l));
-    const trimmed = firstAppFrame ? `\n${firstAppFrame.trim()}` : "";
-    const errPayload: Record<string, unknown> = { message: `${friendly}${trimmed}`, code };
-    if (errPayloadRetryAfterMs !== undefined) errPayload.retry_after_ms = errPayloadRetryAfterMs;
-    if (errPayloadRetryAfterMs !== undefined) errPayload.retry_after_ms = errPayloadRetryAfterMs;
-    if (code === "auth_failed" && cfg.credential_id) {
-      errPayload.credential_id = cfg.credential_id;
-      errPayload.provider = cfg.provider;
-    }
-    yield { type: "error", data: errPayload };
+  // Abort still emits done so queued UI messages can drain normally.
+  if (signal?.aborted || name === "AbortError" || /aborted/i.test(rawMsg)) {
+    yield { type: "error", data: { message: "Run interrupted by user.", code: "aborted" } };
+    yield projection.done(threadId, cfg, runCfg, true);
     return;
   }
 
-  if (truncatedByLength) {
+  console.error("[agent_error]", stack || rawMsg);
+  let friendly = rawMsg;
+  let code = "agent_error";
+  let errPayloadRetryAfterMs: number | undefined;
+  if (
+    name === "DelegationCostBudgetError"
+    || /delegated inference refused|delegation cost budget|reserved per-inference delegation cost/i.test(rawMsg)
+  ) {
+    code = "delegation_cost_budget";
+  } else if (name === "GraphRecursionError" || /recursion limit/i.test(rawMsg)) {
+    const limit = getConfig().recursionLimit;
+    friendly =
+      `The agent took too many tool-calling steps without finishing (hit the ${limit}-step limit). ` +
+      `If the task is legitimately deep, raise JARELA_RECURSION_LIMIT in the env. ` +
+      `If the agent looked stuck in a loop (calling the same tool repeatedly), simplify the prompt or ` +
+      `try /new to start fresh — long histories of tool results sometimes make the model re-attempt the same step.`;
+    code = "recursion_limit";
+  } else if (/Received empty response from chat model call/i.test(rawMsg)) {
+    friendly =
+      "The model returned an empty response. This usually means a content filter triggered, " +
+      "max_tokens was too low for a reasoning model, or the connection dropped mid-stream. " +
+      "Check the model config and retry.";
+    code = "empty_response";
+  } else if (isContextOverflowError(rawMsg)) {
+    friendly = correctContextWindow(rawMsg, cfg, baseParams);
+    code = "context_length_exceeded";
+  } else if (err instanceof ProviderAuthError || isAuthErrorMessage(rawMsg)) {
+    const providerLabel = err instanceof ProviderAuthError ? err.provider : cfg.provider;
+    friendly =
+      `${providerLabel}: the credential the model uses was rejected as invalid or expired. ` +
+      `Open the credential in Settings → Credentials and re-enter or refresh the key, then retry.`;
+    code = "auth_failed";
+  } else if (isRetryableProviderStreamError(rawMsg)) {
+    friendly =
+      `${cfg.provider}: the streaming connection ended before the model produced output. ` +
+      "This is usually a temporary network or upstream failure; retrying may recover it.";
+    code = "stream_error";
+  } else if (isRateLimitError(err, rawMsg)) {
+    const retryAfterSec = parseRetryAfterSeconds(err, rawMsg);
+    const waitHint = retryAfterSec != null
+      ? ` The provider asked us to wait ~${retryAfterSec}s before retrying.`
+      : "";
+    friendly =
+      `${cfg.provider}: rate-limited (HTTP 429). The provider's per-minute/per-day quota for this ` +
+      `credential is exhausted.${waitHint} Wait and retry, or switch to a different model / credential ` +
+      `in Settings → Models.`;
+    code = "rate_limited";
+    if (retryAfterSec !== null) errPayloadRetryAfterMs = retryAfterSec * 1000;
+    if (retryAfterSec !== null) errPayloadRetryAfterMs = retryAfterSec * 1000;
+  } else if (/max_tokens/i.test(rawMsg) && /no content|before hitting/i.test(rawMsg)) {
+    code = "max_tokens_exhausted";
+  }
+  const firstAppFrame = stack.split("\n").find((l) => /\(rsc\)\.\/lib\//.test(l));
+  const trimmed = firstAppFrame ? `\n${firstAppFrame.trim()}` : "";
+  const errPayload: Record<string, unknown> = { message: `${friendly}${trimmed}`, code };
+  if (errPayloadRetryAfterMs !== undefined) errPayload.retry_after_ms = errPayloadRetryAfterMs;
+  if (errPayloadRetryAfterMs !== undefined) errPayload.retry_after_ms = errPayloadRetryAfterMs;
+  if (code === "auth_failed" && cfg.credential_id) {
+    errPayload.credential_id = cfg.credential_id;
+    errPayload.provider = cfg.provider;
+  }
+  yield { type: "error", data: errPayload };
+}
+
+function correctContextWindow(rawMsg: string, cfg: RunnableModelConfig, baseParams: ProviderParams): string {
+  const observed = parseContextLimitFromError(rawMsg);
+  if (observed && observed.limit > 0) {
+    // Shrink, never grow, with a margin for tokenizer and tool-result overhead.
+    try {
+      const current = typeof baseParams.context_window_tokens === "number"
+        ? baseParams.context_window_tokens
+        : Number.POSITIVE_INFINITY;
+      const corrected = Math.max(2048, Math.floor(observed.limit * 0.9));
+      if (corrected < current) {
+        const nextParams = { ...baseParams, context_window_tokens: corrected };
+        upsertModelConfig(cfg.name, cfg.provider, cfg.model_id, nextParams, cfg.is_default === 1);
+        console.warn(
+          `[llm] context-window self-correct for ${cfg.name} (${cfg.provider}/${cfg.model_id}): ` +
+          `provider reported ${observed.limit} tokens; persisted context_window_tokens=${corrected}`,
+        );
+      }
+    } catch (persistErr) {
+      console.error("[llm] failed to self-correct context_window_tokens", persistErr);
+    }
+    return `The request exceeded the model's context window (provider reported ~${observed.limit.toLocaleString()} tokens` +
+      (observed.requested ? `, request had ~${observed.requested.toLocaleString()}` : "") +
+      `). Persisted the corrected window on this model config; retry the turn or trim history.`;
+  }
+  // Without a parseable limit, converge by halving the persisted assumption.
+  try {
+    const current = typeof baseParams.context_window_tokens === "number" && baseParams.context_window_tokens > 0
+      ? baseParams.context_window_tokens
+      : 128_000;
+    const corrected = Math.max(2048, Math.floor(current / 2));
+    if (corrected < current) {
+      const nextParams = { ...baseParams, context_window_tokens: corrected };
+      upsertModelConfig(cfg.name, cfg.provider, cfg.model_id, nextParams, cfg.is_default === 1);
+      console.warn(
+        `[llm] context-window halve-fallback for ${cfg.name} (${cfg.provider}/${cfg.model_id}): ` +
+        `no limit parsed from error; halved ${current} -> ${corrected}`,
+      );
+    }
+  } catch (persistErr) {
+    console.error("[llm] failed halve-fallback for context_window_tokens", persistErr);
+  }
+  return "The request exceeded the model's context window. Halved the model's " +
+    "`context_window_tokens` and persisted it — retry the turn. " +
+    "If this recurs, trim history (lower `history_limit` / `history_window_hours` on the agent) " +
+    "or pin a smaller value explicitly in the model config.";
+}
+
+function* completeInference(
+  projection: InferenceStreamProjection,
+  cfg: RunnableModelConfig,
+  params: ProviderParams,
+  strategyOutputCap: number | undefined,
+  threadId: string,
+  runCfg: AgentRunConfig,
+): Iterable<StreamChunk> {
+  if (projection.truncatedByLength) {
     yield {
       type: "error",
       data: {
@@ -835,26 +826,7 @@ async function* streamWithConfigImpl(
     };
   }
 
-  yield {
-    type: "done",
-    data: {
-      message_id: `llm-${threadId}-${Date.now()}`,
-      usage: sawUsage
-        ? {
-            input_tokens: usageInputTokens,
-            output_tokens: usageOutputTokens,
-            cache_creation_input_tokens: usageCacheCreationTokens,
-            cache_read_input_tokens: usageCacheReadTokens,
-            thinking_tokens: usageThinkingTokens || undefined,
-            source: "provider",
-          }
-        : { input_tokens: 0, output_tokens: totalOutputTokens, source: "estimate" },
-      provider: cfg.provider,
-      model_id: cfg.model_id,
-      model_config_name: cfg.name,
-      route_decision: runCfg?.route_decision ?? null,
-    },
-  };
+  yield projection.done(threadId, cfg, runCfg);
 }
 
 // Detect provider error messages that indicate the request exceeded the

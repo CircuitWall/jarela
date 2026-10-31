@@ -45,13 +45,10 @@ export interface StaticPrompt {
  * prompt is not here because it is assembled from context — the verifier
  * builds it from fixtures instead.
  */
-export function listStaticPrompts(): StaticPrompt[] {
-  const conversationSummary = buildConversationSummaryMessages(
+function listConversationPrompts(): StaticPrompt[] {
+  const conversationSummary = renderMessages(buildConversationSummaryMessages(
     "[seq=42] [2026-10-09T10:00:00.000Z] User: Example transcript row.",
-  ).map((message) => `${message.role.toUpperCase()}\n${typeof message.content === "string" ? message.content : JSON.stringify(message.content)}`).join("\n\n");
-  const renderMessages = (messages: ProviderMessage[]) => messages
-    .map((message) => `${message.role.toUpperCase()}\n${typeof message.content === "string" ? message.content : JSON.stringify(message.content)}`)
-    .join("\n\n");
+  ));
   const sampleTopic: SummaryTopicSegment = {
     title: "Example earlier topic",
     start_seq: 40,
@@ -67,7 +64,48 @@ export function listStaticPrompts(): StaticPrompt[] {
   const compactionRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages));
   const channelGroup = renderMessages(buildTopicGroupingMessages(sampleNewMessages, [sampleTopic], "scheduled_task"));
   const channelRecap = renderMessages(buildTopicRecapMessages({ title: sampleTopic.title, continues: "t1", seqs: [50, 51] }, sampleTopic, sampleNewMessages, "scheduled_task"));
-  const prompts: StaticPrompt[] = [
+  return [
+    {
+      id: "agent.conversation-summary",
+      source: "lib/agents/conversation-summary.ts",
+      purpose: "Compress warm chat context while preserving source seq boundaries for topic alignment.",
+      text: conversationSummary,
+    },
+    {
+      id: "agent.compaction-group",
+      source: "lib/agents/compaction-pipeline.ts",
+      purpose: "Compaction step 1: group newly aged-out messages into topics, each new or continuing a stored warm topic.",
+      text: compactionGroup,
+    },
+    {
+      id: "agent.compaction-topic-recap",
+      source: "lib/agents/compaction-pipeline.ts",
+      purpose: "Compaction step 2: recap one topic, newest detail first, merging its stored recap and listing durable facts.",
+      text: compactionRecap,
+    },
+    {
+      id: "agent.compaction-group-automation",
+      source: "lib/agents/compaction-pipeline.ts",
+      purpose: "Compaction step 1 for an automation channel (scheduled_task shown; watcher and bridge differ only in wording).",
+      text: channelGroup,
+    },
+    {
+      id: "agent.compaction-topic-recap-automation",
+      source: "lib/agents/compaction-pipeline.ts",
+      purpose: "Compaction step 2 for an automation channel (scheduled_task shown); recap focuses on runs, outcomes and failures.",
+      text: channelRecap,
+    },
+  ];
+}
+
+function renderMessages(messages: ProviderMessage[]): string {
+  return messages
+    .map((message) => `${message.role.toUpperCase()}\n${typeof message.content === "string" ? message.content : JSON.stringify(message.content)}`)
+    .join("\n\n");
+}
+
+function listLifecyclePrompts(): StaticPrompt[] {
+  return [
     {
       id: "agent-advertisement",
       source: "lib/agents/advertisement-prompt.ts",
@@ -137,6 +175,11 @@ export function listStaticPrompts(): StaticPrompt[] {
       purpose,
       text: readFileSync(join(process.cwd(), "lib", "skills", "builtins", name, "SKILL.md"), "utf8"),
     })),
+  ];
+}
+
+function listAgentPrompts(): StaticPrompt[] {
+  return [
     {
       id: "agent.retry-fabrication",
       source: "lib/agents/retry-prompts.ts",
@@ -180,36 +223,7 @@ export function listStaticPrompts(): StaticPrompt[] {
       purpose: "Cross-agent tool discovery and invocation procedure; cached prefix of every agent turn.",
       text: buildSharedToolCatalogContext(),
     },
-    {
-      id: "agent.conversation-summary",
-      source: "lib/agents/conversation-summary.ts",
-      purpose: "Compress warm chat context while preserving source seq boundaries for topic alignment.",
-      text: conversationSummary,
-    },
-    {
-      id: "agent.compaction-group",
-      source: "lib/agents/compaction-pipeline.ts",
-      purpose: "Compaction step 1: group newly aged-out messages into topics, each new or continuing a stored warm topic.",
-      text: compactionGroup,
-    },
-    {
-      id: "agent.compaction-topic-recap",
-      source: "lib/agents/compaction-pipeline.ts",
-      purpose: "Compaction step 2: recap one topic, newest detail first, merging its stored recap and listing durable facts.",
-      text: compactionRecap,
-    },
-    {
-      id: "agent.compaction-group-automation",
-      source: "lib/agents/compaction-pipeline.ts",
-      purpose: "Compaction step 1 for an automation channel (scheduled_task shown; watcher and bridge differ only in wording).",
-      text: channelGroup,
-    },
-    {
-      id: "agent.compaction-topic-recap-automation",
-      source: "lib/agents/compaction-pipeline.ts",
-      purpose: "Compaction step 2 for an automation channel (scheduled_task shown); recap focuses on runs, outcomes and failures.",
-      text: channelRecap,
-    },
+    ...listConversationPrompts(),
     {
       id: "audit.citation-checker",
       source: "lib/agents/citation-checker.ts",
@@ -235,7 +249,10 @@ export function listStaticPrompts(): StaticPrompt[] {
       text: DESIGN_QA_PROMPT,
     },
   ];
+}
 
+export function listStaticPrompts(): StaticPrompt[] {
+  const prompts = [...listLifecyclePrompts(), ...listAgentPrompts()];
   for (const harness of BUILTIN_HARNESSES) {
     for (const [section, value] of Object.entries(harness.sections)) {
       if (value.body.trim().length === 0) continue;

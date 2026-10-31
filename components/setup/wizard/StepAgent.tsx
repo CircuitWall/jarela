@@ -27,98 +27,15 @@ interface StepAgentProps {
 export function StepAgent({ agents, models, onChanged, readOnly = false, starter }: StepAgentProps) {
   const [editing, setEditing] = useState<AgentConfig | null | "new">(null);
   const [error, setError] = useState<string | null>(null);
-  const iconInputRef = useRef<HTMLInputElement>(null);
 
   if (starter) {
-    const existingAgent = agents.find((agent) => agent.is_default) ?? agents[0] ?? null;
     return (
-      <StepShell
-        icon={<Bot size={18} />}
-        eyebrow="Step 4 · Your assistant"
-        title={existingAgent ? "Let's get to know each other" : "Give me an identity"}
-        description={existingAgent
-          ? "I'll start with your current assistant, and we can get to know each other in our first chat."
-          : "Choose what to call me and an optional icon. We'll shape my instructions together in our first chat."}
-      >
-        <>
-          {existingAgent && (
-            <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5">
-              {existingAgent.icon ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={existingAgent.icon} alt="" className="h-10 w-10 rounded-lg object-cover" />
-              ) : <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent"><Bot size={18} /></span>}
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-fg">{existingAgent.name}</p>
-                <p className="text-xs text-fg-faint">I&apos;ll keep your current assistant just as it is.</p>
-              </div>
-            </div>
-          )}
-          {!existingAgent && <div className="flex items-end gap-3">
-              <div>
-                <span className="mb-1 block text-xs font-medium text-fg-subtle">My icon <span className="font-normal text-fg-faint">Optional</span></span>
-                <button
-                  type="button"
-                  onClick={() => iconInputRef.current?.click()}
-                  aria-label={starter.icon ? "Change assistant icon" : "Choose assistant icon"}
-                  className="inline-flex h-11 w-11 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-3 text-fg-faint hover:border-accent"
-                >
-                  {starter.icon ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={starter.icon} alt="" className="h-full w-full object-cover" />
-                  ) : <ImagePlus size={17} />}
-                </button>
-                <input
-                  ref={iconInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    if (file.size > 1024 * 1024) {
-                      setError("Choose an image smaller than 1 MB.");
-                      return;
-                    }
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      if (typeof reader.result === "string") starter.onIconChange(reader.result);
-                    };
-                    reader.onerror = () => setError("Could not read that image. Try another one.");
-                    reader.readAsDataURL(file);
-                  }}
-                />
-              </div>
-              <label className="block min-w-0 flex-1">
-                <span className="mb-1 block text-xs font-medium text-fg-subtle">What should I call myself? <span className="font-normal text-fg-faint">Required</span></span>
-                <input
-                  value={starter.name}
-                  onChange={(event) => starter.onNameChange(event.target.value)}
-                  maxLength={60}
-                  className="w-full rounded-xl border border-border bg-surface-3 px-3 py-2.5 text-sm focus:border-accent focus:outline-none"
-                  placeholder="For example, Nova"
-                />
-              </label>
-          </div>}
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-fg-subtle">What would you like me to help with first? <span className="font-normal text-fg-faint">Optional</span></span>
-              <textarea
-                value={starter.goal}
-                onChange={(event) => starter.onGoalChange(event.target.value)}
-                rows={3}
-                maxLength={2000}
-                placeholder="For example: help me plan projects and turn meeting notes into next steps."
-                className="w-full resize-y rounded-xl border border-border bg-surface-3 px-3 py-2.5 text-sm focus:border-accent focus:outline-none"
-              />
-            </label>
-            <p className="text-xs leading-relaxed text-fg-faint">
-              I&apos;ll use this and your profile to start our first chat, ask what I&apos;m still missing, and then suggest instructions that fit you.
-            </p>
-            {!existingAgent && !starter.name.trim() && (
-              <p className="text-xs text-fg-faint">Give me a name so we can get started.</p>
-            )}
-        </>
-        {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
-      </StepShell>
+      <StarterAgent
+        agents={agents}
+        starter={starter}
+        error={error}
+        setError={setError}
+      />
     );
   }
 
@@ -144,6 +61,131 @@ export function StepAgent({ agents, models, onChanged, readOnly = false, starter
     }
   }
 
+  return (
+    <AgentManagement
+      agents={agents}
+      models={models}
+      readOnly={readOnly}
+      editing={editing}
+      setEditing={setEditing}
+      error={error}
+      handleSave={handleSave}
+      handleRemove={handleRemove}
+      onChanged={onChanged}
+    />
+  );
+}
+
+function StarterAgent({ agents, starter, error, setError }: {
+  agents: AgentConfig[];
+  starter: NonNullable<StepAgentProps["starter"]>;
+  error: string | null;
+  setError: (error: string) => void;
+}) {
+  const iconInputRef = useRef<HTMLInputElement>(null);
+  const existingAgent = agents.find((agent) => agent.is_default) ?? agents[0] ?? null;
+  return (
+    <StepShell
+      icon={<Bot size={18} />}
+      eyebrow="Step 4 · Your assistant"
+      title={existingAgent ? "Let's get to know each other" : "Give me an identity"}
+      description={existingAgent
+        ? "I'll start with your current assistant, and we can get to know each other in our first chat."
+        : "Choose what to call me and an optional icon. We'll shape my instructions together in our first chat."}
+    >
+      <>
+        {existingAgent && (
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5">
+            {existingAgent.icon ? (
+            // eslint-disable-next-line @next/next/no-img-element
+              <img src={existingAgent.icon} alt="" className="h-10 w-10 rounded-lg object-cover" />
+            ) : <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent"><Bot size={18} /></span>}
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-fg">{existingAgent.name}</p>
+              <p className="text-xs text-fg-faint">I&apos;ll keep your current assistant just as it is.</p>
+            </div>
+          </div>
+        )}
+        {!existingAgent && <div className="flex items-end gap-3">
+          <div>
+            <span className="mb-1 block text-xs font-medium text-fg-subtle">My icon <span className="font-normal text-fg-faint">Optional</span></span>
+            <button
+              type="button"
+              onClick={() => iconInputRef.current?.click()}
+              aria-label={starter.icon ? "Change assistant icon" : "Choose assistant icon"}
+              className="inline-flex h-11 w-11 items-center justify-center overflow-hidden rounded-lg border border-border bg-surface-3 text-fg-faint hover:border-accent"
+            >
+              {starter.icon ? (
+              // eslint-disable-next-line @next/next/no-img-element
+                <img src={starter.icon} alt="" className="h-full w-full object-cover" />
+              ) : <ImagePlus size={17} />}
+            </button>
+            <input
+              ref={iconInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                if (file.size > 1024 * 1024) {
+                  setError("Choose an image smaller than 1 MB.");
+                  return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                  if (typeof reader.result === "string") starter.onIconChange(reader.result);
+                };
+                reader.onerror = () => setError("Could not read that image. Try another one.");
+                reader.readAsDataURL(file);
+              }}
+            />
+          </div>
+          <label className="block min-w-0 flex-1">
+            <span className="mb-1 block text-xs font-medium text-fg-subtle">What should I call myself? <span className="font-normal text-fg-faint">Required</span></span>
+            <input
+              value={starter.name}
+              onChange={(event) => starter.onNameChange(event.target.value)}
+              maxLength={60}
+              className="w-full rounded-xl border border-border bg-surface-3 px-3 py-2.5 text-sm focus:border-accent focus:outline-none"
+              placeholder="For example, Nova"
+            />
+          </label>
+        </div>}
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-fg-subtle">What would you like me to help with first? <span className="font-normal text-fg-faint">Optional</span></span>
+          <textarea
+            value={starter.goal}
+            onChange={(event) => starter.onGoalChange(event.target.value)}
+            rows={3}
+            maxLength={2000}
+            placeholder="For example: help me plan projects and turn meeting notes into next steps."
+            className="w-full resize-y rounded-xl border border-border bg-surface-3 px-3 py-2.5 text-sm focus:border-accent focus:outline-none"
+          />
+        </label>
+        <p className="text-xs leading-relaxed text-fg-faint">
+              I&apos;ll use this and your profile to start our first chat, ask what I&apos;m still missing, and then suggest instructions that fit you.
+        </p>
+        {!existingAgent && !starter.name.trim() && (
+          <p className="text-xs text-fg-faint">Give me a name so we can get started.</p>
+        )}
+      </>
+      {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+    </StepShell>
+  );
+}
+
+function AgentManagement({ agents, models, readOnly, editing, setEditing, error, handleSave, handleRemove, onChanged }: {
+  agents: AgentConfig[];
+  models: ModelConfig[];
+  readOnly: boolean;
+  editing: AgentConfig | null | "new";
+  setEditing: (agent: AgentConfig | null | "new") => void;
+  error: string | null;
+  handleSave: (data: AgentConfigIn) => Promise<void>;
+  handleRemove: (agent: AgentConfig) => Promise<void>;
+  onChanged: () => void;
+}) {
   return (
     <StepShell
       icon={<Bot size={18} />}

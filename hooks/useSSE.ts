@@ -221,6 +221,118 @@ function useStreamingBuffer() {
 // `streamingContent`, etc. — even though the transport underneath collapsed
 // from three legs (WS sidecar / SSE-POST / SSE-GET reattach) to one.
 export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseSSECommands> {
+  const session = useRunStreamState();
+  const {
+    streaming,
+    setStreaming,
+    toolEvents,
+    setToolEvents,
+    error,
+    authError,
+    setAuthError,
+    abortRef,
+    markSettled,
+    isLive,
+    lastSettledAt,
+    threadIdRef,
+    steeredContinuationIdRef,
+    steeredSegments,
+    setSteeredSegments,
+    closeActivity,
+    streamingContent,
+    thinkingContent,
+    flushPending,
+    restoreStreamingContent,
+    clearStreamingContent,
+  } = session;
+
+  const { consume } = useStreamConsumer(session, onDone);
+
+  const lifecycle = useRunStreamLifecycle(session);
+  const { start } = useStartRun(session, consume, lifecycle);
+
+  // Stop the active run. Three-part: (1) tell the server to abort the
+  // agent stream so the LangGraph loop unwinds; (2) tear down local
+  // streaming state immediately so the UI gates release and the queue
+  // drains — we cannot rely on the server's `error`+`done` round-trip
+  // because step (3) closes the EventSource before those broadcasts
+  // arrive; (3) abort the local controller so the EventSource closes
+  // and the iterator's finally{} fires. Without step (2) the consume()
+  // loop exits via its abort path (no terminal event) and never calls
+  // setStreaming(false) / onDone — the chat appears frozen and the only
+  // recovery is a full refresh.
+  const stop = useCallback(() => {
+    const tid = threadIdRef.current;
+    if (tid) {
+      void api.threads.abortRun(tid).catch(() => { /* server already idle */ });
+    }
+    flushPending();
+    setStreaming(false);
+    // Keep streamingContent and thinkingContent visible until the next
+    // start()/attach() — same pattern as the `done` branch in consume().
+    closeActivity();
+    abortRef.current?.abort();
+    markSettled(null);
+    steeredContinuationIdRef.current = null;
+    onDone?.();
+  }, [abortRef, closeActivity, flushPending, markSettled, onDone, setStreaming, steeredContinuationIdRef, threadIdRef]);
+
+  // Attach to an in-flight run for the given thread (server-side run kept
+  // going because the user switched away, or because this is a fresh
+  // navigation into a session whose run is still streaming). Sets
+  // `streaming` optimistically BEFORE the GET resolves so the input bar
+  // gates / Stop button shows / queue drain blocks immediately on session
+  // open — otherwise there's a race window where the UI thinks no run is
+  // active, accepts a new POST, and the server rejects it with 409.
+  const { attach } = useAttachRun(consume, lifecycle, onDone);
+
+  // Called by the consumer after a refetch lands, so the streaming bubble
+  // gets swapped for the persisted assistant message in a single render.
+  const dismissAuthError = useCallback(() => { setAuthError(null); }, [setAuthError]);
+  const armSteeredContinuation = useCallback((id: string | null) => {
+    steeredContinuationIdRef.current = id;
+  }, [steeredContinuationIdRef]);
+  // Undo a reactive split from consume()'s "done" branch if the steer PATCH
+  // turns out to have been rejected — whether or not `done` had already
+  // raced in and frozen a segment under this id (see steerRun in
+  // ChatView.tsx). If nothing was frozen yet, this just disarms.
+  const rollbackSteeredSegment = useCallback((id: string) => {
+    if (steeredContinuationIdRef.current === id) steeredContinuationIdRef.current = null;
+    setSteeredSegments((segs) => {
+      const match = segs.find((s) => s.id === id);
+      if (!match) return segs;
+      restoreStreamingContent(match.content);
+      return segs.filter((s) => s.id !== id);
+    });
+  }, [restoreStreamingContent, setSteeredSegments, steeredContinuationIdRef]);
+  const clearToolEvents = useCallback(() => { setToolEvents([]); }, [setToolEvents]);
+
+  const state: UseSSEState = {
+    streaming,
+    streamingContent,
+    thinkingContent,
+    toolEvents,
+    error,
+    authError,
+    steeredSegments,
+  };
+  const commands: UseSSECommands = {
+    dismissAuthError,
+    start,
+    stop,
+    attach,
+    isLive,
+    lastSettledAt,
+    clearStreamingContent,
+    clearToolEvents,
+    armSteeredContinuation,
+    rollbackSteeredSegment,
+  };
+
+  return { state, commands, ...state, ...commands };
+}
+
+function useRunStreamState() {
   const [streaming, setStreaming] = useState(false);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   // Mirrors `toolEvents` for synchronous reads inside `consume()` (the
@@ -292,6 +404,52 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
   // and we don't call state setters on a dead component.
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
+  return {
+
+    streaming, setStreaming, toolEvents, setToolEvents,
+
+    toolEventsRef, error, setError, authError,
+
+    setAuthError, abortRef, markLive, markSettled,
+
+    isLive, lastSettledAt, threadIdRef, quietActivityRef,
+
+    steeredContinuationIdRef, steeredSegments, setSteeredSegments, openActivity,
+
+    closeActivity, setVisibleActivityStatus, reportVisibleToolActivity, streamingContent,
+
+    thinkingContent, appendText, appendThinking, flushPending,
+
+    cancelPendingFlush, resetBuffer, splitStreamingContent, restoreStreamingContent,
+
+    resetStreamingText, clearStreamingContent,
+
+  };
+}
+
+function useStreamConsumer(
+  session: ReturnType<typeof useRunStreamState>,
+  onDone?: () => void,
+) {
+  const {
+    resetBuffer,
+    appendText,
+    flushPending,
+    setToolEvents,
+    reportVisibleToolActivity,
+    setVisibleActivityStatus,
+    resetStreamingText,
+    appendThinking,
+    toolEventsRef,
+    steeredContinuationIdRef,
+    splitStreamingContent,
+    setSteeredSegments,
+    setStreaming,
+    closeActivity,
+    cancelPendingFlush,
+    setError,
+    setAuthError,
+  } = session;
   const consume = useCallback(async (
     iterable: AsyncIterable<string>,
   ): Promise<boolean> => {
@@ -404,8 +562,18 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       }
     }
     return false;
-  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, reportVisibleToolActivity, resetBuffer, resetStreamingText, setVisibleActivityStatus, splitStreamingContent]);
+  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, reportVisibleToolActivity, resetBuffer, resetStreamingText, setAuthError, setError, setSteeredSegments, setStreaming, setToolEvents, setVisibleActivityStatus, splitStreamingContent, steeredContinuationIdRef, toolEventsRef]);
 
+  return { consume };
+}
+
+function useStartRun(
+  session: ReturnType<typeof useRunStreamState>,
+  consume: (events: AsyncIterable<string>) => Promise<boolean>,
+  lifecycle: ReturnType<typeof useRunStreamLifecycle>,
+) {
+  const { begin, settle } = lifecycle;
+  const { setError } = session;
   const start = useCallback(async (
     threadId: string,
     message: string,
@@ -416,23 +584,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     messageMetadata?: Record<string, unknown>,
     quietActivity = false,
   ): Promise<{ accepted: boolean }> => {
-    abortRef.current?.abort();
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    markLive();
-    threadIdRef.current = threadId;
-    resetBuffer();
-    setStreaming(true);
-    setToolEvents([]);
-    setError(null);
-    setAuthError(null);
-    // A fresh run must not inherit a stale arm/segment from whatever
-    // thread this hook instance was last attached to.
-    steeredContinuationIdRef.current = null;
-    setSteeredSegments([]);
-    quietActivityRef.current = quietActivity;
-    if (quietActivity) closeActivity();
-    else openActivity("Sending…");
+    const ctrl = begin(threadId, quietActivity, "Sending…");
 
     try {
       // Command: register the run server-side. 202 = we own this turn; 409
@@ -465,61 +617,21 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       // assistant bubble once the refetch lands; clearing now would yank
       // the text out from under the user. The next start()/attach() resets
       // them.
-      setStreaming(false);
-      closeActivity();
-      markSettled(ctrl);
+      settle(ctrl);
     }
-  }, [closeActivity, consume, markLive, markSettled, openActivity, resetBuffer]);
+  }, [begin, settle, consume, setError]);
 
-  // Stop the active run. Three-part: (1) tell the server to abort the
-  // agent stream so the LangGraph loop unwinds; (2) tear down local
-  // streaming state immediately so the UI gates release and the queue
-  // drains — we cannot rely on the server's `error`+`done` round-trip
-  // because step (3) closes the EventSource before those broadcasts
-  // arrive; (3) abort the local controller so the EventSource closes
-  // and the iterator's finally{} fires. Without step (2) the consume()
-  // loop exits via its abort path (no terminal event) and never calls
-  // setStreaming(false) / onDone — the chat appears frozen and the only
-  // recovery is a full refresh.
-  const stop = useCallback(() => {
-    const tid = threadIdRef.current;
-    if (tid) {
-      void api.threads.abortRun(tid).catch(() => { /* server already idle */ });
-    }
-    flushPending();
-    setStreaming(false);
-    // Keep streamingContent and thinkingContent visible until the next
-    // start()/attach() — same pattern as the `done` branch in consume().
-    closeActivity();
-    abortRef.current?.abort();
-    markSettled(null);
-    steeredContinuationIdRef.current = null;
-    onDone?.();
-  }, [closeActivity, flushPending, markSettled, onDone]);
+  return { start };
+}
 
-  // Attach to an in-flight run for the given thread (server-side run kept
-  // going because the user switched away, or because this is a fresh
-  // navigation into a session whose run is still streaming). Sets
-  // `streaming` optimistically BEFORE the GET resolves so the input bar
-  // gates / Stop button shows / queue drain blocks immediately on session
-  // open — otherwise there's a race window where the UI thinks no run is
-  // active, accepts a new POST, and the server rejects it with 409.
+function useAttachRun(
+  consume: (events: AsyncIterable<string>) => Promise<boolean>,
+  lifecycle: ReturnType<typeof useRunStreamLifecycle>,
+  onDone?: () => void,
+) {
+  const { begin, settle } = lifecycle;
   const attach = useCallback(async (threadId: string, quietActivity = false) => {
-    abortRef.current?.abort();
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    markLive();
-    threadIdRef.current = threadId;
-    resetBuffer();
-    setStreaming(true);
-    setToolEvents([]);
-    setError(null);
-    setAuthError(null);
-    steeredContinuationIdRef.current = null;
-    setSteeredSegments([]);
-    quietActivityRef.current = quietActivity;
-    if (quietActivity) closeActivity();
-    else openActivity("Reconnecting…");
+    const ctrl = begin(threadId, quietActivity, "Reconnecting…");
 
     try {
       let continuation = false;
@@ -537,74 +649,45 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       // so the iterator exited without yielding). Without this, navigating
       // into an idle thread leaves streaming=true forever: the Stop button
       // hangs in the composer and the "Reconnecting…" badge never clears.
-      setStreaming(false);
-      closeActivity();
-      markSettled(ctrl);
+      settle(ctrl);
     }
-  }, [closeActivity, consume, markLive, markSettled, onDone, openActivity, resetBuffer]);
+  }, [begin, settle, consume, onDone]);
 
-  // Called by the consumer after a refetch lands, so the streaming bubble
-  // gets swapped for the persisted assistant message in a single render.
-  const dismissAuthError = useCallback(() => { setAuthError(null); }, []);
-  const armSteeredContinuation = useCallback((id: string | null) => {
-    steeredContinuationIdRef.current = id;
-  }, []);
-  // Undo a reactive split from consume()'s "done" branch if the steer PATCH
-  // turns out to have been rejected — whether or not `done` had already
-  // raced in and frozen a segment under this id (see steerRun in
-  // ChatView.tsx). If nothing was frozen yet, this just disarms.
-  const rollbackSteeredSegment = useCallback((id: string) => {
-    if (steeredContinuationIdRef.current === id) steeredContinuationIdRef.current = null;
-    setSteeredSegments((segs) => {
-      const match = segs.find((s) => s.id === id);
-      if (!match) return segs;
-      restoreStreamingContent(match.content);
-      return segs.filter((s) => s.id !== id);
-    });
-  }, [restoreStreamingContent]);
-  const clearToolEvents = useCallback(() => { setToolEvents([]); }, []);
+  return { attach };
+}
 
-  const state: UseSSEState = {
-    streaming,
-    streamingContent,
-    thinkingContent,
-    toolEvents,
-    error,
-    authError,
-    steeredSegments,
-  };
-  const commands: UseSSECommands = {
-    dismissAuthError,
-    start,
-    stop,
-    attach,
-    isLive,
-    lastSettledAt,
-    clearStreamingContent,
-    clearToolEvents,
-    armSteeredContinuation,
-    rollbackSteeredSegment,
-  };
-
-  return {
-    state,
-    commands,
-    streaming,
-    streamingContent,
-    thinkingContent,
-    toolEvents,
-    error,
-    authError,
-    steeredSegments,
-    dismissAuthError,
-    start,
-    stop,
-    attach,
-    isLive,
-    lastSettledAt,
-    clearStreamingContent,
-    clearToolEvents,
-    armSteeredContinuation,
-    rollbackSteeredSegment,
-  };
+function useRunStreamLifecycle(session: ReturnType<typeof useRunStreamState>) {
+  const {
+    abortRef, markLive, threadIdRef, resetBuffer, setStreaming, setToolEvents,
+    setError, setAuthError, steeredContinuationIdRef, setSteeredSegments,
+    quietActivityRef, closeActivity, openActivity, markSettled,
+  } = session;
+  const begin = useCallback((threadId: string, quiet: boolean, label: string) => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    markLive();
+    threadIdRef.current = threadId;
+    resetBuffer();
+    setStreaming(true);
+    setToolEvents([]);
+    setError(null);
+    setAuthError(null);
+    steeredContinuationIdRef.current = null;
+    setSteeredSegments([]);
+    quietActivityRef.current = quiet;
+    if (quiet) closeActivity();
+    else openActivity(label);
+    return ctrl;
+  }, [
+    abortRef, markLive, threadIdRef, resetBuffer, setStreaming, setToolEvents,
+    setError, setAuthError, steeredContinuationIdRef, setSteeredSegments,
+    quietActivityRef, closeActivity, openActivity,
+  ]);
+  const settle = useCallback((ctrl: AbortController) => {
+    setStreaming(false);
+    closeActivity();
+    markSettled(ctrl);
+  }, [setStreaming, closeActivity, markSettled]);
+  return { begin, settle };
 }

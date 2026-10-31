@@ -279,82 +279,11 @@ export async function buildHistoryWindow(
         ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, 0));
         continue;
       }
-      const hotForSlice = hotMessages ?? (hotTurnLimit > 0
-        ? takeRecentTurnsWithinBudget(allWindowMessages, budget.tierBudgets.hot, hotTurnLimit)
-        : takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot));
-      const boundaryKeySeq = pinnedBoundarySeq ?? hotForSlice[0]?.seq ?? null;
-      const cachedWarm = cached?.warm_summary
-        ? unwrapWarmSummary(cached.warm_summary)
-        : null;
-      const cacheResult = resolveWarmCacheHit(
-        thread_id,
-        cachedWarm,
-        cached?.warm_summary_source_messages ?? null,
-        scope,
-        cached?.warm_summary_before_seq ?? null,
-        boundaryKeySeq,
-        warmMessageLimit,
-      );
-      if (cacheResult !== null) {
-        // Boundary-stable or small-slide turn: don't pay the summariser tax again.
-        warmSummaryCtx = cacheResult;
-      } else {
-        // In multi-channel mode allWindowMessages is channel-mixed (that's
-        // the whole point — automation rows enter the HOT tier when their
-        // chip is on). The chat channel's own ephemeral fallback must stay
-        // scoped to chat-only rows below the boundary, or a stale-cache turn
-        // would fold automation content into an unlabeled chat summary —
-        // exactly the leak ADR-0044 exists to close. Pass hotCount=0 since
-        // the boundary filter has already excluded the hot portion.
-        const chatSourceMessages = multiChannel
-          ? takeRecentWarmMessages(
-              allWindowMessages.filter((m) => m.category == null && (boundaryKeySeq === null || m.seq < boundaryKeySeq)),
-              warmMessageLimit,
-            )
-          : takeRecentWarmMessages(
-              allWindowMessages.slice(0, Math.max(0, allWindowMessages.length - hotForSlice.length)),
-              warmMessageLimit,
-            );
-        // Race the summariser against a wall-clock budget so a slow or hung
-        // provider call cannot permanently stall the chat session. On
-        // timeout we fall back to no warm summary — the hot-message truncate
-        // path below kicks in so older context isn't silently dropped.
-        warmSummaryCtx = await raceWithBudget(
-          buildWarmSummary(
-            chatSourceMessages,
-            0,
-            modelInfo.providerName,
-            modelInfo.modelId,
-            providerParams,
-            warmCap,
-          ),
-          getConfig().warmSummaryBudgetMs,
-          "",
-        );
-        // This per-turn fallback is intentionally ephemeral. Persisting it
-        // here would create a warm summary without atomically moving the hot
-        // boundary. The background compaction coordinator owns persistence.
-      }
-      if (multiChannel) {
-        // ADR-0044 — one "## Context — source: <ch>" block per active
-        // channel with non-empty content, chat first then the fixed
-        // automation order. Automation blocks are read-only here: they're
-        // kept fresh by the background boundary-move compactor
-        // (commitBoundaryCompaction), not computed inline — a channel
-        // toggled on before any boundary move simply has no block yet.
-        const chatBlock = warmSummaryCtx
-          ? { channel: "chat", content: warmSummaryCtx, computedAt: cached?.warm_summary_computed_at ?? null }
-          : null;
-        const automationBlocks: Array<{ channel: string; content: string; computedAt: string | null }> = [];
-        for (const channel of orderedAutomationChannels) {
-          const row = getThreadChannelSummary(thread_id, channel);
-          if (!row || !row.summary || boundaryKeySeq === null || row.summary_before_seq !== boundaryKeySeq) continue;
-          automationBlocks.push({ channel, content: row.summary, computedAt: row.computed_at });
-        }
-        warmSummaryCtx = [...(chatBlock ? [chatBlock] : []), ...automationBlocks]
-          .map((b) => `## Context — source: ${b.channel}${b.computedAt ? `  (summary as of ${b.computedAt})` : ""}\n${b.content}`)
-          .join("\n\n");
-      }
+      warmSummaryCtx = await resolveWarmTier({
+        thread_id, hotMessages, hotTurnLimit, allWindowMessages, budget,
+        pinnedBoundarySeq, cached, scope, warmMessageLimit, multiChannel,
+        orderedAutomationChannels, modelInfo, providerParams, warmCap,
+      });
       const used = estimateTokens(warmSummaryCtx);
       ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, used));
     } else {
@@ -367,6 +296,95 @@ export async function buildHistoryWindow(
     }
   }
 
+  return finalizeHistoryWindow({
+    thread_id, budget, hotMessages, hotCap, allWindowMessages,
+    warmSummaryCtx, factsCtx, multiChannel, modelInfo, scope,
+  });
+}
+
+interface WarmTierInput {
+  thread_id: string;
+  hotMessages: MessageRow[] | undefined;
+  hotTurnLimit: number;
+  allWindowMessages: MessageRow[];
+  budget: ContextBudget;
+  pinnedBoundarySeq: number | null;
+  cached: ReturnType<typeof getThread>;
+  scope: "foreground" | "bridge" | "all" | "none";
+  warmMessageLimit: number;
+  multiChannel: boolean;
+  orderedAutomationChannels: readonly string[];
+  modelInfo: { providerName?: string; modelId?: string };
+  providerParams: ProviderParams;
+  warmCap: number;
+}
+
+async function resolveWarmTier(input: WarmTierInput): Promise<string> {
+  const {
+    thread_id, hotMessages, hotTurnLimit, allWindowMessages, budget,
+    pinnedBoundarySeq, cached, scope, warmMessageLimit, multiChannel,
+    orderedAutomationChannels, modelInfo, providerParams, warmCap,
+  } = input;
+  const hotForSlice = hotMessages ?? (hotTurnLimit > 0
+    ? takeRecentTurnsWithinBudget(allWindowMessages, budget.tierBudgets.hot, hotTurnLimit)
+    : takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot));
+  const boundaryKeySeq = pinnedBoundarySeq ?? hotForSlice[0]?.seq ?? null;
+  const cachedWarm = cached?.warm_summary ? unwrapWarmSummary(cached.warm_summary) : null;
+  const cacheResult = resolveWarmCacheHit(
+    thread_id, cachedWarm, cached?.warm_summary_source_messages ?? null,
+    scope, cached?.warm_summary_before_seq ?? null, boundaryKeySeq, warmMessageLimit,
+  );
+  let warmSummaryCtx: string;
+  if (cacheResult !== null) {
+    warmSummaryCtx = cacheResult;
+  } else {
+    // Keep chat's fallback chat-only even when automation enters the hot tier.
+    const chatSourceMessages = multiChannel
+      ? takeRecentWarmMessages(
+          allWindowMessages.filter((m) => m.category == null && (boundaryKeySeq === null || m.seq < boundaryKeySeq)),
+          warmMessageLimit,
+        )
+      : takeRecentWarmMessages(
+          allWindowMessages.slice(0, Math.max(0, allWindowMessages.length - hotForSlice.length)),
+          warmMessageLimit,
+        );
+    // Ephemeral and bounded: only the background coordinator persists a summary
+    // atomically with its boundary; timeout leaves hot truncation as the fallback.
+    warmSummaryCtx = await raceWithBudget(
+      buildWarmSummary(chatSourceMessages, 0, modelInfo.providerName, modelInfo.modelId, providerParams, warmCap),
+      getConfig().warmSummaryBudgetMs,
+      "",
+    );
+  }
+  if (!multiChannel) return warmSummaryCtx;
+  const chatBlock = warmSummaryCtx
+    ? { channel: "chat", content: warmSummaryCtx, computedAt: cached?.warm_summary_computed_at ?? null }
+    : null;
+  const automationBlocks: Array<{ channel: string; content: string; computedAt: string | null }> = [];
+  for (const channel of orderedAutomationChannels) {
+    const row = getThreadChannelSummary(thread_id, channel);
+    if (!row || !row.summary || boundaryKeySeq === null || row.summary_before_seq !== boundaryKeySeq) continue;
+    automationBlocks.push({ channel, content: row.summary, computedAt: row.computed_at });
+  }
+  return [...(chatBlock ? [chatBlock] : []), ...automationBlocks]
+    .map((b) => `## Context — source: ${b.channel}${b.computedAt ? `  (summary as of ${b.computedAt})` : ""}\n${b.content}`)
+    .join("\n\n");
+}
+
+function finalizeHistoryWindow(input: {
+  thread_id: string;
+  budget: ContextBudget;
+  hotMessages: MessageRow[] | undefined;
+  hotCap: number;
+  allWindowMessages: MessageRow[];
+  warmSummaryCtx: string;
+  factsCtx: string;
+  multiChannel: boolean;
+  modelInfo: { providerName?: string; modelId?: string };
+  scope: "foreground" | "bridge" | "all" | "none";
+}): ResolvedHistoryWindow {
+  const { thread_id, budget, hotMessages, hotCap, allWindowMessages,
+    warmSummaryCtx, factsCtx, multiChannel, modelInfo, scope } = input;
   // Hot is always evaluated above (priority always contains all three tiers),
   // but TypeScript can't see that. Default to an empty list defensively.
   const hotMessagesResolved = hotMessages ?? [];

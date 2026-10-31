@@ -89,6 +89,46 @@ describe("WhatsApp inbound pipeline", () => {
     vi.restoreAllMocks();
   });
 
+  it.each(["chats.upsert", "chats.update", "messaging-history.set"])("keeps chat-cache updates wired through %s", async (event) => {
+    const { adapter } = await connect();
+    const chats = [{ id: BOB, name: "Synthetic Contact", conversationTimestamp: 123 }];
+    await handlers.get(event)!(event === "messaging-history.set" ? { chats } : chats);
+    expect(adapter.listChats()).toContainEqual(expect.objectContaining({
+      remote_jid: BOB, name: "Synthetic Contact", last_message_at: 123_000,
+    }));
+    await adapter.stop();
+  });
+
+  it("keeps contact names wired through history and live contact updates", async () => {
+    const { adapter } = await connect();
+    await handlers.get("messaging-history.set")!({ contacts: [{ id: BOB, name: "Historical Contact" }] });
+    expect(adapter.listChats()).toContainEqual(expect.objectContaining({ remote_jid: BOB, name: "Historical Contact" }));
+    await handlers.get("contacts.upsert")!([{ id: BOB, name: "Current Contact" }]);
+    expect(adapter.listChats()).toContainEqual(expect.objectContaining({ remote_jid: BOB, name: "Current Contact" }));
+    await adapter.stop();
+  });
+
+  it("reports pairing and logout without scheduling reconnection after logout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { adapter } = await connect();
+      const status = vi.fn();
+      adapter.onStatusChange(status);
+      await handlers.get("connection.update")!({ qr: "synthetic-qr" });
+      expect(status).toHaveBeenLastCalledWith(expect.objectContaining({ status: "pairing", qr_data_url: "data:," }));
+      await handlers.get("connection.update")!({
+        connection: "close", lastDisconnect: { error: { output: { statusCode: 401 } } },
+      });
+      expect(status).toHaveBeenLastCalledWith(expect.objectContaining({ status: "error", error: expect.stringContaining("Re-pair required") }));
+      const start = vi.spyOn(adapter, "start");
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(start).not.toHaveBeenCalled();
+      await adapter.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not label a contact with the user's own name when the user writes from their phone", async () => {
     const { adapter, received } = await connect();
     await upsert([{

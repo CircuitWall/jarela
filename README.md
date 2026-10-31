@@ -260,6 +260,9 @@ This is development/release infrastructure, not a cloud dependency of the app.
 Jarela is a single Next.js process organized around domain modules and explicit runtime boundaries:
 
 - The UI calls typed API routes; route handlers guard and validate requests before delegating to `lib/`.
+- **Unreleased credential editor:** typed default/create/edit modes and dedicated
+  action/OAuth hooks separate behavior from form, controls, and setup guides.
+  See [UI ownership](docs/ui-hook-api.md#credential-editor-ownership-unreleased).
 - **Unreleased agent advertisements:** saved agent configurations can optionally
   derive bounded specialization metadata using an explicitly selected configured
   model. Generation is off by default, with disclosed egress/usage limits and

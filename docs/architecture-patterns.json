@@ -24,10 +24,12 @@
       "id": "api-request-validation",
       "operation": "Validate JSON request bodies at API boundaries with a Zod schema and the shared response contract.",
       "canonicalSources": [
-        "lib/api/responses.ts"
+        "lib/api/responses.ts",
+        "api/document-sources.ts"
       ],
       "validationSources": [
-        "lib/api/responses.test.ts"
+        "lib/api/responses.test.ts",
+        "api/document-sources.test.ts"
       ],
       "exceptions": [
         "Streaming, multipart, and non-JSON endpoints need their transport-specific parsing, but must still validate input explicitly."

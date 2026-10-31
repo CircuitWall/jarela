@@ -46,27 +46,13 @@ const EMPTY_FORM: ManifestFormState = {
 // the pending-approvals queue, and the manual manifest editor. Renders
 // nothing visible past the header until expanded — matches the UX we
 // agreed: clean default view, one click to expand for power users.
-export function InstallPanel() {
-  const {
-    pending,
-    manifests,
-    install,
-    remove,
-    approveInstall,
-    denyInstall,
-    createManifest,
-    reload,
-    loadResult,
-  } = usePackages();
-  const [open, setOpen] = useState(false);
+type PackageCommands = ReturnType<typeof usePackages>;
 
+function usePackageInstaller(install: PackageCommands["install"], setForm: (form: ManifestFormState) => void) {
   const [installSpec, setInstallSpec] = useState("");
   const [installVersion, setInstallVersion] = useState("");
   const [installing, setInstalling] = useState(false);
   const [installNotice, setInstallNotice] = useState<string | null>(null);
-  const [removing, setRemoving] = useState<string | null>(null);
-  const [form, setForm] = useState<ManifestFormState>(EMPTY_FORM);
-  const [savingManifest, setSavingManifest] = useState(false);
   const [catalog, setCatalog] = useState<LangChainCatalogEntry[]>([]);
   const [catalogSelection, setCatalogSelection] = useState<string>("");
 
@@ -104,11 +90,6 @@ export function InstallPanel() {
       requiredEnv: (entry.requiredEnv ?? []).join(", "),
     });
   }
-
-  const headerCount = useMemo(() => {
-    const n = pending.length;
-    return n > 0 ? `${n} pending` : null;
-  }, [pending]);
 
   async function handleInstall(e: React.FormEvent) {
     e.preventDefault();
@@ -163,6 +144,17 @@ export function InstallPanel() {
     }
   }
 
+  return {
+    installSpec, setInstallSpec, installVersion, setInstallVersion, installing, installNotice,
+    setInstallNotice, catalog, catalogSelection, applyCatalogEntry, handleInstall, handleInstallDefault,
+  };
+}
+
+function usePackageActions(
+  { remove, approveInstall, denyInstall, reload }: Pick<PackageCommands, "remove" | "approveInstall" | "denyInstall" | "reload">,
+  setInstallNotice: (notice: string) => void,
+) {
+  const [removing, setRemoving] = useState<string | null>(null);
   async function handleApprove(id: string) {
     try {
       await approveInstall(id);
@@ -186,6 +178,41 @@ export function InstallPanel() {
       });
     }
   }
+
+  async function handleReload() {
+    try {
+      await reload();
+    } catch (e) {
+      pushErrorToast({
+        title: "Reload failed",
+        error: e,
+        context: { panel: "packages", action: "reload" },
+      });
+    }
+  }
+
+  async function handleRemove(spec: string) {
+    setRemoving(spec);
+    try {
+      await remove(spec);
+      setInstallNotice(`Removed ${spec}.`);
+    } catch (e) {
+      pushErrorToast({
+        title: "Remove failed",
+        error: e,
+        context: { panel: "packages", action: "remove", spec },
+      });
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  return { removing, handleApprove, handleDeny, handleReload, handleRemove };
+}
+
+function useManifestEditor(createManifest: PackageCommands["createManifest"]) {
+  const [form, setForm] = useState<ManifestFormState>(EMPTY_FORM);
+  const [savingManifest, setSavingManifest] = useState(false);
 
   async function handleCreateManifest(e: React.FormEvent) {
     e.preventDefault();
@@ -219,34 +246,20 @@ export function InstallPanel() {
     }
   }
 
-  async function handleReload() {
-    try {
-      await reload();
-    } catch (e) {
-      pushErrorToast({
-        title: "Reload failed",
-        error: e,
-        context: { panel: "packages", action: "reload" },
-      });
-    }
-  }
+  return { form, setForm, savingManifest, handleCreateManifest };
+}
 
-  async function handleRemove(spec: string) {
-    setRemoving(spec);
-    try {
-      await remove(spec);
-      setInstallNotice(`Removed ${spec}.`);
-    } catch (e) {
-      pushErrorToast({
-        title: "Remove failed",
-        error: e,
-        context: { panel: "packages", action: "remove", spec },
-      });
-    } finally {
-      setRemoving(null);
-    }
-  }
-
+export function InstallPanel() {
+  const packages = usePackages();
+  const { pending, manifests, loadResult } = packages;
+  const [open, setOpen] = useState(false);
+  const manifestEditor = useManifestEditor(packages.createManifest);
+  const installer = usePackageInstaller(packages.install, manifestEditor.setForm);
+  const actions = usePackageActions(packages, installer.setInstallNotice);
+  const headerCount = useMemo(() => {
+    const n = pending.length;
+    return n > 0 ? `${n} pending` : null;
+  }, [pending]);
   return (
     <section className="rounded-lg border border-border bg-surface-2">
       <button
@@ -282,297 +295,345 @@ export function InstallPanel() {
             </p>
           )}
 
-          {loadResult?.defaults && loadResult.defaults.length > 0 && (
-            <section className="space-y-2">
-              <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
+          <OptionalPackages loadResult={loadResult} installer={installer} actions={actions} />
+          <PackageInstallForm installer={installer} handleReload={actions.handleReload} />
+          <InstalledManifests manifests={manifests} actions={actions} />
+          <PendingInstalls pending={pending} actions={actions} />
+          <ManifestEditor editor={manifestEditor} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+type Installer = ReturnType<typeof usePackageInstaller>;
+type PackageActions = ReturnType<typeof usePackageActions>;
+
+function OptionalPackages({ loadResult, installer, actions }: {
+  loadResult: PackageCommands["loadResult"];
+  installer: Pick<Installer, "installing" | "handleInstallDefault">;
+  actions: Pick<PackageActions, "removing" | "handleRemove">;
+}) {
+  const { installing, handleInstallDefault } = installer;
+  const { removing, handleRemove } = actions;
+  return (
+    <>
+      {loadResult?.defaults && loadResult.defaults.length > 0 && (
+        <section className="space-y-2">
+          <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
                 Optional integrations
-              </h4>
-              <p className="text-xs text-fg-faint">
+          </h4>
+          <p className="text-xs text-fg-faint">
                 Install only the integrations you use. They load immediately after installation and can be removed here later.
-              </p>
-              <ul className="space-y-1.5">
-                {loadResult.defaults.map((item) => (
-                  <li key={item.id} className="flex items-center gap-2 rounded-md border border-border bg-surface-1 px-3 py-2">
-                    <span className="min-w-0 flex-1 text-xs text-fg">{item.label}</span>
-                    <code className="hidden text-[10px] text-fg-faint md:block">{item.npmPackage}</code>
-                    <button
-                      type="button"
-                      onClick={() => void (item.installed
-                        ? handleRemove(item.npmPackage)
-                        : handleInstallDefault(item.npmPackage))}
-                      disabled={installing || removing === item.npmPackage}
-                      className="rounded-md border border-border px-2 py-1 text-xs text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-50"
-                      aria-label={`${item.installed ? "Remove" : "Install"} ${item.label}`}
-                    >
-                      {removing === item.npmPackage ? "Removing…" : item.installed ? "Remove" : "Install"}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          </p>
+          <ul className="space-y-1.5">
+            {loadResult.defaults.map((item) => (
+              <li key={item.id} className="flex items-center gap-2 rounded-md border border-border bg-surface-1 px-3 py-2">
+                <span className="min-w-0 flex-1 text-xs text-fg">{item.label}</span>
+                <code className="hidden text-[10px] text-fg-faint md:block">{item.npmPackage}</code>
+                <button
+                  type="button"
+                  onClick={() => void (item.installed
+                    ? handleRemove(item.npmPackage)
+                    : handleInstallDefault(item.npmPackage))}
+                  disabled={installing || removing === item.npmPackage}
+                  className="rounded-md border border-border px-2 py-1 text-xs text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-50"
+                  aria-label={`${item.installed ? "Remove" : "Install"} ${item.label}`}
+                >
+                  {removing === item.npmPackage ? "Removing…" : item.installed ? "Remove" : "Install"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  );
+}
 
-          <section className="space-y-2">
-            <div className="flex items-center gap-2">
-              <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide flex-1">
+function PackageInstallForm({ installer, handleReload }: { installer: Installer; handleReload: PackageActions["handleReload"] }) {
+  const {
+    catalog, catalogSelection, applyCatalogEntry, handleInstall, installSpec, setInstallSpec,
+    installVersion, setInstallVersion, installing, installNotice,
+  } = installer;
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-2">
+        <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide flex-1">
                 Install from npm
-              </h4>
-              <button
-                type="button"
-                onClick={handleReload}
-                className="shrink-0 rounded-md border border-border px-2.5 py-1.5 text-xs text-fg-muted hover:text-fg hover:bg-surface-3 inline-flex items-center gap-1.5"
-                aria-label="Reload installed packages"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Reload
-              </button>
-            </div>
-            {catalog.length > 0 && (
-              <div className="space-y-1">
-                <label
-                  htmlFor="catalog-picker"
-                  className="block text-[11px] text-fg-faint"
-                >
+        </h4>
+        <button
+          type="button"
+          onClick={handleReload}
+          className="shrink-0 rounded-md border border-border px-2.5 py-1.5 text-xs text-fg-muted hover:text-fg hover:bg-surface-3 inline-flex items-center gap-1.5"
+          aria-label="Reload installed packages"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Reload
+        </button>
+      </div>
+      {catalog.length > 0 && (
+        <div className="space-y-1">
+          <label
+            htmlFor="catalog-picker"
+            className="block text-[11px] text-fg-faint"
+          >
                   Pick from curated LangChain tools (auto-fills the form below):
-                </label>
-                <select
-                  id="catalog-picker"
-                  value={catalogSelection}
-                  onChange={(e) => applyCatalogEntry(e.target.value)}
-                  className="w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
-                  aria-label="Curated LangChain tool catalog"
-                >
-                  <option value="">— Choose a tool —</option>
-                  {catalog.map((entry) => (
-                    <option key={entry.id} value={entry.id}>
-                      {entry.label} ({entry.npmPackage}) — {entry.description}
-                    </option>
-                  ))}
-                </select>
-                {catalogSelection && (() => {
-                  const entry = catalog.find((e) => e.id === catalogSelection);
-                  if (!entry) return null;
-                  return (
-                    <p className="text-[11px] text-fg-faint">
+          </label>
+          <select
+            id="catalog-picker"
+            value={catalogSelection}
+            onChange={(e) => applyCatalogEntry(e.target.value)}
+            className="w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+            aria-label="Curated LangChain tool catalog"
+          >
+            <option value="">— Choose a tool —</option>
+            {catalog.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.label} ({entry.npmPackage}) — {entry.description}
+              </option>
+            ))}
+          </select>
+          {catalogSelection && (() => {
+            const entry = catalog.find((e) => e.id === catalogSelection);
+            if (!entry) return null;
+            return (
+              <p className="text-[11px] text-fg-faint">
                       Export: <code className="font-mono">{entry.exportName}</code>
-                      {entry.requiredEnv && entry.requiredEnv.length > 0 && (
-                        <>
-                          {" "}
+                {entry.requiredEnv && entry.requiredEnv.length > 0 && (
+                  <>
+                    {" "}
                           · Requires:{" "}
-                          <code className="font-mono">
-                            {entry.requiredEnv.join(", ")}
-                          </code>
-                        </>
-                      )}
-                      {entry.docsUrl && (
-                        <>
-                          {" "}
+                    <code className="font-mono">
+                      {entry.requiredEnv.join(", ")}
+                    </code>
+                  </>
+                )}
+                {entry.docsUrl && (
+                  <>
+                    {" "}
                           ·{" "}
-                          <a
-                            href={entry.docsUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="underline hover:text-fg"
-                          >
+                    <a
+                      href={entry.docsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline hover:text-fg"
+                    >
                             Docs
-                          </a>
-                        </>
-                      )}
-                    </p>
-                  );
-                })()}
-              </div>
-            )}
-            <form
-              onSubmit={handleInstall}
-              className="grid gap-2 md:grid-cols-[minmax(0,1fr)_140px_auto]"
-            >
-              <input
-                type="text"
-                value={installSpec}
-                onChange={(e) => setInstallSpec(e.target.value)}
-                placeholder="@langchain/community"
-                className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
-                aria-label="Package spec"
-              />
-              <input
-                type="text"
-                value={installVersion}
-                onChange={(e) => setInstallVersion(e.target.value)}
-                placeholder="version (optional)"
-                className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
-                aria-label="Version"
-              />
-              <button
-                type="submit"
-                disabled={installing || !installSpec.trim()}
-                className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg hover:bg-surface-3 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {installing ? "Installing…" : "Install"}
-              </button>
-            </form>
-            {installNotice && <p className="text-xs text-fg-muted">{installNotice}</p>}
-          </section>
+                    </a>
+                  </>
+                )}
+              </p>
+            );
+          })()}
+        </div>
+      )}
+      <form
+        onSubmit={handleInstall}
+        className="grid gap-2 md:grid-cols-[minmax(0,1fr)_140px_auto]"
+      >
+        <input
+          type="text"
+          value={installSpec}
+          onChange={(e) => setInstallSpec(e.target.value)}
+          placeholder="@langchain/community"
+          className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+          aria-label="Package spec"
+        />
+        <input
+          type="text"
+          value={installVersion}
+          onChange={(e) => setInstallVersion(e.target.value)}
+          placeholder="version (optional)"
+          className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+          aria-label="Version"
+        />
+        <button
+          type="submit"
+          disabled={installing || !installSpec.trim()}
+          className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg hover:bg-surface-3 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {installing ? "Installing…" : "Install"}
+        </button>
+      </form>
+      {installNotice && <p className="text-xs text-fg-muted">{installNotice}</p>}
+    </section>
+  );
+}
 
-          {manifests.length > 0 && (
-            <section className="space-y-2">
-              <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
+function InstalledManifests({ manifests, actions }: { manifests: PackageCommands["manifests"]; actions: PackageActions }) {
+  const { removing, handleRemove } = actions;
+  return (
+    <>
+      {manifests.length > 0 && (
+        <section className="space-y-2">
+          <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
                 Installed packages
-              </h4>
-              <ul className="space-y-1.5">
-                {manifests.map((record) => (
-                  <li key={record.name} className="flex items-center gap-2 rounded-md border border-border bg-surface-1 px-3 py-2">
-                    <code className="min-w-0 flex-1 truncate text-xs text-fg">{record.manifest.package}</code>
+          </h4>
+          <ul className="space-y-1.5">
+            {manifests.map((record) => (
+              <li key={record.name} className="flex items-center gap-2 rounded-md border border-border bg-surface-1 px-3 py-2">
+                <code className="min-w-0 flex-1 truncate text-xs text-fg">{record.manifest.package}</code>
+                <button
+                  type="button"
+                  onClick={() => void handleRemove(record.manifest.package)}
+                  disabled={removing === record.manifest.package}
+                  className="rounded-md border border-border px-2 py-1 text-xs text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-50"
+                  aria-label={`Remove ${record.manifest.package}`}
+                >
+                  {removing === record.manifest.package ? "Removing…" : "Remove"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  );
+}
+
+function PendingInstalls({ pending, actions }: { pending: PackageCommands["pending"]; actions: PackageActions }) {
+  const { handleApprove, handleDeny } = actions;
+  return (
+    <>
+      {pending.length > 0 && (
+        <section className="space-y-2">
+          <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
+                Pending approvals ({pending.length})
+          </h4>
+          <ul className="space-y-2">
+            {pending.map((p) => (
+              <li
+                key={p.id}
+                className="rounded-lg border border-border bg-surface-1 px-3 py-2.5"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-mono text-fg">
+                      {p.spec}
+                      {p.version ? `@${p.version}` : ""}
+                    </div>
+                    <p className="text-xs text-fg-muted mt-0.5">
+                          Publisher <span className="font-mono">{p.publisher}</span> · {p.reason}
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() => void handleRemove(record.manifest.package)}
-                      disabled={removing === record.manifest.package}
-                      className="rounded-md border border-border px-2 py-1 text-xs text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-50"
-                      aria-label={`Remove ${record.manifest.package}`}
+                      onClick={() => handleApprove(p.id)}
+                      className="rounded-md border border-border px-2 py-1.5 text-xs text-fg-muted hover:text-fg hover:bg-surface-3 inline-flex items-center gap-1"
+                      aria-label={`Approve ${p.spec}`}
                     >
-                      {removing === record.manifest.package ? "Removing…" : "Remove"}
+                      <Check className="w-3.5 h-3.5" /> Approve
                     </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeny(p.id)}
+                      className="rounded-md border border-border px-2 py-1.5 text-xs text-fg-muted hover:text-fg hover:bg-surface-3 inline-flex items-center gap-1"
+                      aria-label={`Deny ${p.spec}`}
+                    >
+                      <X className="w-3.5 h-3.5" /> Deny
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </>
+  );
+}
 
-          {pending.length > 0 && (
-            <section className="space-y-2">
-              <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
-                Pending approvals ({pending.length})
-              </h4>
-              <ul className="space-y-2">
-                {pending.map((p) => (
-                  <li
-                    key={p.id}
-                    className="rounded-lg border border-border bg-surface-1 px-3 py-2.5"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-mono text-fg">
-                          {p.spec}
-                          {p.version ? `@${p.version}` : ""}
-                        </div>
-                        <p className="text-xs text-fg-muted mt-0.5">
-                          Publisher <span className="font-mono">{p.publisher}</span> · {p.reason}
-                        </p>
-                      </div>
-                      <div className="flex gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleApprove(p.id)}
-                          className="rounded-md border border-border px-2 py-1.5 text-xs text-fg-muted hover:text-fg hover:bg-surface-3 inline-flex items-center gap-1"
-                          aria-label={`Approve ${p.spec}`}
-                        >
-                          <Check className="w-3.5 h-3.5" /> Approve
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeny(p.id)}
-                          className="rounded-md border border-border px-2 py-1.5 text-xs text-fg-muted hover:text-fg hover:bg-surface-3 inline-flex items-center gap-1"
-                          aria-label={`Deny ${p.spec}`}
-                        >
-                          <X className="w-3.5 h-3.5" /> Deny
-                        </button>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          <section className="space-y-2">
-            <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
+function ManifestEditor({ editor }: { editor: ReturnType<typeof useManifestEditor> }) {
+  const { form, setForm, handleCreateManifest, savingManifest } = editor;
+  return (
+    <section className="space-y-2">
+      <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
               Add manifest
-            </h4>
-            <p className="text-xs text-fg-faint">
+      </h4>
+      <p className="text-xs text-fg-faint">
               Maps an exported class from an installed npm package to a built-in
               category. Surfaced under <code className="font-mono text-[11px]">/api/v1/tools</code>{" "}
               after a reload.
-            </p>
-            <form
-              onSubmit={handleCreateManifest}
-              className="rounded-lg border border-border bg-surface-1 p-3 space-y-2"
-            >
-              <div className="grid gap-2 md:grid-cols-2">
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="name (e.g. tavily)"
-                  className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
-                  aria-label="Manifest name"
-                />
-                <input
-                  type="text"
-                  value={form.package}
-                  onChange={(e) => setForm({ ...form, package: e.target.value })}
-                  placeholder="package (e.g. @langchain/community/tools/tavily_search)"
-                  className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
-                  aria-label="Package import path"
-                />
-                <input
-                  type="text"
-                  value={form.exportName}
-                  onChange={(e) => setForm({ ...form, exportName: e.target.value })}
-                  placeholder="export (blank = all tools in package)"
-                  className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
-                  aria-label="Export name"
-                />
-                <input
-                  type="text"
-                  value={form.requiredEnv}
-                  onChange={(e) => setForm({ ...form, requiredEnv: e.target.value })}
-                  placeholder="required env, comma-separated"
-                  className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
-                  aria-label="Required env vars"
-                />
-                <select
-                  value={form.category}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      category: e.target.value as (typeof CATEGORIES)[number],
-                    })
-                  }
-                  className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
-                  aria-label="Category"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <select
-                  value={form.capability}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      capability: e.target.value as (typeof CAPABILITIES)[number],
-                    })
-                  }
-                  className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
-                  aria-label="Capability"
-                >
-                  {CAPABILITIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={savingManifest || !form.name.trim() || !form.package.trim()}
-                  className="rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs text-fg hover:bg-surface-3 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {savingManifest ? "Saving…" : "Add manifest"}
-                </button>
-              </div>
-            </form>
-          </section>
+      </p>
+      <form
+        onSubmit={handleCreateManifest}
+        className="rounded-lg border border-border bg-surface-1 p-3 space-y-2"
+      >
+        <div className="grid gap-2 md:grid-cols-2">
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="name (e.g. tavily)"
+            className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+            aria-label="Manifest name"
+          />
+          <input
+            type="text"
+            value={form.package}
+            onChange={(e) => setForm({ ...form, package: e.target.value })}
+            placeholder="package (e.g. @langchain/community/tools/tavily_search)"
+            className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+            aria-label="Package import path"
+          />
+          <input
+            type="text"
+            value={form.exportName}
+            onChange={(e) => setForm({ ...form, exportName: e.target.value })}
+            placeholder="export (blank = all tools in package)"
+            className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+            aria-label="Export name"
+          />
+          <input
+            type="text"
+            value={form.requiredEnv}
+            onChange={(e) => setForm({ ...form, requiredEnv: e.target.value })}
+            placeholder="required env, comma-separated"
+            className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+            aria-label="Required env vars"
+          />
+          <select
+            value={form.category}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                category: e.target.value as (typeof CATEGORIES)[number],
+              })
+            }
+            className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+            aria-label="Category"
+          >
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <select
+            value={form.capability}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                capability: e.target.value as (typeof CAPABILITIES)[number],
+              })
+            }
+            className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+            aria-label="Capability"
+          >
+            {CAPABILITIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
-      )}
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={savingManifest || !form.name.trim() || !form.package.trim()}
+            className="rounded-md border border-border bg-surface-2 px-3 py-1.5 text-xs text-fg hover:bg-surface-3 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {savingManifest ? "Saving…" : "Add manifest"}
+          </button>
+        </div>
+      </form>
     </section>
   );
 }

@@ -2,7 +2,10 @@
 // the user has asked Jarela to index for semantic search.
 
 import { randomUUID } from "node:crypto";
+import type { SQLOutputValue } from "node:sqlite";
 import { getDb } from "@/lib/db";
+import type { DocumentSourceKind as CreatableDocumentSourceKind, DocumentSourceStats } from "@/api/document-sources";
+export type { DocumentSourceStats } from "@/api/document-sources";
 
 // ADR-0026 — `kind` discriminates local-folder sources from remote ones
 // (Jira projects, Confluence spaces, saved JQL/CQL, on-demand URL). `config`
@@ -11,16 +14,7 @@ import { getDb } from "@/lib/db";
 // ADR-0029 added `github_pulls` (PRs of one repo) and `github_repo` (text
 // files on one branch of one repo).
 export type DocumentSourceKind =
-  | "local_folder"
-  | "confluence_space"
-  | "confluence_cql"
-  | "jira_project"
-  | "jira_jql"
-  | "github_pulls"
-  | "github_repo"
-  | "gmail_mail"
-  | "outlook_mail"
-  | "icloud_mail"
+  | CreatableDocumentSourceKind
   | "on_demand_url";
 
 export interface DocumentSourceRow {
@@ -148,36 +142,36 @@ export function markSourceScanned(
     .run(now(), error ?? null, now(), id);
 }
 
-export interface DocumentSourceStats {
-  source_id: string;
-  document_count: number;
-  chunk_count: number;
-  embedded_chunk_count: number;
+interface SourceStatsRow extends DocumentSourceRow, DocumentSourceStats {
+  [column: string]: SQLOutputValue;
+}
+
+const SOURCE_STATS_QUERY = `
+  SELECT s.*, s.id AS source_id,
+         COUNT(DISTINCT d.id) AS document_count,
+         COUNT(c.id) AS chunk_count,
+         COUNT(c.embedding) AS embedded_chunk_count
+  FROM document_sources s
+  LEFT JOIN documents d ON d.source_id = s.id
+  LEFT JOIN document_chunks c ON c.document_id = d.id`;
+
+export function listDocumentSourcesWithStats(): Array<{ source: DocumentSourceRow; stats: DocumentSourceStats }> {
+  const rows = getDb().prepare(`${SOURCE_STATS_QUERY} GROUP BY s.id ORDER BY s.created_at ASC`)
+    .all();
+  return rows.map((row) => {
+    const { source_id, document_count, chunk_count, embedded_chunk_count, ...source } =
+      row as SourceStatsRow;
+    return { source, stats: { source_id, document_count, chunk_count, embedded_chunk_count } };
+  });
 }
 
 export function getDocumentSourceStats(sourceId: string): DocumentSourceStats {
-  const db = getDb();
-  const docs = db
-    .prepare("SELECT COUNT(*) AS n FROM documents WHERE source_id=?")
-    .get(sourceId) as { n: number };
-  const chunks = db
-    .prepare(
-      `SELECT COUNT(*) AS n
-       FROM document_chunks dc JOIN documents d ON dc.document_id = d.id
-       WHERE d.source_id=?`,
-    )
-    .get(sourceId) as { n: number };
-  const embedded = db
-    .prepare(
-      `SELECT COUNT(*) AS n
-       FROM document_chunks dc JOIN documents d ON dc.document_id = d.id
-       WHERE d.source_id=? AND dc.embedding IS NOT NULL`,
-    )
-    .get(sourceId) as { n: number };
+  const row = getDb().prepare(`${SOURCE_STATS_QUERY} WHERE s.id=? GROUP BY s.id`)
+    .get(sourceId) as SourceStatsRow | undefined;
   return {
     source_id: sourceId,
-    document_count: docs.n,
-    chunk_count: chunks.n,
-    embedded_chunk_count: embedded.n,
+    document_count: row?.document_count ?? 0,
+    chunk_count: row?.chunk_count ?? 0,
+    embedded_chunk_count: row?.embedded_chunk_count ?? 0,
   };
 }

@@ -37,58 +37,15 @@ interface RedactionState {
 }
 
 export function RedactionPanel() {
-  const [state, setState] = useState<RedactionState | null>(null);
+  const {
+    state,
+    busy,
+    toggle,
+    materialize,
+    msg,
+  } = useRedactionSettings();
   const [showPatterns, setShowPatterns] = useState(false);
   const [showAllowlist, setShowAllowlist] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/v1/redaction");
-      if (res.ok) setState(await res.json());
-    } catch { /* ignore */ }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const toggle = useCallback(async (enabled: boolean) => {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/api/v1/redaction", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled }),
-      });
-      if (res.ok) {
-        await refresh();
-      } else {
-        setMsg("Could not save toggle.");
-      }
-    } finally {
-      setBusy(false);
-    }
-  }, [refresh]);
-
-  const materialize = useCallback(async () => {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const res = await fetch("/api/v1/redaction/init", { method: "POST" });
-      if (res.ok) {
-        const { created, path } = (await res.json()) as { created: boolean; path: string };
-        setMsg(created ? `Created ${path}` : `Already exists at ${path}`);
-        await refresh();
-      } else {
-        setMsg("Could not create pattern file.");
-      }
-    } finally {
-      setBusy(false);
-    }
-  }, [refresh]);
 
   if (!state) {
     return (
@@ -206,4 +163,65 @@ export function RedactionPanel() {
       </div>
     </SettingsCard>
   );
+}
+
+function useRedactionSettings() {
+  const [state, setState] = useState<RedactionState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/redaction");
+      if (res.ok) setState(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const toggle = useCallback(async (enabled: boolean) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/v1/redaction", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (res.ok) {
+        await refresh();
+      } else {
+        setMsg("Could not save toggle.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [refresh]);
+
+  const materialize = useCallback(async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/v1/redaction/init", { method: "POST" });
+      if (res.ok) {
+        const { created, path } = (await res.json()) as { created: boolean; path: string };
+        setMsg(created ? `Created ${path}` : `Already exists at ${path}`);
+        await refresh();
+      } else {
+        setMsg("Could not create pattern file.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [refresh]);
+
+  return {
+    state,
+    busy,
+    toggle,
+    materialize,
+    msg,
+  };
 }

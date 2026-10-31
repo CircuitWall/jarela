@@ -61,6 +61,8 @@ its body do count. Tests, declarations, dependencies, and generated output are
 excluded.
 
 The limit is a review guardrail, not proof of complexity or correctness.
+The unreleased cleanup has removed all grandfathered function-size exceptions;
+the baseline is empty and the 150-line limit is unchanged.
 Prefer cohesive extraction over arbitrary splitting. A justified exception
 requires explicit review of the baseline change and its reason in the PR.
 After a deliberate reduction or reviewed exception, run

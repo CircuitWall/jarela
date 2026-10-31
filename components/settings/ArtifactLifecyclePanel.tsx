@@ -26,7 +26,7 @@ function plural(value: number, unit: string): string {
   return `${value} ${unit}${value === 1 ? "" : "s"}`;
 }
 
-export function ArtifactLifecyclePanel() {
+function useArtifactLifecycle() {
   const [state, setState] = useState<ArtifactLifecycleResponse | null>(null);
   const [draft, setDraft] = useState<ArtifactLifecycleSettings | null>(null);
   const [preview, setPreview] = useState<ArtifactCleanupResult | null>(null);
@@ -99,6 +99,11 @@ export function ArtifactLifecyclePanel() {
     }
   }
 
+  return { state, draft, setDraft, preview, busy, refresh, save, dryRun, cleanup };
+}
+
+export function ArtifactLifecyclePanel() {
+  const { state, draft, setDraft, preview, busy, refresh, save, dryRun, cleanup } = useArtifactLifecycle();
   if (!state || !draft) {
     return (
       <section className="rounded-xl border border-border bg-surface-2/70 p-4 text-sm text-fg-muted">

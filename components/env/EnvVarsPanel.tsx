@@ -2,28 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Edit3, RotateCcw, Save, ServerCog, Search, X } from "lucide-react";
-import { refreshRuntimeConfig } from "@/api/runtime-config";
 import { EnvValueInput, ENV_TYPE_LABEL } from "@/components/env/EnvValueInput";
 import { ENV_CATEGORIES, type EnvCategory } from "@/lib/env/schema";
 
-import { confirmAction } from "@/lib/ui/confirm";
-
-interface EnvRow {
-  name: string;
-  type: "int" | "string" | "bool" | "enum";
-  default: number | string | boolean;
-  current: string;
-  overridden: boolean;
-  description: string;
-  category: EnvCategory;
-  phase: "preflight" | "postflight";
-  tier: "A" | "B" | "C";
-  requiresRestart: boolean;
-  agentWritable: boolean;
-  enumValues?: readonly string[];
-  min?: number;
-  max?: number;
-}
+import { useRuntimeEnvSettings, type RuntimeEnvRow as EnvRow } from "./useRuntimeEnvSettings";
 
 const CATEGORY_LABEL = new Map(ENV_CATEGORIES.map(({ id, label }) => [id, label]));
 
@@ -34,38 +16,24 @@ const CATEGORY_LABEL = new Map(ENV_CATEGORIES.map(({ id, label }) => [id, label]
  * pending changes flag a requiresRestart=true row.
  */
 export function EnvVarsPanel() {
-  const [rows, setRows] = useState<EnvRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    rows,
+    loading,
+    error,
+    setError,
+    editing,
+    setEditing,
+    saving,
+    restartNeeded,
+    restarting,
+    onSave,
+    onReset,
+    onRestart,
+  } = useRuntimeEnvSettings("runtime", "user clicked Restart in EnvVarsPanel");
   const [search, setSearch] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [editing, setEditing] = useState<{ name: string; value: string } | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [restartNeeded, setRestartNeeded] = useState(false);
-  const [restarting, setRestarting] = useState(false);
   const editInputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const r = await fetch("/api/v1/env", { cache: "no-store" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const body = (await r.json()) as { entries: EnvRow[] };
-      // Network vars are surfaced in the Profile page's NetworkPanel
-      // so they don't appear in both places. Drop them here.
-      setRows(body.entries.filter((row) => row.category !== "network"));
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // Focus the edit input when it appears.
   useEffect(() => {
     if (editing) editInputRef.current?.focus();
   }, [editing]);
@@ -94,73 +62,9 @@ export function EnvVarsPanel() {
 
   const startEdit = useCallback((row: EnvRow) => {
     setEditing({ name: row.name, value: row.current });
-  }, []);
+  }, [setEditing]);
 
-  const cancelEdit = useCallback(() => setEditing(null), []);
-
-  const persist = useCallback(async (name: string, value: string | null, requiresRestart: boolean) => {
-    setSaving(true);
-    try {
-      const r = await fetch("/api/v1/env", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, value }),
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `${r.status} ${r.statusText}`);
-      }
-      if (requiresRestart) setRestartNeeded(true);
-      // Re-fetch the public runtime-config snapshot so api/client.ts and
-      // any other browser-side reader picks up the new HTTP / SSE / health
-      // timeouts on the next call.
-      refreshRuntimeConfig();
-      await load();
-      setEditing(null);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }, [load]);
-
-  const onSave = useCallback(() => {
-    if (!editing) return;
-    const row = rows.find((r) => r.name === editing.name);
-    if (!row) return;
-    void persist(editing.name, editing.value, row.requiresRestart);
-  }, [editing, rows, persist]);
-
-  const onReset = useCallback((row: EnvRow) => {
-    void persist(row.name, null, row.requiresRestart);
-  }, [persist]);
-
-  const onRestart = useCallback(async () => {
-    if (!(await confirmAction({ message: "Restart the server? In-flight runs will be aborted; the supervisor (launchd / systemd / Task Scheduler) will relaunch the process.", destructive: true, confirmLabel: "Restart" }))) {
-      return;
-    }
-    setRestarting(true);
-    try {
-      await fetch("/api/v1/system/restart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: "user clicked Restart in EnvVarsPanel" }),
-      });
-      // The server will exit ~250ms after returning. Show a banner and
-      // poll /health until it comes back.
-      pollUntilUp().then(() => {
-        setRestarting(false);
-        setRestartNeeded(false);
-        void load();
-      }).catch(() => {
-        setRestarting(false);
-        setError("Server didn't come back within 30s — check it manually.");
-      });
-    } catch (e) {
-      setRestarting(false);
-      setError((e as Error).message);
-    }
-  }, [load]);
+  const cancelEdit = useCallback(() => setEditing(null), [setEditing]);
 
   return (
     <div className="workspace-gutter flex flex-col h-full min-h-0 py-4 gap-3">
@@ -230,108 +134,18 @@ export function EnvVarsPanel() {
               </div>
               <ul className="divide-y divide-border/30">
                 {list.map((row) => (
-                  <li key={row.name} className="px-3 py-2 hover:bg-surface-2/40">
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <code className="text-[12px] font-mono text-fg">{row.name}</code>
-                          <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-fg-faint/10 text-fg-faint" title={`Value type: ${ENV_TYPE_LABEL[row.type]}`}>
-                            {ENV_TYPE_LABEL[row.type]}
-                          </span>
-                          {row.overridden && (
-                            <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
-                              overridden
-                            </span>
-                          )}
-                          {row.requiresRestart && (
-                            <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                              restart
-                            </span>
-                          )}
-                          {row.phase === "preflight" && (
-                            <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-sky-500/20 text-sky-700 dark:text-sky-300">
-                              preflight
-                            </span>
-                          )}
-                          {row.agentWritable && (
-                            <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-sky-500/20 text-sky-700 dark:text-sky-300">
-                              agent-writable
-                            </span>
-                          )}
-                          <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-fg-faint/15 text-fg-faint">
-                            tier {row.tier}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-fg-muted">{row.description}</div>
-                        {editing?.name === row.name ? (
-                          <div className="mt-1.5 flex items-center gap-1.5">
-                            <EnvValueInput
-                              type={row.type}
-                              value={editing.value}
-                              onChange={(value) => setEditing({ name: row.name, value })}
-                              enumValues={row.enumValues}
-                              min={row.min}
-                              max={row.max}
-                              inputRef={(element) => { editInputRef.current = element; }}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") onSave();
-                                if (event.key === "Escape") cancelEdit();
-                              }}
-                              ariaLabel={row.name}
-                              className="px-2 py-1 rounded border border-border bg-surface text-fg text-[11px] font-mono w-48"
-                            />
-                            <button
-                              type="button"
-                              onClick={onSave}
-                              disabled={saving}
-                              className="px-2 py-1 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 text-[11px] inline-flex items-center gap-1"
-                            >
-                              <Save size={11} /> Save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelEdit}
-                              className="px-2 py-1 rounded border border-border text-fg-faint hover:bg-surface-2 text-[11px]"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="mt-0.5 flex items-center gap-2 flex-wrap">
-                            <code className="text-[11px] font-mono text-fg-muted">
-                              {row.current}
-                            </code>
-                            {row.overridden && (
-                              <span className="text-[10px] text-fg-faint">
-                                (default: <code className="font-mono">{String(row.default)}</code>)
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {editing?.name !== row.name && (
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(row)}
-                            className="p-1.5 rounded border border-border text-fg-faint hover:bg-surface-2 hover:text-fg"
-                            title="Edit"
-                          >
-                            <Edit3 size={12} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onReset(row)}
-                            disabled={!row.overridden}
-                            className="p-1.5 rounded border border-border text-fg-faint hover:bg-surface-2 hover:text-fg disabled:opacity-30 disabled:hover:bg-transparent"
-                            title={row.overridden ? "Reset to default" : "No override to reset"}
-                          >
-                            <RotateCcw size={12} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </li>
+                  <RuntimeSettingRow
+                    key={row.name}
+                    row={row}
+                    editing={editing}
+                    setEditing={setEditing}
+                    editInputRef={editInputRef}
+                    onSave={onSave}
+                    cancelEdit={cancelEdit}
+                    saving={saving}
+                    startEdit={startEdit}
+                    onReset={onReset}
+                  />
                 ))}
               </ul>
             </div>
@@ -342,16 +156,119 @@ export function EnvVarsPanel() {
   );
 }
 
-async function pollUntilUp(timeoutMs = 30_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  let delay = 500;
-  while (Date.now() < deadline) {
-    await new Promise<void>((r) => setTimeout(r, delay));
-    delay = Math.min(2000, Math.floor(delay * 1.4));
-    try {
-      const r = await fetch("/api/v1/health", { cache: "no-store" });
-      if (r.ok) return;
-    } catch { /* still down */ }
-  }
-  throw new Error("server did not return");
+function RuntimeSettingRow({ row, editing, setEditing, editInputRef, onSave, cancelEdit, saving, startEdit, onReset }: {
+  row: EnvRow;
+  editing: { name: string; value: string; } | null;
+  setEditing: React.Dispatch<React.SetStateAction<{ name: string; value: string; } | null>>;
+  editInputRef: React.RefObject<HTMLInputElement | HTMLSelectElement | null>;
+  onSave: () => void;
+  cancelEdit: () => void;
+  saving: boolean;
+  startEdit: (row: EnvRow) => void;
+  onReset: (row: EnvRow) => void;
+}) {
+  return (
+    <li key={row.name} className="px-3 py-2 hover:bg-surface-2/40">
+      <div className="flex items-start gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <code className="text-[12px] font-mono text-fg">{row.name}</code>
+            <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-fg-faint/10 text-fg-faint" title={`Value type: ${ENV_TYPE_LABEL[row.type]}`}>
+              {ENV_TYPE_LABEL[row.type]}
+            </span>
+            {row.overridden && (
+              <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                overridden
+              </span>
+            )}
+            {row.requiresRestart && (
+              <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                restart
+              </span>
+            )}
+            {row.phase === "preflight" && (
+              <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-sky-500/20 text-sky-700 dark:text-sky-300">
+                preflight
+              </span>
+            )}
+            {row.agentWritable && (
+              <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-sky-500/20 text-sky-700 dark:text-sky-300">
+                agent-writable
+              </span>
+            )}
+            <span className="px-1.5 rounded text-[9px] uppercase tracking-wider bg-fg-faint/15 text-fg-faint">
+              tier {row.tier}
+            </span>
+          </div>
+          <div className="mt-0.5 text-[11px] text-fg-muted">{row.description}</div>
+          {editing?.name === row.name ? (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <EnvValueInput
+                type={row.type}
+                value={editing.value}
+                onChange={(value) => setEditing({ name: row.name, value })}
+                enumValues={row.enumValues}
+                min={row.min}
+                max={row.max}
+                inputRef={(element) => { editInputRef.current = element; }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") onSave();
+                  if (event.key === "Escape") cancelEdit();
+                }}
+                ariaLabel={row.name}
+                className="px-2 py-1 rounded border border-border bg-surface text-fg text-[11px] font-mono w-48"
+              />
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={saving}
+                className="px-2 py-1 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 text-[11px] inline-flex items-center gap-1"
+              >
+                <Save size={11} /> Save
+              </button>
+              <button
+                type="button"
+                onClick={cancelEdit}
+                className="px-2 py-1 rounded border border-border text-fg-faint hover:bg-surface-2 text-[11px]"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="mt-0.5 flex items-center gap-2 flex-wrap">
+              <code className="text-[11px] font-mono text-fg-muted">
+                {row.current}
+              </code>
+              {row.overridden && (
+                <span className="text-[10px] text-fg-faint">
+                  (default: <code className="font-mono">{String(row.default)}</code>)
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        {editing?.name !== row.name && (
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => startEdit(row)}
+              className="p-1.5 rounded border border-border text-fg-faint hover:bg-surface-2 hover:text-fg"
+              title="Edit"
+            >
+              <Edit3 size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onReset(row)}
+              disabled={!row.overridden}
+              className="p-1.5 rounded border border-border text-fg-faint hover:bg-surface-2 hover:text-fg disabled:opacity-30 disabled:hover:bg-transparent"
+              title={row.overridden ? "Reset to default" : "No override to reset"}
+            >
+              <RotateCcw size={12} />
+            </button>
+          </div>
+        )}
+      </div>
+    </li>
+  );
 }

@@ -20,54 +20,19 @@ import { confirmAction } from "@/lib/ui/confirm";
 // behind the corp VPN). Without it, the SSRF guard refuses the fetch
 // even for an allow-listed host.
 export function AllowedSitesSection() {
-  const { items: sites, loading, error: loadError, refresh } = useListState<AllowedSiteStatus>({
-    loader: async () => (await api.allowedSites.list()).sites,
-  });
-  // Action errors (add/toggle/remove) are surfaced separately from list-load
-  // errors, but rendered in the same spot below.
-  const [actionError, setActionError] = useState<string | null>(null);
-  const error = actionError ?? loadError;
-  const [adding, setAdding] = useState(false);
-  const [newHost, setNewHost] = useState("");
-  const [newBypass, setNewBypass] = useState(false);
-
-  async function add() {
-    const host = newHost.trim();
-    if (!host) return;
-    setAdding(true);
-    setActionError(null);
-    try {
-      await api.allowedSites.add({ hostname: host, ssrf_bypass: newBypass });
-      setNewHost("");
-      setNewBypass(false);
-      await refresh();
-    } catch (e) {
-      setActionError(errorMessage(e));
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  async function toggleBypass(s: AllowedSiteStatus) {
-    setActionError(null);
-    try {
-      await api.allowedSites.setSsrfBypass(s.hostname, !s.ssrf_bypass);
-      await refresh();
-    } catch (e) {
-      setActionError(errorMessage(e));
-    }
-  }
-
-  async function remove(s: AllowedSiteStatus) {
-    if (!(await confirmAction({ message: `Remove ${s.hostname}? The agent will lose browser-RPC and cookie access for this host.`, destructive: true, confirmLabel: "Remove" }))) return;
-    setActionError(null);
-    try {
-      await api.allowedSites.remove(s.hostname);
-      await refresh();
-    } catch (e) {
-      setActionError(errorMessage(e));
-    }
-  }
+  const {
+    loading,
+    error,
+    sites,
+    toggleBypass,
+    remove,
+    newHost,
+    setNewHost,
+    add,
+    newBypass,
+    setNewBypass,
+    adding,
+  } = useAllowedSites();
 
   return (
     <div className="mb-3 rounded-lg border border-border bg-surface-2 overflow-hidden">
@@ -188,4 +153,69 @@ function formatRelative(iso: string | null): string {
   if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
   if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
   return `${Math.floor(sec / 86400)}d ago`;
+}
+
+function useAllowedSites() {
+  const { items: sites, loading, error: loadError, refresh } = useListState<AllowedSiteStatus>({
+    loader: async () => (await api.allowedSites.list()).sites,
+  });
+  // Action errors (add/toggle/remove) are surfaced separately from list-load
+  // errors, but rendered in the same spot below.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const error = actionError ?? loadError;
+  const [adding, setAdding] = useState(false);
+  const [newHost, setNewHost] = useState("");
+  const [newBypass, setNewBypass] = useState(false);
+
+  async function add() {
+    const host = newHost.trim();
+    if (!host) return;
+    setAdding(true);
+    setActionError(null);
+    try {
+      await api.allowedSites.add({ hostname: host, ssrf_bypass: newBypass });
+      setNewHost("");
+      setNewBypass(false);
+      await refresh();
+    } catch (e) {
+      setActionError(errorMessage(e));
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function toggleBypass(s: AllowedSiteStatus) {
+    setActionError(null);
+    try {
+      await api.allowedSites.setSsrfBypass(s.hostname, !s.ssrf_bypass);
+      await refresh();
+    } catch (e) {
+      setActionError(errorMessage(e));
+    }
+  }
+
+  async function remove(s: AllowedSiteStatus) {
+    if (!(await confirmAction({ message: `Remove ${s.hostname}? The agent will lose browser-RPC and cookie access for this host.`, destructive: true, confirmLabel: "Remove" }))) return;
+    setActionError(null);
+    try {
+      await api.allowedSites.remove(s.hostname);
+      await refresh();
+    } catch (e) {
+      setActionError(errorMessage(e));
+    }
+  }
+
+  return {
+    loading,
+    error,
+    sites,
+    toggleBypass,
+    remove,
+    newHost,
+    setNewHost,
+    add,
+    newBypass,
+    setNewBypass,
+    adding,
+  };
 }

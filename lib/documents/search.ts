@@ -60,34 +60,28 @@ export async function searchDocuments(
   // Hard cap on rows scanned per query — at thousands of chunks the JS
   // cosine pass is still milliseconds, but we still want a ceiling.
   const limitRows = 20_000;
-  const rows = (
-    opts?.sourceId
-      ? db.prepare(
-          `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding, dc.embedding_model_signature,
-                  d.source_id, ds.label AS source_label, d.rel_path, d.path AS abs_path
-           FROM document_chunks dc
-           JOIN documents d ON dc.document_id = d.id
-           JOIN document_sources ds ON d.source_id = ds.id
-           WHERE d.source_id = ? AND ds.enabled = 1
-           LIMIT ?`,
-        ).all(opts.sourceId, limitRows)
-      : db.prepare(
-          `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding, dc.embedding_model_signature,
-                  d.source_id, ds.label AS source_label, d.rel_path, d.path AS abs_path
-           FROM document_chunks dc
-           JOIN documents d ON dc.document_id = d.id
-           JOIN document_sources ds ON d.source_id = ds.id
-           WHERE ds.enabled = 1
-           LIMIT ?`,
-        ).all(limitRows)
-  ) as unknown as Row[];
+  const sourceFilter = opts?.sourceId
+    ? { sql: " AND d.source_id = ?", params: [opts.sourceId, limitRows] }
+    : { sql: "", params: [limitRows] };
+  const rows = db.prepare(
+    `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding, dc.embedding_model_signature,
+            d.source_id, ds.label AS source_label, d.rel_path, d.path AS abs_path
+     FROM document_chunks dc
+     JOIN documents d ON dc.document_id = d.id
+     JOIN document_sources ds ON d.source_id = ds.id
+     WHERE ds.enabled = 1${sourceFilter.sql}
+     LIMIT ?`,
+  ).all(...sourceFilter.params) as unknown as Row[];
 
   if (rows.length === 0) return [];
 
   const policy = getDocumentRecallPolicy();
-  const candidates = rows.filter((r) => opts?.includeExcluded || !policy.excluded_documents.some(
-    (d) => d.source_id === r.source_id && d.path === r.abs_path,
-  ));
+  const candidates = rows.map((row) => ({
+    row,
+    excluded: policy.excluded_documents.some(
+      (d) => d.source_id === row.source_id && d.path === row.abs_path,
+    ),
+  })).filter(({ excluded }) => opts?.includeExcluded || !excluded);
   if (candidates.length === 0) return [];
   const topicResult = !opts?.includeExcluded && policy.topics.length > 0
     ? await embedQueryWithSignature(policy.topics)
@@ -103,7 +97,7 @@ export async function searchDocuments(
   const minSimilarity = Math.max(0, Math.min(1, opts?.minSimilarity ?? getDefaultDocumentMinSimilarity()));
   const mismatched = new Set<string>();
 
-  for (const r of candidates) {
+  for (const { row: r, excluded } of candidates) {
     if (topicVectors.length > 0) {
       const vector = parseVector(r.embedding);
       if (!vector || r.embedding_model_signature !== topicResult?.modelSignature
@@ -119,19 +113,14 @@ export async function searchDocuments(
       try { vec = JSON.parse(r.embedding) as number[]; } catch { vec = null; }
       if (vec && vec.length === qVec.length) {
         score = cosine(qVec, vec);
-        if (score <= 0) {
-          score = substringScore(r.text, lowered);
-          match = "substring";
-        } else if (score <= minSimilarity) {
-          score = 0;
-        }
+        // A weak positive semantic match must not bypass the floor via text.
+        if (score > 0 && score <= minSimilarity) continue;
       } else {
         // Dimension mismatch: track this document for reindexing.
         mismatched.add(r.document_id);
-        score = substringScore(r.text, lowered);
-        match = "substring";
       }
-    } else {
+    }
+    if (score <= 0) {
       score = substringScore(r.text, lowered);
       match = "substring";
     }
@@ -146,9 +135,7 @@ export async function searchDocuments(
       text: r.text,
       score,
       match,
-      ...(opts?.includeExcluded ? {
-        excluded: policy.excluded_documents.some((d) => d.source_id === r.source_id && d.path === r.abs_path),
-      } : {}),
+      ...(opts?.includeExcluded ? { excluded } : {}),
     });
   }
 
