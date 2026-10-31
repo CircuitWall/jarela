@@ -14,6 +14,47 @@ import {
   updateAutomationActivity,
 } from "@/lib/stores/automation-activity";
 
+function resolveDispatchTarget(adapter: BridgeAdapter, msg: InboundMessage) {
+  const route = resolveRoute(adapter.bridge_id, msg.remote_jid);
+  if (!route) {
+    console.log(`[bridge ${adapter.bridge_id}] dropped: no route for ${msg.remote_jid} (${msg.push_name ?? "?"})`);
+    return null;
+  }
+  const agentId = route.agent_id;
+  if (!getAgentConfig(agentId)) {
+    console.warn(`[bridge ${adapter.bridge_id}] route points at missing agent ${agentId}, dropping`);
+    return null;
+  }
+  return { route, agentId, thread: getOrCreateAgentThread(agentId) };
+}
+
+function beginTyping(adapter: BridgeAdapter, remoteJid: string, willReply: boolean): () => void {
+  let active = willReply;
+  const send = (typing: boolean) => {
+    void adapter.sendTyping(remoteJid, typing).catch(() => { /* best-effort */ });
+  };
+  if (willReply) send(true);
+  const timer = setInterval(() => { if (active) send(true); }, 8_000);
+  timer.unref?.();
+  return () => {
+    active = false;
+    clearInterval(timer);
+    if (willReply) send(false);
+  };
+}
+
+async function sendBridgeReply(adapter: BridgeAdapter, remoteJid: string, reply: string, willReply: boolean) {
+  if (!reply.length || !willReply) return null;
+  try {
+    await adapter.sendText(remoteJid, reply);
+    return null;
+  } catch (err) {
+    const message = errorMessage(err);
+    console.error(`[bridge ${adapter.bridge_id}] sendText failed:`, message);
+    return message;
+  }
+}
+
 /**
  * Handle one inbound message from a bridge adapter:
  *   1. Resolve the chat → agent route. Unrouted → publish an advisory
@@ -34,26 +75,9 @@ export async function handleInboundMessage(
   msg: InboundMessage,
 ): Promise<void> {
   try {
-    const route = resolveRoute(adapter.bridge_id, msg.remote_jid);
-    if (!route) {
-      // Unrouted chats are silently dropped. We intentionally do NOT publish
-      // a notification here — the user already declared "this chat isn't
-      // monitored" by not configuring a route, so popping a toast for every
-      // inbound message in an active group would be noise. The console log
-      // remains for debugging; the chat picker in BridgeEditor still shows
-      // observed chats so a route can be added on demand.
-      console.log(`[bridge ${adapter.bridge_id}] dropped: no route for ${msg.remote_jid} (${msg.push_name ?? "?"})`);
-      return;
-    }
-    const agentId = route.agent_id;
-
-    const agent = getAgentConfig(agentId);
-    if (!agent) {
-      console.warn(`[bridge ${adapter.bridge_id}] route points at missing agent ${agentId}, dropping`);
-      return;
-    }
-
-    const thread = getOrCreateAgentThread(agentId);
+    const target = resolveDispatchTarget(adapter, msg);
+    if (!target) return;
+    const { route, agentId, thread } = target;
     // Stamp bridge/chat provenance + sender role onto every inbound prompt.
     // Role framing (user / counterpart / agent) is shared across every
     // bridge adapter via `formatBridgePrompt` — see lib/bridges/message-role.ts.
@@ -99,15 +123,7 @@ export async function handleInboundMessage(
     };
     // Keep typing outside the queue so users still see "thinking" while
     // waiting behind other queued turns for the same thread.
-    let typingActive = willReply;
-    if (willReply) {
-      void adapter.sendTyping(msg.remote_jid, true).catch(() => { /* best-effort */ });
-    }
-    const typingTimer = setInterval(() => {
-      if (!typingActive) return;
-      void adapter.sendTyping(msg.remote_jid, true).catch(() => { /* best-effort */ });
-    }, 8_000);
-    (typingTimer as unknown as { unref?: () => void }).unref?.();
+    const stopTyping = beginTyping(adapter, msg.remote_jid, willReply);
 
     let reply = "";
     let suppressAssistant = false;
@@ -161,11 +177,7 @@ export async function handleInboundMessage(
       suppressAssistant = result.skippedAssistant;
       aborted = result.aborted;
     } finally {
-      typingActive = false;
-      clearInterval(typingTimer);
-      if (willReply) {
-        void adapter.sendTyping(msg.remote_jid, false).catch(() => { /* best-effort */ });
-      }
+      stopTyping();
     }
 
     // Outbound reply gate: silent_mode (master switch) AND respond_to
@@ -173,16 +185,7 @@ export async function handleInboundMessage(
     // dispatcher. The WhatsApp adapter also re-checks `route.silent_mode`
     // inside its own sendText as a belt-and-suspenders guard, so even a
     // tool that called adapter.sendText directly would be dropped.
-    let sendError: string | null = null;
-    if (reply.length > 0 && willReply) {
-      try {
-        await adapter.sendText(msg.remote_jid, reply);
-      } catch (sendErr) {
-        const m = errorMessage(sendErr);
-        sendError = m;
-        console.error(`[bridge ${adapter.bridge_id}] sendText failed:`, m);
-      }
-    }
+    const sendError = await sendBridgeReply(adapter, msg.remote_jid, reply, willReply);
 
     finalizeAutomationActivity(activity.msg_id, aborted
       ? { disposition: "cancelled" }

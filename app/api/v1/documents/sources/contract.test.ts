@@ -4,13 +4,14 @@ import type { DocumentSourceRow } from "@/lib/stores/document-sources";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(),
-  stats: vi.fn(), find: vi.fn(), notify: vi.fn(),
+  stats: vi.fn(), listWithStats: vi.fn(), find: vi.fn(), notify: vi.fn(),
 }));
 vi.mock("@/lib/stores/document-sources", () => ({
   listDocumentSources: mocks.list, getDocumentSource: mocks.get,
   createDocumentSource: mocks.create, updateDocumentSource: mocks.update,
   deleteDocumentSource: mocks.remove, getDocumentSourceStats: mocks.stats,
   getDocumentSourceByPath: mocks.find,
+  listDocumentSourcesWithStats: mocks.listWithStats,
 }));
 vi.mock("@/lib/triggers", () => ({ notifyTriggerHandlers: mocks.notify }));
 import { GET as list, POST as create } from "./route";
@@ -37,6 +38,7 @@ function request(method = "GET", body?: unknown) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.list.mockReturnValue([row]);
+  mocks.listWithStats.mockReturnValue([{ source: row, stats }]);
   mocks.get.mockReturnValue(row);
   mocks.create.mockReturnValue(row);
   mocks.update.mockReturnValue(row);
@@ -60,7 +62,8 @@ describe("document source wire contracts", () => {
     const patched = await update(request("PATCH", { label: row.label }), context());
     expect(patched.status).toBe(200);
     expect(await patched.json()).toEqual(expected);
-    expect(mocks.stats).toHaveBeenCalledTimes(4);
+    expect(mocks.listWithStats).toHaveBeenCalledOnce();
+    expect(mocks.stats).toHaveBeenCalledTimes(3);
     expect(mocks.stats).toHaveBeenCalledWith(row.id);
     expect(mocks.notify).toHaveBeenCalledTimes(2);
   });

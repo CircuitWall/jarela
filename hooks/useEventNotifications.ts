@@ -159,120 +159,7 @@ export function useEventNotifications(options: Options): UnifiedHookResult<
 
       es.onmessage = (msg) => {
         backoff = 500;
-        let ev: StreamEvent;
-        try { ev = JSON.parse(msg.data) as StreamEvent; } catch { return; }
-        if (!ev.ts) return;
-        setLastEventTs(ev.ts);
-
-        if (ev.type === "automation_activity") {
-          lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
-          saveLastTs(lastTsRef.current);
-          window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
-            detail: {
-              thread_id: ev.thread_id,
-              agent_id: ev.agent_id,
-              replace_existing: true,
-            },
-          }));
-          return;
-        }
-
-        // Page-capture push: re-fetch the affected thread AND drop a small
-        // toast so the user can see *which* agent received the capture
-        // without having to switch to the chat view first. The capture
-        // itself was made by the user, but the routing target (default
-        // agent's most-recent thread) isn't necessarily the agent they're
-        // currently looking at.
-        if (ev.type === "thread_message_added") {
-          lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
-          saveLastTs(lastTsRef.current);
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
-              detail: { thread_id: ev.thread_id, agent_id: ev.agent_id },
-            }));
-          }
-          // Extension refine/fill/rewrite turns share this bus only to
-          // refresh open chat views — they don't warrant a toast since the
-          // user just triggered the action from the extension popup/menu.
-          if (ev.source !== "page_capture") return;
-          const agentName = optsRef.current.resolveAgentName(ev.agent_id);
-          pushToast({
-            kind: "info",
-            source: "system",
-            sourceLabel: "Page capture",
-            title: `📎 Captured to ${agentName}`,
-            body: "A page snippet was added to the most recent thread. Open Jarela to follow up.",
-            agent_id: ev.agent_id,
-            thread_id: ev.thread_id,
-            ttl: 5000,
-          });
-          return;
-        }
-
-        // Background health probes: surface as a sticky toast so the user
-        // notices before the agent burns a turn on an expired token. The
-        // runner already dedups so every health_alert is worth showing.
-        // We add a dedupeKey per (category,label) so a failing→recovered
-        // transition REPLACES the failing card (turning it green and
-        // scheduling a 6s auto-dismiss) instead of stacking a second
-        // toast that the user has to click away manually.
-        if (ev.type === "health_alert") {
-          lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
-          saveLastTs(lastTsRef.current);
-          const recovered = ev.status === "recovered";
-          pushToast({
-            kind: recovered ? "success" : "error",
-            source: "system",
-            sourceLabel: ev.category === "llm" ? "LLM provider" : "Integration",
-            title: recovered ? `${ev.label} recovered` : `${ev.label} is failing`,
-            body: ev.error ?? (recovered ? "Probe is green again." : "Probe failed."),
-            agent_id: null,
-            thread_id: null,
-            href: "/setup",
-            hrefLabel: "Open setup",
-            ttl: recovered ? 6000 : 0,
-            dedupeKey: `health:${ev.category}:${ev.label}`,
-          });
-          return;
-        }
-
-        // Ignore event types this hook doesn't surface (bridge_status,
-        // bridge_unrouted, …). The badge would otherwise increment on every
-        // pairing-state ping.
-        if (
-          ev.type !== "run_completed" &&
-          ev.type !== "task_completed" &&
-          ev.type !== "bridge_message_received"
-        ) return;
-        lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
-        saveLastTs(lastTsRef.current);
-        // Broadcast a thread-updated event regardless of whether we'll
-        // surface a toast / OS notification. Other tabs / devices that
-        // have the chat open for the same thread need to refetch their
-        // message list even when shouldNotify() suppresses the ping
-        // (e.g. the user is actively viewing this agent on the PC while
-        // sending the message from iOS — without this they had to refresh
-        // the chat window to see what they typed on the phone).
-        const evThreadId = (ev as { thread_id?: string }).thread_id;
-        if (evThreadId && typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
-            detail: {
-              thread_id: evThreadId,
-              agent_id: ev.agent_id ?? null,
-              replace_existing: ev.type === "task_completed",
-            },
-          }));
-        }
-        // No-action checks still refresh the inline activity row, but do not
-        // create a toast, badge, or OS notification.
-        if (
-          ev.type === "task_completed"
-          && (
-            ev.status === "skipped"
-            || (ev.silent && ev.status !== "error" && ev.status !== "expired")
-          )
-        ) return;
-        handleEvent(ev);
+        routeStreamMessage(msg.data, lastTsRef, setLastEventTs, optsRef.current);
       };
 
       es.onerror = () => {
@@ -286,68 +173,8 @@ export function useEventNotifications(options: Options): UnifiedHookResult<
       };
     }
 
-    function handleEvent(ev: NotifEvent) {
-      if (!optsRef.current.shouldNotify(ev)) return;
-
-      const { title, body, kind, source, sourceLabel } =
-        format(ev, optsRef.current.resolveAgentName);
-
-      // Always push an in-app toast — it is the source of truth for the
-      // per-agent unread badge (header menu icon, gear panel, chat agent
-      // selector). The OS Web Notification is layered on top when permission
-      // is granted so the user still gets a system ping if Jarela isn't
-      // focused.
-      pushToast({
-        kind,
-        source,
-        sourceLabel,
-        title,
-        body,
-        preview: ev.preview || undefined,
-        agent_id: ev.agent_id,
-        thread_id: ev.thread_id || null,
-        ttl: 6000,
-      });
-
-      const canOSNotify =
-        typeof Notification !== "undefined" && Notification.permission === "granted";
-      if (canOSNotify) {
-        try {
-          const customIcon = optsRef.current.resolveAgentIcon?.(ev.agent_id) ?? null;
-          // Tag uniquely per source/identity so a new run replaces the old
-          // run-toast for the same thread, but doesn't collide with a task
-          // or bridge ping that happens to share an id.
-          const tag =
-            ev.type === "run_completed"    ? `run:${ev.thread_id}` :
-            ev.type === "task_completed"   ? `task:${ev.task_id}` :
-            /* bridge_message_received */   `bridge:${ev.bridge_id}:${ev.remote_jid}`;
-          const n = new Notification(title, {
-            body: ev.preview ? `${body}\n\n${ev.preview}` : body,
-            tag,
-            icon: customIcon || "/icon-192.png",
-          });
-          // Click handler: focus the Jarela window, jump to the exact thread
-          // the event happened in (or fall back to just the agent), dismiss
-          // the OS notification.
-          n.onclick = () => {
-            window.focus();
-            const agentId = ev.agent_id;
-            const threadId = (ev as { thread_id?: string }).thread_id ?? null;
-            if (agentId) {
-              window.dispatchEvent(new CustomEvent("jarela:focus-agent", {
-                detail: { agentId, threadId },
-              }));
-            }
-            n.close();
-          };
-        } catch { /* OS rejected — toast is already up, nothing else to do */ }
-      }
-    }
-
     connect();
-    // When the PWA comes back to the foreground (iOS suspends SSE in the
-    // background, often without firing onerror), force a fresh reconnect so
-    // the server's recentSince() replays anything that happened while away.
+    // iOS can suspend SSE without an error, so replay missed events on foreground.
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
@@ -379,6 +206,178 @@ export function useEventNotifications(options: Options): UnifiedHookResult<
   };
 }
 
+function routeStreamMessage(
+  data: string,
+  lastTsRef: { current: number },
+  setLastEventTs: (ts: number) => void,
+  options: Options,
+) {
+  let ev: StreamEvent;
+  try { ev = JSON.parse(data) as StreamEvent; } catch { return; }
+  if (!ev.ts) return;
+  setLastEventTs(ev.ts);
+  // Unknown bus events may update connection diagnostics, but must not
+  // advance the replay cursor or create unread badges.
+  if (![
+    "automation_activity", "thread_message_added", "health_alert",
+    "run_completed", "task_completed", "bridge_message_received",
+  ].includes(ev.type)) return;
+  lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
+  saveLastTs(lastTsRef.current);
+
+  if (ev.type === "automation_activity") {
+    window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
+      detail: {
+        thread_id: ev.thread_id,
+        agent_id: ev.agent_id,
+        replace_existing: true,
+      },
+    }));
+    return;
+  }
+
+  // Page-capture push: re-fetch the affected thread AND drop a small
+  // toast so the user can see *which* agent received the capture
+  // without having to switch to the chat view first. The capture
+  // itself was made by the user, but the routing target (default
+  // agent's most-recent thread) isn't necessarily the agent they're
+  // currently looking at.
+  if (ev.type === "thread_message_added") {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
+        detail: { thread_id: ev.thread_id, agent_id: ev.agent_id },
+      }));
+    }
+    // Extension refine/fill/rewrite turns share this bus only to
+    // refresh open chat views — they don't warrant a toast since the
+    // user just triggered the action from the extension popup/menu.
+    if (ev.source !== "page_capture") return;
+    const agentName = options.resolveAgentName(ev.agent_id);
+    pushToast({
+      kind: "info",
+      source: "system",
+      sourceLabel: "Page capture",
+      title: `📎 Captured to ${agentName}`,
+      body: "A page snippet was added to the most recent thread. Open Jarela to follow up.",
+      agent_id: ev.agent_id,
+      thread_id: ev.thread_id,
+      ttl: 5000,
+    });
+    return;
+  }
+
+  // Background health probes: surface as a sticky toast so the user
+  // notices before the agent burns a turn on an expired token. The
+  // runner already dedups so every health_alert is worth showing.
+  // We add a dedupeKey per (category,label) so a failing→recovered
+  // transition REPLACES the failing card (turning it green and
+  // scheduling a 6s auto-dismiss) instead of stacking a second
+  // toast that the user has to click away manually.
+  if (ev.type === "health_alert") {
+    const recovered = ev.status === "recovered";
+    pushToast({
+      kind: recovered ? "success" : "error",
+      source: "system",
+      sourceLabel: ev.category === "llm" ? "LLM provider" : "Integration",
+      title: recovered ? `${ev.label} recovered` : `${ev.label} is failing`,
+      body: ev.error ?? (recovered ? "Probe is green again." : "Probe failed."),
+      agent_id: null,
+      thread_id: null,
+      href: "/setup",
+      hrefLabel: "Open setup",
+      ttl: recovered ? 6000 : 0,
+      dedupeKey: `health:${ev.category}:${ev.label}`,
+    });
+    return;
+  }
+
+  // Broadcast a thread-updated event regardless of whether we'll
+  // surface a toast / OS notification. Other tabs / devices that
+  // have the chat open for the same thread need to refetch their
+  // message list even when shouldNotify() suppresses the ping
+  // (e.g. the user is actively viewing this agent on the PC while
+  // sending the message from iOS — without this they had to refresh
+  // the chat window to see what they typed on the phone).
+  const evThreadId = (ev as { thread_id?: string }).thread_id;
+  if (evThreadId && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
+      detail: {
+        thread_id: evThreadId,
+        agent_id: ev.agent_id ?? null,
+        replace_existing: ev.type === "task_completed",
+      },
+    }));
+  }
+  // No-action checks still refresh the inline activity row, but do not
+  // create a toast, badge, or OS notification.
+  if (
+    ev.type === "task_completed"
+    && (
+      ev.status === "skipped"
+      || (ev.silent && ev.status !== "error" && ev.status !== "expired")
+    )
+  ) return;
+  handleEvent(ev, options);
+}
+
+function handleEvent(ev: NotifEvent, options: Options) {
+  if (!options.shouldNotify(ev)) return;
+
+  const { title, body, kind, source, sourceLabel } =
+    format(ev, options.resolveAgentName);
+
+  // Always push an in-app toast — it is the source of truth for the
+  // per-agent unread badge (header menu icon, gear panel, chat agent
+  // selector). The OS Web Notification is layered on top when permission
+  // is granted so the user still gets a system ping if Jarela isn't
+  // focused.
+  pushToast({
+    kind,
+    source,
+    sourceLabel,
+    title,
+    body,
+    preview: ev.preview || undefined,
+    agent_id: ev.agent_id,
+    thread_id: ev.thread_id || null,
+    ttl: 6000,
+  });
+
+  const canOSNotify =
+        typeof Notification !== "undefined" && Notification.permission === "granted";
+  if (canOSNotify) {
+    try {
+      const customIcon = options.resolveAgentIcon?.(ev.agent_id) ?? null;
+      // Tag uniquely per source/identity so a new run replaces the old
+      // run-toast for the same thread, but doesn't collide with a task
+      // or bridge ping that happens to share an id.
+      const tag =
+            ev.type === "run_completed"    ? `run:${ev.thread_id}` :
+              ev.type === "task_completed"   ? `task:${ev.task_id}` :
+              /* bridge_message_received */   `bridge:${ev.bridge_id}:${ev.remote_jid}`;
+      const n = new Notification(title, {
+        body: ev.preview ? `${body}\n\n${ev.preview}` : body,
+        tag,
+        icon: customIcon || "/icon-192.png",
+      });
+      // Click handler: focus the Jarela window, jump to the exact thread
+      // the event happened in (or fall back to just the agent), dismiss
+      // the OS notification.
+      n.onclick = () => {
+        window.focus();
+        const agentId = ev.agent_id;
+        const threadId = (ev as { thread_id?: string }).thread_id ?? null;
+        if (agentId) {
+          window.dispatchEvent(new CustomEvent("jarela:focus-agent", {
+            detail: { agentId, threadId },
+          }));
+        }
+        n.close();
+      };
+    } catch { /* OS rejected — toast is already up, nothing else to do */ }
+  }
+}
+
 function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
   title: string; body: string; kind: "info" | "success" | "error";
   source: NotifSource; sourceLabel: string;
@@ -387,9 +386,9 @@ function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
   if (ev.type === "run_completed") {
     return ev.status === "error"
       ? { title: `${name} — error`, body: ev.preview || "Run failed.",
-          kind: "error", source: "run", sourceLabel: "Reply" }
+        kind: "error", source: "run", sourceLabel: "Reply" }
       : { title: `${name} replied`, body: ev.preview || "Response ready.",
-          kind: "info", source: "run", sourceLabel: "Reply" };
+        kind: "info", source: "run", sourceLabel: "Reply" };
   }
   if (ev.type === "task_completed") {
     if (ev.status === "expired") {

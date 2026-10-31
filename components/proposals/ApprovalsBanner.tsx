@@ -221,22 +221,15 @@ type SecretFormState = {
   error: string | null;
 };
 
-export function ApprovalsBanner({
-  agentId,
-  onChange,
-  onResolved,
-}: {
+interface ApprovalsBannerProps {
   agentId: string | null;
   onChange?: () => void;
   onResolved?: (action: PendingAction) => Promise<void>;
-}) {
+}
+
+function useApprovalQueue({ agentId, onChange, onResolved }: ApprovalsBannerProps, responses: Record<string, ChoiceResponse>) {
   const [pending, setPending] = useState<PendingAction[]>([]);
-  const requestsId = useId();
-  const [open, setOpen] = useState(false);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
-  const [secretForm, setSecretForm] = useState<SecretFormState | null>(null);
-  const [responses, setResponses] = useState<Record<string, ChoiceResponse>>({});
-  const [reviewedExecutions, setReviewedExecutions] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [outcomes, setOutcomes] = useState<Record<string, PendingAction>>({});
   const settledIds = useRef(new Set<string>());
@@ -323,6 +316,12 @@ export function ApprovalsBanner({
     finally { markBusy(action.id, false); }
   }
 
+  return { pending, busyIds, errors, setErrors, outcomes, setOutcomes, markBusy, continueConversation, recordOutcome, plainApprove, deny };
+}
+
+function useApprovalSecrets(queue: ReturnType<typeof useApprovalQueue>) {
+  const { markBusy, recordOutcome, deny, plainApprove, setErrors } = queue;
+  const [secretForm, setSecretForm] = useState<SecretFormState | null>(null);
   // Approve a `start_oauth` proposal: the apply step returns a kickoff_path
   // and we have to actually open the vendor authorize URL. Today both gmail
   // and outlook expose dedicated start endpoints — we dispatch on
@@ -434,6 +433,18 @@ export function ApprovalsBanner({
     }
   }
 
+  return { secretForm, setSecretForm, submitSecretForm, approve };
+}
+
+export function ApprovalsBanner(props: ApprovalsBannerProps) {
+  const { agentId, onResolved } = props;
+  const requestsId = useId();
+  const [open, setOpen] = useState(false);
+  const [responses, setResponses] = useState<Record<string, ChoiceResponse>>({});
+  const [reviewedExecutions, setReviewedExecutions] = useState<Record<string, boolean>>({});
+  const queue = useApprovalQueue(props, responses);
+  const { pending, busyIds, errors, outcomes, setOutcomes, continueConversation, deny } = queue;
+  const { secretForm, setSecretForm, submitSecretForm, approve } = useApprovalSecrets(queue);
   const visiblePending = pending.filter((action) => !outcomes[action.id]
     && (!agentId || action.agent_id === agentId));
   const visibleOutcomes = Object.values(outcomes).filter((action) => !agentId || action.agent_id === agentId);
@@ -501,16 +512,16 @@ export function ApprovalsBanner({
                     ) : a.kind === "authoring_operation" && typeof a.payload.operation_id === "string"
                       && (a.payload.operation_type === "extension" || a.payload.operation_type === "contribution")
                       ? <AuthoringOperationPreview id={a.payload.operation_id} type={a.payload.operation_type}
-                          onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
+                        onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
                       : a.kind === "execute_workflow" && typeof a.payload.authorization_id === "string"
-                      ? <SkillExecutionPreview requestId={a.payload.authorization_id} workflow
+                        ? <SkillExecutionPreview requestId={a.payload.authorization_id} workflow
                           onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
-                      : a.kind === "execute_skill" && typeof a.payload.request_id === "string"
-                      ? <SkillExecutionPreview requestId={a.payload.request_id}
-                          onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
-                      : a.kind === "write_skill" || a.kind === "update_scheduled_task_prompt" || a.kind === "update_watcher_prompt"
-                      ? <ArtifactPreview payload={a.payload} />
-                      : <PayloadPreview payload={a.payload} />}
+                        : a.kind === "execute_skill" && typeof a.payload.request_id === "string"
+                          ? <SkillExecutionPreview requestId={a.payload.request_id}
+                            onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
+                          : a.kind === "write_skill" || a.kind === "update_scheduled_task_prompt" || a.kind === "update_watcher_prompt"
+                            ? <ArtifactPreview payload={a.payload} />
+                            : <PayloadPreview payload={a.payload} />}
                     {choice && !choice.success && <p role="alert">Invalid choice proposal. Dismiss it and request a new question.</p>}
                     {errors[a.id] && <p role="alert" className="text-red-500">{errors[a.id]}</p>}
                     <div className="flex gap-1.5 justify-end">

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
+import { localDocumentSourceSchema, remoteDocumentSourceSchema } from "@/api/document-sources";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
@@ -7,38 +7,13 @@ import {
   createDocumentSource,
   getDocumentSourceByPath,
   getDocumentSourceStats,
-  listDocumentSources,
+  listDocumentSourcesWithStats,
   type DocumentSourceKind,
 } from "@/lib/stores/document-sources";
 import { notifyTriggerHandlers } from "@/lib/triggers";
 import { mailSourceConfigSchema } from "@/lib/documents/mail-source-config";
 import { errorResponse } from "@/lib/api/responses";
 import { documentSourceToResponse } from "@/lib/api/serializers";
-
-const LocalSchema = z.object({
-  path: z.string().min(1),
-  label: z.string().nullable().optional(),
-});
-
-// ADR-0026 — remote source kinds (Jira/Confluence/GitHub/mail) share the same store
-// and indexer pipeline. A separate body shape keeps the local-folder
-// happy path identical to pre-0026.
-const REMOTE_KINDS = [
-  "confluence_space",
-  "confluence_cql",
-  "jira_project",
-  "jira_jql",
-  "github_pulls",
-  "github_repo",
-  "gmail_mail",
-  "outlook_mail",
-  "icloud_mail",
-] as const;
-const RemoteSchema = z.object({
-  kind: z.enum(REMOTE_KINDS),
-  label: z.string().min(1),
-  config: z.record(z.string(), z.unknown()),
-});
 
 function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>): string {
   const hash = Buffer.from(JSON.stringify({ kind, config })).toString("base64").replace(/=+$/g, "").slice(0, 24);
@@ -57,9 +32,9 @@ function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>
 }
 
 export async function GET() {
-  const sources = listDocumentSources();
+  const sources = listDocumentSourcesWithStats();
   return NextResponse.json(
-    sources.map((source) => documentSourceToResponse(source, getDocumentSourceStats(source.id))),
+    sources.map(({ source, stats }) => documentSourceToResponse(source, stats)),
   );
 }
 
@@ -73,13 +48,15 @@ export async function POST(req: NextRequest) {
   try { body = await req.json(); } catch {
     return errorResponse("invalid json", 400);
   }
+  let input: Parameters<typeof createDocumentSource>[0];
+  let conflictMessage: string;
 
   // Remote source path — discriminated by `kind` being present (and
   // non-local). Local-folder POSTs that happen to include `kind:'local_folder'`
   // still flow through the local-folder branch below.
   if (body && typeof body === "object" && "kind" in (body as Record<string, unknown>)
       && (body as { kind?: string }).kind !== "local_folder") {
-    const parsed = RemoteSchema.safeParse(body);
+    const parsed = remoteDocumentSourceSchema.safeParse(body);
     if (!parsed.success) {
       return errorResponse(parsed.error.issues[0]?.message ?? "invalid input", 400);
     }
@@ -98,39 +75,36 @@ export async function POST(req: NextRequest) {
     const synth = config.scope && (kind === "gmail_mail" || kind === "outlook_mail" || kind === "icloud_mail")
       ? `${kind.replace("_", "-")}://${createHash("sha256").update(JSON.stringify(config)).digest("hex")}`
       : syntheticPath(kind, config);
-    if (getDocumentSourceByPath(synth)) {
-      return errorResponse("source already exists for this config", 409);
-    }
-    const row = createDocumentSource({
+    input = {
       path: synth,
       label: parsed.data.label,
       kind: parsed.data.kind,
       config,
-    });
-    await notifyTriggerHandlers("source_changed");
-    return NextResponse.json(documentSourceToResponse(row, getDocumentSourceStats(row.id)), { status: 201 });
-  }
-
-  const parsed = LocalSchema.safeParse(body);
-  if (!parsed.success) {
-    return errorResponse(parsed.error.issues[0]?.message ?? "invalid input", 400);
-  }
-  const abs = path.resolve(parsed.data.path);
-
-  try {
-    const st = await fs.stat(abs);
-    if (!st.isDirectory()) {
-      return errorResponse("path is not a directory", 400);
+    };
+    conflictMessage = "source already exists for this config";
+  } else {
+    const parsed = localDocumentSourceSchema.safeParse(body);
+    if (!parsed.success) {
+      return errorResponse(parsed.error.issues[0]?.message ?? "invalid input", 400);
     }
-  } catch {
-    return errorResponse("path does not exist or is unreadable", 400);
+    const abs = path.resolve(parsed.data.path);
+    try {
+      const st = await fs.stat(abs);
+      if (!st.isDirectory()) {
+        return errorResponse("path is not a directory", 400);
+      }
+    } catch {
+      return errorResponse("path does not exist or is unreadable", 400);
+    }
+    input = { path: abs, label: parsed.data.label ?? null };
+    conflictMessage = "source already exists for this path";
   }
 
-  if (getDocumentSourceByPath(abs)) {
-    return errorResponse("source already exists for this path", 409);
+  if (getDocumentSourceByPath(input.path)) {
+    return errorResponse(conflictMessage, 409);
   }
 
-  const row = createDocumentSource({ path: abs, label: parsed.data.label ?? null });
+  const row = createDocumentSource(input);
   await notifyTriggerHandlers("source_changed");
   return NextResponse.json(documentSourceToResponse(row, getDocumentSourceStats(row.id)), { status: 201 });
 }

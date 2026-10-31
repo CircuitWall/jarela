@@ -146,6 +146,41 @@ async function validateDelegationTarget(
   return { parent, child };
 }
 
+function validateDelegatedResult(
+  collected: DelegatedRunSuccess["collected"],
+  ctx: DelegateContext,
+  timedOut: boolean,
+  threadId: string,
+): DelegatedRunFailure | null {
+  const failure = (errorCode: string, message: string): DelegatedRunFailure => ({
+    errorCode, message, threadId, sideEffects: "unknown",
+  });
+  if (ctx.signal?.aborted) {
+    return failure("aborted", "Delegation was cancelled; the child run did not complete successfully.");
+  }
+  if (timedOut || delegationBudgetRemainingMs(ctx.budget) <= 0) {
+    return failure("time_exhausted", "The root delegation time budget expired before the child completed.");
+  }
+  if (collected.aborted) {
+    return failure("aborted", "The delegated child run was aborted and did not complete successfully.");
+  }
+  if (collected.terminal !== "done") {
+    return failure(
+      collected.errorCode === "delegation_cost_budget"
+        || /delegation (?:inference|cost budget)|canonical pricing/i.test(collected.errorMessage ?? "")
+        ? "cost_exhausted" : "child_error",
+      collected.errorMessage ?? "The delegated run ended without a successful terminal result.",
+    );
+  }
+  const result = collected.assistantContent.trim();
+  if (!result || result.length > MAX_RETURNED_OUTPUT_CHARS) {
+    return failure("invalid_output", result
+      ? `The delegated result exceeded the ${MAX_RETURNED_OUTPUT_CHARS}-character output limit.`
+      : "The delegated run completed without a non-empty result.");
+  }
+  return null;
+}
+
 // Runs in the per-thread queue. Authority is re-read only after this callback
 // actually starts so roster or permission changes while waiting take effect.
 async function runDelegatedTurn(
@@ -214,52 +249,9 @@ async function runDelegatedTurn(
 
         unconsumedSignalDelivery = undefined;
         const collected = await collectStream(prepared.stream);
-        if (ctx.signal?.aborted) {
-          return {
-            errorCode: "aborted",
-            message: "Delegation was cancelled; the child run did not complete successfully.",
-            threadId: childThreadId,
-            sideEffects: "unknown",
-          };
-        }
-        if (timedOut || delegationBudgetRemainingMs(ctx.budget) <= 0) {
-          return {
-            errorCode: "time_exhausted",
-            message: "The root delegation time budget expired before the child completed.",
-            threadId: childThreadId,
-            sideEffects: "unknown",
-          };
-        }
-        if (collected.aborted) {
-          return {
-            errorCode: "aborted",
-            message: "The delegated child run was aborted and did not complete successfully.",
-            threadId: childThreadId,
-            sideEffects: "unknown",
-          };
-        }
-        if (collected.terminal !== "done") {
-          return {
-            errorCode: collected.errorCode === "delegation_cost_budget"
-              || /delegation (?:inference|cost budget)|canonical pricing/i.test(collected.errorMessage ?? "")
-              ? "cost_exhausted"
-              : "child_error",
-            message: collected.errorMessage ?? "The delegated run ended without a successful terminal result.",
-            threadId: childThreadId,
-            sideEffects: "unknown",
-          };
-        }
+        const failure = validateDelegatedResult(collected, ctx, timedOut, childThreadId);
+        if (failure) return failure;
         const result = collected.assistantContent.trim();
-        if (!result || result.length > MAX_RETURNED_OUTPUT_CHARS) {
-          return {
-            errorCode: "invalid_output",
-            message: result
-              ? `The delegated result exceeded the ${MAX_RETURNED_OUTPUT_CHARS}-character output limit.`
-              : "The delegated run completed without a non-empty result.",
-            threadId: childThreadId,
-            sideEffects: "unknown",
-          };
-        }
         const routeDecision = finalizeRouteDecision(
           collected.routeDecision ?? prepared.route_decision ?? null,
           {

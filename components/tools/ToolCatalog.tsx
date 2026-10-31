@@ -12,7 +12,7 @@ import { pushErrorToast } from "@/lib/ui/error-report";
 // package-level surface; this is the tool-level surface — one row per
 // `tool.name`, with search, source filter, and health filter.
 
-export function ToolCatalog() {
+function useToolCatalog() {
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -49,6 +49,11 @@ export function ToolCatalog() {
 
   const issueHref = buildIssueHref(query);
 
+  return { loading, query, setQuery, sourceFilter, setSourceFilter, statusFilter, setStatusFilter, filtered, issueHref };
+}
+
+export function ToolCatalog() {
+  const { loading, query, setQuery, sourceFilter, setSourceFilter, statusFilter, setStatusFilter, filtered, issueHref } = useToolCatalog();
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2">

@@ -101,136 +101,29 @@ export function CredentialsPanel() {
 }
 
 export function CredentialsListPanel() {
-  const { state, dispatch } = useAppContext();
-  const agentId = state.activeAgentId;
-  const [credentials, setCredentials] = useState<Credential[]>([]);
-  const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
-  const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
-  const [agentProfile, setAgentProfile] = useState<{ id: string; preset: UsageProfile } | null>(null);
-  const preset = agentProfile?.id === agentId ? agentProfile.preset : "custom";
-  const [loading, setLoading] = useState(true);
-  const [addOpen, setAddOpen] = useState(false);
-  const [addAnotherProvider, setAddAnotherProvider] = useState<string | null>(null);
-  const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const envSync = useEnvSync();
-  const [collapsedByType, setCollapsedByType] = useState<Record<SectionKey, boolean>>({
-    modelProviders: true,
-    tools: true,
-  });
-  const containerRef = useRef<HTMLDivElement>(null);
-  useDeepLinkScroll("credentials", "credential", containerRef);
-  useDeepLinkScroll("credentials", "integration", containerRef);
-  // Auto-test every saved credential on mount + after edits so the UI
-  // shows a live ✓/✗ next to each row without the user having to click
-  // Test for each one. Results are cached in-module across re-renders.
-  const probes = useCredentialProbes(credentials);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [rows, ints] = await Promise.all([
-        api.credentials.list(),
-        api.integrations.list().catch(() => ({ definitions: [] as IntegrationDefinition[], statuses: [] as IntegrationStatus[] })),
-      ]);
-      setCredentials(rows);
-      setDefs(ints.definitions);
-      setStatuses(Object.fromEntries(ints.statuses.map((s) => [s.name, s])));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!agentId) return;
-    let cancelled = false;
-    api.agents.get(agentId).then((agent) => {
-      if (!cancelled) setAgentProfile({ id: agentId, preset: agent.usage_profile ?? "custom" });
-    }).catch((error) => {
-      if (!cancelled) pushErrorToast({ title: "Couldn't load agent usage profile", error, context: { panel: "credentials" } });
-    });
-    return () => { cancelled = true; };
-  }, [agentId]);
-
-  useEffect(() => {
-    refresh();
-    const onChange = () => refresh();
-    if (typeof window !== "undefined") window.addEventListener("jarela:credentials-changed", onChange);
-    return () => {
-      if (typeof window !== "undefined") window.removeEventListener("jarela:credentials-changed", onChange);
-    };
-  }, [refresh]);
-
-  const defByName = useMemo(() => {
-    const m = new Map<string, IntegrationDefinition>();
-    for (const d of defs) m.set(d.name, d);
-    return m;
-  }, [defs]);
-
-  async function handleDelete(c: Credential) {
-    setDeleteError(null);
-    try {
-      await api.credentials.delete(c.id);
-      await refresh();
-    } catch (e) {
-      setDeleteError(`Could not delete "${c.id}": ${errorMessage(e)}`);
-    }
-  }
-
-  // Discovery filtering never removes saved credentials from the list.
-  const visibleDefs = useMemo(() => filterIntegrationsForProfile(defs, statuses, preset), [defs, preset, statuses]);
-
-  const hiddenCount = defs.length - visibleDefs.length;
-
-  // Group saved credentials by provider first, then place each provider bucket
-  // under either model-provider credentials or tool credentials.
-  const groupedByType = useMemo(() => {
-    type ProviderGroup = {
-      type: CredentialType;
-      provider: string;
-      def: IntegrationDefinition | undefined;
-      credentials: Credential[];
-      sortLabel: string;
-    };
-
-    const bySection = new Map<SectionKey, ProviderGroup[]>();
-    const byProvider = new Map<string, Credential[]>();
-    for (const c of credentials) {
-      const key = `${c.type}::${c.provider}`;
-      const arr = byProvider.get(key) ?? [];
-      arr.push(c);
-      byProvider.set(key, arr);
-    }
-
-    for (const rows of byProvider.values()) {
-      const type = rows[0]?.type;
-      const provider = rows[0]?.provider;
-      if (!type || !provider) continue;
-      rows.sort((a, b) => {
-        if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
-        return a.id.localeCompare(b.id);
-      });
-      const def = defByName.get(provider);
-      const section = credentialSection(type, def?.category ?? null);
-      const arr = bySection.get(section) ?? [];
-      arr.push({
-        type,
-        provider,
-        def,
-        credentials: rows,
-        sortLabel: (def?.label ?? provider).toLowerCase(),
-      });
-      bySection.set(section, arr);
-    }
-
-    for (const groups of bySection.values()) {
-      groups.sort((a, b) => a.sortLabel.localeCompare(b.sortLabel) || a.provider.localeCompare(b.provider));
-    }
-
-    return SECTION_ORDER
-      .filter((t) => bySection.has(t))
-      .map((t) => [t, bySection.get(t)!] as const);
-  }, [credentials, defByName]);
+  const {
+    preset,
+    agentId,
+    dispatch,
+    hiddenCount,
+    envSync,
+    setAddOpen,
+    containerRef,
+    loading,
+    credentials,
+    groupedByType,
+    deleteError,
+    collapsedByType,
+    setCollapsedByType,
+    probes,
+    setEditingCredential,
+    setAddAnotherProvider,
+    handleDelete,
+    addOpen,
+    refresh,
+    addAnotherProvider,
+    editingCredential,
+  } = useCredentialList();
 
   return (
     <div className="flex flex-col h-full">
@@ -456,3 +349,162 @@ function ProbeIndicator({ probe }: { probe: CredentialProbeResult }) {
   // unsupported — provider has no health probe registered.
   return <StatusDot tone="success" size="xs" />;
 }
+
+function useCredentialList() {
+  const { state, dispatch } = useAppContext();
+  const agentId = state.activeAgentId;
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
+  const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
+  const [agentProfile, setAgentProfile] = useState<{ id: string; preset: UsageProfile } | null>(null);
+  const preset = agentProfile?.id === agentId ? agentProfile.preset : "custom";
+  const [loading, setLoading] = useState(true);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addAnotherProvider, setAddAnotherProvider] = useState<string | null>(null);
+  const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const envSync = useEnvSync();
+  const [collapsedByType, setCollapsedByType] = useState<Record<SectionKey, boolean>>({
+    modelProviders: true,
+    tools: true,
+  });
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("credentials", "credential", containerRef);
+  useDeepLinkScroll("credentials", "integration", containerRef);
+  // Auto-test every saved credential on mount + after edits so the UI
+  // shows a live ✓/✗ next to each row without the user having to click
+  // Test for each one. Results are cached in-module across re-renders.
+  const probes = useCredentialProbes(credentials);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [rows, ints] = await Promise.all([
+        api.credentials.list(),
+        api.integrations.list().catch(() => ({ definitions: [] as IntegrationDefinition[], statuses: [] as IntegrationStatus[] })),
+      ]);
+      setCredentials(rows);
+      setDefs(ints.definitions);
+      setStatuses(Object.fromEntries(ints.statuses.map((s) => [s.name, s])));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!agentId) return;
+    let cancelled = false;
+    api.agents.get(agentId).then((agent) => {
+      if (!cancelled) setAgentProfile({ id: agentId, preset: agent.usage_profile ?? "custom" });
+    }).catch((error) => {
+      if (!cancelled) pushErrorToast({ title: "Couldn't load agent usage profile", error, context: { panel: "credentials" } });
+    });
+    return () => { cancelled = true; };
+  }, [agentId]);
+
+  useEffect(() => {
+    refresh();
+    const onChange = () => refresh();
+    if (typeof window !== "undefined") window.addEventListener("jarela:credentials-changed", onChange);
+    return () => {
+      if (typeof window !== "undefined") window.removeEventListener("jarela:credentials-changed", onChange);
+    };
+  }, [refresh]);
+
+  const defByName = useMemo(() => {
+    const m = new Map<string, IntegrationDefinition>();
+    for (const d of defs) m.set(d.name, d);
+    return m;
+  }, [defs]);
+
+  async function handleDelete(c: Credential) {
+    setDeleteError(null);
+    try {
+      await api.credentials.delete(c.id);
+      await refresh();
+    } catch (e) {
+      setDeleteError(`Could not delete "${c.id}": ${errorMessage(e)}`);
+    }
+  }
+
+  // Discovery filtering never removes saved credentials from the list.
+  const visibleDefs = useMemo(() => filterIntegrationsForProfile(defs, statuses, preset), [defs, preset, statuses]);
+
+  const hiddenCount = defs.length - visibleDefs.length;
+
+  // Group saved credentials by provider first, then place each provider bucket
+  // under either model-provider credentials or tool credentials.
+  const groupedByType = useMemo(() => groupSavedCredentials(credentials, defByName), [credentials, defByName]);
+
+  return {
+    preset,
+    agentId,
+    dispatch,
+    hiddenCount,
+    envSync,
+    setAddOpen,
+    containerRef,
+    loading,
+    credentials,
+    groupedByType,
+    deleteError,
+    collapsedByType,
+    setCollapsedByType,
+    probes,
+    setEditingCredential,
+    setAddAnotherProvider,
+    handleDelete,
+    addOpen,
+    refresh,
+    addAnotherProvider,
+    editingCredential,
+  };
+}
+
+function groupSavedCredentials(credentials: Credential[], defByName: Map<string, IntegrationDefinition>) {
+    type ProviderGroup = {
+      type: CredentialType;
+      provider: string;
+      def: IntegrationDefinition | undefined;
+      credentials: Credential[];
+      sortLabel: string;
+    };
+
+    const bySection = new Map<SectionKey, ProviderGroup[]>();
+    const byProvider = new Map<string, Credential[]>();
+    for (const c of credentials) {
+      const key = `${c.type}::${c.provider}`;
+      const arr = byProvider.get(key) ?? [];
+      arr.push(c);
+      byProvider.set(key, arr);
+    }
+
+    for (const rows of byProvider.values()) {
+      const type = rows[0]?.type;
+      const provider = rows[0]?.provider;
+      if (!type || !provider) continue;
+      rows.sort((a, b) => {
+        if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+        return a.id.localeCompare(b.id);
+      });
+      const def = defByName.get(provider);
+      const section = credentialSection(type, def?.category ?? null);
+      const arr = bySection.get(section) ?? [];
+      arr.push({
+        type,
+        provider,
+        def,
+        credentials: rows,
+        sortLabel: (def?.label ?? provider).toLowerCase(),
+      });
+      bySection.set(section, arr);
+    }
+
+    for (const groups of bySection.values()) {
+      groups.sort((a, b) => a.sortLabel.localeCompare(b.sortLabel) || a.provider.localeCompare(b.provider));
+    }
+
+    return SECTION_ORDER
+      .filter((t) => bySection.has(t))
+      .map((t) => [t, bySection.get(t)!] as const);
+  }

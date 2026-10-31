@@ -74,7 +74,7 @@ async function clearCachesAndReload() {
   window.location.reload();
 }
 
-export function UpdateAvailableBanner() {
+function useAppUpdate() {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [phase, setPhase] = useState<Phase>("preview");
@@ -115,12 +115,6 @@ export function UpdateAvailableBanner() {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
   }, []);
-
-  if (!info || !info.behind || !info.latest || dismissed) return null;
-
-  const isMain = info.channel === "main";
-  const shortRemote = info.latestCommit?.sha?.slice(0, 7);
-  const shortLocal = info.currentCommit?.slice(0, 7);
 
   async function pollApplyStatus() {
     try {
@@ -200,6 +194,24 @@ export function UpdateAvailableBanner() {
     }
   }
 
+  function dismiss() {
+    const key = info?.channel === "main" && info.latestCommit?.sha
+      ? `${info.latest}@${info.latestCommit.sha}`
+      : info?.latest;
+    if (key) localStorage.setItem(DISMISS_KEY, key);
+    setDismissed(true);
+  }
+
+  return { info, dismissed, phase, lines, errorMsg, applyUpdate, dismiss };
+}
+
+export function UpdateAvailableBanner() {
+  const { info, dismissed, phase, lines, errorMsg, applyUpdate, dismiss } = useAppUpdate();
+  if (!info || !info.behind || !info.latest || dismissed) return null;
+  const isMain = info.channel === "main";
+  const shortRemote = info.latestCommit?.sha?.slice(0, 7);
+  const shortLocal = info.currentCommit?.slice(0, 7);
+
   const headline =
     phase === "preview"
       ? isMain
@@ -251,14 +263,7 @@ export function UpdateAvailableBanner() {
           {phase === "preview" && (
             <button
               type="button"
-              onClick={() => {
-                const key =
-                  isMain && info.latestCommit?.sha
-                    ? `${info.latest}@${info.latestCommit.sha}`
-                    : info.latest;
-                if (key) localStorage.setItem(DISMISS_KEY, key);
-                setDismissed(true);
-              }}
+              onClick={dismiss}
               className="shrink-0 rounded p-0.5 hover:bg-emerald-900/40"
               aria-label="Dismiss update notice"
             >

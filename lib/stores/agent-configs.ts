@@ -261,17 +261,13 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
   return withDbTransaction(() => upsertAgentConfigTransaction(input));
 }
 
-function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
-  const t = now();
-  const db = getDb();
-  const existing = getAgentConfig(input.id);
+function resolveAgentConfigValues(input: UpsertAgentInput, existing: AgentConfigRow | null, t: string) {
   const created_at = existing?.created_at ?? t;
   const mbti = input.adaptive_mbti ?? existing?.adaptive_mbti ?? "INTJ";
   const strength = input.adaptive_persona_strength ?? existing?.adaptive_persona_strength ?? DEFAULT_PERSONA_STYLE.strength;
   const empathy = input.adaptive_empathy ?? existing?.adaptive_empathy ?? DEFAULT_PERSONA_STYLE.empathy;
   const expressiveness = input.adaptive_expressiveness ?? existing?.adaptive_expressiveness ?? DEFAULT_PERSONA_STYLE.expressiveness;
   const verbosity = input.adaptive_verbosity ?? existing?.adaptive_verbosity ?? DEFAULT_PERSONA_STYLE.verbosity;
-  if (input.is_default) db.prepare("UPDATE agent_configs SET is_default=0").run();
   // harness_id: explicit `undefined` means "keep existing"; explicit `null`
   // means "use the global default". Empty string is normalised to null too,
   // matching how the AgentEditor sends "" for the inherit option.
@@ -342,6 +338,23 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
   const warmSummaryLimit = Number.isFinite(requestedWarmSummaryLimit)
     ? Math.max(0, Math.floor(requestedWarmSummaryLimit))
     : existing?.warm_summary_limit ?? 50;
+  return {
+    created_at, mbti, strength, empathy, expressiveness, verbosity,
+    harnessId, delegateTargets, tierProportions, antiHallucMode, antiHallucModel,
+    citationStrictness, toolCredentials, routerPolicy, routerEnabled, usageStrategy, warmSummaryLimit,
+  };
+}
+
+function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
+  const t = now();
+  const db = getDb();
+  const existing = getAgentConfig(input.id);
+  if (input.is_default) db.prepare("UPDATE agent_configs SET is_default=0").run();
+  const {
+    created_at, mbti, strength, empathy, expressiveness, verbosity,
+    harnessId, delegateTargets, tierProportions, antiHallucMode, antiHallucModel,
+    citationStrictness, toolCredentials, routerPolicy, routerEnabled, usageStrategy, warmSummaryLimit,
+  } = resolveAgentConfigValues(input, existing, t);
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,

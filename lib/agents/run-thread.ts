@@ -9,6 +9,7 @@ import {
   isDelegationBudget,
 } from "@/lib/agents/delegation-budget";
 import type { ContentPart } from "@/lib/tools/runtime/types";
+import type { ProviderParams } from "@/lib/providers/types";
 import { spillAttachments } from "@/lib/attachments/spill";
 import { fileReferenceFromContentPart, isFileReferenceMetadata, type AttachmentHandlingMetadata, type FileReferenceMetadata } from "@/lib/attachments/reference";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
@@ -432,6 +433,73 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   };
   const isDelegatedRun = (req._delegation_depth ?? 0) > 0
     || (req._delegation_ancestors?.length ?? 0) > 0;
+  const admission = await initializeTurn(req);
+  const input = await persistTurnInput(req, admission);
+  const boundary = resolveTurnBoundary(req, admission);
+  const model = resolveTurnModel(req, admission, input, boundary, isDelegatedRun);
+  const configured = configureTurnModel(req, admission, boundary, model, input);
+  const historyWindow = await prepareTurnHistory(req, admission, boundary, model, configured, input, isDelegatedRun);
+  const context = await prepareTurnContext(req, admission, model, configured, historyWindow, input);
+  return createPreparedTurn(req, admission, model, configured, historyWindow, context, input, isDelegatedRun);
+}
+
+interface TurnAdmission {
+  thread: NonNullable<ReturnType<typeof getThread>>;
+  trimmed: string;
+  agentCfg: NonNullable<ReturnType<typeof getAgentConfig>>;
+  baseToolPermissionMap: ToolCatalogEntry[];
+  requestedAllowedTools: string[];
+}
+
+interface TurnInput {
+  content: string | ContentPart[];
+  idleMsBeforeTurn: number | null;
+  autoBoundaryScope: "foreground" | "bridge" | "all" | "none";
+  hasImageContext: boolean;
+}
+
+interface TurnBoundary {
+  agentTierProportions: ReturnType<typeof getAgentTierProportions>;
+  requestedHotSinceDiffers: boolean;
+  effectiveHotSinceSeq: number | null;
+  requiredHotContextTokens: number | null;
+}
+
+interface TurnModel {
+  modelConfigName: string | null;
+  routeDecision: RouteDecisionMetadata;
+  modelCfg: ReturnType<typeof getModelConfig> | null;
+  usageStrategy: ReturnType<typeof resolveUsageStrategy>;
+  usageProfile: ReturnType<typeof getUsageStrategyProfile>;
+  autoRecallEnabled: boolean;
+  autoFactsEnabled: boolean;
+  routePolicy: NonNullable<ThreadRunRequest["_router_policy_override"]>;
+}
+
+interface ConfiguredTurnModel {
+  toolPermissionMap: ToolCatalogEntry[];
+  allowedTools: string[];
+  providerParams: ProviderParams;
+  runContextWindow: number;
+  adaptiveOutputTokenCap: number;
+  thinkingReduction: ReturnType<typeof thinkingReductionParams> | null;
+}
+
+type TurnHistory = Awaited<ReturnType<typeof buildHistoryWindow>>;
+
+interface TurnContext {
+  delegateRosterLines: Awaited<ReturnType<typeof import("@/lib/agents/delegate-catalog").buildDelegateCatalog>>;
+  surroundingsCtx: string;
+  rawRecallCtx: Awaited<ReturnType<typeof buildRecallContext>>;
+  profile: ThreadRunRequest["context_profile"];
+  effectiveHistory: TurnHistory["history"];
+  effectiveWarmSummary: string;
+  effectiveFacts: string;
+  recallCtx: string;
+  sourceManifest: SourceManifestEntry[];
+}
+
+async function initializeTurn(req: ThreadRunRequest): Promise<TurnAdmission> {
   // Lazy-start the scheduler when any agent activity occurs so previously
   // saved scheduled tasks resume firing across server restarts.
   startScheduler();
@@ -450,9 +518,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   }
   const baseToolPermissionMap = applyAgentPermissionsToCatalog(await getAllToolCatalogAsync(), agentCfg);
   const requestedAllowedTools = withDefaultTools(allowedToolNamesFromPermissionMap(baseToolPermissionMap), []);
-  let toolPermissionMap = baseToolPermissionMap;
-  let allowedTools = requestedAllowedTools;
+  return { thread, trimmed, agentCfg, baseToolPermissionMap, requestedAllowedTools };
+}
 
+async function persistTurnInput(req: ThreadRunRequest, admission: TurnAdmission): Promise<TurnInput> {
+  const { agentCfg, trimmed } = admission;
   if (
     !req._skip_persist_message
     && isAutoBoundaryEligibleCategory(req.user_category)
@@ -538,7 +608,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   const hasImageContext = contentHasImage(content)
     || getMessagesPage(req.thread_id, agentCfg.history_limit ?? 50).messages.some((m) => contentHasImage(m.content));
+  return { content, idleMsBeforeTurn, autoBoundaryScope, hasImageContext };
+}
 
+function resolveTurnBoundary(req: ThreadRunRequest, admission: TurnAdmission): TurnBoundary {
+  const { thread, agentCfg } = admission;
   const agentTierProportions = getAgentTierProportions(agentCfg);
 
   const requestedHotSinceDiffers = req.hot_since_seq !== undefined
@@ -560,7 +634,19 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       req.context_profile?.history_scope,
       req.history_bridge_key,
     );
+  return { agentTierProportions, requestedHotSinceDiffers, effectiveHotSinceSeq, requiredHotContextTokens };
+}
 
+function resolveTurnModel(
+  req: ThreadRunRequest,
+  admission: TurnAdmission,
+  input: TurnInput,
+  boundary: TurnBoundary,
+  isDelegatedRun: boolean,
+): TurnModel {
+  const { agentCfg, trimmed, requestedAllowedTools: allowedTools } = admission;
+  const { hasImageContext } = input;
+  const { agentTierProportions, requiredHotContextTokens } = boundary;
   // Resolve model config + provider params (for both the live stream and
   // the warm-summary recursion inside buildHistoryWindow).
   const defaultModelConfig = getDefaultModelConfig();
@@ -647,6 +733,28 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     };
   }
   const modelCfg = modelConfigName ? getModelConfig(modelConfigName) : null;
+  return {
+    modelConfigName,
+    routeDecision,
+    modelCfg,
+    usageStrategy,
+    usageProfile,
+    autoRecallEnabled,
+    autoFactsEnabled,
+    routePolicy,
+  };
+}
+
+function configureTurnModel(
+  req: ThreadRunRequest,
+  admission: TurnAdmission,
+  boundary: TurnBoundary,
+  model: TurnModel,
+  input: TurnInput,
+): ConfiguredTurnModel {
+  const { baseToolPermissionMap, requestedAllowedTools, agentCfg, trimmed } = admission;
+  const { agentTierProportions } = boundary;
+  const { modelCfg, usageProfile, usageStrategy } = model;
   const limitedTools = applyProviderToolLimitToCatalog(
     baseToolPermissionMap,
     applyToolBindBudget(
@@ -665,12 +773,12 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       preferredToolNames: getAgentTools(agentCfg),
     },
   );
-  toolPermissionMap = markProxyOnlyTools(
+  let toolPermissionMap = markProxyOnlyTools(
     limitedTools.toolPermissionMap,
     limitedTools.allowedToolNames,
     requestedAllowedTools,
   );
-  allowedTools = limitedTools.allowedToolNames;
+  let allowedTools = limitedTools.allowedToolNames;
   if (req._system_signal_continuation) {
     toolPermissionMap = toolPermissionMap.map((entry) => entry.capability === "read" || entry.name === "invoke_tool"
       ? entry
@@ -721,7 +829,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     : configuredContextWindow;
   // The current user-turn size is a deterministic proxy for expected output;
   // the adaptive resolver applies headroom and the model/context hard limits.
-  const inputTokenEstimate = estimateTokens(contentText(content));
+  const inputTokenEstimate = estimateTokens(contentText(input.content));
   const { overheadTokens: outputBudgetOverhead } = computeContextBudget({ context_window_tokens: runContextWindow, max_tokens: 256 });
   const contextOutputCeiling = Math.max(1, runContextWindow - inputTokenEstimate - outputBudgetOverhead);
   const explicitOutputCeiling = typeof tierProviderParams.max_tokens === "number"
@@ -754,7 +862,30 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     context_window_tokens: runContextWindow,
     max_tokens: adaptiveOutputTokenCap,
   };
+  return {
+    toolPermissionMap,
+    allowedTools,
+    providerParams,
+    runContextWindow,
+    adaptiveOutputTokenCap,
+    thinkingReduction,
+  };
+}
 
+async function prepareTurnHistory(
+  req: ThreadRunRequest,
+  admission: TurnAdmission,
+  boundary: TurnBoundary,
+  model: TurnModel,
+  configured: ConfiguredTurnModel,
+  input: TurnInput,
+  isDelegatedRun: boolean,
+): Promise<TurnHistory> {
+  const { agentCfg, trimmed } = admission;
+  const { requestedHotSinceDiffers, effectiveHotSinceSeq } = boundary;
+  const { modelCfg, autoFactsEnabled } = model;
+  const { providerParams } = configured;
+  const { autoBoundaryScope } = input;
   // New non-null pins are deferred until their warm summary is ready. A clear
   // broadens context, so it can be committed immediately without a recap.
   if (requestedHotSinceDiffers) {
@@ -803,7 +934,21 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   ) {
     kickBoundaryCompaction(req.thread_id, historyWindow.hotSinceSeqCandidate);
   }
+  return historyWindow;
+}
 
+async function prepareTurnContext(
+  req: ThreadRunRequest,
+  admission: TurnAdmission,
+  model: TurnModel,
+  configured: ConfiguredTurnModel,
+  historyWindow: TurnHistory,
+  input: TurnInput,
+): Promise<TurnContext> {
+  const { agentCfg, trimmed, baseToolPermissionMap } = admission;
+  const { autoRecallEnabled } = model;
+  const { toolPermissionMap } = configured;
+  const { content } = input;
   const { buildDelegateCatalog } = await import("@/lib/agents/delegate-catalog");
   const delegateRosterLines = await buildDelegateCatalog(agentCfg, toolPermissionMap, baseToolPermissionMap);
 
@@ -881,7 +1026,44 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const strictness = parseCitationStrictness(agentCfg.citation_strictness) ?? "off";
   const sourceManifest: SourceManifestEntry[] = [];
   void strictness; // strictness is read again at persist-time
+  return {
+    delegateRosterLines,
+    surroundingsCtx,
+    rawRecallCtx,
+    profile,
+    effectiveHistory,
+    effectiveWarmSummary,
+    effectiveFacts,
+    recallCtx,
+    sourceManifest,
+  };
+}
 
+function createPreparedTurn(
+  req: ThreadRunRequest,
+  admission: TurnAdmission,
+  model: TurnModel,
+  configured: ConfiguredTurnModel,
+  historyWindow: TurnHistory,
+  context: TurnContext,
+  input: TurnInput,
+  isDelegatedRun: boolean,
+): PreparedThreadRun {
+  const { agentCfg, trimmed } = admission;
+  const { routeDecision, usageProfile, autoRecallEnabled, autoFactsEnabled, routePolicy } = model;
+  const { allowedTools, toolPermissionMap } = configured;
+  const {
+    delegateRosterLines,
+    surroundingsCtx,
+    rawRecallCtx,
+    profile,
+    effectiveHistory,
+    effectiveWarmSummary,
+    effectiveFacts,
+    recallCtx,
+    sourceManifest,
+  } = context;
+  const { idleMsBeforeTurn } = input;
   const ownsSignalDelivery = !req._system_signal_batch;
   const canDeliverSignals = !req.history_bridge_key && !req.delivery_channel
     && req.user_category !== "bridge" && req.context_profile?.history_scope !== "none";
@@ -912,36 +1094,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     toolPermissionMap,
   });
 
-  const delegationDepth = req._delegation_depth ?? 0;
-  const delegationAncestors = req._delegation_ancestors ?? [];
-  const toolCredentialOverrides = getAgentToolCredentials(agentCfg);
-  const streamOpts: StreamOptions = {
-    ...req.options,
-    agent_run_config: {
-      signal_continuation: req._system_signal_continuation,
-      system_prompt: systemPrompt,
-      allowed_tools: allowedTools,
-      tool_permission_map: toolPermissionMap.map((entry) => ({
-        name: entry.name,
-        category: entry.category,
-        capability: entry.capability,
-        source: entry.source,
-        permission: entry.permission ?? "disabled",
-        permission_reason: entry.permission_reason ?? null,
-      })),
-      model_config_name: modelConfigName,
-      route_decision: routeDecision,
-      output_reserve_tokens: historyWindow.budget.outputReserveTokens,
-      context_window_tokens: runContextWindow,
-      max_output_tokens: adaptiveOutputTokenCap,
-      thinking_params: thinkingReduction?.params,
-      tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
-      delegation: delegationDepth > 0 || delegationAncestors.length > 0
-        ? { depth: delegationDepth, ancestors: delegationAncestors }
-        : undefined,
-      delegation_budget: req._delegation_budget,
-    },
-  };
+  const streamOpts = buildTurnStreamOptions(req, agentCfg, model, configured, historyWindow, systemPrompt);
 
   // Retry paths may need to append an explicit non-persisted message (for
   // example a stall/transient nudge) to the in-memory history for THIS run
@@ -991,22 +1144,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     : stallRetryStream(transientWrapped, req, allowedTools, retriesLeft, attemptAbort, prepareThreadRun);
   return {
     signal_delivery: signalDelivery,
-    stream: ownsSignalDelivery ? (async function* () {
-      let succeeded = false;
-      let renewedAt = Date.now();
-      try {
-        for await (const chunk of stream) {
-          if (Date.now() - renewedAt > 10_000) {
-            renewSystemSignalLease(signalDelivery);
-            renewedAt = Date.now();
-          }
-          if (chunk.type === "done" && !chunk.data.aborted && !req.signal?.aborted) succeeded = true;
-          yield chunk;
-        }
-      } finally {
-        if (!succeeded) releaseSystemSignals(signalDelivery);
-      }
-    })() : stream,
+    stream: ownsSignalDelivery ? withSignalDeliveryLease(stream, signalDelivery, req.signal) : stream,
     thread_id: req.thread_id,
     context_snapshot: {
       context_window_tokens: historyWindow.budget.contextWindowTokens,
@@ -1024,6 +1162,67 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       ? { memory_hits: rawRecallCtx.memoryHits, message_hits: rawRecallCtx.messageHits }
       : undefined,
   };
+}
+
+function buildTurnStreamOptions(
+  req: ThreadRunRequest,
+  agentCfg: TurnAdmission["agentCfg"],
+  model: TurnModel,
+  configured: ConfiguredTurnModel,
+  historyWindow: TurnHistory,
+  systemPrompt: string,
+): StreamOptions {
+  const delegationDepth = req._delegation_depth ?? 0;
+  const delegationAncestors = req._delegation_ancestors ?? [];
+  const toolCredentialOverrides = getAgentToolCredentials(agentCfg);
+  return {
+    ...req.options,
+    agent_run_config: {
+      signal_continuation: req._system_signal_continuation,
+      system_prompt: systemPrompt,
+      allowed_tools: configured.allowedTools,
+      tool_permission_map: configured.toolPermissionMap.map((entry) => ({
+        name: entry.name,
+        category: entry.category,
+        capability: entry.capability,
+        source: entry.source,
+        permission: entry.permission ?? "disabled",
+        permission_reason: entry.permission_reason ?? null,
+      })),
+      model_config_name: model.modelConfigName,
+      route_decision: model.routeDecision,
+      output_reserve_tokens: historyWindow.budget.outputReserveTokens,
+      context_window_tokens: configured.runContextWindow,
+      max_output_tokens: configured.adaptiveOutputTokenCap,
+      thinking_params: configured.thinkingReduction?.params,
+      tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
+      delegation: delegationDepth > 0 || delegationAncestors.length > 0
+        ? { depth: delegationDepth, ancestors: delegationAncestors }
+        : undefined,
+      delegation_budget: req._delegation_budget,
+    },
+  };
+}
+
+async function* withSignalDeliveryLease(
+  stream: AsyncIterable<StreamChunk>,
+  signalDelivery: SystemSignalBatch,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamChunk> {
+  let succeeded = false;
+  let renewedAt = Date.now();
+  try {
+    for await (const chunk of stream) {
+      if (Date.now() - renewedAt > 10_000) {
+        renewSystemSignalLease(signalDelivery);
+        renewedAt = Date.now();
+      }
+      if (chunk.type === "done" && !chunk.data.aborted && !signal?.aborted) succeeded = true;
+      yield chunk;
+    }
+  } finally {
+    if (!succeeded) releaseSystemSignals(signalDelivery);
+  }
 }
 
 export interface AssistantUsageSnapshot {
@@ -1201,131 +1400,118 @@ export function persistAssistantMessage(
     if (routeDecision) {
       mergeMessageMetadata(row.msg_id, { routing: routeDecision });
     }
-    // Persist the source manifest for THIS reply into the message's
-    // metadata. The chat UI uses it to resolve inline `[N]` markers →
-    // clickable links and to populate the References panel.
-    //
-    // Scope: ONLY this turn's tool events + this turn's delegate replies.
-    // We deliberately don't include prior-turn sources, memory items, or
-    // earlier-dialog anchors — each reply's panel must reflect what backs
-    // THAT reply, otherwise the panel turns into a 40-entry haystack of
-    // stale links from unrelated topics across the thread (real user
-    // complaint, 2026-06-07: "there are so many irrelevant citation").
-    //
-    // The agent's mid-prose markdown links `[label](url)` need no
-    // manifest entry — they linkify themselves.
-    let manifest: SourceManifestEntry[] = [];
-    if (sanitizedEvents && sanitizedEvents.length > 0) {
-      const thread = getThread(thread_id);
-      const agent = thread?.agent_id ? getAgentConfig(thread.agent_id) : null;
-      const strictness = agent ? parseCitationStrictness(agent.citation_strictness) ?? "off" : "off";
-      if (strictness !== "off") {
-        manifest = buildCombinedManifest(sanitizedEvents, thread_id, {
-          tools: getConfig().citationManifestMax,
-          delegates: 10,
-        });
-      }
-    }
-    // Fold the agent's declared refs into the manifest (dedup by
-    // normalized href). These are appended after tool-derived entries
-    // and renumbered. Skipped when strictness is `off` so off-mode
-    // agents that ignore the fence don't suddenly get a References
-    // panel (the strictness gate is the user's switch for this whole
-    // feature).
-    if (declaredRefs.length > 0) {
-      const thread = getThread(thread_id);
-      const agent = thread?.agent_id ? getAgentConfig(thread.agent_id) : null;
-      const strictness = agent ? parseCitationStrictness(agent.citation_strictness) ?? "off" : "off";
-      if (strictness !== "off") {
-        manifest = mergeDeclaredReferences(manifest, declaredRefs);
-      }
-    }
-    if (manifest.length > 0) {
-      // Merge so a redaction_summary written above survives.
-      mergeMessageMetadata(row.msg_id, {
-        citations: {
-          checker_model: "",
-          claims: [],
-          unverified_links: [],
-          sources: manifest.map((e) => ({ n: e.n, label: e.label, href: e.href })),
-        },
+    persistTurnCitations(thread_id, row.msg_id, persisted, sanitizedEvents, declaredRefs, category);
+    persistUsageSnapshot(thread_id, row.msg_id, usage, contextSnapshot);
+  }
+}
+
+function persistTurnCitations(
+  thread_id: string,
+  messageId: string,
+  persisted: string,
+  sanitizedEvents: PersistedToolEvent[] | null,
+  declaredRefs: ReturnType<typeof extractDeclaredReferences>["refs"],
+  category: string | null,
+): void {
+  // Sources are limited to this turn, never earlier replies or memory.
+  let manifest: SourceManifestEntry[] = [];
+  if (sanitizedEvents && sanitizedEvents.length > 0) {
+    const thread = getThread(thread_id);
+    const agent = thread?.agent_id ? getAgentConfig(thread.agent_id) : null;
+    const strictness = agent ? parseCitationStrictness(agent.citation_strictness) ?? "off" : "off";
+    if (strictness !== "off") {
+      manifest = buildCombinedManifest(sanitizedEvents, thread_id, {
+        tools: getConfig().citationManifestMax,
+        delegates: 10,
       });
     }
-    // Citation checker (fire-and-forget). Runs only when the agent's
-    // `citation_strictness` is not `off`, the persisted text is non-empty,
-    // the manifest is non-empty, and (at standard/informational levels)
-    // the text actually carries at least one `[N]` marker to verify.
-    // Strict mode skips the marker pre-check so the audit can flag
-    // missing citations. Writes its verdict back into `messages.metadata`
-    // alongside the manifest; the UI picks it up on the next refresh.
-    // Any failure (timeout, parse error, missing checker model) leaves
-    // the manifest in place and the message renders normally.
-    // Delegated inference must remain inside the shared per-inference budget.
-    // The post-persist checker calls a provider directly, outside llm.ts's
-    // budget hook, so delegated results keep their deterministic manifest but
-    // skip this optional model-based audit.
-    if (category !== "delegation" && persisted && manifest.length > 0) {
-      void runCitationCheckerForRow(thread_id, row.msg_id, persisted, manifest);
+  }
+  // Declared refs follow tool-derived entries, deduplicated and renumbered.
+  // Off-mode agents must not gain a References panel by emitting the fence.
+  if (declaredRefs.length > 0) {
+    const thread = getThread(thread_id);
+    const agent = thread?.agent_id ? getAgentConfig(thread.agent_id) : null;
+    const strictness = agent ? parseCitationStrictness(agent.citation_strictness) ?? "off" : "off";
+    if (strictness !== "off") {
+      manifest = mergeDeclaredReferences(manifest, declaredRefs);
     }
-    // ADR-0041 wrote provider-reported token usage when available. The
-    // per-tier context snapshot (hot/warm/facts/overhead) is computed
-    // locally and is meaningful even when the provider didn't emit a
-    // usage event (custom proxies, mid-stream errors, providers that
-    // omit usage on tool turns), so persist the row whenever EITHER side
-    // has data. The cost/rate columns simply stay null when there are
-    // no provider tokens to price.
-    const hasProviderUsage = !!(usage && (usage.input_tokens > 0 || usage.output_tokens > 0));
-    if (hasProviderUsage || contextSnapshot) {
-      try {
-        const thread = getThread(thread_id);
-        const agentId = thread?.agent_id ?? "";
-        const agent = agentId ? getAgentConfig(agentId) : null;
-        const agentName = agent?.name ?? agentId;
-        const tables = getPricingTables();
-        const rates = hasProviderUsage
-          ? modelRatesFor(tables, usage!.provider, usage!.model_id)
-          : { inputPer1M: null, outputPer1M: null };
-        const cacheCreation = hasProviderUsage ? (usage!.cache_creation_input_tokens ?? 0) : 0;
-        const cacheRead = hasProviderUsage ? (usage!.cache_read_input_tokens ?? 0) : 0;
-        const thinking = hasProviderUsage ? (usage!.thinking_tokens ?? 0) : 0;
-        const cost = hasProviderUsage
-          ? estimateProviderCostUsd(usage!.provider, usage!.input_tokens, usage!.output_tokens, rates, {
-              cache_creation_input_tokens: cacheCreation,
-              cache_read_input_tokens: cacheRead,
-            })
-          : 0;
-        recordMessageUsage({
-          message_id: row.msg_id,
-          thread_id,
-          agent_id: agentId,
-          agent_name: agentName,
-          provider: hasProviderUsage ? usage!.provider : "",
-          model_id: hasProviderUsage ? usage!.model_id : "",
-          model_config_name: hasProviderUsage ? usage!.model_config_name : null,
-          input_tokens: hasProviderUsage ? usage!.input_tokens : 0,
-          output_tokens: hasProviderUsage ? usage!.output_tokens : 0,
-          input_rate_usd_per_mtok: rates.inputPer1M,
-          output_rate_usd_per_mtok: rates.outputPer1M,
-          cost_usd: cost,
-          cache_creation_input_tokens: cacheCreation > 0 ? cacheCreation : null,
-          cache_read_input_tokens: cacheRead > 0 ? cacheRead : null,
-          thinking_tokens: thinking > 0 ? thinking : null,
-          tier_usage: contextSnapshot
-            ? {
-                hot_tokens: contextSnapshot.hot_tokens,
-                warm_tokens: contextSnapshot.warm_tokens,
-                facts_tokens: contextSnapshot.facts_tokens,
-                overhead_tokens: contextSnapshot.overhead_tokens,
-                hot_budget_tokens: contextSnapshot.hot_budget_tokens,
-                warm_budget_tokens: contextSnapshot.warm_budget_tokens,
-                facts_budget_tokens: contextSnapshot.facts_budget_tokens,
-                context_window_tokens: contextSnapshot.context_window_tokens,
-              }
-            : null,
-        });
-      } catch (err) {
-        console.error("[message_usage] snapshot failed", err);
-      }
+  }
+  if (manifest.length > 0) {
+    // Merge so a redaction_summary written above survives.
+    mergeMessageMetadata(messageId, {
+      citations: {
+        checker_model: "",
+        claims: [],
+        unverified_links: [],
+        sources: manifest.map((e) => ({ n: e.n, label: e.label, href: e.href })),
+      },
+    });
+  }
+  // The optional asynchronous audit must not bypass delegated inference budgets.
+  // The checker owns strictness, marker, model and failure gates.
+  if (category !== "delegation" && persisted && manifest.length > 0) {
+    void runCitationCheckerForRow(thread_id, messageId, persisted, manifest);
+  }
+}
+
+function persistUsageSnapshot(
+  thread_id: string,
+  messageId: string,
+  usage?: AssistantUsageSnapshot | null,
+  contextSnapshot?: ContextUsageSnapshot | null,
+): void {
+  // Context allocation remains meaningful even without provider-reported usage.
+  const hasProviderUsage = !!(usage && (usage.input_tokens > 0 || usage.output_tokens > 0));
+  if (hasProviderUsage || contextSnapshot) {
+    try {
+      const thread = getThread(thread_id);
+      const agentId = thread?.agent_id ?? "";
+      const agent = agentId ? getAgentConfig(agentId) : null;
+      const agentName = agent?.name ?? agentId;
+      const tables = getPricingTables();
+      const rates = hasProviderUsage
+        ? modelRatesFor(tables, usage!.provider, usage!.model_id)
+        : { inputPer1M: null, outputPer1M: null };
+      const cacheCreation = hasProviderUsage ? (usage!.cache_creation_input_tokens ?? 0) : 0;
+      const cacheRead = hasProviderUsage ? (usage!.cache_read_input_tokens ?? 0) : 0;
+      const thinking = hasProviderUsage ? (usage!.thinking_tokens ?? 0) : 0;
+      const cost = hasProviderUsage
+        ? estimateProviderCostUsd(usage!.provider, usage!.input_tokens, usage!.output_tokens, rates, {
+            cache_creation_input_tokens: cacheCreation,
+            cache_read_input_tokens: cacheRead,
+          })
+        : 0;
+      recordMessageUsage({
+        message_id: messageId,
+        thread_id,
+        agent_id: agentId,
+        agent_name: agentName,
+        provider: hasProviderUsage ? usage!.provider : "",
+        model_id: hasProviderUsage ? usage!.model_id : "",
+        model_config_name: hasProviderUsage ? usage!.model_config_name : null,
+        input_tokens: hasProviderUsage ? usage!.input_tokens : 0,
+        output_tokens: hasProviderUsage ? usage!.output_tokens : 0,
+        input_rate_usd_per_mtok: rates.inputPer1M,
+        output_rate_usd_per_mtok: rates.outputPer1M,
+        cost_usd: cost,
+        cache_creation_input_tokens: cacheCreation > 0 ? cacheCreation : null,
+        cache_read_input_tokens: cacheRead > 0 ? cacheRead : null,
+        thinking_tokens: thinking > 0 ? thinking : null,
+        tier_usage: contextSnapshot
+          ? {
+              hot_tokens: contextSnapshot.hot_tokens,
+              warm_tokens: contextSnapshot.warm_tokens,
+              facts_tokens: contextSnapshot.facts_tokens,
+              overhead_tokens: contextSnapshot.overhead_tokens,
+              hot_budget_tokens: contextSnapshot.hot_budget_tokens,
+              warm_budget_tokens: contextSnapshot.warm_budget_tokens,
+              facts_budget_tokens: contextSnapshot.facts_budget_tokens,
+              context_window_tokens: contextSnapshot.context_window_tokens,
+            }
+          : null,
+      });
+    } catch (err) {
+      console.error("[message_usage] snapshot failed", err);
     }
   }
 }

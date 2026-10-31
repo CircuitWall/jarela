@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeAdapter, InboundMessage } from "./types";
+import { QueueExpiredError } from "@/lib/agents/run-queue";
 
 const resolveRouteMock = vi.fn();
 const getAgentConfigMock = vi.fn();
@@ -113,6 +114,58 @@ describe("handleInboundMessage silent observer mode", () => {
       aborted: false,
     });
     formatBridgePromptMock.mockReturnValue("BRIDGE_PROMPT");
+  });
+
+  it.each(["success", "failure", "expired"] as const)("owns typing heartbeat until the queued turn settles: %s", async (outcome) => {
+    vi.useFakeTimers();
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      resolveRouteMock.mockReturnValue({
+        agent_id: "a1", silent_mode: 0, respond_to: "counterpart",
+      });
+      const deferred = Promise.withResolvers<{
+        assistantContent: string; skippedAssistant: boolean; aborted: boolean;
+      }>();
+      runAgentTurnMock.mockReturnValue(deferred.promise);
+      const adapter = makeAdapter();
+      const pending = handleInboundMessage(adapter, makeMessage());
+      expect(adapter.sendTyping).toHaveBeenLastCalledWith("chat@jid", true);
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(adapter.sendTyping).toHaveBeenCalledTimes(2);
+      if (outcome === "success") {
+        deferred.resolve({ assistantContent: "reply", skippedAssistant: false, aborted: false });
+      } else {
+        deferred.reject(outcome === "expired" ? new QueueExpiredError("t1", 0) : new Error("synthetic failure"));
+      }
+      await pending;
+      expect(adapter.sendTyping).toHaveBeenLastCalledWith("chat@jid", false);
+      const calls = vi.mocked(adapter.sendTyping).mock.calls.length;
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect(adapter.sendTyping).toHaveBeenCalledTimes(calls);
+      expect(finalizeAutomationActivityMock).toHaveBeenCalledWith(
+        "activity-1", expect.objectContaining({ disposition: outcome === "success" ? "action" : outcome === "expired" ? "expired" : "failed" }),
+      );
+      if (outcome !== "success") expect(adapter.sendText).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      errorLog.mockRestore();
+    }
+  });
+
+  it.each(["unrouted", "missing-agent"])("does not create threads or typing timers for %s messages", async (reason) => {
+    const log = vi.spyOn(console, reason === "unrouted" ? "log" : "warn").mockImplementation(() => {});
+    try {
+      if (reason === "unrouted") resolveRouteMock.mockReturnValue(null);
+      else getAgentConfigMock.mockReturnValue(null);
+      const adapter = makeAdapter();
+      await handleInboundMessage(adapter, makeMessage());
+      expect(getOrCreateAgentThreadMock).not.toHaveBeenCalled();
+      expect(adapter.sendTyping).not.toHaveBeenCalled();
+      expect(runAgentTurnMock).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledOnce();
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("suppresses non-important NO_REPLY assistant output", async () => {

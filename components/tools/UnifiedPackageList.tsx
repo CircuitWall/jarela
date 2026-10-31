@@ -197,24 +197,11 @@ function buildRows(
   return rows;
 }
 
-export function UnifiedPackageList() {
-  const { dispatch } = useAppContext();
-  const {
-    loadResult,
-    manifests,
-    refresh,
-    setDefaultEnabled,
-    setManifestEnabled,
-    deleteManifest,
-  } = usePackages();
+function usePackageSources() {
+  const packages = usePackages();
+  const { loadResult, manifests } = packages;
   const [builtins, setBuiltins] = useState<BuiltinToolCategoryInfo[]>([]);
   const [ext, setExt] = useState<ExtensionsListResponse | null>(null);
-  const [busy, setBusy] = useState<Record<string, boolean>>({});
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [openGroups, setOpenGroups] = useState<Partial<Record<Kind, boolean>>>({});
-  const [showAll, setShowAll] = useState<Partial<Record<Kind, boolean>>>({});
-  const [query, setQuery] = useState("");
-  const [kindFilter, setKindFilter] = useState<"all" | Kind>("all");
   const [loadingExtras, setLoadingExtras] = useState(true);
 
   async function loadExtras() {
@@ -246,6 +233,12 @@ export function UnifiedPackageList() {
     [builtins, loadResult, manifests, ext],
   );
 
+  return { packages, setBuiltins, ext, setExt, loadingExtras, loadExtras, rows };
+}
+
+function usePackageFilters(rows: UnifiedRow[]) {
+  const [query, setQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | Kind>("all");
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
@@ -265,82 +258,80 @@ export function UnifiedPackageList() {
       .filter((g) => g.rows.length > 0),
     [filtered],
   );
-  async function toggleBuiltin(row: UnifiedRow) {
-    if (!row.category) return;
+  const counts: Record<Kind, number> = {
+    builtin: rows.filter((r) => r.kind === "builtin").length,
+    default: rows.filter((r) => r.kind === "default").length,
+    npm: rows.filter((r) => r.kind === "npm").length,
+    dropin: rows.filter((r) => r.kind === "dropin").length,
+  };
+  return { query, setQuery, kindFilter, setKindFilter, filtered, searching, groups, counts };
+}
+
+function usePackageRowActions(sources: ReturnType<typeof usePackageSources>) {
+  const { dispatch } = useAppContext();
+  const { setBuiltins, setExt, packages: { setDefaultEnabled, setManifestEnabled, deleteManifest } } = sources;
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  async function mutate(
+    row: UnifiedRow,
+    title: string,
+    context: Record<string, unknown>,
+    operation: () => Promise<void>,
+  ) {
+    setBusy((b) => ({ ...b, [row.id]: true }));
+    try {
+      await operation();
+    } catch (e) {
+      pushErrorToast({ title, error: e, context: { panel: "packages", ...context } });
+    } finally {
+      setBusy((b) => ({ ...b, [row.id]: false }));
+    }
+  }
+
+  function toggleBuiltin(row: UnifiedRow) {
+    const category = row.category;
+    if (!category) return;
     const next = !row.enabled;
-    setBusy((b) => ({ ...b, [row.id]: true }));
-    try {
-      await api.builtinTools.setEnabled(row.category, next);
+    return mutate(row, "Couldn't toggle category", {
+      action: "toggle-builtin", category, target_enabled: next,
+    }, async () => {
+      await api.builtinTools.setEnabled(category, next);
       setBuiltins((prev) =>
-        prev.map((r) => (r.category === row.category ? { ...r, enabled: next } : r)),
+        prev.map((r) => (r.category === category ? { ...r, enabled: next } : r)),
       );
-    } catch (e) {
-      pushErrorToast({
-        title: "Couldn't toggle category",
-        error: e,
-        context: { panel: "packages", action: "toggle-builtin", category: row.category, target_enabled: next },
-      });
-    } finally {
-      setBusy((b) => ({ ...b, [row.id]: false }));
-    }
+    });
   }
 
-  async function toggleDefault(row: UnifiedRow) {
+  function toggleDefault(row: UnifiedRow) {
     const id = row.id.slice("default:".length);
-    setBusy((b) => ({ ...b, [row.id]: true }));
-    try {
-      await setDefaultEnabled(id, !row.enabled);
-    } catch (e) {
-      pushErrorToast({
-        title: "Couldn't toggle package",
-        error: e,
-        context: { panel: "packages", action: "toggle-default", id, target_enabled: !row.enabled },
-      });
-    } finally {
-      setBusy((b) => ({ ...b, [row.id]: false }));
-    }
+    return mutate(row, "Couldn't toggle package", {
+      action: "toggle-default", id, target_enabled: !row.enabled,
+    }, () => setDefaultEnabled(id, !row.enabled));
   }
 
-  async function toggleNpm(row: UnifiedRow) {
+  function toggleNpm(row: UnifiedRow) {
     const name = row.id.slice("npm:".length);
-    setBusy((b) => ({ ...b, [row.id]: true }));
-    try {
-      await setManifestEnabled(name, !row.enabled);
-    } catch (e) {
-      pushErrorToast({
-        title: "Couldn't toggle package",
-        error: e,
-        context: { panel: "packages", action: "toggle-npm", name, target_enabled: !row.enabled },
-      });
-    } finally {
-      setBusy((b) => ({ ...b, [row.id]: false }));
-    }
+    return mutate(row, "Couldn't toggle package", {
+      action: "toggle-npm", name, target_enabled: !row.enabled,
+    }, () => setManifestEnabled(name, !row.enabled));
   }
 
-  async function toggleDropin(row: UnifiedRow) {
+  function toggleDropin(row: UnifiedRow) {
     const name = row.id.slice("dropin:".length);
-    setBusy((b) => ({ ...b, [row.id]: true }));
-    try {
+    return mutate(row, "Couldn't toggle tool", {
+      action: "toggle-dropin", name, target_enabled: !row.enabled,
+    }, async () => {
       await api.extensions.setDropinEnabled(name, !row.enabled);
       setExt((prev) =>
         prev
           ? {
-              ...prev,
-              tools: prev.tools.map((t) =>
-                t.name === name ? { ...t, enabled: !row.enabled } : t,
-              ),
-            }
+            ...prev,
+            tools: prev.tools.map((t) =>
+              t.name === name ? { ...t, enabled: !row.enabled } : t,
+            ),
+          }
           : prev,
       );
-    } catch (e) {
-      pushErrorToast({
-        title: "Couldn't toggle tool",
-        error: e,
-        context: { panel: "packages", action: "toggle-dropin", name, target_enabled: !row.enabled },
-      });
-    } finally {
-      setBusy((b) => ({ ...b, [row.id]: false }));
-    }
+    });
   }
 
   async function removeManifest(row: UnifiedRow) {
@@ -348,18 +339,9 @@ export function UnifiedPackageList() {
     if (typeof window !== "undefined") {
       if (!(await confirmAction({ message: `Delete manifest "${name}"?`, destructive: true }))) return;
     }
-    setBusy((b) => ({ ...b, [row.id]: true }));
-    try {
-      await deleteManifest(name);
-    } catch (e) {
-      pushErrorToast({
-        title: "Couldn't delete manifest",
-        error: e,
-        context: { panel: "packages", action: "delete-manifest", name },
-      });
-    } finally {
-      setBusy((b) => ({ ...b, [row.id]: false }));
-    }
+    await mutate(row, "Couldn't delete manifest", {
+      action: "delete-manifest", name,
+    }, () => deleteManifest(name));
   }
 
   function openCredentials(integrationId: string) {
@@ -374,13 +356,17 @@ export function UnifiedPackageList() {
     }
   }
 
-  const counts: Record<Kind, number> = {
-    builtin: rows.filter((r) => r.kind === "builtin").length,
-    default: rows.filter((r) => r.kind === "default").length,
-    npm: rows.filter((r) => r.kind === "npm").length,
-    dropin: rows.filter((r) => r.kind === "dropin").length,
-  };
+  return { busy, toggleBuiltin, toggleDefault, toggleNpm, toggleDropin, removeManifest, openCredentials };
+}
 
+export function UnifiedPackageList() {
+  const sources = usePackageSources();
+  const { packages: { loadResult, refresh }, ext, loadingExtras, loadExtras, rows } = sources;
+  const actions = usePackageRowActions(sources);
+  const { query, setQuery, kindFilter, setKindFilter, filtered, searching, groups, counts } = usePackageFilters(rows);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [openGroups, setOpenGroups] = useState<Partial<Record<Kind, boolean>>>({});
+  const [showAll, setShowAll] = useState<Partial<Record<Kind, boolean>>>({});
   const dropInDir = ext?.directories.tools;
   const manifestErrors = loadResult?.errors ?? [];
   const extErrors = ext?.errors.filter((e) => e.kind === "tool") ?? [];
@@ -427,68 +413,18 @@ export function UnifiedPackageList() {
           No packages match the current filters.
         </p>
       ) : (
-        <div className="space-y-3">
-          {groups.map((g) => {
-            const isOpen = searching || (openGroups[g.kind] ?? g.kind !== "builtin");
-            const limit = searching || showAll[g.kind] ? g.rows.length : GROUP_PREVIEW;
-            return (
-              <div key={g.kind}>
-                <button
-                  type="button"
-                  aria-expanded={isOpen}
-                  disabled={searching}
-                  onClick={() => setOpenGroups((m) => ({ ...m, [g.kind]: !isOpen }))}
-                  className="control-tap touch-manipulation flex w-full items-center gap-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-fg-faint hover:text-fg-muted"
-                >
-                  <CollapseChevron open={isOpen} />
-                  {KIND_LABEL[g.kind]}
-                  <span className="normal-case tracking-normal">({g.rows.length})</span>
-                </button>
-                {isOpen && (
-                  <ul className="mt-1 space-y-2">
-          {g.rows.slice(0, limit).map((row) => (
-            <PackageListRow
-              key={row.id}
-              row={row}
-              busy={Boolean(busy[row.id])}
-              expanded={Boolean(expanded[row.id])}
-              onToggleExpand={() =>
-                setExpanded((m) => ({ ...m, [row.id]: !m[row.id] }))
-              }
-              onToggleEnabled={
-                row.kind === "builtin" && row.category === ALWAYS_ON_BUILTIN_CATEGORY
-                  ? undefined
-                  : () => {
-                      if (row.kind === "builtin") return toggleBuiltin(row);
-                      if (row.kind === "default") return toggleDefault(row);
-                      if (row.kind === "npm") return toggleNpm(row);
-                      if (row.kind === "dropin") return toggleDropin(row);
-                    }
-              }
-              onRemove={row.kind === "npm" ? () => removeManifest(row) : undefined}
-              onConfigureCredentials={
-                row.kind === "default" && row.integrationId
-                  ? () => openCredentials(row.integrationId!)
-                  : undefined
-              }
-              onSecretsSaved={loadExtras}
-            />
-          ))}
-                  </ul>
-                )}
-                {isOpen && g.rows.length > limit && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAll((m) => ({ ...m, [g.kind]: true }))}
-                    className="control-tap touch-manipulation mt-1 text-[11px] text-accent hover:text-accent-hover"
-                  >
-                    Show all {g.rows.length}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <PackageGroups
+          groups={groups}
+          searching={searching}
+          openGroups={openGroups}
+          setOpenGroups={setOpenGroups}
+          showAll={showAll}
+          setShowAll={setShowAll}
+          expanded={expanded}
+          setExpanded={setExpanded}
+          actions={actions}
+          loadExtras={loadExtras}
+        />
       )}
 
       {(manifestErrors.length > 0 || extErrors.length > 0) && (
@@ -521,6 +457,90 @@ export function UnifiedPackageList() {
         </div>
       )}
     </section>
+  );
+}
+
+type GroupFlags = Partial<Record<Kind, boolean>>;
+type FlagSetter<T> = React.Dispatch<React.SetStateAction<T>>;
+
+function PackageGroups({
+  groups, searching, openGroups, setOpenGroups, showAll, setShowAll, expanded, setExpanded, actions, loadExtras,
+}: {
+  groups: Array<{ kind: Kind; rows: UnifiedRow[] }>;
+  searching: boolean;
+  openGroups: GroupFlags;
+  setOpenGroups: FlagSetter<GroupFlags>;
+  showAll: GroupFlags;
+  setShowAll: FlagSetter<GroupFlags>;
+  expanded: Record<string, boolean>;
+  setExpanded: FlagSetter<Record<string, boolean>>;
+  actions: ReturnType<typeof usePackageRowActions>;
+  loadExtras: () => Promise<void>;
+}) {
+  const { busy, toggleBuiltin, toggleDefault, toggleNpm, toggleDropin, removeManifest, openCredentials } = actions;
+  return (
+    <div className="space-y-3">
+      {groups.map((g) => {
+        const isOpen = searching || (openGroups[g.kind] ?? g.kind !== "builtin");
+        const limit = searching || showAll[g.kind] ? g.rows.length : GROUP_PREVIEW;
+        return (
+          <div key={g.kind}>
+            <button
+              type="button"
+              aria-expanded={isOpen}
+              disabled={searching}
+              onClick={() => setOpenGroups((m) => ({ ...m, [g.kind]: !isOpen }))}
+              className="control-tap touch-manipulation flex w-full items-center gap-1.5 text-left text-[11px] font-medium uppercase tracking-wide text-fg-faint hover:text-fg-muted"
+            >
+              <CollapseChevron open={isOpen} />
+              {KIND_LABEL[g.kind]}
+              <span className="normal-case tracking-normal">({g.rows.length})</span>
+            </button>
+            {isOpen && (
+              <ul className="mt-1 space-y-2">
+                {g.rows.slice(0, limit).map((row) => (
+                  <PackageListRow
+                    key={row.id}
+                    row={row}
+                    busy={Boolean(busy[row.id])}
+                    expanded={Boolean(expanded[row.id])}
+                    onToggleExpand={() =>
+                      setExpanded((m) => ({ ...m, [row.id]: !m[row.id] }))
+                    }
+                    onToggleEnabled={
+                      row.kind === "builtin" && row.category === ALWAYS_ON_BUILTIN_CATEGORY
+                        ? undefined
+                        : () => {
+                          if (row.kind === "builtin") return toggleBuiltin(row);
+                          if (row.kind === "default") return toggleDefault(row);
+                          if (row.kind === "npm") return toggleNpm(row);
+                          if (row.kind === "dropin") return toggleDropin(row);
+                        }
+                    }
+                    onRemove={row.kind === "npm" ? () => removeManifest(row) : undefined}
+                    onConfigureCredentials={
+                      row.kind === "default" && row.integrationId
+                        ? () => openCredentials(row.integrationId!)
+                        : undefined
+                    }
+                    onSecretsSaved={loadExtras}
+                  />
+                ))}
+              </ul>
+            )}
+            {isOpen && g.rows.length > limit && (
+              <button
+                type="button"
+                onClick={() => setShowAll((m) => ({ ...m, [g.kind]: true }))}
+                className="control-tap touch-manipulation mt-1 text-[11px] text-accent hover:text-accent-hover"
+              >
+                    Show all {g.rows.length}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -711,13 +731,12 @@ function ExpandedToolList({ toolNames }: { toolNames: string[] }) {
   );
 }
 
-function DropInSecretsEditor({
-  tool,
-  onSaved,
-}: {
+interface DropInEditorProps {
   tool: ExternalToolInfo;
   onSaved: () => void | Promise<void>;
-}) {
+}
+
+function useDropInSettings({ tool, onSaved }: DropInEditorProps) {
   const [secretValues, setSecretValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(tool.secrets.map((s) => [s.key, s.is_set ? SECRET_MASK : ""])),
   );
@@ -743,14 +762,6 @@ function DropInSecretsEditor({
       Object.fromEntries(tool.config.map((s) => [s.key, s.value ?? s.default ?? ""])),
     );
   }, [tool.name, tool.config]);
-
-  if (tool.secrets.length === 0 && tool.config.length === 0) {
-    return (
-      <p className="mt-2 ml-6 text-[11px] text-fg-faint">
-        This drop-in tool declares no credentials or configuration.
-      </p>
-    );
-  }
 
   async function saveSecrets() {
     setSavingSecrets(true);
@@ -794,6 +805,25 @@ function DropInSecretsEditor({
     }
   }
 
+  return {
+    secretValues, setSecretValues, savingSecrets, secretErr, secretStatus, saveSecrets,
+    configValues, setConfigValues, savingConfig, configErr, configStatus, saveConfig,
+  };
+}
+
+function DropInSecretsEditor(props: DropInEditorProps) {
+  const { tool } = props;
+  const {
+    secretValues, setSecretValues, savingSecrets, secretErr, secretStatus, saveSecrets,
+    configValues, setConfigValues, savingConfig, configErr, configStatus, saveConfig,
+  } = useDropInSettings(props);
+  if (tool.secrets.length === 0 && tool.config.length === 0) {
+    return (
+      <p className="mt-2 ml-6 text-[11px] text-fg-faint">
+        This drop-in tool declares no credentials or configuration.
+      </p>
+    );
+  }
   return (
     <div className="mt-2 ml-6 border-l border-border/60 pl-3 space-y-4">
       {tool.secrets.length > 0 && (

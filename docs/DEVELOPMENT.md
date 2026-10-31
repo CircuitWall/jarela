@@ -17,6 +17,35 @@ For JSON response contracts and validation rules, see the
 exceptions and technical debt reporting, see
 [Contributing](https://github.com/CircuitWall/jarela/blob/main/CONTRIBUTING.md#api-design-and-technical-debt).
 
+The function-size check is not a decision-complexity score. Refactors should
+give independent responsibilities typed boundaries, collapse duplicate paths,
+and preserve behavior with executable checks; compressed formatting and
+arbitrary line-based splits are not debt reduction.
+The unreleased cleanup leaves no function-size exceptions; the unchanged
+150-line limit still applies to every production TypeScript/TSX function,
+including nested callbacks and workspace sources.
+
+The unreleased backend cleanup separates fresh-schema SQL from ordered upgrade
+steps without changing the schema, and separates dashboard usage normalization,
+shared daily/global accumulation, ranking, and pricing. Bridge dispatch owns
+typing cleanup independently of reply delivery; WhatsApp socket setup registers
+dedicated event handlers and shares identical chat-update handling. Contribution
+test execution starts only after its isolated worktree staging phase completes.
+Currency lookups share FX response construction while retaining existing
+fallback bodies, country attribution, and warning paths.
+
+Agent execution also separates admission, routing, context assembly, stream
+handling, retry assessment, persistence, accounting, and delegation validation.
+It continues to use the existing queues and stores. The refactor's fixed-clock
+verification assembled all 46 prompt variants and found their bytes unchanged;
+focused stage tests cover the run route, LLM streaming, and thread preparation.
+This does not certify live providers or remove the underlying lifecycle decisions.
+
+These boundaries are covered by the migration, agent-config, dashboard-metrics,
+bridge dispatcher/WhatsApp, contribution-service, and dashboard currency route
+tests. Mocked transport checks do not certify live WhatsApp pairing, currency
+providers, or other external services.
+
 ## Documentation history chart
 
 `npm run docs:build` regenerates the [project history chart](PROJECT_HISTORY.md)
@@ -152,6 +181,24 @@ platform/load dependent. To exercise the actual watcher pipeline on Windows
 or another host explicitly, set `JARELA_E2E_NATIVE_WATCHER=1` and run
 `npx playwright test documents-watcher.spec.ts --project=chromium-desktop`.
 This opt-in does not replace failures with skips or certify other operating systems.
+
+The unreleased local-source sweep consolidates file processing in
+`lib/documents/indexer.ts`: stable metadata avoids reading the file, unchanged
+content preserves chunks and backfills missing embeddings, and forced rescans
+use the same upsert path as changed content. Only returned upserts and
+nonempty backfills consume the per-tick processing budget; binary/unreadable
+files and fully embedded unchanged files do not. Per-file exceptions are
+recorded on the source while the sweep continues. Verify these invariants and
+the shared watcher upsert with `npx vitest run lib/documents`; these mocked
+embedding checks do not certify live embedding providers or native watchers.
+
+The unreleased search cleanup uses one source-filtered SQL query and one
+substring fallback path. Exact exclusions are evaluated once per chunk before
+topic checks, ranking, and limiting. Positive semantic scores at or below the
+configured floor remain suppressed even when text matches; missing embeddings,
+dimension mismatches, and nonpositive scores retain substring fallback. Topic
+validation still fails closed before any fallback or reindex repair. These
+contracts are covered by `lib/documents/search.test.ts` in the same suite.
 
 The local embedding benchmark is also opt-in: set
 `JARELA_BENCHMARK_EMBEDDINGS=1` and run

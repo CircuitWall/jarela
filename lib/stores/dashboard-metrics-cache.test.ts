@@ -140,4 +140,41 @@ describe("dashboard metrics cache", () => {
     expect(data.series.filter((point) => point.day !== day.day).every((point) =>
       Object.values(point.cost_breakdown).every((cost) => cost === 0))).toBe(true);
   });
+
+  it.each([0, 100])("suppresses user estimates only for provider-token snapshots: %s", async (inputTokens) => {
+    const now = new Date().toISOString();
+    getDb().prepare("INSERT INTO messages(msg_id, thread_id, role, content, created_at) VALUES (?,?,?,?,?)")
+      .run("user-estimate", "t1", "user", "u".repeat(80), now);
+    recordMessageUsage({
+      message_id: "m1", thread_id: "t1", agent_id: "captured-agent", agent_name: "Captured Agent",
+      provider: "synthetic", model_id: "captured-model", model_config_name: "Captured Config",
+      input_tokens: inputTokens, output_tokens: 10, input_rate_usd_per_mtok: null,
+      output_rate_usd_per_mtok: null, cost_usd: 0.5, cache_read_input_tokens: 5,
+      tier_usage: {
+        hot_tokens: 4, warm_tokens: 3, facts_tokens: 2, overhead_tokens: 1,
+        hot_budget_tokens: 10, warm_budget_tokens: 10, facts_budget_tokens: 10, context_window_tokens: 100,
+      },
+    });
+    const data = await getDashboardMetrics();
+    const day = data.breakdowns_by_day[now.slice(0, 10)];
+    expect(data.summary.input_tokens_est).toBe(inputTokens > 0 ? inputTokens : 20);
+    expect(data.summary.output_tokens_est).toBe(10);
+    expect(data.summary.cache_read_tokens).toBe(5);
+    expect(data.summary.data_quality).toEqual({ measured_messages: 1, estimated_messages: 0, measured_pct: 1 });
+    expect(data.summary.tier_tokens).toEqual({
+      hot_tokens: 4, warm_tokens: 3, facts_tokens: 2, overhead_tokens: 1, measured_input_tokens: 10,
+    });
+    expect(day.summary.input_tokens_est).toBe(data.summary.input_tokens_est);
+    expect(day.summary.tier_tokens).toEqual(data.summary.tier_tokens);
+    for (const buckets of [data.by_provider, data.by_model, data.top_agents, day.by_provider, day.by_model, day.top_agents]) {
+      expect(buckets.reduce((sum, bucket) => sum + bucket.input_tokens_est, 0)).toBe(data.summary.input_tokens_est);
+      expect(buckets.reduce((sum, bucket) => sum + bucket.message_count, 0)).toBe(2);
+    }
+    expect(data.top_agents).toContainEqual(expect.objectContaining({
+      agent_id: "captured-agent", agent_name: "Captured Agent", output_tokens_est: 10,
+    }));
+    expect(data.by_model).toContainEqual(expect.objectContaining({
+      model_id: "captured-model", model_config_name: "Captured Config", output_tokens_est: 10,
+    }));
+  });
 });

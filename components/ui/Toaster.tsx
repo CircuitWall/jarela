@@ -46,8 +46,7 @@ export function Toaster() {
   );
 }
 
-function ToastCard({ toast }: { toast: Toast }) {
-  const { dispatch } = useAppContext();
+function useToastLifetime(toast: Toast) {
   const [paused, setPaused] = useState(false);
   const [exiting, setExiting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -91,6 +90,40 @@ function ToastCard({ toast }: { toast: Toast }) {
     setTimeout(() => dismissToast(toast.id), 200);
   }
 
+  return { paused, setPaused, exiting, close };
+}
+
+function useToastReport(toast: Toast) {
+  const [copied, setCopied] = useState(false);
+
+  async function onCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!toast.reportInput) return;
+    const { body } = await buildReport(toast.reportInput);
+    try {
+      await navigator.clipboard.writeText(body);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      const win = window.open("", "_blank", "noopener,noreferrer,width=600,height=400");
+      if (win) win.document.body.innerText = body;
+    }
+  }
+
+  async function onReport(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!toast.reportInput) return;
+    const { url } = await buildReport(toast.reportInput);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  return { copied, onCopy, onReport };
+}
+
+function ToastCard({ toast }: { toast: Toast }) {
+  const { dispatch } = useAppContext();
+  const { paused, setPaused, exiting, close } = useToastLifetime(toast);
+  const { copied, onCopy, onReport } = useToastReport(toast);
   function open() {
     if (toast.href) {
       const parsed = parseHref(toast.href);
@@ -119,44 +152,6 @@ function ToastCard({ toast }: { toast: Toast }) {
   // trigger the body's open()/navigate behavior.
   const hasReport = isError && (toast.details != null || toast.reportInput != null);
   const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  async function onCopy(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!toast.reportInput) return;
-    const { body } = await buildReport(toast.reportInput);
-    try {
-      await navigator.clipboard.writeText(body);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard rejected (no focus, secure context, etc.) — open a window
-      // with the text instead so the user can copy manually.
-      const win = window.open("", "_blank", "noopener,noreferrer,width=600,height=400");
-      if (win) {
-        win.document.body.innerText = body;
-      }
-    }
-  }
-
-  async function onReport(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!toast.reportInput) return;
-    const { url } = await buildReport(toast.reportInput);
-    window.open(url, "_blank", "noopener,noreferrer");
-  }
-  // Avatar — when we have an agent_id use a deterministic gradient. Otherwise
-  // fall back to a generic bot icon.
-  const avatar = toast.agent_id ? (
-    <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradientFor(toast.agent_id)} flex items-center justify-center text-sm font-bold text-white shrink-0`}>
-      {toast.title.charAt(0).toUpperCase()}
-    </span>
-  ) : (
-    <span className="w-9 h-9 rounded-lg bg-surface-3 flex items-center justify-center shrink-0">
-      {isError ? <AlertCircle size={16} className="text-rose-700 dark:text-rose-400" /> : <Bot size={16} className="text-fg-muted" />}
-    </span>
-  );
-
   return (
     <div
       onMouseEnter={() => setPaused(true)}
@@ -172,7 +167,7 @@ function ToastCard({ toast }: { toast: Toast }) {
           aria-label={`Open notification: ${toast.title}`}
           className="control-tap flex min-w-0 flex-1 items-start gap-3 rounded-md text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         >
-          {avatar}
+          <ToastAvatar toast={toast} />
           <span className="flex-1 min-w-0">
             <span className="block text-[10px] uppercase tracking-wider text-fg-faint font-semibold truncate">
               {toast.sourceLabel}
@@ -264,4 +259,17 @@ function ToastCard({ toast }: { toast: Toast }) {
       )}
     </div>
   );
+}
+
+function ToastAvatar({ toast }: { toast: Toast }) {
+  return toast.agent_id ? (
+    <span className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradientFor(toast.agent_id)} flex items-center justify-center text-sm font-bold text-white shrink-0`}>
+      {toast.title.charAt(0).toUpperCase()}
+    </span>
+  ) : (
+    <span className="w-9 h-9 rounded-lg bg-surface-3 flex items-center justify-center shrink-0">
+      {toast.kind === "error" ? <AlertCircle size={16} className="text-rose-700 dark:text-rose-400" /> : <Bot size={16} className="text-fg-muted" />}
+    </span>
+  );
+
 }

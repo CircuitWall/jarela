@@ -305,6 +305,42 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     return metricsCache.metrics;
   }
 
+  const rows = readDashboardUsage(db, since);
+  const dayMap = seedDayBuckets(now, boundedDays);
+  const { totals, attribution, days: dayBreakdowns } = aggregateDashboardUsage(rows, tables, dayMap);
+  const series = buildDashboardSeries(dayMap);
+  const metrics: DashboardMetrics = {
+    generated_at: now.toISOString(),
+    days: boundedDays,
+    summary: {
+      input_tokens_est: totals.inputTokens,
+      output_tokens_est: totals.outputTokens,
+      estimated_cost_usd: totals.estimatedCost,
+      cost_breakdown: totals.cost_breakdown,
+      recorded_cost_usd: totals.recordedCost,
+      cache_read_tokens: totals.cacheRead,
+      cache_hit_rate: round4(totals.cacheRead > 0 ? totals.cacheRead / (totals.inputTokens + totals.cacheRead) : 0),
+      tool_calls: totals.toolCalls,
+      tool_successes: totals.toolSuccesses,
+      tool_errors: totals.toolErrors,
+      success_rate: round4(totals.toolCalls > 0 ? totals.toolSuccesses / totals.toolCalls : 1),
+      error_rate: round4(totals.toolCalls > 0 ? totals.toolErrors / totals.toolCalls : 0),
+      tier_tokens: tierBucketToTokens(totals.tier),
+      data_quality: computeDataQuality(totals.measured, totals.estimated),
+    },
+    series,
+    top_tools: dashboardTopTools(),
+    top_agents: rankDashboardBuckets(attribution.agents, (row) => row.agent_name).slice(0, 8),
+    by_provider: rankDashboardBuckets(attribution.providers, (row) => row.provider),
+    by_model: rankDashboardBuckets(attribution.models, (row) => row.model_config_name),
+    breakdowns_by_day: buildDayBreakdowns(dayBreakdowns, series),
+    pricing: dashboardPricing(tables),
+  };
+  metricsCache = { db, changes, dataVersion, tables, createdAt: now.getTime(), metrics };
+  return metrics;
+}
+
+function readDashboardUsage(db: ReturnType<typeof getDb>, since: string): UsageRow[] {
   const usageRows = db
     .prepare(
       `SELECT m.created_at, m.role,
@@ -345,281 +381,208 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     )
     .all(since) as UsageRow[];
 
-  // ADR-0041: when an assistant turn has a snapshot, its `input_tokens`
-  // already accounts for the entire prompt the model saw — so we must NOT
-  // also count this thread's user messages via the content-length estimate
-  // or we double-count. Track which threads have any snapshot in the
-  // window and suppress their user-side estimates wholesale. Threads with
-  // zero snapshots (legacy data, or recorded before the migration) fall
-  // back to the old estimate path unchanged.
-  const snapshotThreadIds = new Set<string>();
-  for (const r of usageRows) {
-    // A row with provider tokens (input_tokens > 0) is the authoritative
-    // count the dashboard cares about. Snapshot-only rows persisted for
-    // the per-tier context-usage bar carry input_tokens=0 + cost_usd=null
-    // and must NOT suppress the content-length estimate for that thread.
-    if (r.mu_input_tokens != null && r.mu_input_tokens > 0) {
-      snapshotThreadIds.add(r.thread_id);
-    }
-  }
+  return usageRows;
+}
 
-  const { byProvider, generatedAt } = tables;
-  const dayMap = seedDayBuckets(now, boundedDays);
-  const agentMap = new Map<string, AgentBucket>();
-  const providerMap = new Map<string, ProviderBucket>();
-  const modelMap = new Map<string, ModelBucket>();
-  // Per-day breakdown maps. Populated lazily — only days that saw traffic
-  // get an entry. Each entry mirrors the global agent/provider/model maps
-  // but scoped to that day so the UI can re-slice when a day is selected.
-  type DayBreakdownBucket = {
-    agents: Map<string, AgentBucket>;
-    providers: Map<string, ProviderBucket>;
-    models: Map<string, ModelBucket>;
+type UsageAttribution = {
+  agentId: string;
+  agentName: string | null;
+  provider: string | null;
+  modelId: string | null;
+  modelConfig: string | null;
+};
+
+function resolveDashboardUsage(row: UsageRow, threadHasSnapshot: boolean, tables: PricingTables) {
+  const hasSnapshot = row.mu_input_tokens != null;
+  const attribution: UsageAttribution = {
+    agentId: row.mu_agent_id ?? row.agent_id,
+    agentName: row.mu_agent_name ?? row.agent_name,
+    provider: row.mu_provider ?? row.provider,
+    modelId: row.mu_model_id ?? row.model_id,
+    modelConfig: row.mu_model_config_name ?? row.model_config_name,
   };
-  const dayBreakdownMap = new Map<string, DayBreakdownBucket>();
-  const ensureDayBreakdown = (day: string): DayBreakdownBucket => {
-    let entry = dayBreakdownMap.get(day);
-    if (!entry) {
-      entry = { agents: new Map(), providers: new Map(), models: new Map() };
-      dayBreakdownMap.set(day, entry);
-    }
-    return entry;
-  };
-
-  let totalInput = 0;
-  let totalOutput = 0;
-  let totalCost = 0;
-  let totalRecordedCost = 0;
-  let totalCacheRead = 0;
-  let totalCalls = 0;
-  let totalSuccesses = 0;
-  let totalErrors = 0;
-  const tierTotals: TierBucket = { hot: 0, warm: 0, facts: 0, overhead: 0 };
-  // Data-quality counters: only assistant turns are eligible since
-  // user/system rows never carry a message_usage snapshot by design.
-  let measuredAssistantMessages = 0;
-  let estimatedAssistantMessages = 0;
-  const totalCosts = emptyCostBreakdown();
-
-  for (const row of usageRows) {
-    const day = row.created_at.slice(0, 10);
-    const dayBucket = dayMap.get(day);
-    if (!dayBucket) continue;
-
-    // ADR-0041: snapshots keep provider tokens and attribution stable;
-    // display cost is recalculated separately from current rates.
-    const hasSnapshot = row.mu_input_tokens != null;
-    const threadHasSnapshot = snapshotThreadIds.has(row.thread_id);
-
-    let inputTokens = 0;
-    let outputTokens = 0;
-    let estCost = 0;
-    let costs = emptyCostBreakdown();
-    let attribProvider: string | null = row.provider;
-    let attribModelId: string | null = row.model_id;
-    let attribModelConfig: string | null = row.model_config_name;
-    let attribAgentId: string = row.agent_id;
-    let attribAgentName: string | null = row.agent_name;
-
-    if (hasSnapshot) {
-      inputTokens = row.mu_input_tokens ?? 0;
-      outputTokens = row.mu_output_tokens ?? 0;
-      attribProvider = row.mu_provider ?? attribProvider;
-      attribModelId = row.mu_model_id ?? attribModelId;
-      attribModelConfig = row.mu_model_config_name ?? attribModelConfig;
-      attribAgentId = row.mu_agent_id ?? attribAgentId;
-      attribAgentName = row.mu_agent_name ?? attribAgentName;
-      const recordedCost = row.mu_cost_usd ?? 0;
-      totalRecordedCost += recordedCost;
-      costs = recalculateSnapshotCostBreakdown({
-        provider: attribProvider ?? "",
-        modelId: attribModelId ?? "",
-        inputTokens,
-        outputTokens,
-        cacheCreationTokens: row.mu_cache_creation,
-        cacheReadTokens: row.mu_cache_read,
-        recordedCostUsd: recordedCost,
-      }, tables);
-      estCost = totalCostBreakdown(costs);
-      if (row.role === "assistant") measuredAssistantMessages += 1;
-      // Accumulate tier breakdown — null columns (legacy snapshots
-      // before the tier wire-up) contribute zero, which is the right
-      // behaviour for a stacked bar that visualises *known* tier split.
-      const hot = row.mu_hot_tokens ?? 0;
-      const warm = row.mu_warm_tokens ?? 0;
-      const facts = row.mu_facts_tokens ?? 0;
-      const overhead = row.mu_overhead_tokens ?? 0;
-      totalCacheRead += row.mu_cache_read ?? 0;
-      tierTotals.hot += hot;
-      tierTotals.warm += warm;
-      tierTotals.facts += facts;
-      tierTotals.overhead += overhead;
-      dayBucket.tier.hot += hot;
-      dayBucket.tier.warm += warm;
-      dayBucket.tier.facts += facts;
-      dayBucket.tier.overhead += overhead;
-    } else if (row.role === "user" && threadHasSnapshot) {
-      // Suppressed: snapshotted assistant turns in this thread already
-      // capture this user message's tokens in their input_tokens.
-      // Still contributes message_count via the rest of the loop.
-    } else {
-      const tokenEstimate = estimateTokens(row.content);
-      const isInput = row.role === "user";
-      inputTokens = isInput ? tokenEstimate : 0;
-      outputTokens = isInput ? 0 : tokenEstimate;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let estimatedCost = 0;
+  let costs = emptyCostBreakdown();
+  const tier: TierBucket = { hot: 0, warm: 0, facts: 0, overhead: 0 };
+  let estimated = 0;
+  if (hasSnapshot) {
+    inputTokens = row.mu_input_tokens ?? 0;
+    outputTokens = row.mu_output_tokens ?? 0;
+    costs = recalculateSnapshotCostBreakdown({
+      provider: attribution.provider ?? "",
+      modelId: attribution.modelId ?? "",
+      inputTokens, outputTokens,
+      cacheCreationTokens: row.mu_cache_creation,
+      cacheReadTokens: row.mu_cache_read,
+      recordedCostUsd: row.mu_cost_usd ?? 0,
+    }, tables);
+    estimatedCost = totalCostBreakdown(costs);
+    tier.hot = row.mu_hot_tokens ?? 0;
+    tier.warm = row.mu_warm_tokens ?? 0;
+    tier.facts = row.mu_facts_tokens ?? 0;
+    tier.overhead = row.mu_overhead_tokens ?? 0;
+  } else {
+    // Snapshot attribution is authoritative only when a snapshot exists.
+    attribution.agentId = row.agent_id;
+    attribution.agentName = row.agent_name;
+    attribution.provider = row.provider;
+    attribution.modelId = row.model_id;
+    attribution.modelConfig = row.model_config_name;
+    if (!(row.role === "user" && threadHasSnapshot)) {
+      const tokens = estimateTokens(row.content);
+      inputTokens = row.role === "user" ? tokens : 0;
+      outputTokens = row.role === "user" ? 0 : tokens;
       const rates = modelRatesFor(tables, row.provider, row.model_id);
-      estCost = estimateCostUsd(inputTokens, outputTokens, rates);
+      estimatedCost = estimateCostUsd(inputTokens, outputTokens, rates);
       costs = {
         input_cost_usd: estimateCostUsd(inputTokens, 0, rates),
         output_cost_usd: estimateCostUsd(0, outputTokens, rates),
         unattributed_cost_usd: 0,
       };
-      if (row.role === "assistant") estimatedAssistantMessages += 1;
-    }
-
-    dayBucket.inputTokens += inputTokens;
-    dayBucket.outputTokens += outputTokens;
-    dayBucket.estimatedCost += estCost;
-    addCostBreakdown(dayBucket.cost_breakdown, costs);
-
-    totalInput += inputTokens;
-    totalOutput += outputTokens;
-    totalCost += estCost;
-    addCostBreakdown(totalCosts, costs);
-
-    const agentName = attribAgentName?.trim() || attribAgentId;
-    const agentBucket = agentMap.get(attribAgentId) ?? {
-      agent_id: attribAgentId,
-      agent_name: agentName,
-      message_count: 0,
-      input_tokens_est: 0,
-      output_tokens_est: 0,
-      estimated_cost_usd: 0,
-      cost_breakdown: emptyCostBreakdown(),
-    };
-    agentBucket.message_count += 1;
-    agentBucket.input_tokens_est += inputTokens;
-    agentBucket.output_tokens_est += outputTokens;
-    agentBucket.estimated_cost_usd += estCost;
-    addCostBreakdown(agentBucket.cost_breakdown, costs);
-    agentMap.set(attribAgentId, agentBucket);
-
-    const providerName = attribProvider?.trim().toLowerCase() || "unassigned";
-    const providerBucket = providerMap.get(providerName) ?? {
-      provider: providerName,
-      message_count: 0,
-      input_tokens_est: 0,
-      output_tokens_est: 0,
-      estimated_cost_usd: 0,
-      cost_breakdown: emptyCostBreakdown(),
-    };
-    providerBucket.message_count += 1;
-    providerBucket.input_tokens_est += inputTokens;
-    providerBucket.output_tokens_est += outputTokens;
-    providerBucket.estimated_cost_usd += estCost;
-    addCostBreakdown(providerBucket.cost_breakdown, costs);
-    providerMap.set(providerName, providerBucket);
-
-    const modelConfigName = attribModelConfig?.trim() || "unassigned";
-    const modelId = attribModelId?.trim() || "unknown";
-    const modelKey = `${providerName}::${modelConfigName}::${modelId}`;
-    const modelBucket = modelMap.get(modelKey) ?? {
-      model_config_name: modelConfigName,
-      provider: providerName,
-      model_id: modelId,
-      message_count: 0,
-      input_tokens_est: 0,
-      output_tokens_est: 0,
-      estimated_cost_usd: 0,
-      cost_breakdown: emptyCostBreakdown(),
-    };
-    modelBucket.message_count += 1;
-    modelBucket.input_tokens_est += inputTokens;
-    modelBucket.output_tokens_est += outputTokens;
-    modelBucket.estimated_cost_usd += estCost;
-    addCostBreakdown(modelBucket.cost_breakdown, costs);
-    modelMap.set(modelKey, modelBucket);
-
-    const dayBreakdown = ensureDayBreakdown(day);
-    const dayAgent = dayBreakdown.agents.get(attribAgentId) ?? {
-      agent_id: attribAgentId,
-      agent_name: agentName,
-      message_count: 0,
-      input_tokens_est: 0,
-      output_tokens_est: 0,
-      estimated_cost_usd: 0,
-      cost_breakdown: emptyCostBreakdown(),
-    };
-    dayAgent.message_count += 1;
-    dayAgent.input_tokens_est += inputTokens;
-    dayAgent.output_tokens_est += outputTokens;
-    dayAgent.estimated_cost_usd += estCost;
-    addCostBreakdown(dayAgent.cost_breakdown, costs);
-    dayBreakdown.agents.set(attribAgentId, dayAgent);
-
-    const dayProvider = dayBreakdown.providers.get(providerName) ?? {
-      provider: providerName,
-      message_count: 0,
-      input_tokens_est: 0,
-      output_tokens_est: 0,
-      estimated_cost_usd: 0,
-      cost_breakdown: emptyCostBreakdown(),
-    };
-    dayProvider.message_count += 1;
-    dayProvider.input_tokens_est += inputTokens;
-    dayProvider.output_tokens_est += outputTokens;
-    dayProvider.estimated_cost_usd += estCost;
-    addCostBreakdown(dayProvider.cost_breakdown, costs);
-    dayBreakdown.providers.set(providerName, dayProvider);
-
-    const dayModel = dayBreakdown.models.get(modelKey) ?? {
-      model_config_name: modelConfigName,
-      provider: providerName,
-      model_id: modelId,
-      message_count: 0,
-      input_tokens_est: 0,
-      output_tokens_est: 0,
-      estimated_cost_usd: 0,
-      cost_breakdown: emptyCostBreakdown(),
-    };
-    dayModel.message_count += 1;
-    dayModel.input_tokens_est += inputTokens;
-    dayModel.output_tokens_est += outputTokens;
-    dayModel.estimated_cost_usd += estCost;
-    addCostBreakdown(dayModel.cost_breakdown, costs);
-    dayBreakdown.models.set(modelKey, dayModel);
-
-    if (row.tool_events && row.tool_events.length > 1) {
-      const usage = summarizeEvents(row.tool_events);
-      if (usage.calls > 0) {
-        dayBucket.toolCalls += usage.calls;
-        dayBucket.toolSuccesses += usage.successes;
-        dayBucket.toolErrors += usage.errors;
-        totalCalls += usage.calls;
-        totalSuccesses += usage.successes;
-        totalErrors += usage.errors;
-      }
+      if (row.role === "assistant") estimated = 1;
     }
   }
+  return {
+    attribution, inputTokens, outputTokens, estimatedCost, costs, tier, estimated,
+    measured: hasSnapshot && row.role === "assistant" ? 1 : 0,
+    recordedCost: hasSnapshot ? row.mu_cost_usd ?? 0 : 0,
+    cacheRead: hasSnapshot ? row.mu_cache_read ?? 0 : 0,
+  };
+}
 
-  const series = [...dayMap.entries()].map(([day, b]) => {
-    const successRate = b.toolCalls > 0 ? b.toolSuccesses / b.toolCalls : 1;
-    const errorRate = b.toolCalls > 0 ? b.toolErrors / b.toolCalls : 0;
-    return {
+type ResolvedDashboardUsage = ReturnType<typeof resolveDashboardUsage>;
+type AttributionMaps = {
+  agents: Map<string, AgentBucket>;
+  providers: Map<string, ProviderBucket>;
+  models: Map<string, ModelBucket>;
+};
+
+function createAttributionMaps(): AttributionMaps {
+  return { agents: new Map(), providers: new Map(), models: new Map() };
+}
+
+function emptyUsageBucket() {
+  return { message_count: 0, input_tokens_est: 0, output_tokens_est: 0, estimated_cost_usd: 0, cost_breakdown: emptyCostBreakdown() };
+}
+
+function addUsageBucket<T extends ReturnType<typeof emptyUsageBucket>>(
+  map: Map<string, T>, key: string, seed: T, usage: ResolvedDashboardUsage,
+): void {
+  const bucket = map.get(key) ?? seed;
+  bucket.message_count += 1;
+  bucket.input_tokens_est += usage.inputTokens;
+  bucket.output_tokens_est += usage.outputTokens;
+  bucket.estimated_cost_usd += usage.estimatedCost;
+  addCostBreakdown(bucket.cost_breakdown, usage.costs);
+  map.set(key, bucket);
+}
+
+function addDashboardAttribution(maps: AttributionMaps, usage: ResolvedDashboardUsage): void {
+  const { agentId, agentName, provider, modelId, modelConfig } = usage.attribution;
+  const providerName = provider?.trim().toLowerCase() || "unassigned";
+  const modelConfigName = modelConfig?.trim() || "unassigned";
+  const resolvedModelId = modelId?.trim() || "unknown";
+  addUsageBucket(maps.agents, agentId, {
+    ...emptyUsageBucket(), agent_id: agentId, agent_name: agentName?.trim() || agentId,
+  }, usage);
+  addUsageBucket(maps.providers, providerName, {
+    ...emptyUsageBucket(), provider: providerName,
+  }, usage);
+  addUsageBucket(maps.models, `${providerName}::${modelConfigName}::${resolvedModelId}`, {
+    ...emptyUsageBucket(), model_config_name: modelConfigName, provider: providerName, model_id: resolvedModelId,
+  }, usage);
+}
+
+function addDashboardDay(bucket: DayBucket, usage: ResolvedDashboardUsage, tools: ReturnType<typeof summarizeEvents>): void {
+  bucket.inputTokens += usage.inputTokens;
+  bucket.outputTokens += usage.outputTokens;
+  bucket.estimatedCost += usage.estimatedCost;
+  addCostBreakdown(bucket.cost_breakdown, usage.costs);
+  bucket.tier.hot += usage.tier.hot;
+  bucket.tier.warm += usage.tier.warm;
+  bucket.tier.facts += usage.tier.facts;
+  bucket.tier.overhead += usage.tier.overhead;
+  bucket.toolCalls += tools.calls;
+  bucket.toolSuccesses += tools.successes;
+  bucket.toolErrors += tools.errors;
+}
+
+function aggregateDashboardUsage(rows: UsageRow[], tables: PricingTables, dayMap: Map<string, DayBucket>) {
+  // Only provider-token snapshots suppress user estimates, not context-only snapshots.
+  const snapshotThreadIds = new Set(rows.filter((row) => row.mu_input_tokens != null && row.mu_input_tokens > 0)
+    .map((row) => row.thread_id));
+  const attribution = createAttributionMaps();
+  const days = new Map<string, AttributionMaps>();
+  const totals = {
+    inputTokens: 0, outputTokens: 0, estimatedCost: 0, cost_breakdown: emptyCostBreakdown(),
+    toolCalls: 0, toolSuccesses: 0, toolErrors: 0,
+    tier: { hot: 0, warm: 0, facts: 0, overhead: 0 },
+    recordedCost: 0, cacheRead: 0, measured: 0, estimated: 0,
+  };
+  for (const row of rows) {
+    const day = row.created_at.slice(0, 10);
+    const bucket = dayMap.get(day);
+    if (!bucket) continue;
+    const usage = resolveDashboardUsage(row, snapshotThreadIds.has(row.thread_id), tables);
+    const tools = row.tool_events && row.tool_events.length > 1
+      ? summarizeEvents(row.tool_events) : { calls: 0, successes: 0, errors: 0 };
+    addDashboardDay(bucket, usage, tools);
+    addDashboardDay(totals, usage, tools);
+    totals.recordedCost += usage.recordedCost;
+    totals.cacheRead += usage.cacheRead;
+    totals.measured += usage.measured;
+    totals.estimated += usage.estimated;
+    const dayAttribution = days.get(day) ?? createAttributionMaps();
+    addDashboardAttribution(attribution, usage);
+    addDashboardAttribution(dayAttribution, usage);
+    days.set(day, dayAttribution);
+  }
+  return { totals, attribution, days };
+}
+
+function buildDashboardSeries(dayMap: Map<string, DayBucket>): DashboardSeriesPoint[] {
+  return [...dayMap.entries()].map(([day, b]) => ({
+    day, input_tokens_est: b.inputTokens, output_tokens_est: b.outputTokens,
+    estimated_cost_usd: b.estimatedCost, cost_breakdown: b.cost_breakdown,
+    tool_calls: b.toolCalls, tool_successes: b.toolSuccesses, tool_errors: b.toolErrors,
+    success_rate: round4(b.toolCalls > 0 ? b.toolSuccesses / b.toolCalls : 1),
+    error_rate: round4(b.toolCalls > 0 ? b.toolErrors / b.toolCalls : 0),
+    tier_tokens: tierBucketToTokens(b.tier),
+  }));
+}
+
+function rankDashboardBuckets<T extends { estimated_cost_usd: number; message_count: number }>(
+  map: Map<string, T>, label: (bucket: T) => string,
+): T[] {
+  return [...map.values()].sort((a, b) =>
+    b.estimated_cost_usd - a.estimated_cost_usd || b.message_count - a.message_count || label(a).localeCompare(label(b)));
+}
+
+function buildDayBreakdowns(days: Map<string, AttributionMaps>, series: DashboardSeriesPoint[]): Record<string, DashboardDayBreakdown> {
+  const seriesByDay = new Map(series.map((point) => [point.day, point]));
+  return Object.fromEntries([...days].map(([day, bucket]) => {
+    const point = seriesByDay.get(day);
+    return [day, {
       day,
-      input_tokens_est: b.inputTokens,
-      output_tokens_est: b.outputTokens,
-      estimated_cost_usd: b.estimatedCost,
-      cost_breakdown: b.cost_breakdown,
-      tool_calls: b.toolCalls,
-      tool_successes: b.toolSuccesses,
-      tool_errors: b.toolErrors,
-      success_rate: round4(successRate),
-      error_rate: round4(errorRate),
-      tier_tokens: tierBucketToTokens(b.tier),
-    } satisfies DashboardSeriesPoint;
-  });
+      summary: {
+        input_tokens_est: point?.input_tokens_est ?? 0,
+        output_tokens_est: point?.output_tokens_est ?? 0,
+        estimated_cost_usd: point?.estimated_cost_usd ?? 0,
+        cost_breakdown: point?.cost_breakdown ?? emptyCostBreakdown(),
+        tool_calls: point?.tool_calls ?? 0, tool_successes: point?.tool_successes ?? 0,
+        tool_errors: point?.tool_errors ?? 0, success_rate: point?.success_rate ?? 1,
+        error_rate: point?.error_rate ?? 0, tier_tokens: point?.tier_tokens ?? emptyTierTokens(),
+      },
+      top_agents: rankDashboardBuckets(bucket.agents, (row) => row.agent_name).slice(0, 8),
+      by_provider: rankDashboardBuckets(bucket.providers, (row) => row.provider),
+      by_model: rankDashboardBuckets(bucket.models, (row) => row.model_config_name),
+    }];
+  }));
+}
 
+function dashboardTopTools(): DashboardToolTop[] {
   const top_tools = listToolStats()
     .map((row) => {
       const stats = toStats(row);
@@ -640,110 +603,12 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     })
     .slice(0, 10);
 
-  const top_agents = [...agentMap.values()]
-    .sort((a, b) => {
-      if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
-      if (b.message_count !== a.message_count) return b.message_count - a.message_count;
-      return a.agent_name.localeCompare(b.agent_name);
-    })
-    .slice(0, 8)
-    .map((row) => ({
-      ...row,
-      estimated_cost_usd: row.estimated_cost_usd,
-    }));
+  return top_tools;
+}
 
-  const by_provider = [...providerMap.values()]
-    .sort((a, b) => {
-      if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
-      if (b.message_count !== a.message_count) return b.message_count - a.message_count;
-      return a.provider.localeCompare(b.provider);
-    })
-    .map((row) => ({
-      ...row,
-      estimated_cost_usd: row.estimated_cost_usd,
-    }));
-
-  const by_model = [...modelMap.values()]
-    .sort((a, b) => {
-      if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
-      if (b.message_count !== a.message_count) return b.message_count - a.message_count;
-      return a.model_config_name.localeCompare(b.model_config_name);
-    })
-    .map((row) => ({
-      ...row,
-      estimated_cost_usd: row.estimated_cost_usd,
-    }));
-
-  const overallSuccessRate = totalCalls > 0 ? totalSuccesses / totalCalls : 1;
-  const overallErrorRate = totalCalls > 0 ? totalErrors / totalCalls : 0;
-
-  const seriesByDay = new Map(series.map((s) => [s.day, s]));
-  const breakdowns_by_day: Record<string, DashboardDayBreakdown> = {};
-  for (const [day, bucket] of dayBreakdownMap.entries()) {
-    const dayPoint = seriesByDay.get(day);
-    const dayAgents = [...bucket.agents.values()]
-      .sort((a, b) => {
-        if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
-        if (b.message_count !== a.message_count) return b.message_count - a.message_count;
-        return a.agent_name.localeCompare(b.agent_name);
-      })
-      .slice(0, 8);
-    const dayProviders = [...bucket.providers.values()].sort((a, b) => {
-      if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
-      if (b.message_count !== a.message_count) return b.message_count - a.message_count;
-      return a.provider.localeCompare(b.provider);
-    });
-    const dayModels = [...bucket.models.values()].sort((a, b) => {
-      if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
-      if (b.message_count !== a.message_count) return b.message_count - a.message_count;
-      return a.model_config_name.localeCompare(b.model_config_name);
-    });
-    breakdowns_by_day[day] = {
-      day,
-      summary: {
-        input_tokens_est: dayPoint?.input_tokens_est ?? 0,
-        output_tokens_est: dayPoint?.output_tokens_est ?? 0,
-        estimated_cost_usd: dayPoint?.estimated_cost_usd ?? 0,
-        cost_breakdown: dayPoint?.cost_breakdown ?? emptyCostBreakdown(),
-        tool_calls: dayPoint?.tool_calls ?? 0,
-        tool_successes: dayPoint?.tool_successes ?? 0,
-        tool_errors: dayPoint?.tool_errors ?? 0,
-        success_rate: dayPoint?.success_rate ?? 1,
-        error_rate: dayPoint?.error_rate ?? 0,
-        tier_tokens: dayPoint?.tier_tokens ?? emptyTierTokens(),
-      },
-      top_agents: dayAgents,
-      by_provider: dayProviders,
-      by_model: dayModels,
-    };
-  }
-
-  const metrics: DashboardMetrics = {
-    generated_at: now.toISOString(),
-    days: boundedDays,
-    summary: {
-      input_tokens_est: totalInput,
-      output_tokens_est: totalOutput,
-      estimated_cost_usd: totalCost,
-      cost_breakdown: totalCosts,
-      recorded_cost_usd: totalRecordedCost,
-      cache_read_tokens: totalCacheRead,
-      cache_hit_rate: round4(totalCacheRead > 0 ? totalCacheRead / (totalInput + totalCacheRead) : 0),
-      tool_calls: totalCalls,
-      tool_successes: totalSuccesses,
-      tool_errors: totalErrors,
-      success_rate: round4(overallSuccessRate),
-      error_rate: round4(overallErrorRate),
-      tier_tokens: tierBucketToTokens(tierTotals),
-      data_quality: computeDataQuality(measuredAssistantMessages, estimatedAssistantMessages),
-    },
-    series,
-    top_tools,
-    top_agents,
-    by_provider,
-    by_model,
-    breakdowns_by_day,
-    pricing: {
+function dashboardPricing(tables: PricingTables): DashboardMetrics["pricing"] {
+  const { byProvider, generatedAt } = tables;
+  return {
       snapshot_generated_at: generatedAt,
       rates: [...byProvider.entries()]
         .map(([provider, rates]) => ({
@@ -773,11 +638,9 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       aggregator_sources: tables.aggregatorSources,
       aggregator_model_rates: tables.aggregatorModelRates,
       notes: "Dashboard cost is recalculated from captured provider token usage and the latest matching rates. The original per-turn cost snapshots remain unchanged; legacy rows use content-length token estimates.",
-    },
-  };
-  metricsCache = { db, changes, dataVersion, tables, createdAt: now.getTime(), metrics };
-  return metrics;
+    };
 }
+
 
 function seedDayBuckets(now: Date, days: number): Map<string, DayBucket> {
   const out = new Map<string, DayBucket>();

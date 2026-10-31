@@ -131,6 +131,24 @@ and the boundaries new code should use.
 **Dependency direction:** UI → API routes → runtime modules → registries,
 adapters, and stores → local persistence or configured external services.
 
+The unreleased credential editor keeps API dispatch and form state in
+`hooks/useIntegrationCredential.ts` and authorization sessions in
+`hooks/useIntegrationOAuth.ts`. `IntegrationCard` composes form, action-bar, and
+setup-guide views without calling credential APIs. Its typed default/create/edit
+mode and lifecycle contracts are documented in the
+[UI hook specification](ui-hook-api.md#credential-editor-ownership-unreleased).
+This stays within the existing UI-to-API boundary; persistence and vendor
+authorization remain server-owned.
+
+The unreleased complexity cleanup also keeps component-local controllers
+responsible for loading, mutations, feedback, and resource lifetimes, with
+cohesive view sections handling rendering. Agent modules separate admission,
+context assembly, streaming, retries, persistence, and accounting into typed
+stages while retaining the existing queues and stores. Dashboard attribution
+uses the same accumulation operation for daily and global scopes. These are
+internal ownership changes, not additional containers, processes, persistence
+schemas, or external dependencies; the diagrams above are unchanged.
+
 The unreleased internal skill-consent contract in
 `lib/skills/execution-consent.ts` owns run-local, bounded one-use decision state.
 It reuses the manifest JSON complexity guard; it does not modify

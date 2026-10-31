@@ -1,6 +1,6 @@
 "use client";
 import { ChevronLeft } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition, IntegrationStatus } from "@/api/types";
 import { pushErrorToast } from "@/lib/ui/error-report";
@@ -51,7 +51,138 @@ interface Props {
 // providers grouped by category, then drops the user into the same
 // IntegrationCard editor the Credentials panel renders inline — so
 // OAuth Connect, Test, and the setup guides are all in one place.
-export function AddCredentialDialog({ usageProfile = "custom", initialCategory, directProviderName, lockCategory, credential, createNew, onClose, onSaved }: Props) {
+export function AddCredentialDialog({
+  usageProfile = "custom",
+  initialCategory,
+  directProviderName,
+  lockCategory,
+  credential,
+  createNew,
+  onClose,
+  onSaved,
+}: Props) {
+  const {
+    titleNode,
+    showBack,
+    backToPicker,
+    loadError,
+    setLoadAttempt,
+    step,
+    showAll,
+    setShowAll,
+    loading,
+    defs,
+    displayGroups,
+    grouped,
+    statuses,
+    openProvider,
+    activeDef,
+    activeStatus,
+    reload,
+    activeName,
+  } = useCredentialCatalog({ usageProfile, initialCategory, directProviderName, lockCategory, credential, createNew });
+
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={titleNode}
+      size="md"
+      align="top"
+      level="topmost"
+      padded={false}
+      titlePrefix={
+        showBack ? (
+          <button onClick={backToPicker} className="text-fg-subtle hover:text-fg" title="Back to picker">
+            <ChevronLeft size={16} />
+          </button>
+        ) : undefined
+      }
+    >
+      {loadError && (
+        <div className="p-4 space-y-3">
+          <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">
+            Couldn&apos;t load credential providers. Check that Jarela is running and try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm text-fg hover:bg-surface-3"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+      {step === "pick" && (
+        <CredentialProviderPicker
+          usageProfile={usageProfile}
+          showAll={showAll}
+          setShowAll={setShowAll}
+          loading={loading}
+          loadError={loadError}
+          defs={defs}
+          displayGroups={displayGroups}
+          grouped={grouped}
+          statuses={statuses}
+          openProvider={openProvider}
+        />
+      )}
+
+      {step === "form" && activeDef && (
+        <div className="p-4">
+          <IntegrationCard
+            definition={activeDef}
+            status={activeStatus ?? undefined}
+            credential={credential ?? undefined}
+            createNew={createNew}
+            onChanged={() => {
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
+              }
+              onSaved?.(activeDef.name);
+              void reload();
+            }}
+            onDeleted={onClose}
+          />
+        </div>
+      )}
+      {step === "form" && !activeDef && !loadError && (
+        loading
+          ? <p className="text-fg-faint text-sm text-center py-8">Loading…</p>
+          : (
+            <div className="p-4 space-y-3 text-center">
+              <p className="text-sm text-fg-muted">
+                No credential form is available for{" "}
+                <span className="font-medium text-fg">{activeName ?? "this provider"}</span>.
+              </p>
+              <p className="text-[11px] text-fg-faint leading-snug">
+                This usually means the provider is a pass-through (e.g. LangChain,
+                Ollama, Mistral) that doesn&apos;t use a shared credential. Configure
+                the API key, base URL, and any extra headers on the individual
+                model row instead.
+              </p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs text-accent hover:text-accent/80"
+              >
+                Close
+              </button>
+            </div>
+          )
+      )}
+    </Dialog>
+  );
+}
+
+function useCredentialCatalog({
+  usageProfile = "custom",
+  initialCategory,
+  directProviderName,
+  lockCategory,
+  credential,
+  createNew,
+}: Omit<Props, "onClose" | "onSaved">) {
   const [showAll, setShowAll] = useState(false);
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
@@ -145,133 +276,101 @@ export function AddCredentialDialog({ usageProfile = "custom", initialCategory, 
           : `${activeStatus?.configured ? "Edit" : "Connect"} ${activeDef.label}`
       : "Add credential";
 
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title={titleNode}
-      size="md"
-      align="top"
-      level="topmost"
-      padded={false}
-      titlePrefix={
-        showBack ? (
-          <button onClick={backToPicker} className="text-fg-subtle hover:text-fg" title="Back to picker">
-            <ChevronLeft size={16} />
-          </button>
-        ) : undefined
-      }
-    >
-      {loadError && (
-        <div className="p-4 space-y-3">
-          <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">
-            Couldn&apos;t load credential providers. Check that Jarela is running and try again.
-          </p>
-          <button
-            type="button"
-            onClick={() => setLoadAttempt((attempt) => attempt + 1)}
-            className="rounded-lg border border-border px-3 py-1.5 text-sm text-fg hover:bg-surface-3"
-          >
-            Try again
-          </button>
-        </div>
-      )}
-      {step === "pick" && (
-        <div className="p-4 space-y-4">
-          {USAGE_PROFILES[usageProfile].compactChat && (
-            <div className="flex items-center justify-between gap-2 text-xs text-fg-muted">
-              <span>{showAll ? "All integrations" : `${USAGE_PROFILES[usageProfile].label} integrations`}</span>
-              <button type="button" onClick={() => setShowAll((value) => !value)} className="text-accent hover:underline">
-                {showAll ? "Use agent profile" : "Show all integrations"}
-              </button>
-            </div>
-          )}
-          {loading && <p className="text-fg-faint text-sm text-center py-6">Loading…</p>}
-          {!loading && !loadError && defs.length === 0 && (
-            <p className="text-fg-faint text-sm text-center py-6">No credential providers available.</p>
-          )}
-          {!loading && displayGroups.map((group) => {
-            const entries = group.categories
-              .flatMap((cat) => grouped.get(cat) ?? []);
-            if (entries.length === 0) return null;
-            return (
-              <section key={group.key}>
-                <h4 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1.5 px-1">{group.label}</h4>
-                <div className="divide-y divide-border/60 border border-border/60 rounded-xl overflow-hidden bg-surface-3/40">
-                  {entries.map((def) => {
-                    const configured = statuses[def.name]?.configured;
-                    return (
-                      <button
-                        key={def.name}
-                        type="button"
-                        onClick={() => openProvider(def.name)}
-                        className="w-full text-left px-3 py-2.5 hover:bg-surface-2 transition-colors flex items-start gap-3"
-                      >
-                        <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-fg flex items-center gap-2">
-                            <span className="font-medium">{def.label}</span>
-                            {configured && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">
-                                configured
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-fg-faint mt-0.5 leading-snug">{def.description}</p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      )}
+  return {
+    titleNode,
+    showBack,
+    backToPicker,
+    loadError,
+    setLoadAttempt,
+    step,
+    showAll,
+    setShowAll,
+    loading,
+    defs,
+    displayGroups,
+    grouped,
+    statuses,
+    openProvider,
+    activeDef,
+    activeStatus,
+    reload,
+    activeName,
+  };
+}
 
-      {step === "form" && activeDef && (
-        <div className="p-4">
-          <IntegrationCard
-            definition={activeDef}
-            status={activeStatus ?? undefined}
-            credential={credential ?? undefined}
-            createNew={createNew}
-            onChanged={() => {
-              if (typeof window !== "undefined") {
-                window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
-              }
-              onSaved?.(activeDef.name);
-              void reload();
-            }}
-            onDeleted={onClose}
-          />
+function CredentialProviderPicker({
+  usageProfile,
+  showAll,
+  setShowAll,
+  loading,
+  loadError,
+  defs,
+  displayGroups,
+  grouped,
+  statuses,
+  openProvider,
+}: {
+  usageProfile: "home" | "work" | "dev" | "custom";
+  showAll: boolean;
+  setShowAll: Dispatch<SetStateAction<boolean>>;
+  loading: boolean;
+  loadError: boolean;
+  defs: IntegrationDefinition[];
+  displayGroups: { key: string; label: string; categories: Category[]; }[];
+  grouped: Map<Category, IntegrationDefinition[]>;
+  statuses: Record<string, IntegrationStatus>;
+  openProvider: (name: string) => void;
+}) {
+  return (
+    <div className="p-4 space-y-4">
+      {USAGE_PROFILES[usageProfile].compactChat && (
+        <div className="flex items-center justify-between gap-2 text-xs text-fg-muted">
+          <span>{showAll ? "All integrations" : `${USAGE_PROFILES[usageProfile].label} integrations`}</span>
+          <button type="button" onClick={() => setShowAll((value) => !value)} className="text-accent hover:underline">
+            {showAll ? "Use agent profile" : "Show all integrations"}
+          </button>
         </div>
       )}
-      {step === "form" && !activeDef && !loadError && (
-        loading
-          ? <p className="text-fg-faint text-sm text-center py-8">Loading…</p>
-          : (
-            <div className="p-4 space-y-3 text-center">
-              <p className="text-sm text-fg-muted">
-                No credential form is available for{" "}
-                <span className="font-medium text-fg">{activeName ?? "this provider"}</span>.
-              </p>
-              <p className="text-[11px] text-fg-faint leading-snug">
-                This usually means the provider is a pass-through (e.g. LangChain,
-                Ollama, Mistral) that doesn&apos;t use a shared credential. Configure
-                the API key, base URL, and any extra headers on the individual
-                model row instead.
-              </p>
-              <button
-                type="button"
-                onClick={onClose}
-                className="text-xs text-accent hover:text-accent/80"
-              >
-                Close
-              </button>
-            </div>
-          )
+      {loading && <p className="text-fg-faint text-sm text-center py-6">Loading…</p>}
+      {!loading && !loadError && defs.length === 0 && (
+        <p className="text-fg-faint text-sm text-center py-6">No credential providers available.</p>
       )}
-    </Dialog>
+      {!loading && displayGroups.map((group) => {
+        const entries = group.categories
+          .flatMap((cat) => grouped.get(cat) ?? []);
+        if (entries.length === 0) return null;
+        return (
+          <section key={group.key}>
+            <h4 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1.5 px-1">{group.label}</h4>
+            <div className="divide-y divide-border/60 border border-border/60 rounded-xl overflow-hidden bg-surface-3/40">
+              {entries.map((def) => {
+                const configured = statuses[def.name]?.configured;
+                return (
+                  <button
+                    key={def.name}
+                    type="button"
+                    onClick={() => openProvider(def.name)}
+                    className="w-full text-left px-3 py-2.5 hover:bg-surface-2 transition-colors flex items-start gap-3"
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-fg flex items-center gap-2">
+                        <span className="font-medium">{def.label}</span>
+                        {configured && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">
+                            configured
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-fg-faint mt-0.5 leading-snug">{def.description}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+    </div>
   );
 }

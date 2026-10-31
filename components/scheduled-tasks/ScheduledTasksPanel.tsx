@@ -292,14 +292,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 // card. For "once" tasks the schedule field is a datetime-local input
 // (ISO conversion happens on save); for "cron" it's a free-text cron expr
 // the server validates with cron-parser.
-function TaskEditor({
-  task, agents, onCancel, onSaved,
-}: {
+interface TaskEditorProps {
   task: ScheduledTask;
   agents: Record<string, AgentConfig>;
   onCancel: () => void;
   onSaved: () => void;
-}) {
+}
+
+function useTaskEditor({ task, onSaved }: Pick<TaskEditorProps, "task" | "onSaved">) {
   const [agentId, setAgentId] = useState(task.agent_id);
   const [prompt, setPrompt] = useState(task.prompt);
   const [description, setDescription] = useState(task.description ?? "");
@@ -348,6 +348,17 @@ function TaskEditor({
     }
   }
 
+  return {
+    agentId, setAgentId, prompt, setPrompt, description, setDescription, kind, setKind,
+    schedule, setSchedule, enabled, setEnabled, silent, setSilent, saving, error, save,
+  };
+}
+
+function TaskEditor({ task, agents, onCancel, onSaved }: TaskEditorProps) {
+  const {
+    agentId, setAgentId, prompt, setPrompt, description, setDescription, kind, setKind,
+    schedule, setSchedule, enabled, setEnabled, silent, setSilent, saving, error, save,
+  } = useTaskEditor({ task, onSaved });
   return (
     <div className="space-y-2">
       <Row label="Agent">

@@ -800,7 +800,7 @@ export class ContributionService {
     }
   }
 
-  async #runTests(op: Operation) {
+  async #stageTestWorktree(op: Operation): Promise<void> {
     this.#checkInputRevision(op);
     await this.#verifySource(op);
     if (this.#vitestHash(op.vitestEntrypoint) !== op.vitestSha256) {
@@ -848,6 +848,10 @@ export class ContributionService {
       throw new Error("Isolated worktree changes do not match the reviewed file selection");
     }
     await this.#verifyCandidateFiles(op);
+  }
+
+  async #runTests(op: Operation) {
+    await this.#stageTestWorktree(op);
     const testPolicy = this.#testPolicy(op);
     const binding = {
       agentId: op.agentId, runId: op.id, workspace: op.workspace,
