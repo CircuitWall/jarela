@@ -451,7 +451,7 @@ function buildRecommendedNextSteps(input: {
   if (!input.includeTree || input.treeTruncated) {
     steps.push("Use file_glob to narrow file discovery before reading files.");
   }
-  steps.push("Use file_grep with a glob filter for code search; prefer file_read line ranges from grep/outline results over shell cat/type/Get-Content.");
+  steps.push("Use file_grep with a narrow glob filter for code search, then file_read with explicit start_line/end_line around relevant hits or outline entries. Read a known range directly; do not page through entire files unless the task requires complete inspection. Prefer these tools over shell cat/type/Get-Content.");
   steps.push("Use file_edit for one targeted edit and file_multi_edit for multiple edits in the same file; avoid shell heredocs for file writes.");
   if (input.skillFiles.length > 0) {
     steps.push(`Repo skills detected: ${input.skillFiles.slice(0, 8).join(", ")}. Before specialized work, read the matching SKILL.md or use list_skills/read_skill when the skill appears in the system prompt.`);

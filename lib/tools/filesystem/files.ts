@@ -295,7 +295,7 @@ export const fileReadTool = tool(
   {
     name: "file_read",
     description:
-      "Read a UTF-8 text file. Prefer file_glob/file_grep to locate targets before reading; avoid shell cat/type/Get-Content for normal file inspection. Optional 1-based start_line/end_line slice. Output clipped at the configured read-file limit (1 MB by default) — for large files always pass a line range and walk in chunks. When called without a line range on a recognised text file, the response also includes an `outline` array of {kind,name,line} entries (markdown headings, top-level functions/classes, config keys); feed those line numbers straight back into start_line/end_line on the next call to zoom in without grepping.",
+      "Read a UTF-8 text file. Prefer file_glob/file_grep to locate targets before reading; avoid shell cat/type/Get-Content for normal file inspection. Use explicit 1-based start_line/end_line ranges around relevant search hits; read a known range directly. Output clipped at the configured read-file limit (1 MB by default), separately from the inline tool-result budget. Do not walk an entire large file in chunks or reconstruct a spilled response unless complete inspection is required by the task. When called without a line range on a recognised text file, the response also includes an `outline` array of {kind,name,line} entries; use it to select a bounded follow-up range, not to read every section.",
     schema: readSchema,
   },
 );
