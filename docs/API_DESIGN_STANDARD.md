@@ -73,6 +73,29 @@ It does not infer failures from arbitrary payload variables.
   Pass already-read data (such as document source stats) to pure serializers.
   Do not hide database reads, catch corrupt persisted JSON, or expose private
   cursor/credential fields in a serializer.
+- Unreleased bridge-route and skill-repository collection/mutation responses
+  reuse the same serializers. Bridge catch-up watermarks remain private; SQLite
+  flags retain their existing strict `=== 1` conversion.
+- Model create/update routes share the inline-parameter policy in
+  [inline-params.ts](../lib/models/inline-params.ts). Read the prior row inside
+  the existing model mutation lock before resolving echoed secret masks.
+  Collection and mutation responses use the same redaction policy; credential
+  binding, metadata lookup and encrypted persistence retain their own owners.
+
+## Client cache ownership (unreleased)
+
+[api/client.ts](../api/client.ts) shares one asynchronous lifecycle for its
+30-second list and value caches: coalesce pending reads, invalidate revisions
+after mutations, ignore superseded successful reads, and clear only the failing
+request's own pending slot. Forced list refreshes supersede older requests.
+
+Keep shape-specific behavior at the adapters: list snapshots shallow-copy their
+rows, while value-cache hits retain object identity. Ordinary reads do not emit
+list-change notifications; mutation setters retain existing events. This is
+distinct from the synchronous keyed/content caches in
+[lib/cache/keyed-cache.ts](../lib/cache/keyed-cache.ts), and from the separate
+short-lived startup handoff cache. Do not merge them merely because they all
+cache values.
 
 ## Statuses, headers, and transports
 

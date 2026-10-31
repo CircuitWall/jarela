@@ -92,6 +92,36 @@
       ]
     },
     {
+      "id": "client-async-cache",
+      "operation": "Share client list/value request coalescing, TTL, revision invalidation, superseded completion handling and owned failure cleanup; preserve shape-specific copying and notification adapters.",
+      "canonicalSources": [
+        "api/client.ts"
+      ],
+      "validationSources": [
+        "api/client.cache.test.ts",
+        "api/client.models.test.ts",
+        "api/client.startup.test.ts"
+      ],
+      "exceptions": [
+        "Synchronous keyed/content caches and startup handoff snapshots have different invalidation, copying and ownership contracts."
+      ]
+    },
+    {
+      "id": "model-inline-secret-policy",
+      "operation": "Resolve echoed inline model-secret masks against the row read inside the mutation lock and redact the same fields on collection and mutation responses.",
+      "canonicalSources": [
+        "lib/models/inline-params.ts",
+        "lib/utils/secret-mask.ts"
+      ],
+      "validationSources": [
+        "lib/models/inline-params.test.ts",
+        "app/api/v1/models/[name]/route.test.ts"
+      ],
+      "exceptions": [
+        "Credential stores, integration forms and proxy settings retain their separate field sets, account boundaries and persistence contracts."
+      ]
+    },
+    {
       "id": "built-in-tool-registration",
       "operation": "Register built-in tools with explicit category and capability metadata through the shared registry.",
       "canonicalSources": [

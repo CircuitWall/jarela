@@ -1,26 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { deleteRoute, getRoute, updateRoute, type BridgeRouteRow } from "@/lib/stores/bridges";
+import { deleteRoute, getRoute, updateRoute } from "@/lib/stores/bridges";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { errorMessage } from "@/lib/utils/error";
 import { errorResponse } from "@/lib/api/responses";
 import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
+import { bridgeRouteToResponse } from "@/lib/api/serializers";
 
 interface Params { params: Promise<{ id: string; route_id: string }> }
-
-function toResponse(r: BridgeRouteRow) {
-  return {
-    id: r.id,
-    bridge_id: r.bridge_id,
-    remote_jid: r.remote_jid,
-    agent_id: r.agent_id,
-    label: r.label,
-    silent_mode: r.silent_mode === 1,
-    respond_to: r.respond_to,
-    created_at: r.created_at,
-    updated_at: r.updated_at,
-  };
-}
 
 const RouteJidSchema = z.union([z.literal("*"), z.string().trim().min(3)]);
 
@@ -48,7 +35,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   try {
     const updated = updateRoute(route_id, parsed.data);
     if (!updated) return errorResponse("update failed", 500);
-    return NextResponse.json(toResponse(updated));
+    return NextResponse.json(bridgeRouteToResponse(updated));
   } catch (err) {
     const m = errorMessage(err);
     if (/UNIQUE/.test(m)) {

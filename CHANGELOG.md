@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Share list/value client-cache lifecycle and notification setters, model
+  inline-secret preservation/redaction, and bridge-route/skill-repository
+  response serializers; preserve cache races, copying, events and v1 contracts.
 - Use Node's built-in SQLite in document-search regression tests instead of an
   undeclared native dependency that failed clean CI installs.
 - Derive document-source mutation and statistics types from shared Zod schemas
