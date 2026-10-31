@@ -110,15 +110,15 @@ export function putMemory(namespace: string, key: string, value: unknown): Memor
   if (isAdvertisementMemory(namespace, key)) throw new Error("Use agent advertisement settings to change generation policy or metadata");
   if (isSkillExecutionPolicySetting(namespace, key)) throw new Error("Skill execution policy must be changed in Security settings");
   const t = now();
-  // Only the original created_at is needed to preserve insertion time on
-  // upsert; reading the full row would force an unnecessary AES-GCM
-  // decrypt of an existing sensitive value just to discard it.
+  // Read only insertion time and the prior value needed for revision history.
   const existing = getDb()
     .prepare("SELECT created_at, value FROM memory_store WHERE namespace=? AND key=?")
     .get(namespace, key) as { created_at?: string; value?: string } | undefined;
   const created_at = existing?.created_at ?? t;
 
-  const previous = existing?.value ? parseStructuredMemory(existing.value) : null;
+  const previousValue = existing?.value && isSensitiveMemoryNamespace(namespace)
+    ? decryptIfNeeded(existing.value) : existing?.value;
+  const previous = previousValue ? parseStructuredMemory(previousValue) : null;
   const normalizedValue = normalizeStructuredMemoryValue(value, previous, t);
   const json = JSON.stringify(normalizedValue);
   // Encrypt the value column at rest for sensitive namespaces (ADR-0005).
