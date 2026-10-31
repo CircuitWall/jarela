@@ -6,7 +6,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-allowed-sites-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { getDb } = await import("@/lib/db");
+const { closeDb, getDb } = await import("@/lib/db");
 const {
   addAllowedSite,
   removeAllowedSite,
@@ -22,12 +22,23 @@ function wipe(): void {
 }
 
 afterAll(() => {
+  closeDb();
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* */ }
 });
 
 beforeEach(() => { wipe(); });
 
 describe("addAllowedSite", () => {
+  it("retains unchanged entries and rejects overlong or invalid mutation hosts", () => {
+    const created = addAllowedSite({ hostname: "example.test" });
+    expect(addAllowedSite({ hostname: "example.test" })).toEqual(created);
+    expect(addAllowedSite({ hostname: "a".repeat(254) })).toHaveProperty("error");
+    expect(isHostAllowed("")).toMatchObject({ allowed: false });
+    expect(removeAllowedSite("")).toBe(false);
+    expect(setSsrfBypass("", true)).toBe(false);
+    expect(setSsrfBypass("missing.test", false)).toBe(false);
+    expect(putCookies("", [])).toBe(false);
+  });
   it("normalizes hostname to lowercase and strips trailing dots", () => {
     const r = addAllowedSite({ hostname: "Jira.Example.COM." });
     if ("error" in r) throw new Error(r.error);
@@ -88,6 +99,22 @@ describe("isHostAllowed (suffix matching)", () => {
 describe("cookie storage and retrieval", () => {
   beforeEach(() => {
     addAllowedSite({ hostname: "example.com" });
+  });
+
+  it("reads legacy plain cookie blobs defensively and records only successful use", () => {
+    const write = getDb().prepare("UPDATE allowed_sites SET cookies_blob=? WHERE hostname='example.com'");
+    expect(getCookieHeaderForUrl("invalid URL")).toBeNull();
+    write.run("invalid JSON");
+    expect(getCookieHeaderForUrl("https://example.com")).toBeNull();
+    write.run(JSON.stringify([null, { name: 123, value: "synthetic" }, { name: "synthetic", value: 123 }]));
+    expect(getCookieHeaderForUrl("https://example.com")).toBeNull();
+    write.run(JSON.stringify([
+      { name: "wrong", value: "synthetic", domain: "", path: "/" },
+      { name: "fallback", value: "synthetic" },
+      { name: "directory", value: "synthetic", domain: "example.com", path: "/admin/" },
+    ]));
+    expect(getCookieHeaderForUrl("https://example.com/admin/users")).toBe("fallback=synthetic; directory=synthetic");
+    expect(listAllowedSites()[0].last_used_at).not.toBeNull();
   });
 
   it("returns null when no cookies are stored", () => {
