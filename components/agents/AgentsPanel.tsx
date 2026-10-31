@@ -11,6 +11,7 @@ import { AgentEditor } from "./AgentEditor";
 import { useAppContext } from "@/contexts/AppContext";
 
 import { confirmAction } from "@/lib/ui/confirm";
+import { errorMessage } from "@/lib/utils/error";
 
 const AVATAR_GRADIENTS = [
   "from-violet-500 to-indigo-600",
@@ -48,12 +49,13 @@ function AgentAvatar({ icon, name, id }: { icon: string | null; name: string; id
 }
 
 export function AgentsPanel() {
-  const { agents, loading, create, update, remove, duplicate } = useAgents();
+  const { agents, loading, error, create, update, remove, duplicate } = useAgents();
   const { models } = useModels();
   const { state } = useAppContext();
   const [editing, setEditing] = useState<AgentConfig | null | "new">(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [duplicating, setDuplicating] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastDeepLinkedAgent = useRef<string | null>(null);
   useDeepLinkScroll("agents", "agent", containerRef);
@@ -89,19 +91,25 @@ export function AgentsPanel() {
   }
 
   async function handleDuplicate(agent: AgentConfig) {
+    setActionError(null);
     setDuplicating(agent.id);
     try {
       setEditing(await duplicate(agent.id));
+    } catch (err) {
+      setActionError(`Could not duplicate agent: ${errorMessage(err)}`);
     } finally {
       setDuplicating(null);
     }
   }
 
   async function handleDelete(agent: AgentConfig) {
-    if (!(await confirmAction({ message: `Delete agent "${agent.name}"? This cannot be undone.`, destructive: true }))) return;
-    setDeleting(agent.id);
+    setActionError(null);
     try {
+      if (!(await confirmAction({ message: `Delete agent "${agent.name}"? This cannot be undone.`, destructive: true }))) return;
+      setDeleting(agent.id);
       await remove(agent.id);
+    } catch (err) {
+      setActionError(`Could not delete agent: ${errorMessage(err)}`);
     } finally {
       setDeleting(null);
     }
@@ -116,48 +124,26 @@ export function AgentsPanel() {
 
       {/* List */}
       <div ref={containerRef} className="flex-1 overflow-y-auto px-[calc(var(--workspace-gutter)/2)] pb-2">
+        {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 py-2">{error}</p>}
+        {actionError && <p role="alert" className="text-xs text-red-700 dark:text-red-400 py-2">{actionError}</p>}
         {loading && (
           <p className="text-fg-faint text-xs text-center py-4">Loading…</p>
         )}
-        {!loading && agents.length === 0 && (
+        {!loading && !error && agents.length === 0 && (
           <p className="text-fg-faint text-xs text-center py-4 select-none">
             No agents yet. Create one to start chatting.
           </p>
         )}
         {agents.map((a) => (
-          <div
+          <AgentRow
             key={a.id}
-            data-deep-link-id={a.id}
-            onClick={() => setEditing(a)}
-            className="group flex items-center gap-2.5 px-[calc(var(--workspace-gutter)/2)] py-2 rounded-lg hover:bg-surface-3 transition-colors cursor-pointer"
-          >
-            <AgentAvatar icon={a.icon} name={a.name} id={a.id} />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-fg font-medium truncate">{a.name}</p>
-              {a.identity && (
-                <p className="text-[11px] text-fg-faint truncate">{a.identity}</p>
-              )}
-            </div>
-            <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-              <button
-                onClick={(e) => { e.stopPropagation(); void handleDuplicate(a); }}
-                disabled={duplicating === a.id}
-                className="p-1 text-fg-muted hover:text-fg transition-colors disabled:opacity-50"
-                title="Duplicate"
-                aria-label={`Duplicate ${a.name}`}
-              >
-                <Copy size={12} />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); void handleDelete(a); }}
-                disabled={deleting === a.id}
-                className="p-1 text-fg-muted hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-50"
-                title="Delete"
-              >
-                <Trash2 size={12} />
-              </button>
-            </div>
-          </div>
+            agent={a}
+            deleting={deleting === a.id}
+            duplicating={duplicating === a.id}
+            onEdit={() => setEditing(a)}
+            onDuplicate={() => { void handleDuplicate(a); }}
+            onDelete={() => { void handleDelete(a); }}
+          />
         ))}
       </div>
 
@@ -171,6 +157,57 @@ export function AgentsPanel() {
         />
       )}
       </>
+    </div>
+  );
+}
+
+function AgentRow({ agent, deleting, duplicating, onEdit, onDuplicate, onDelete }: {
+  agent: AgentConfig;
+  deleting: boolean;
+  duplicating: boolean;
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      data-deep-link-id={agent.id}
+      className="group flex items-center gap-2.5 px-[calc(var(--workspace-gutter)/2)] py-2 rounded-lg hover:bg-surface-3 transition-colors"
+    >
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label={`Edit ${agent.name}`}
+        className="flex items-center gap-2.5 flex-1 min-w-0 text-left rounded focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <AgentAvatar icon={agent.icon} name={agent.name} id={agent.id} />
+        <span className="flex-1 min-w-0">
+          <span className="block text-xs text-fg font-medium truncate">{agent.name}</span>
+          {agent.identity && <span className="block text-[11px] text-fg-faint truncate">{agent.identity}</span>}
+        </span>
+      </button>
+      <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+        <button
+          type="button"
+          onClick={onDuplicate}
+          disabled={duplicating}
+          className="p-1 text-fg-muted hover:text-fg transition-colors disabled:opacity-50"
+          title="Duplicate"
+          aria-label={`Duplicate ${agent.name}`}
+        >
+          <Copy size={12} />
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={deleting}
+          className="p-1 text-fg-muted hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+          title="Delete"
+          aria-label={`Delete ${agent.name}`}
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
     </div>
   );
 }

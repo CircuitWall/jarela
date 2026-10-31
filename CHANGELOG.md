@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Show agent-list and delete/duplicate failures in the Agents panel, retain
+  retryable controls, and provide keyboard-accessible editing with separately
+  labeled actions.
+
 ### Changed
 
 - Share stored attachment decoding between chat rendering and history assembly,
