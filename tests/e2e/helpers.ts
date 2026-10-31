@@ -12,7 +12,8 @@ export async function seedMockAgent(request: APIRequestContext): Promise<{ model
       name: modelName,
       provider: "mock",
       model_id: "mock-1",
-      params: {},
+      // Scripted mock replies need little output headroom; keep chat input available.
+      params: { max_tokens: 1_024 },
       is_default: true,
     },
   });
