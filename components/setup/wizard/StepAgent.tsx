@@ -8,6 +8,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { StepShell } from "./StepShell";
 
 import { confirmAction } from "@/lib/ui/confirm";
+import { useIconFile } from "@/hooks/useIconFile";
 
 interface StepAgentProps {
   agents: AgentConfig[];
@@ -34,7 +35,6 @@ export function StepAgent({ agents, models, onChanged, readOnly = false, starter
         agents={agents}
         starter={starter}
         error={error}
-        setError={setError}
       />
     );
   }
@@ -76,13 +76,13 @@ export function StepAgent({ agents, models, onChanged, readOnly = false, starter
   );
 }
 
-function StarterAgent({ agents, starter, error, setError }: {
+function StarterAgent({ agents, starter, error }: {
   agents: AgentConfig[];
   starter: NonNullable<StepAgentProps["starter"]>;
   error: string | null;
-  setError: (error: string) => void;
 }) {
   const iconInputRef = useRef<HTMLInputElement>(null);
+  const { handleIconFile, iconError } = useIconFile(starter.onIconChange, validateStarterIcon);
   const existingAgent = agents.find((agent) => agent.is_default) ?? agents[0] ?? null;
   return (
     <StepShell
@@ -125,20 +125,7 @@ function StarterAgent({ agents, starter, error, setError }: {
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                if (file.size > 1024 * 1024) {
-                  setError("Choose an image smaller than 1 MB.");
-                  return;
-                }
-                const reader = new FileReader();
-                reader.onload = () => {
-                  if (typeof reader.result === "string") starter.onIconChange(reader.result);
-                };
-                reader.onerror = () => setError("Could not read that image. Try another one.");
-                reader.readAsDataURL(file);
-              }}
+              onChange={handleIconFile}
             />
           </div>
           <label className="block min-w-0 flex-1">
@@ -171,8 +158,13 @@ function StarterAgent({ agents, starter, error, setError }: {
         )}
       </>
       {error && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{error}</p>}
+      {iconError && <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">{iconError}</p>}
     </StepShell>
   );
+}
+
+function validateStarterIcon(file: File): string | null {
+  return file.size > 1024 * 1024 ? "Choose an image smaller than 1 MB." : null;
 }
 
 function AgentManagement({ agents, models, readOnly, editing, setEditing, error, handleSave, handleRemove, onChanged }: {

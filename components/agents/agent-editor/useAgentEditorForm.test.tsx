@@ -6,7 +6,10 @@ import type { AgentConfig } from "@/api/types";
 import { USAGE_PROFILES } from "@/lib/agents/usage-profile";
 import { IdentitySection } from "./IdentitySection";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 vi.mock("@/hooks/useTools", () => {
   const tools: never[] = [];
@@ -14,6 +17,44 @@ vi.mock("@/hooks/useTools", () => {
 });
 vi.mock("./useAgentExternalData", () => ({ useAgentExternalData: () => ({}) }));
 vi.mock("./useAgentToolHandlers", () => ({ useAgentToolHandlers: () => ({}) }));
+
+describe("agent icon file lifecycle", () => {
+  it("keeps the newest selection when an older file finishes later", () => {
+    const readers: FileReader[] = [];
+    vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader) {
+      readers.push(this);
+    });
+    const { container } = render(<IconEditor />);
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    fireEvent.change(input, { target: { files: [new File(["old"], "old.png")] } });
+    fireEvent.change(input, { target: { files: [new File(["new"], "new.png")] } });
+    act(() => {
+      Object.defineProperty(readers[1], "result", { value: "data:image/png;base64,new" });
+      readers[1].dispatchEvent(new ProgressEvent("load"));
+      Object.defineProperty(readers[0], "result", { value: "data:image/png;base64,old" });
+      readers[0].dispatchEvent(new ProgressEvent("load"));
+    });
+    expect(screen.getByRole("img").getAttribute("src")).toBe("data:image/png;base64,new");
+  });
+
+  it("shows a file-read failure instead of silently keeping the previous icon", () => {
+    let reader!: FileReader;
+    vi.spyOn(FileReader.prototype, "readAsDataURL").mockImplementation(function (this: FileReader) {
+      reader = this;
+    });
+    const { container } = render(<IconEditor />);
+    fireEvent.change(container.querySelector('input[type="file"]')!, {
+      target: { files: [new File(["synthetic"], "avatar.png")] },
+    });
+    act(() => reader.dispatchEvent(new ProgressEvent("error")));
+    expect(screen.getByRole("alert").textContent).toContain("Could not read that image");
+  });
+});
+
+function IconEditor() {
+  const form = useAgentEditorForm(undefined);
+  return <IdentitySection form={form} />;
+}
 
 describe("agent usage profile defaults", () => {
   it("shows one persona editor with direct accessible sliders and no MBTI picker", () => {

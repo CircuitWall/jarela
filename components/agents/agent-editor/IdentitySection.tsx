@@ -5,6 +5,7 @@ import type { AgentEditorForm } from "./useAgentEditorForm";
 import { Section } from "./Section";
 import { USAGE_PROFILES, USAGE_PROFILE_VALUES } from "@/lib/agents/usage-profile";
 import { AdaptivePersonaFields } from "./AdaptivePersonaFields";
+import { DialogError } from "@/components/ui/DialogFooter";
 
 export function IdentitySection({ form }: { form: AgentEditorForm }) {
   return (
@@ -21,6 +22,7 @@ export function IdentitySection({ form }: { form: AgentEditorForm }) {
           />
         </label>
       </div>
+      <DialogError message={form.iconError} />
       <fieldset className="space-y-2">
         <legend className="text-xs text-fg-subtle">Persona</legend>
         <p className="text-[11px] text-fg-faint">
