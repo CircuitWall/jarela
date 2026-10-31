@@ -32,7 +32,7 @@ function MaxTokensField({ form }: { form: ModelEditorForm }) {
           form.setMaxTokens(e.target.value);
           if (e.target.value !== form.autoMaxTokens) form.setAutoMaxTokens(null);
         }}
-        placeholder="4096"
+        placeholder="Automatic"
       />
     </label>
   );

@@ -300,7 +300,7 @@ remain pending under [ADR-0112](adr/0112-checked-javascript-skill-execution.md).
 New turns use a text-size heuristic for output allocation: estimate the current
 user text at roughly four characters per token, multiply that estimate by four
 for headroom, and keep at least the strategy baseline (2,048 tokens for Fast
-and Cost-saving; 4,096 for Balanced and High reasoning). Thinking models retain
+and Cost-saving; 8,192 for Balanced and High reasoning). Thinking models retain
 a 32,768-token baseline outside Cost-saving, subject to hard limits. Explicit
 thinking budgets also reserve room for output.
 

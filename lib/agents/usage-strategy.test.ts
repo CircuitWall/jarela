@@ -71,7 +71,7 @@ describe("usage strategy profiles", () => {
   it("scales the output cap from the turn estimate and adds headroom", () => {
     expect(resolveAdaptiveOutputTokenCap(100, 2_048, 32_768)).toBe(2_048);
     expect(resolveAdaptiveOutputTokenCap(1_000, 2_048, 32_768)).toBe(4_000);
-    expect(resolveAdaptiveOutputTokenCap(1_000, DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP, 32_768)).toBe(4_096);
+    expect(resolveAdaptiveOutputTokenCap(1_000, DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP, 32_768)).toBe(8_192);
   });
 
   it("does not exceed a hard model, user, or context ceiling", () => {

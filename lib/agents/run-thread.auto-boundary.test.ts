@@ -102,10 +102,10 @@ describe("prepareThreadRun auto context boundary", () => {
   });
 
   it.each([
-    { name: "short balanced turn", model: "gpt-4o-mini", strategy: "balanced", chars: 100, max: undefined, expected: 4_096 },
-    { name: "long balanced turn", model: "gpt-4o-mini", strategy: "balanced", chars: 6_000, max: undefined, expected: 6_000 },
+    { name: "short balanced turn", model: "gpt-4o-mini", strategy: "balanced", chars: 100, max: undefined, expected: 8_192 },
+    { name: "long balanced turn", model: "gpt-4o-mini", strategy: "balanced", chars: 10_000, max: undefined, expected: 10_000 },
     { name: "explicit ceiling", model: "gpt-4o-mini", strategy: "balanced", chars: 6_000, max: 1_024, expected: 1_024 },
-    { name: "ceiling is not a baseline", model: "gpt-4o-mini", strategy: "balanced", chars: 100, max: 8_192, expected: 4_096 },
+    { name: "ceiling is not a baseline", model: "gpt-4o-mini", strategy: "balanced", chars: 100, max: 16_384, expected: 8_192 },
     { name: "known model ceiling", model: "gpt-4o-mini", strategy: "balanced", chars: 20_000, max: undefined, expected: 16_384 },
     { name: "balanced reasoning floor", model: "gpt-5", strategy: "balanced", chars: 100, max: undefined, expected: 32_768 },
     { name: "high reasoning floor", model: "gpt-5", strategy: "high_reasoning", chars: 100, max: undefined, expected: 32_768 },
