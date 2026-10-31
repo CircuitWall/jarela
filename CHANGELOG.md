@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-10-31
+
+### Added
+
+- workflows: Add checked skill and durable execution
+- workflows: Add inert authoring and contribution builders
+- workflows: Add reviewed authoring lifecycles
+- agents: Add derived advertisements and bounded delegation
+
+### Fixed
+
+- runtime: Fix tool proxy and stream recovery
+
+### Changed
+
+- workflows: Fix contribution ownership harness portability
+- deps: Bump the docs group with 2 updates
+- deps: Bump actions/setup-node from 6 to 7 in the actions group
+- deps: Bump the npm group with 6 updates
+- agents: Document modular agent guidance
+- api: Align responses and local validation guardrails
+- core: Remove function exceptions and align contracts
+- api: Remove duplicate cache and response policies
+
 ### Added
 
 - Add shared v1 API error construction and lint enforcement without changing

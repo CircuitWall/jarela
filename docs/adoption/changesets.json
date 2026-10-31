@@ -4282,6 +4282,632 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "3.3.0",
+      "previous_version": "3.2.0",
+      "date": "2026-10-31",
+      "hints": [],
+      "commits": [
+        "refactor(api): remove duplicate cache and response policies",
+        "refactor(core): remove function exceptions and align contracts",
+        "refactor(api): align responses and local validation guardrails",
+        "fix(runtime): fix tool proxy and stream recovery",
+        "docs(agents): document modular agent guidance",
+        "feat(agents): add derived advertisements and bounded delegation",
+        "build(deps): bump the npm group with 6 updates",
+        "ci(deps): bump actions/setup-node from 6 to 7 in the actions group",
+        "build(deps): bump the docs group with 2 updates",
+        "test(workflows): fix contribution ownership harness portability",
+        "feat(workflows): add reviewed authoring lifecycles",
+        "feat(workflows): add inert authoring and contribution builders",
+        "feat(workflows): add checked skill and durable execution"
+      ],
+      "prompts": [
+        {
+          "id": "static.agent-advertisement",
+          "source": "lib/agents/advertisement-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.skill.contribution-review",
+          "source": "lib/skills/builtins/contribution-review/SKILL.md",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.skill.extension-development",
+          "source": "lib/skills/builtins/extension-development/SKILL.md",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.skill.jarela-integrations",
+          "source": "lib/skills/builtins/jarela-integrations/SKILL.md",
+          "change": "changed",
+          "added_lines": [
+            "For a genuinely missing, authorized capability, load `extension-development`",
+            "before scaffolding. Keep generated drafts outside auto-loaded directories;",
+            "tests and installation need separate authority. Upstream sharing is optional:",
+            "load `contribution-review` only for an explicitly requested contribution."
+          ],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.skill.memory-organization",
+          "source": "lib/skills/builtins/memory-organization/SKILL.md",
+          "change": "changed",
+          "added_lines": [
+            "## Host and installation",
+            "Resolve this bundle from the actual loaded `SKILL.md`, not the workspace or",
+            "current working directory. Its script is [scripts/run.mjs](./scripts/run.mjs);",
+            "keep the whole directory together, including scripts, schemas and fixtures.",
+            "Built-in, workspace and personal installations use identical relative resources.",
+            "The memory tool names, record format and policy controls below describe Jarela.",
+            "On another host, inspect its authorized memory API before reading or writing;",
+            "do not assume Jarela tools or a `facts` namespace exist. Never substitute file",
+            "writes or a different memory store to bypass unavailable tools or permissions.",
+            "For read-only cleanup planning, map retrieved records to the projection below",
+            "only when their stable identity, kind, status and expiry are known. If that",
+            "mapping is unsupported, report the blocker; do not invent missing fields."
+          ],
+          "removed_lines": [
+            "2. Discover `plan_memory_cleanup` with `list_tools` using the exact name and",
+            "`include_schema: true`. Supply an explicit current UTC `now` and at most",
+            "On another host with authorized Node execution, run",
+            "`node <skill-root>/scripts/run.mjs` with the JSON input on stdin and close stdin.",
+            "on stderr. Inside Jarela use the typed tool, never terminal execution to bypass"
+          ],
+          "omitted_lines": 19
+        },
+        {
+          "id": "static.skill.personal-briefing",
+          "source": "lib/skills/builtins/personal-briefing/SKILL.md",
+          "change": "changed",
+          "added_lines": [
+            "## Host and installation",
+            "Resolve this bundle from the actual loaded `SKILL.md`, not the workspace or",
+            "current working directory. Its script is [scripts/run.mjs](./scripts/run.mjs);",
+            "keep the whole directory together, including scripts and fixtures. Built-in,",
+            "workspace and personal installations use the same relative resource paths.",
+            "In Jarela, discover and use the typed tools named below. On another host, use",
+            "its authorized read-only retrieval tools and the portable validator below;",
+            "Jarela tool names are not commands to run in a shell. If retrieval, Node or",
+            "script execution is unavailable or denied, report the blocker rather than",
+            "inventing results or bypassing the host's approval rules.",
+            "1. Establish the owner's requested sources and time window. In Jarela use",
+            "`list_tools`; elsewhere use the host's tool discovery to find authorized"
+          ],
+          "removed_lines": [
+            "1. Establish the owner's requested sources and time window. Use `list_tools`",
+            "to discover available typed read-only tools. Do not request extra access or",
+            "4. Call `validate_personal_briefing` with that object. Its input is the",
+            "On a host that authorizes Node script execution, run",
+            "`node <skill-root>/scripts/run.mjs`. Send the procedure's JSON object on stdin"
+          ],
+          "omitted_lines": 12
+        },
+        {
+          "id": "system.Available delegates",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Available skills",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "- contribution-review (builtin): Use when: preparing a local contribution bundle, reviewing an outgoing diff for privacy, or separating commit, push and draft-PR authorization.",
+            "- extension-development (builtin): Use when: filling an authorized capability gap, scaffolding an extension, reviewing generated plugin code, or planning separate test and installation approval."
+          ],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Enabled tools",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "You can execute the 107 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 167 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.",
+            "- Basic > Config > cancel_authoring_operation: execute/builtin/enabled reason=basic_default",
+            "- Basic > Config > inspect_authoring_operation: read/builtin/enabled reason=basic_default",
+            "- Basic > Config > inspect_contribution_operation: read/builtin/enabled reason=basic_default",
+            "- Basic > Config > inspect_extension_authoring: read/builtin/enabled reason=basic_default",
+            "- Basic > Config > prepare_contribution_bundle: read/builtin/enabled reason=basic_default",
+            "- Basic > Config > request_contribution_commit: write/builtin/enabled reason=basic_default",
+            "- Basic > Config > request_contribution_draft_pr: write/builtin/enabled reason=basic_default",
+            "- Basic > Config > request_contribution_push: write/builtin/enabled reason=basic_default",
+            "- Basic > Config > request_contribution_tests: execute/builtin/enabled reason=basic_default",
+            "- Basic > Config > request_extension_stage: execute/builtin/enabled reason=basic_default",
+            "- Basic > Config > scaffold_extension: read/builtin/enabled reason=basic_default"
+          ],
+          "removed_lines": [
+            "You can execute the 86 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 167 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "omitted_lines": 10
+        }
+      ],
+      "tools": [
+        {
+          "name": "advance_workflow",
+          "change": "added",
+          "description_changed": false,
+          "description": "Resume this agent's ready workflow using its exact current version. Human script-plan approval and typed answers are separate prerequisites. After restart, interrupted ownership must be proven dead; recovery never blindly replays writes. Inspect the returned phase before continuing.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "id",
+            "stream",
+            "version"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "id",
+            "version"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "cancel_authoring_operation",
+          "change": "added",
+          "description_changed": false,
+          "description": "Request cancellation of this agent's pending/running extension/contribution operation. Acknowledgement is not proof execution stopped. Does not return local source/diffs, undo effects or grant downstream authority. Ownership remains while underlying work settles; inspect actual outcomes instead of replaying writes.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "id",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "cancel_skill_execution",
+          "change": "added",
+          "description_changed": false,
+          "description": "Cancel this agent's pending or running skill execution operation. Cancellation does not roll back side effects; inspect the final result to verify process cleanup.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "request_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "request_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "cancel_workflow",
+          "change": "added",
+          "description_changed": false,
+          "description": "Cancel this agent's workflow using its current version. Interrupted writes remain uncertain; cancellation does not roll back external effects.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "id",
+            "stream",
+            "version"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "id",
+            "version"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "check_skill_execution",
+          "change": "added",
+          "description_changed": false,
+          "description": "Read this agent's live skill execution status/result. Pending approval is not execution success; expired or restarted requests need fresh approval. Does not grant consent or execute code.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "request_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "request_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "delegate_to_agent",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Hand a bounded, concrete subtask to an authorized specialist. The delegate sees only the task and supplied context, not this conversation. Provide the expected output and validation criteria when they are task-specific; task-only handoffs remain supported with safe defaults. The call rechecks current roster and permission when queued execution starts, shares the root call/time/cost budget, and never retries or reroutes an uncertain handoff. Only delegate when the target is genuinely better-suited. Before calling, tell the user in one sentence which agent you are handing to and why. The parent…",
+          "previous_description": "Hand a subtask to another agent that has specialized knowledge or tools you lack. The delegate runs in its own thread; the user sees a tool card with the delegate's name, the task you sent, and the delegate's final answer (plus a link to open the delegate's thread). Only delegate when the target agent is genuinely better-suited — do NOT delegate trivial subtasks you can handle yourself. Before calling this tool, tell the user in one sentence which agent you are handing to and why. Available delegate ids are listed in the 'Available delegates' system section; calling with an id outside that li…",
+          "params_added": [
+            "context",
+            "expected_output",
+            "validation_criteria"
+          ],
+          "params_removed": [],
+          "params_changed": [
+            "agent_id",
+            "task"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "inspect_authoring_operation",
+          "change": "added",
+          "description_changed": false,
+          "description": "Read this agent's extension/contribution operation status and approval metadata. Complete source/diff and observed evidence stay in the local review endpoint, not model output. Pending is not success; unknown effects require read-back, not automatic retry. Does not approve or resume anything.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "id",
+            "stream",
+            "type"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "id",
+            "type"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "inspect_contribution_operation",
+          "change": "added",
+          "description_changed": false,
+          "description": "Inspect this agent's contribution operation status and current approval identity. The exact code/diff preview is provided only through the local review endpoint, not returned to the model. Pending is not success; unknown outcomes block retry.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "operation_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "operation_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "inspect_extension_authoring",
+          "change": "added",
+          "description_changed": false,
+          "description": "Inspect this agent's authoring session, observed test/install/verification status and current pending operation. Approval is separate; never infer completion or rollback from a requested stage.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "inspect_workflow",
+          "change": "added",
+          "description_changed": false,
+          "description": "Read this agent's durable workflow status, checked outputs, pending human choice and version. Does not grant script consent or resume execution.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "invoke_tool",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Never target invoke_tool itself; call the target tool directly. Execute a permitted tool by name only after list_tools finds a tool that is permitted for this agent but was not directly loaded this turn, especially when permission_reason='proxy_only' or 'provider_tool_limit'. Prefer args: pass the target's arguments as a structured JSON object, matching its list_tools include_schema=true schema — this is the more reliable form and works on every provider that supports nested object schemas. Only use args_json (the same arguments JSON-encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}…",
+          "previous_description": "Never target invoke_tool itself; call the target tool directly. Execute a permitted tool by name only after list_tools finds a tool that is permitted for this agent but was not directly loaded this turn, especially when permission_reason='proxy_only' or 'provider_tool_limit'. Prefer args: pass the target's arguments as a structured JSON object, matching its list_tools include_schema=true schema — this is the more reliable form and works on every provider that supports nested object schemas. Only use args_json (the same arguments JSON-encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}…",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "list_workflows",
+          "change": "added",
+          "description_changed": false,
+          "description": "List this agent's retained durable workflow runs. Completed, cancelled and failed runs have bounded retention.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "prepare_contribution_bundle",
+          "change": "added",
+          "description_changed": false,
+          "description": "Build a local-only review bundle and exact outgoing patch from bounded supplied before/after text, destination, base revision, branch, rights and reported tests. Blocks dirty/unknown worktree reports, failed/unrun tests, unknown rights, unsafe paths and common sensitive markers. Does not read git/files, verify reported evidence, prove sanitization or send anything. Human privacy review and separate exact commit/push/draft-PR authorization are mandatory; local execution trust never grants publication rights.",
+          "params_added": [
+            "async_run",
+            "base_revision",
+            "branch",
+            "classification",
+            "deadline_ms",
+            "destination",
+            "files",
+            "license_review",
+            "ownership",
+            "stream",
+            "summary",
+            "tests",
+            "worktree"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "base_revision",
+            "branch",
+            "classification",
+            "destination",
+            "files",
+            "license_review",
+            "ownership",
+            "summary",
+            "tests",
+            "worktree"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "reconcile_workflow",
+          "change": "added",
+          "description_changed": false,
+          "description": "Reconcile an uncertain write only through its declared authorized read-back tool. No inferred success or caller-provided output is accepted. Missing read-back support is an explicit blocker, not permission to replay the write.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "id",
+            "stream",
+            "version"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "id",
+            "version"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "request_contribution_commit",
+          "change": "added",
+          "description_changed": false,
+          "description": "Request a separate local human approval for the exact verified review bundle and commit. The approval preview includes every changed byte, observed test evidence, commit message and identity; configured Git hooks execute normally and are never bypassed. Does not authorize push or draft PR creation.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "operation_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "operation_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "request_contribution_draft_pr",
+          "change": "added",
+          "description_changed": false,
+          "description": "Request a separate human approval to create one exact GitHub draft PR after the reviewed topic branch is pushed. Uses Jarela's configured GitHub integration only; reports missing credentials and never falls back to gh. No merge or review submission is performed.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "operation_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "operation_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "request_contribution_push",
+          "change": "added",
+          "description_changed": false,
+          "description": "Request a separate human approval to push only the verified topic ref to origin with a non-forced explicit refspec. Checks local Git credential access first; no main push, force push, remote URL credentials, gh CLI or automatic retry. Configured pre-push hooks run normally. Does not authorize a pull request.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "operation_id",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "operation_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "request_contribution_tests",
+          "change": "added",
+          "description_changed": false,
+          "description": "Capture actual selected repository bytes at an exact clean base and request explicit human approval to run only the listed Vitest files. The local approval preview shows the exact patch and test sources, hooks, environment and full-host-trust effects. Tests run on an isolated topic worktree through Jarela's owned process runner; no caller-reported test claim is accepted. A passing run creates a local review bundle only. It never commits, pushes or opens a PR.",
+          "params_added": [
+            "async_run",
+            "base_revision",
+            "branch",
+            "classification",
+            "commit_message",
+            "deadline_ms",
+            "destination",
+            "files",
+            "license_review",
+            "ownership",
+            "stream",
+            "summary",
+            "test_files"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "base_revision",
+            "branch",
+            "classification",
+            "commit_message",
+            "destination",
+            "files",
+            "license_review",
+            "ownership",
+            "summary",
+            "test_files"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "request_extension_stage",
+          "change": "added",
+          "description_changed": false,
+          "description": "Request one exact extension lifecycle stage: stage, test, install, configure, enable, verify, disable, remove, restore or discard. Always pauses for a separate local human approval; pending is not success. Tests use the checked process owner with full host access, NOT a sandbox. Installation copies exact tested code into the configured autoload directory initially disabled; enable separately grants this tool to this agent. Configure accepts only explicit local synthetic fixture_origin. Restore requires retained prior bytes, new staging/tests and new enablement; no automatic rollback. Discard …",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "fixture_origin",
+            "id",
+            "stage",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "id",
+            "stage"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "run_skill",
+          "change": "added",
+          "description_changed": false,
+          "description": "Request execution of an explicit dependency-free JavaScript skill bundle with checked JSON input/output. Requires this execute tool to be enabled, workspace_init and safe mode off. Default policy queues exact-code and exact-input human approval; pending is not success. Wait for the user and check_proposal; never approve yourself or fall back to shell execution. Trusted exact revisions may run immediately. Full-trust code is not sandboxed. Reading/discovering a skill never runs it.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "id",
+            "input_json",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "id",
+            "input_json"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "run_workflow",
+          "change": "added",
+          "description_changed": false,
+          "description": "Create and advance a bounded durable workflow with explicit JSON contracts and backward-only bindings. Script steps require a separate exact-plan approval before execution; pending approval is not success. Typed choices pause for the human in Skills workflow controls: never invent answers. Writes run once and uncertain writes require observed reconciliation. No shell-text or code expressions in definitions. Enable every concrete operation separately.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "definition_json",
+            "invocation_json",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "definition_json",
+            "invocation_json"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "scaffold_extension",
+          "change": "added",
+          "description_changed": false,
+          "description": "Build an inert dependency-free external-tool template, synthetic local-service tests and review/setup/recovery notes. Discover existing capabilities first; only decision=author produces files. Returns bounded text and an exact revision, never writes/imports/tests/installs/enables code. The template is a local synthetic example, not implementation of the stated goal. Discovery evidence is caller-supplied, not verified. Separate code-execution and installation approval remain required.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "discovery",
+            "goal",
+            "name",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "discovery",
+            "goal",
+            "name"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "start_extension_authoring",
+          "change": "added",
+          "description_changed": false,
+          "description": "Capture an inert revision-bound local synthetic-service extension candidate. Discover/reuse existing capabilities first. Optional source replaces only the reviewed CommonJS tool, not its fixed fixture assertions. No files/imports/tests/activation occur. Use request_extension_stage for separately approved staging, full-trust tests, installation, configuration, agent enablement and actual verification. No publication authority.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "discovery",
+            "goal",
+            "name",
+            "source",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "discovery",
+            "goal",
+            "name"
+          ],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
