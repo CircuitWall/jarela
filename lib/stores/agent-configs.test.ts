@@ -19,6 +19,11 @@ const {
   DISPLAY_FILTER_DEFAULTS,
   listAgentConfigs,
   duplicateAgentConfig,
+  compareAndSetAgentTools,
+  parseDelegateTargets,
+  deleteAgentConfig,
+  getDefaultAgentConfig,
+  generateAgentId,
 } = await import("./agent-configs");
 const { getDb } = await import("@/lib/db");
 const { createThread } = await import("./threads");
@@ -37,6 +42,63 @@ const seedAgent = (id: string) =>
     instructions: "",
     tools: [],
   });
+
+describe("configuration lifecycle edge cases", () => {
+  it("applies explicit overrides, clears inheritance and retains omitted values", () => {
+    const base = { id: "synthetic-overrides", name: "Synthetic", identity: "", instructions: "", tools: [] };
+    const configured = upsertAgentConfig({
+      ...base, is_default: true, never_reply: true, adaptive_persona_enabled: true,
+      voice_enabled: true, voice_auto_speak: false, voice_model: " ", voice_name: " ", voice_stt_model: " ",
+      harness_id: "synthetic", delegate_targets: ["synthetic-other", base.id, "synthetic-other"],
+      context_tier_proportions: { hot: -1, warm: 20, facts: 80 },
+      anti_hallucination_model_config: " synthetic ", router_enabled: true,
+      tool_credentials: { synthetic: "synthetic-id", empty: "" },
+    });
+    expect(configured).toMatchObject({
+      is_default: 1, never_reply: 1, adaptive_persona_enabled: 1, voice_enabled: 1,
+      voice_auto_speak: 0, anti_hallucination_model_config: "synthetic",
+    });
+    expect(getDefaultAgentConfig()?.id).toBe(base.id);
+    expect(getAgentTierProportions(configured)).toEqual({ hot: 0, warm: 20, facts: 80 });
+    expect(parseDelegateTargets(configured.delegate_targets)).toEqual(["synthetic-other"]);
+    expect(getAgentToolCredentials(configured)).toEqual({ synthetic: "synthetic-id" });
+    const cleared = upsertAgentConfig({
+      ...base, never_reply: false, adaptive_persona_enabled: false, voice_enabled: false, voice_auto_speak: true,
+      harness_id: "", delegate_targets: [], context_tier_proportions: null,
+      anti_hallucination_model_config: "", router_enabled: null, tool_credentials: {},
+      warm_summary_limit: Number.NaN,
+    });
+    expect(cleared).toMatchObject({
+      never_reply: 0, adaptive_persona_enabled: 0, voice_enabled: 0, voice_auto_speak: 1,
+      harness_id: null, context_tier_proportions: null, anti_hallucination_model_config: null,
+      router_enabled: null, tool_credentials: null, warm_summary_limit: configured.warm_summary_limit,
+    });
+    expect(upsertAgentConfig({ ...base, router_enabled: false }).router_enabled).toBe(0);
+  });
+
+  it("enforces optimistic tool updates and deletes only existing agents", () => {
+    const created = seedAgent("synthetic-permissions");
+    compareAndSetAgentTools(created.id, created.tools, ["synthetic", "synthetic"]);
+    expect(getAgentTools(getAgentConfig(created.id))).toEqual(["synthetic"]);
+    expect(() => compareAndSetAgentTools(created.id, created.tools, [])).toThrow(/permissions changed/);
+    compareAndSetAgentTools(created.id, JSON.stringify(["synthetic"]), ["synthetic"]);
+    expect(deleteAgentConfig(created.id)).toBe(true);
+    expect(deleteAgentConfig(created.id)).toBe(false);
+    expect(duplicateAgentConfig("missing")).toBeNull();
+    expect(generateAgentId("!!!")).toMatch(/^agent-/);
+  });
+
+  it("uses defaults for malformed filters and tolerates legacy delegate values", () => {
+    const created = seedAgent("synthetic-legacy");
+    getDb().prepare("UPDATE agent_configs SET display_filters=? WHERE id=?").run("invalid JSON", created.id);
+    expect(getAgentDisplayFilters(created.id)).toEqual(DISPLAY_FILTER_DEFAULTS);
+    expect(updateAgentDisplayFilters("missing", {})).toBeNull();
+    expect(parseDelegateTargets(null)).toEqual([]);
+    expect(parseDelegateTargets("{}")).toEqual([]);
+    expect(parseDelegateTargets("invalid JSON")).toEqual([]);
+    expect(parseDelegateTargets(JSON.stringify(["synthetic", "synthetic", "", 1]))).toEqual(["synthetic"]);
+  });
+});
 
 describe("usage profiles", () => {
   it("preserves tuned sliders even if a legacy client updates only MBTI", () => {

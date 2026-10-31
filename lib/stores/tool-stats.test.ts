@@ -15,6 +15,7 @@ const {
   recordToolUsage,
   summarizeToolFailureSamples,
   summarizeToolUsage,
+  toStats,
 } = await import("./tool-stats");
 const { getDb } = await import("@/lib/db");
 
@@ -23,6 +24,29 @@ afterAll(() => {
 });
 
 describe("tool usefulness telemetry", () => {
+  it("ignores empty turns, lists all stats and preserves defaults for zero-call rows", () => {
+    expect(() => recordToolUsage([], "")).not.toThrow();
+    expect(toStats({
+      tool_name: "synthetic", call_count: 0, success_count: 0, error_count: 0,
+      used_count: 0, last_called_at: null, updated_at: "2026-10-31T00:00:00Z",
+    })).toEqual(defaultToolStats());
+    getDb().prepare(`INSERT INTO tool_stats (tool_name, call_count, success_count, error_count, used_count, updated_at)
+      VALUES ('synthetic-zero',0,0,0,0,'2026-10-31T00:00:00Z')`).run();
+    expect(getToolStatsMap().get("synthetic-zero")).toEqual(defaultToolStats());
+    expect(pruneToolFailureSamples("invalid timestamp")).toBeGreaterThanOrEqual(0);
+  });
+
+  it("handles missing names, synthetic phase IDs and non-object payloads", () => {
+    expect(summarizeToolUsage([
+      { id: "", phase: "call", name: "", payload: null },
+      { id: "", phase: "call", name: "synthetic", payload: null },
+      { id: "", phase: "result", name: "synthetic", payload: null },
+    ], "")).toEqual([{ name: "synthetic", calls: 1, successes: 0, errors: 1, used: 0 }]);
+    expect(summarizeToolFailureSamples([
+      { id: "synthetic", phase: "call", name: "synthetic", payload: {} },
+      { id: "synthetic", phase: "result", name: "synthetic", payload: { status: "failed", message: "Synthetic failure" } },
+    ])).toHaveLength(1);
+  });
   beforeEach(() => {
     // isolate tests by using distinct tool names; simpler than re-opening the DB.
   });
