@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Gate approval-store coverage with the existing 80% thresholds and expand
+  SQLite-backed lifecycle tests for single reservations, immutable outcomes,
+  restart recovery, encrypted results and atomic signal-publication rollback.
+  Production approval behavior is unchanged.
 - Raise the default adaptive output floor for Balanced and High Reasoning to
   8,192 tokens so short prompts have more room for large tool calls. Provider,
   model and context ceilings still apply; Fast and Cost-saving retain their
