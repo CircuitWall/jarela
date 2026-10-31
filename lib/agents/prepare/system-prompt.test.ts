@@ -403,7 +403,7 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("plus 160 further permitted tool(s) through invoke_tool");
   });
 
-  it("renders the tool usage SOP as an ordered, tool-free static block", () => {
+  it("renders the tool usage SOP as an ordered static block without an embedded inventory", () => {
     const ctx = buildSharedToolCatalogContext();
 
     expect(ctx).toContain("--- Tool usage SOP ---");
@@ -463,7 +463,7 @@ describe("buildToolPermissionContext", () => {
 
     // The inventory is no longer embedded; it is discovered through list_tools.
     expect(ctx).not.toContain("Cached full tool index:");
-    expect(ctx).not.toContain("file_read");
+    expect(ctx).not.toContain("file_read: read/builtin");
     expect(ctx).not.toContain("memory_read");
     expect(ctx).not.toContain("gmail_send_email");
     expect(ctx).not.toContain("github_search_issues");

@@ -496,6 +496,20 @@ describe("assembled agent system prompt", () => {
     }
   });
 
+  it("prioritizes targeted file inspection without requiring exhaustive result paging", () => {
+    for (const { id, prompt } of variants) {
+      const shared = prompt.split(CACHE_SHARED_SPLIT_SENTINEL)[0];
+      const search = shared.indexOf("use file_glob to locate paths and file_grep");
+      const read = shared.indexOf("before file_read with explicit start_line/end_line ranges");
+      expect(search, id).toBeGreaterThanOrEqual(0);
+      expect(read, id).toBeGreaterThan(search);
+      expect(shared, id).toContain("When a relevant path and range are already known, read that range directly");
+      expect(shared, id).toContain("not proof that omitted content was inspected");
+      expect(shared, id).toContain("unless the task explicitly requires complete inspection");
+      expect(shared, id).toContain("stop when the evidence needed for the task is obtained");
+    }
+  });
+
   it("shares the composition contract across all profile, persona, and transport fixtures", () => {
     const sharedBlocks = variants.map(({ prompt }) => prompt.split(CACHE_SHARED_SPLIT_SENTINEL)[0]);
     expect(new Set(sharedBlocks).size).toBe(1);
