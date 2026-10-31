@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ENV_CATEGORIES, envSchemaByName, envSchemaList, type EnvVarDef } from "./schema";
+import { USAGE_STRATEGIES } from "@/lib/agents/usage-strategy";
 import {
   validateForSchema,
   readOverrides,
@@ -47,6 +48,17 @@ describe("env-overrides validateForSchema", () => {
     expect((await readOverrides()).entries[def.name]).toBe("32768");
     await patchOverride(def.name, null);
     expect((await readOverrides()).entries[def.name]).toBeUndefined();
+  });
+
+  it("reuses canonical usage choices while retaining strict persisted values", () => {
+    const def = envSchemaByName().get("JARELA_USAGE_STRATEGY");
+    if (!def) throw new Error("missing usage-strategy schema");
+    expect(def.enumValues).toBe(USAGE_STRATEGIES);
+    for (const strategy of USAGE_STRATEGIES) {
+      expect(validateForSchema(def, strategy)).toBeNull();
+      expect(validateForSchema(def, strategy.toUpperCase())).toMatch(/expected one of/);
+      expect(validateForSchema(def, ` ${strategy} `)).toMatch(/expected one of/);
+    }
   });
 
   const intDef: EnvVarDef = {
