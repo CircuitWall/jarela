@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { withDbTransaction } from "@/lib/db/transaction";
+import { readJsonSetting } from "./app-settings-json";
 import { isAbsolute, normalize } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
@@ -95,18 +96,6 @@ export const DEFAULT_ARTIFACT_LIFECYCLE_SETTINGS: ArtifactLifecycleSettings = {
   include_generated_media: true,
 };
 
-function readJsonSetting<T>(key: string): T | null {
-  const row = getDb()
-    .prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
-    .get(NS, key) as { value?: string } | undefined;
-  if (!row?.value) return null;
-  try {
-    return JSON.parse(row.value) as T;
-  } catch {
-    return null;
-  }
-}
-
 function writeJsonSetting(key: string, value: unknown): void {
   const existing = getDb()
     .prepare("SELECT created_at FROM memory_store WHERE namespace=? AND key=?")
@@ -130,16 +119,7 @@ export function setEmbeddingModelConfigName(name: string | null): string | null 
     getDb().prepare("DELETE FROM memory_store WHERE namespace=? AND key=?").run(NS, EMBEDDING_MODEL_KEY);
     return null;
   }
-  const existing = getDb()
-    .prepare("SELECT created_at FROM memory_store WHERE namespace=? AND key=?")
-    .get(NS, EMBEDDING_MODEL_KEY) as { created_at?: string } | undefined;
-  const t = now();
-  const created = existing?.created_at ?? t;
-  getDb()
-    .prepare(
-      "INSERT OR REPLACE INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,NULL)",
-    )
-    .run(NS, EMBEDDING_MODEL_KEY, JSON.stringify(name), created, t);
+  writeJsonSetting(EMBEDDING_MODEL_KEY, name);
   return name;
 }
 
@@ -162,19 +142,9 @@ export function setLocalEmbeddingsEnabled(enabled: boolean): void {
 }
 
 export function getScreenLockIdleTimeoutMs(): number | null {
-  const row = getDb()
-    .prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
-    .get(NS, IDLE_TIMEOUT_KEY) as { value?: string } | undefined;
-  const raw = row?.value;
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0
-      ? Math.floor(parsed)
-      : null;
-  } catch {
-    return null;
-  }
+  const parsed = readJsonSetting<unknown>(IDLE_TIMEOUT_KEY);
+  return typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0
+    ? Math.floor(parsed) : null;
 }
 
 export function setScreenLockIdleTimeoutMs(ms: number): void {
@@ -186,15 +156,7 @@ export function setScreenLockIdleTimeoutMs(ms: number): void {
 // global because the trust boundary it guards (what crosses to the LLM
 // provider) is uniform across agents.
 export function isRedactionEnabled(): boolean {
-  const row = getDb()
-    .prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
-    .get(NS, REDACTION_ENABLED_KEY) as { value?: string } | undefined;
-  if (!row?.value) return true;
-  try {
-    return JSON.parse(row.value) !== false;
-  } catch {
-    return true;
-  }
+  return readJsonSetting<unknown>(REDACTION_ENABLED_KEY) !== false;
 }
 
 export function setRedactionEnabled(enabled: boolean): void {
@@ -205,15 +167,7 @@ export function setRedactionEnabled(enabled: boolean): void {
 // redaction: only an explicit persisted `false` disables it. Guards whether
 // the server accepts foreground-tab pushes from the extension at all.
 export function isAmbientContextEnabled(): boolean {
-  const row = getDb()
-    .prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
-    .get(NS, AMBIENT_CONTEXT_KEY) as { value?: string } | undefined;
-  if (!row?.value) return true;
-  try {
-    return JSON.parse(row.value) !== false;
-  } catch {
-    return true;
-  }
+  return readJsonSetting<unknown>(AMBIENT_CONTEXT_KEY) !== false;
 }
 
 export function setAmbientContextEnabled(enabled: boolean): void {

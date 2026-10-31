@@ -1,5 +1,6 @@
 "use client";
 import type { ContentPart, Message, SummaryTopicSegment, WarmChannelSummary } from "@/api/types";
+import { parseJsonArray } from "@/lib/utils/json";
 
 export interface ChatRunOptions {
   quiet?: boolean;
@@ -190,11 +191,5 @@ export function makeQueuedId(prefix = "q"): string {
 /** Parse the raw `warm_summary_topics` JSON string from the manual /compact
  *  response (the thread GET/context-pin routes already return it parsed). */
 export function parseWarmSummaryTopics(raw: string | null | undefined): SummaryTopicSegment[] | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as SummaryTopicSegment[]) : null;
-  } catch {
-    return null;
-  }
+  return parseJsonArray<SummaryTopicSegment>(raw);
 }

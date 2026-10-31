@@ -83,6 +83,15 @@ describe("generate_image as used by an agent", () => {
     expect(String(error)).not.toContain("test-key");
   });
 
+  it("preserves the cause detail for image-generation connection failures", async () => {
+    const cause = Object.assign(new Error("Synthetic connection reset"), { code: "ECONNRESET" });
+    fetchMock.mockRejectedValue(new Error("fetch failed", { cause }));
+    await expect(generate({ prompt: "Synthetic caption" })).rejects.toThrow(
+      "Gemini request failed: fetch failed: Synthetic connection reset (ECONNRESET)",
+    );
+    expect(mocks.writes).toHaveLength(0);
+  });
+
   it("keeps the upstream status for Imagen non-JSON errors", async () => {
     fetchMock.mockResolvedValue(new Response("upstream timeout", { status: 504 }));
     await expect(generate({ prompt: "cat", model: "imagen-3.0-generate-002" })).rejects.toThrow(/Imagen 504/);

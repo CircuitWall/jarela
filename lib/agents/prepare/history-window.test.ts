@@ -178,6 +178,19 @@ describe("history source isolation", () => {
     for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
   });
 
+  it("decodes stored attachments without applying text channel labels to them", async () => {
+    const thread = createThread("test-agent", "synthetic-content");
+    const parts = [{ type: "text", text: "Synthetic caption" }, { type: "image_ref", name: "synthetic.png" }];
+    addMessage(thread.thread_id, "user", JSON.stringify(parts));
+    addMessage(thread.thread_id, "assistant", "watcher context", null, "watcher");
+    const result = await buildHistoryWindow(
+      thread.thread_id, agentCfg(), providerParams, "next", modelInfo, null,
+      { scope: "foreground", channels: ["chat", "watcher"], includeWarm: false, includeFacts: false },
+    );
+    expect(result.history[0].content).toEqual(parts);
+    expect(result.history[1].content).toMatch(/^\[watcher @ \d\d:\d\d\] watcher context$/);
+  });
+
   it("keeps foreground and bridge history in separate scopes", async () => {
     const thread = createThread("scope-agent");
     addMessage(thread.thread_id, "user", "foreground question");
@@ -623,6 +636,29 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(result.factsCtx).toBe("");
     // 100ms recall + 100ms warm summary budgets, with margin.
     expect(elapsed).toBeLessThan(2000);
+  });
+
+  it("keeps zero-budget history recall unlimited rather than racing an immediate fallback", async () => {
+    const env = await import("@/lib/env/config");
+    const config = env.getConfig();
+    const getConfig = vi.spyOn(env, "getConfig").mockReturnValue({ ...config, recallBudgetMs: 0 });
+    const thread = createThread("test-agent", "synthetic-zero-budget");
+    addMessage(thread.thread_id, "user", "synthetic recall query");
+    putMemory("facts", "synthetic-zero-budget", "Unrelated stored fact");
+    recallSpy.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve([
+      { source: "memory", namespace: "facts", key: "synthetic-zero-budget", content: "Delayed synthetic fact" },
+    ]), 10)));
+    try {
+      const result = await buildHistoryWindow(
+        thread.thread_id, agentCfg(), providerParams, "synthetic recall query", modelInfo, null,
+        { includeWarm: false, includeFacts: true },
+      );
+      expect(result.factsCtx).toContain("Delayed synthetic fact");
+    } finally {
+      getConfig.mockRestore();
+      deleteMemory("facts", "synthetic-zero-budget");
+      recallSpy.mockResolvedValue([]);
+    }
   });
 
   it("skips automatic facts recall when disabled and permits an explicit override", async () => {

@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import {
   getToolStatsMap,
+  defaultToolStats,
   listToolFailureSamples,
   type ToolFailureSampleRow,
   type ToolUsefulnessStats,
@@ -66,7 +67,7 @@ export function buildToolTelemetryComplaintIssue(input: TelemetryIssueInput = {}
   const rows = candidateNames
     .map((name): TelemetryToolRow => ({
       name,
-      stats: statsMap.get(name) ?? emptyStats(),
+      stats: statsMap.get(name) ?? defaultToolStats(),
       failures: failuresByTool.get(name) ?? [],
     }))
     .filter((row) => row.stats.call_count >= minCalls || row.failures.length > 0)
@@ -390,20 +391,6 @@ function parseJsonSafe(text: string): Record<string, unknown> {
   } catch {
     return {};
   }
-}
-
-function emptyStats(): ToolUsefulnessStats {
-  return {
-    call_count: 0,
-    success_count: 0,
-    error_count: 0,
-    used_count: 0,
-    success_rate: 1,
-    usefulness_rate: 1,
-    score: 1,
-    never_used: true,
-    last_called_at: null,
-  };
 }
 
 registerLangChainPackage({

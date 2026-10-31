@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
+import { readJsonSetting } from "./app-settings-json";
 import {
   CUSTOM_HARNESS_ID_PREFIX,
   DEFAULT_HARNESS_ID,
@@ -16,18 +17,6 @@ const CUSTOMS_KEY = "harnesses";
 const DEFAULT_KEY = "default_harness_id";
 
 const now = () => new Date().toISOString();
-
-function readJson<T>(key: string): T | null {
-  const row = getDb()
-    .prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
-    .get(NS, key) as { value?: string } | undefined;
-  if (!row?.value) return null;
-  try {
-    return JSON.parse(row.value) as T;
-  } catch {
-    return null;
-  }
-}
 
 function writeJson(key: string, value: unknown): void {
   const t = now();
@@ -60,7 +49,7 @@ function sanitizeSections(input: unknown): Harness["sections"] {
 }
 
 function listCustomHarnesses(): Harness[] {
-  const raw = readJson<unknown[]>(CUSTOMS_KEY);
+  const raw = readJsonSetting<unknown[]>(CUSTOMS_KEY);
   if (!Array.isArray(raw)) return [];
   const out: Harness[] = [];
   for (const item of raw) {
@@ -93,7 +82,7 @@ export function getHarness(id: string): Harness | null {
 }
 
 export function getDefaultHarnessId(): string {
-  const raw = readJson<string>(DEFAULT_KEY);
+  const raw = readJsonSetting<string>(DEFAULT_KEY);
   if (typeof raw === "string" && raw.length > 0) return raw;
   return DEFAULT_HARNESS_ID;
 }

@@ -1,6 +1,18 @@
 import { describe, it, expect, vi } from "vitest";
-import { extractTopicSegments, summarizeTranscript, transcriptText, validateTopicSegments } from "./conversation-summary";
+import { extractTopicSegments, parseStoredTopics, summarizeTranscript, transcriptText, validateTopicSegments } from "./conversation-summary";
 import type { ModelProvider, ProviderMessage, ProviderParams } from "@/lib/providers/types";
+
+describe("parseStoredTopics", () => {
+  it.each([undefined, null, "", "{", "null", "{}", '"text"'])("keeps null fallback for %s", (raw) => {
+    expect(parseStoredTopics(raw)).toBeNull();
+  });
+
+  it("keeps stored pipeline array fields intact without introducing response validation", () => {
+    const topics = [{ title: "Synthetic", start_seq: 1, source_chars: 100, extra: true }];
+    expect(parseStoredTopics(JSON.stringify(topics))).toEqual(topics);
+    expect(parseStoredTopics("[]")).toEqual([]);
+  });
+});
 
 describe("transcriptText", () => {
   it("returns plain text unchanged", () => {

@@ -10,3 +10,9 @@ export function parseJsonSafe<T>(text: string, fallback?: T): T | undefined {
     return fallback;
   }
 }
+
+export function parseJsonArray<T>(text: string | null | undefined): T[] | null {
+  if (!text) return null;
+  const parsed = parseJsonSafe<unknown>(text);
+  return Array.isArray(parsed) ? parsed as T[] : null;
+}

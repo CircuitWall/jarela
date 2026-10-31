@@ -334,7 +334,35 @@ them — but they are load-bearing:
   / `validateBody` and the per-resource `*ToResponse` row→JSON serializers
   shared between list and `[id]` route handlers.
 
-Both layers are pure-logic and 100% line-covered by Vitest.
+Unreleased runtime-operation consolidation also shares:
+
+- [Stored message decoding](../api/message-content.ts) between chat rendering
+  and history assembly. This preserves legacy attachment recognition and plain
+  text fallback; it is not request-schema validation or a text projection.
+- [Best-effort context deadlines](../lib/utils/promise.ts) between foreground
+  recall and history. The helper bounds waiting, not execution, and returns the
+  caller's fallback on rejection or expiry. History keeps its non-positive
+  unlimited-wait adapter; foreground recall keeps an immediate timer at zero.
+  Required work and authorization checks must not use this fallback contract.
+- [Tolerant app-settings reads](../lib/stores/app-settings-json.ts) for settings
+  whose owners permit a null fallback. Strict skill-execution and document-recall
+  policy readers remain separate and propagate corruption or schema failures.
+  Database errors are not converted to fallback settings.
+- Nullable agent enum overrides share omission/clear/allowed-choice handling in
+  [agent configuration](../lib/stores/agent-configs.ts); usage strategies reuse
+  their canonical choice list. Omitted legacy values remain untouched, while
+  explicit invalid values clear the override. Text, boolean and citation controls
+  retain their distinct normalization rules.
+- Stored summary topics share array decoding in [JSON utilities](../lib/utils/json.ts).
+  UI and compaction pipeline topic types remain separate; decoding does not
+  validate topic ranges or strip pipeline fields.
+- The update route reuses the [lifecycle version reader](../lib/lifecycle/version.ts).
+  Health probes and image generation share the one-level cause formatter in
+  [error utilities](../lib/utils/error.ts); other error owners retain ordinary
+  message-only formatting.
+
+The pattern catalog lists focused behavior tests. Coverage must be checked for
+the particular helper and its callers, not inferred for an entire utility layer.
 
 ### Review patterns and architecture drift
 

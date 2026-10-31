@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Share list/value client-cache lifecycle and notification setters, model
   inline-secret preservation/redaction, and bridge-route/skill-repository
   response serializers; preserve cache races, copying, events and v1 contracts.
+- Share stored attachment decoding between chat rendering and history assembly,
+  best-effort context deadline handling, tolerant app-settings JSON reads and
+  telemetry statistics defaults; unify nullable agent enum overrides while
+  reusing canonical usage-strategy choices. Preserve zero-budget recall differences,
+  strict policy validation and existing fallback behavior.
+- Reuse the lifecycle version reader in the update route, share tolerant
+  stored-topic array parsing and preserve cause-aware error details through
+  a common formatter for health probes and image generation.
 - Use Node's built-in SQLite in document-search regression tests instead of an
   undeclared native dependency that failed clean CI installs.
 - Derive document-source mutation and statistics types from shared Zod schemas

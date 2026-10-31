@@ -6,6 +6,14 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+export function errorMessageWithCause(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = "cause" in err ? err.cause : undefined;
+  if (!(cause instanceof Error)) return err.message;
+  const code = "code" in cause ? cause.code : undefined;
+  return code ? `${err.message}: ${cause.message} (${code})` : `${err.message}: ${cause.message}`;
+}
+
 const MAX_ERROR_BODY_LENGTH = 500;
 
 // Reads an HTTP error response body for inclusion in a thrown/logged error

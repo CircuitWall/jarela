@@ -18,6 +18,7 @@ import { maskOutboundText } from "@/lib/redaction/mask-provider";
 import { resolveGoogleApiKey, timeoutSignal } from "@/lib/utils/google-api";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { withStreamDefault } from "../support/tool-metadata";
+import { errorMessageWithCause as describeError } from "@/lib/utils/error";
 
 const DEFAULT_MODEL = "gemini-2.5-flash-image";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -114,16 +115,6 @@ async function callImagen(model: string, prompt: string, apiKey: string, n: numb
   }
   if (out.length === 0) throw new Error("Imagen returned no image");
   return out;
-}
-
-function describeError(err: unknown): string {
-  if (!(err instanceof Error)) return String(err);
-  const cause = (err as { cause?: unknown }).cause;
-  if (cause instanceof Error) {
-    const code = (cause as { code?: string }).code;
-    return code ? `${err.message}: ${cause.message} (${code})` : `${err.message}: ${cause.message}`;
-  }
-  return err.message;
 }
 
 function extForMime(mime: string): string {

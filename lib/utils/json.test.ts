@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { parseJsonSafe } from "./json";
+import { parseJsonArray, parseJsonSafe } from "./json";
+
+describe("parseJsonArray", () => {
+  it.each([undefined, null, "", "{", "null", "0", "true", '"text"', "{}"])("returns null for non-array input: %s", (raw) => {
+    expect(parseJsonArray(raw)).toBeNull();
+  });
+
+  it.each(["[]", "[null]", "[1,false,{}]", '[{"title":"Synthetic","extra":true}]'])("retains array entries without introducing schema validation: %s", (raw) => {
+    expect(parseJsonArray(raw)).toEqual(JSON.parse(raw));
+  });
+});
 
 describe("parseJsonSafe", () => {
   it("parses valid JSON", () => {
