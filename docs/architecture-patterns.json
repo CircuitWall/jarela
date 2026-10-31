@@ -69,13 +69,48 @@
       "id": "tolerant-json-decoding",
       "operation": "Use the shared JSON parser only when malformed or empty JSON has a documented fallback; validate user input separately.",
       "canonicalSources": [
-        "lib/utils/json.ts"
+        "lib/utils/json.ts",
+        "lib/stores/app-settings-json.ts"
       ],
       "validationSources": [
-        "lib/utils/json.test.ts"
+        "lib/utils/json.test.ts",
+        "lib/stores/app-settings-json.test.ts",
+        "components/chat/chat-helpers.test.tsx",
+        "lib/agents/conversation-summary.test.ts"
       ],
       "exceptions": [
         "Never use a fallback parser as a substitute for schema validation of a request or persisted value with integrity requirements."
+      ]
+    },
+    {
+      "id": "stored-message-decoding",
+      "operation": "Decode legacy stored attachment arrays consistently for chat rendering and model history, preserving plain-text fallback and part order.",
+      "canonicalSources": [
+        "api/message-content.ts"
+      ],
+      "validationSources": [
+        "api/message-content.test.ts",
+        "components/chat/MessageBubble.test.tsx",
+        "lib/agents/prepare/history-window.test.ts"
+      ],
+      "exceptions": [
+        "Request validation and transcript/TTS text projection have different input and output contracts; stored decoding does not replace them."
+      ]
+    },
+    {
+      "id": "best-effort-context-deadline",
+      "operation": "Bound waiting for optional context, returning the caller's fallback on timeout or rejection and clearing the timer on early settlement.",
+      "canonicalSources": [
+        "lib/utils/promise.ts"
+      ],
+      "validationSources": [
+        "lib/utils/promise.test.ts",
+        "lib/agents/prepare/history-window.test.ts",
+        "lib/agents/run-thread.retry.test.ts"
+      ],
+      "exceptions": [
+        "History treats non-positive budgets as unlimited waiting; foreground recall retains a zero-budget timer.",
+        "This does not cancel execution and must not mask failures of required operations or authorization checks."
       ]
     },
     {

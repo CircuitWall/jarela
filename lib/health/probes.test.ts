@@ -97,6 +97,15 @@ describe("health probes", () => {
     expect(String(r.error)).toMatch(/could not reach its endpoint/i);
   });
 
+  it("preserves cause details when the Atlassian endpoint cannot be reached", async () => {
+    saveIntegration("atlassian", { url: "https://example.atlassian.net", email: "synthetic@example.test", api_token: "synthetic-token" });
+    const cause = Object.assign(new Error("Synthetic connection reset"), { code: "ECONNRESET" });
+    mockFetch(() => { throw new Error("fetch failed", { cause }); });
+    expect(await probeAtlassian()).toMatchObject({
+      ok: false, status: "transient", error: "fetch failed: Synthetic connection reset (ECONNRESET)",
+    });
+  });
+
   it("ok on a 200 from the vendor", async () => {
     saveIntegration("anthropic", { api_key: "sk-ant-xxx" });
     mockFetch(() => jsonResponse({ data: [{ id: "claude-3-opus" }] }));

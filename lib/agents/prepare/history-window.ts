@@ -12,6 +12,8 @@ import { countMessagesBetweenSeq, getRecentMessagesWindow, getThread, getThreadC
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
+import { settleWithinBudget } from "@/lib/utils/promise";
+import { parseStoredMessageContent } from "@/api/message-content";
 import {
   applyTierSpill,
   computeContextBudget,
@@ -400,7 +402,7 @@ function finalizeHistoryWindow(input: {
 
   const history = hotMessagesForPrompt.map((m) => ({
     role: m.role as "user" | "assistant",
-    content: multiChannel ? prefixChannelLabel(parseContent(m.content), m) : parseContent(m.content),
+    content: multiChannel ? prefixChannelLabel(parseStoredMessageContent(m.content), m) : parseStoredMessageContent(m.content),
   }));
 
   // Should be unreachable: the budget floors at 1 token and
@@ -486,48 +488,10 @@ function prefixChannelLabel(content: string | ContentPart[], m: MessageRow): str
   return `[${channel} @ ${formatHHMM(m.created_at)}] ${content}`;
 }
 
-// Recover ContentPart[] from messages that were stored as JSON-encoded
-// arrays (text + attachments). Plain string messages pass through.
-function parseContent(raw: string): string | ContentPart[] {
-  if (!raw.startsWith("[")) return raw;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (
-      Array.isArray(parsed) &&
-      parsed.length > 0 &&
-      typeof parsed[0] === "object" &&
-      parsed[0] !== null &&
-      "type" in (parsed[0] as object)
-    ) {
-      return parsed as ContentPart[];
-    }
-  } catch {
-    // not valid JSON — treat as plain text
-  }
-  return raw;
-}
-
-// Bounded race: resolve to `promise` when it settles within `ms`, otherwise
-// resolve to `fallback`. Mirrors the helper in `lib/agents/run-thread.ts` —
-// kept local to avoid widening that module's public surface for one call
-// site. A budget of 0 means "wait forever" (the timer fires immediately
-// but the promise wins via microtask ordering only if it's already
-// settled — in practice we configure non-zero budgets).
+// History keeps its legacy non-positive "wait without a deadline" policy;
+// foreground turn recall instead uses an immediate timer at zero.
 function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  if (ms <= 0) return promise.catch(() => fallback);
-  return new Promise<T>((resolve) => {
-    let settled = false;
-    const t = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        resolve(fallback);
-      }
-    }, ms);
-    promise.then(
-      (v) => { if (!settled) { settled = true; clearTimeout(t); resolve(v); } },
-      () => { if (!settled) { settled = true; clearTimeout(t); resolve(fallback); } },
-    );
-  });
+  return ms <= 0 ? promise.catch(() => fallback) : settleWithinBudget(promise, ms, fallback);
 }
 
 async function buildWarmSummary(

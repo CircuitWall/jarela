@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { readErrorBody } from "./error";
+import { errorMessage, errorMessageWithCause, readErrorBody } from "./error";
+
+describe("errorMessageWithCause", () => {
+  it.each(["Synthetic failure", null, 42, { synthetic: true }])("matches ordinary thrown-value formatting: %j", (value) => {
+    expect(errorMessageWithCause(value)).toBe(errorMessage(value));
+  });
+
+  it("keeps only the outer message when the cause is absent or not an Error", () => {
+    expect(errorMessageWithCause(new Error("Outer"))).toBe("Outer");
+    expect(errorMessageWithCause(new Error("Outer", { cause: "Synthetic cause" }))).toBe("Outer");
+  });
+
+  it("includes one cause message and its truthy code without traversing further causes", () => {
+    const cause = Object.assign(new Error("Inner", { cause: new Error("Not rendered") }), { code: "ECONNRESET" });
+    expect(errorMessageWithCause(new Error("Outer", { cause }))).toBe("Outer: Inner (ECONNRESET)");
+    expect(errorMessage(new Error("Outer", { cause }))).toBe("Outer");
+  });
+
+  it.each([undefined, "", 0, false])("omits falsy cause codes: %j", (code) => {
+    const cause = Object.assign(new Error("Inner"), { code });
+    expect(errorMessageWithCause(new Error("Outer", { cause }))).toBe("Outer: Inner");
+  });
+});
 
 describe("readErrorBody", () => {
   it("suppresses HTML error pages instead of returning the raw markup", async () => {

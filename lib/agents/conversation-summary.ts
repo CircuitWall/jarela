@@ -1,5 +1,6 @@
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import type { ModelProvider, ProviderMessage, ProviderParams } from "@/lib/providers/types";
+import { parseJsonArray } from "@/lib/utils/json";
 
 export function transcriptText(raw: string): string {
   if (!raw.startsWith("[")) return raw;
@@ -279,13 +280,7 @@ export function extractTopicSegments(text: string): { body: string; topics: Summ
 
 /** Parse the `threads.warm_summary_topics` column (JSON array or NULL) for API responses. */
 export function parseStoredTopics(raw: string | null | undefined): SummaryTopicSegment[] | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as SummaryTopicSegment[]) : null;
-  } catch {
-    return null;
-  }
+  return parseJsonArray<SummaryTopicSegment>(raw);
 }
 
 export async function summarizeTranscript(

@@ -16,7 +16,7 @@ import { pushToast } from "@/lib/ui/toasts";
 import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/message-role";
 import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extension-turn-prompt";
 import { errorMessage } from "@/lib/utils/error";
-import { stripDeclaredReferencesFence } from "@/api/message-content";
+import { parseStoredMessageContent, stripDeclaredReferencesFence } from "@/api/message-content";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownContent, ContentPartView } from "./MessageContent";
 import { USAGE_PROFILES } from "@/lib/agents/usage-profile";
@@ -693,25 +693,6 @@ function BridgeMessageCard({ ctx, activity }: {
   );
 }
 
-function parseContent(raw: string): string | ContentPart[] {
-  if (!raw.startsWith("[")) return raw;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (
-      Array.isArray(parsed) &&
-      parsed.length > 0 &&
-      typeof parsed[0] === "object" &&
-      parsed[0] !== null &&
-      "type" in (parsed[0] as object)
-    ) {
-      return parsed as ContentPart[];
-    }
-  } catch {
-    // not valid JSON content
-  }
-  return raw;
-}
-
 function ReferencesPanel({ sources }: { sources: ReadonlyArray<{ n: number; label: string; href: string }> }) {
   const [open, setOpen] = useState(false);
   if (sources.length === 0) return null;
@@ -1032,11 +1013,11 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
   const streaming = "streaming" in message && message.streaming;
   const transcriptStatus = "transcript_status" in message ? message.transcript_status : undefined;
   const statusReason = "status_reason" in message ? message.status_reason : null;
-  // Memoize the JSON-or-plain-text parse: `parseContent` runs JSON.parse on
+  // Memoize the JSON-or-plain-text parse: `parseStoredMessageContent` runs JSON.parse on
   // anything that looks like a serialized ContentPart[]. For the streaming
   // bubble this is called on every rAF flush as `content` grows; without
   // memoization we'd re-parse the entire (growing) blob each frame.
-  const parsed = useMemo(() => parseContent(message.content), [message.content]);
+  const parsed = useMemo(() => parseStoredMessageContent(message.content), [message.content]);
   const messageId = "id" in message ? message.id : null;
   const containsImageAttachment = hasImageAttachment(parsed);
 

@@ -1,6 +1,7 @@
 import { streamWithConfig } from "@/lib/agents/llm";
 import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 import { getConfig } from "@/lib/env/config";
+import { settleWithinBudget } from "@/lib/utils/promise";
 import { claimSystemSignals, renewSystemSignalLease, releaseSystemSignals, commitSystemSignalTranscript, type SystemSignalBatch } from "@/lib/stores/system-signals";
 import { runtimeInstanceId } from "@/lib/lifecycle/system-signals";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
@@ -291,22 +292,6 @@ export async function persistThreadRunUserMessage(
 // race silently lost on most turns and recall effectively never fired.
 function recallBudgetMs(): number {
   return getConfig().recallBudgetMs;
-}
-
-function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise<T>((resolve) => {
-    let settled = false;
-    const t = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        resolve(fallback);
-      }
-    }, ms);
-    promise.then(
-      (v) => { if (!settled) { settled = true; clearTimeout(t); resolve(v); } },
-      () => { if (!settled) { settled = true; clearTimeout(t); resolve(fallback); } },
-    );
-  });
 }
 
 export interface PreparedThreadRun {
@@ -980,7 +965,7 @@ async function prepareTurnContext(
     : null;
   const rawRecallCtx = !autoRecallEnabled
     ? { text: "", memoryHits: 0, messageHits: 0 }
-    : await raceWithBudget(
+    : await settleWithinBudget(
       buildRecallContext(req.thread_id, trimmed, oldestInWindow, surroundingsQuery),
       recallWaitBudgetMs,
       { text: "", memoryHits: 0, messageHits: 0 },

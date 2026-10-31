@@ -1,6 +1,18 @@
 import { describe, it, expect } from "vitest";
 import type { Message } from "@/api/types";
-import { appendUnique, applyThreadMeta, compactionOutcomeToast, type ThreadMetaApplier } from "./chat-helpers";
+import { appendUnique, applyThreadMeta, compactionOutcomeToast, parseWarmSummaryTopics, type ThreadMetaApplier } from "./chat-helpers";
+
+describe("parseWarmSummaryTopics", () => {
+  it.each([undefined, null, "", "{", "null", "{}", '"text"'])("keeps null fallback for %s", (raw) => {
+    expect(parseWarmSummaryTopics(raw)).toBeNull();
+  });
+
+  it("keeps stored array payloads intact without adding pipeline-field validation", () => {
+    const topics = [{ title: "Synthetic", start_seq: 1, source_chars: 100, extra: true }];
+    expect(parseWarmSummaryTopics(JSON.stringify(topics))).toEqual(topics);
+    expect(parseWarmSummaryTopics("[]")).toEqual([]);
+  });
+});
 
 // created_at is display-only after the seq-ordering change — every fixture
 // shares one value to prove ordering doesn't depend on it. `seq` is omitted

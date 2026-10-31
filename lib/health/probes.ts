@@ -11,6 +11,7 @@
 
 import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import { spawnSync } from "node:child_process";
+import { errorMessageWithCause as describeError } from "@/lib/utils/error";
 
 type AtlassianAuth = { url: string; email: string; apiToken: string; cloudId?: string };
 type JiraAlignAuth = { url: string; apiToken: string };
@@ -88,16 +89,6 @@ function transient(error: string): HealthResult {
 }
 function probeError(error: string): HealthResult {
   return { ok: false, status: "error", error };
-}
-
-function describeError(err: unknown): string {
-  if (!(err instanceof Error)) return String(err);
-  const cause = (err as { cause?: unknown }).cause;
-  if (cause instanceof Error) {
-    const code = (cause as { code?: string }).code;
-    return code ? `${err.message}: ${cause.message} (${code})` : `${err.message}: ${cause.message}`;
-  }
-  return err.message;
 }
 
 function probeSignal(timeoutMs: number): AbortSignal {

@@ -93,6 +93,26 @@ describe("report_tool_telemetry_issue", () => {
     expect(out.hint).toContain("create_issue=true");
   });
 
+  it("uses canonical never-used stats when retained failure samples outlive their aggregate row", () => {
+    const name = "synthetic-missing-aggregate";
+    recordToolUsage([
+      { id: "synthetic-a", phase: "call", name, payload: {} },
+      { id: "synthetic-a", phase: "result", name, payload: { error: "timeout" } },
+      { id: "synthetic-b", phase: "call", name, payload: {} },
+      { id: "synthetic-b", phase: "result", name, payload: { error: "timeout" } },
+    ], "");
+    getDb().prepare("DELETE FROM tool_stats WHERE tool_name=?").run(name);
+    const issue = buildToolTelemetryComplaintIssue({ tool_names: [name] });
+    expect(issue.tools).toEqual([name]);
+    expect(issue.body).toContain("- calls: 0");
+    expect(issue.body).toContain("- errors: 0");
+    expect(issue.body).toContain("- score: 100%");
+    expect(issue.body).toContain("- success rate: 100%");
+    expect(issue.body).toContain("- usefulness rate: 100%");
+    expect(issue.body).toContain("- last called: never");
+    expect(issue.body).toContain("- recorded failure-pattern count: 2");
+  });
+
   it("truncates an overlong issue title override", async () => {
     const title = "t".repeat(160);
     const out = JSON.parse(String(await reportToolTelemetryIssueTool.invoke({

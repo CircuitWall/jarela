@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { withDbTransaction } from "@/lib/db/transaction";
 import type { MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { DEFAULT_PERSONA_STYLE } from "@/lib/agents/usage-profile";
+import { USAGE_STRATEGIES } from "@/lib/agents/usage-strategy";
 import type { UsageProfile } from "@/lib/agents/usage-profile";
 import { deleteAdvertisement, notifyAdvertisementSourceChanged } from "@/lib/stores/agent-advertisements";
 
@@ -54,7 +55,7 @@ export interface AgentConfigRow {
   // Per-agent override of the anti-hallucination classifier mode/model.
   // NULL on either column = inherit the global JARELA_HALLUCINATION_DETECTOR_*
   // env knob.
-  anti_hallucination_mode: string | null;          // "off" | "report" | "enforce"
+  anti_hallucination_mode: string | null;          // "off" | "regex" | "model"
   anti_hallucination_model_config: string | null;  // saved model config name
   // Citation strictness: 'off' | 'informational' | 'standard' | 'strict'.
   //   off           - no checker, no system-prompt directive
@@ -261,6 +262,15 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
   return withDbTransaction(() => upsertAgentConfigTransaction(input));
 }
 
+function resolveEnumOverride(
+  incoming: string | null | undefined,
+  existing: string | null | undefined,
+  choices: readonly string[],
+): string | null {
+  if (incoming === undefined) return existing ?? null;
+  return incoming !== null && choices.includes(incoming) ? incoming : null;
+}
+
 function resolveAgentConfigValues(input: UpsertAgentInput, existing: AgentConfigRow | null, t: string) {
   const created_at = existing?.created_at ?? t;
   const mbti = input.adaptive_mbti ?? existing?.adaptive_mbti ?? "INTJ";
@@ -295,14 +305,9 @@ function resolveAgentConfigValues(input: UpsertAgentInput, existing: AgentConfig
   // Anti-hallucination override: `undefined` keeps existing; `null` clears
   // the override (inherits env). Empty-string model is normalised to null
   // so the editor can ship "" for the inherit option.
-  const antiHallucMode =
-    input.anti_hallucination_mode === undefined
-      ? (existing?.anti_hallucination_mode ?? null)
-      : input.anti_hallucination_mode === null
-        ? null
-        : (input.anti_hallucination_mode === "off" || input.anti_hallucination_mode === "regex" || input.anti_hallucination_mode === "model")
-          ? input.anti_hallucination_mode
-          : null;
+  const antiHallucMode = resolveEnumOverride(
+    input.anti_hallucination_mode, existing?.anti_hallucination_mode, ["off", "regex", "model"],
+  );
   const antiHallucModel =
     input.anti_hallucination_model_config === undefined
       ? (existing?.anti_hallucination_model_config ?? null)
@@ -314,26 +319,16 @@ function resolveAgentConfigValues(input: UpsertAgentInput, existing: AgentConfig
       ? (parseCitationStrictness(existing?.citation_strictness) ?? "off")
       : (parseCitationStrictness(input.citation_strictness) ?? "off");
   const toolCredentials = serialiseToolCredentials(input.tool_credentials, existing?.tool_credentials ?? null);
-  const VALID_ROUTER_POLICIES = new Set(["cheap", "fast", "balanced", "quality"]);
-  const routerPolicy =
-    input.router_policy === undefined
-      ? (existing?.router_policy ?? null)
-      : input.router_policy !== null && VALID_ROUTER_POLICIES.has(input.router_policy)
-        ? input.router_policy
-        : null;
+  const routerPolicy = resolveEnumOverride(
+    input.router_policy, existing?.router_policy, ["cheap", "fast", "balanced", "quality"],
+  );
   const routerEnabled =
     input.router_enabled === undefined
       ? (existing?.router_enabled ?? null)
       : input.router_enabled === null
         ? null
         : (input.router_enabled ? 1 : 0);
-  const VALID_USAGE_STRATEGIES = new Set(["cost_saving", "fast", "balanced", "high_reasoning"]);
-  const usageStrategy =
-    input.usage_strategy === undefined
-      ? (existing?.usage_strategy ?? null)
-      : input.usage_strategy !== null && VALID_USAGE_STRATEGIES.has(input.usage_strategy)
-        ? input.usage_strategy
-        : null;
+  const usageStrategy = resolveEnumOverride(input.usage_strategy, existing?.usage_strategy, USAGE_STRATEGIES);
   const requestedWarmSummaryLimit = input.warm_summary_limit ?? existing?.warm_summary_limit ?? 50;
   const warmSummaryLimit = Number.isFinite(requestedWarmSummaryLimit)
     ? Math.max(0, Math.floor(requestedWarmSummaryLimit))

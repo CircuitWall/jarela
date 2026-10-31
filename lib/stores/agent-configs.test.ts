@@ -356,6 +356,40 @@ describe("agent usage strategy", () => {
   });
 });
 
+describe.each([
+  { field: "anti_hallucination_mode", choices: ["off", "regex", "model"] },
+  { field: "router_policy", choices: ["cheap", "fast", "balanced", "quality"] },
+  { field: "usage_strategy", choices: ["cost_saving", "fast", "balanced", "high_reasoning"] },
+] as const)("nullable agent override: $field", ({ field, choices }) => {
+  const input = { id: `synthetic-override-${field}`, name: "Synthetic", identity: "", instructions: "", tools: [] };
+
+  it("accepts every supported choice, keeps omitted values and clears explicit null", () => {
+    for (const value of choices) {
+      expect(upsertAgentConfig({ ...input, [field]: value })[field]).toBe(value);
+      expect(upsertAgentConfig(input)[field]).toBe(value);
+    }
+    expect(upsertAgentConfig({ ...input, [field]: null })[field]).toBeNull();
+    expect(upsertAgentConfig(input)[field]).toBeNull();
+  });
+
+  it("clears unsupported incoming values without changing other controls", () => {
+    upsertAgentConfig({ ...input, [field]: choices[0], router_enabled: false, harness_id: null });
+    for (const invalid of ["synthetic-unknown", "", " fast "]) {
+      const row = upsertAgentConfig({ ...input, [field]: invalid });
+      expect(row[field]).toBeNull();
+      expect(row.router_enabled).toBe(0);
+      expect(row.harness_id).toBeNull();
+    }
+  });
+
+  it("preserves an existing legacy value on omission but validates an explicit resubmission", () => {
+    upsertAgentConfig(input);
+    getDb().prepare(`UPDATE agent_configs SET ${field}=? WHERE id=?`).run("synthetic-legacy", input.id);
+    expect(upsertAgentConfig(input)[field]).toBe("synthetic-legacy");
+    expect(upsertAgentConfig({ ...input, [field]: "synthetic-legacy" })[field]).toBeNull();
+  });
+});
+
 describe("agent list ordering", () => {
   it("keeps the default first and sorts other agents by latest message time", () => {
     const db = getDb();
