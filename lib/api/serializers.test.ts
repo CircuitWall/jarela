@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   agentToResponse,
   bridgeToResponse,
+  bridgeRouteToResponse,
+  skillRepoToResponse,
   mcpServerToResponse,
   messageToResponse,
   messageUsageToResponse,
@@ -12,7 +14,8 @@ import {
 } from "./serializers";
 import type { DocumentSourceRow, DocumentSourceStats } from "@/lib/stores/document-sources";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
-import type { BridgeRow } from "@/lib/stores/bridges";
+import type { BridgeRow, BridgeRouteRow } from "@/lib/stores/bridges";
+import type { SkillRepoRow } from "@/lib/stores/skill-repos";
 import type { McpServerRow } from "@/lib/stores/mcp-servers";
 import type { MessageRow } from "@/lib/stores/threads";
 import type { MessageUsageRow } from "@/lib/stores/message-usage";
@@ -161,6 +164,46 @@ describe("bridgeToResponse", () => {
       group_profile_updates: true,
       group_participants_updates: false,
     });
+  });
+});
+
+describe("bridgeRouteToResponse", () => {
+  const row: BridgeRouteRow = {
+    id: "route", bridge_id: "bridge", remote_jid: "*", agent_id: "agent", label: null,
+    silent_mode: 1, respond_to: "counterpart", last_seen_ts: 123,
+    created_at: "2026-10-31T00:00:00Z", updated_at: "2026-10-31T01:00:00Z",
+  };
+
+  it("preserves the complete public shape without exposing the catch-up watermark", () => {
+    expect(bridgeRouteToResponse(row)).toEqual({
+      id: row.id, bridge_id: row.bridge_id, remote_jid: row.remote_jid, agent_id: row.agent_id,
+      label: null, silent_mode: true, respond_to: "counterpart",
+      created_at: row.created_at, updated_at: row.updated_at,
+    });
+  });
+
+  it.each([0, 1, 2])("preserves strict SQLite flag conversion for %i", (flag) => {
+    expect(bridgeRouteToResponse({ ...row, silent_mode: flag, respond_to: "user", label: "Synthetic" }))
+      .toMatchObject({ silent_mode: flag === 1, respond_to: "user", label: "Synthetic" });
+  });
+});
+
+describe("skillRepoToResponse", () => {
+  const row: SkillRepoRow = {
+    id: "repo", path: "synthetic-repo", label: null, writable: 1, enabled: 0,
+    created_at: "2026-10-31T00:00:00Z", updated_at: "2026-10-31T01:00:00Z",
+  };
+
+  it("preserves the complete public shape", () => {
+    expect(skillRepoToResponse(row)).toEqual({
+      id: row.id, path: row.path, label: null, writable: true, enabled: false,
+      created_at: row.created_at, updated_at: row.updated_at,
+    });
+  });
+
+  it.each([0, 1, 2])("preserves strict writable/enabled flag conversion for %i", (flag) => {
+    expect(skillRepoToResponse({ ...row, writable: flag, enabled: flag, label: "Synthetic" }))
+      .toMatchObject({ writable: flag === 1, enabled: flag === 1, label: "Synthetic" });
   });
 });
 
@@ -469,4 +512,3 @@ describe("resolveContextWindowTokens", () => {
     expect(resolveContextWindowTokens(-1, 8_192)).toBe(8_192);
   });
 });
-

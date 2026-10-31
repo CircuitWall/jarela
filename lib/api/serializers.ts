@@ -5,7 +5,8 @@
 import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import { getAgentTierProportions, getAgentToolCredentials, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
-import type { BridgeRow } from "@/lib/stores/bridges";
+import type { BridgeRow, BridgeRouteRow } from "@/lib/stores/bridges";
+import type { SkillRepoRow } from "@/lib/stores/skill-repos";
 import type { McpServerRow } from "@/lib/stores/mcp-servers";
 import type { MessageRow } from "@/lib/stores/threads";
 import type { MessageUsageRow } from "@/lib/stores/message-usage";
@@ -101,6 +102,32 @@ export function bridgeToResponse(r: BridgeRow) {
     },
     created_at: r.created_at,
     updated_at: r.updated_at,
+  };
+}
+
+export function bridgeRouteToResponse(r: BridgeRouteRow) {
+  return {
+    id: r.id,
+    bridge_id: r.bridge_id,
+    remote_jid: r.remote_jid,
+    agent_id: r.agent_id,
+    label: r.label,
+    silent_mode: r.silent_mode === 1,
+    respond_to: r.respond_to,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  };
+}
+
+export function skillRepoToResponse(row: SkillRepoRow) {
+  return {
+    id: row.id,
+    path: row.path,
+    label: row.label,
+    writable: row.writable === 1,
+    enabled: row.enabled === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
   };
 }
 

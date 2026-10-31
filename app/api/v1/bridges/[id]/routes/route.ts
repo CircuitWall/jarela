@@ -1,31 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createRoute, getBridge, listRoutes, type BridgeRouteRow } from "@/lib/stores/bridges";
+import { createRoute, getBridge, listRoutes } from "@/lib/stores/bridges";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { errorMessage } from "@/lib/utils/error";
 import { validateBody, errorResponse } from "@/lib/api/responses";
 import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
+import { bridgeRouteToResponse } from "@/lib/api/serializers";
 
 interface Params { params: Promise<{ id: string }> }
-
-function toResponse(r: BridgeRouteRow) {
-  return {
-    id: r.id,
-    bridge_id: r.bridge_id,
-    remote_jid: r.remote_jid,
-    agent_id: r.agent_id,
-    label: r.label,
-    silent_mode: r.silent_mode === 1,
-    respond_to: r.respond_to,
-    created_at: r.created_at,
-    updated_at: r.updated_at,
-  };
-}
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   if (!getBridge(id)) return errorResponse(NOT_FOUND_ERRORS.LEGACY, 404);
-  return NextResponse.json(listRoutes(id).map(toResponse));
+  return NextResponse.json(listRoutes(id).map(bridgeRouteToResponse));
 }
 
 const RouteJidSchema = z.union([z.literal("*"), z.string().trim().min(3)]);
@@ -57,7 +44,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       silent_mode: parsed.silent_mode ?? false,
       respond_to: parsed.respond_to,
     });
-    return NextResponse.json(toResponse(row), { status: 201 });
+    return NextResponse.json(bridgeRouteToResponse(row), { status: 201 });
   } catch (err) {
     const m = errorMessage(err);
     // UNIQUE violations: either (bridge_id, remote_jid) already routed, or

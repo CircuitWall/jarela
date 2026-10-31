@@ -92,14 +92,6 @@ const RUN_BODY_PREFLIGHT_LIMIT_BYTES = 9_000_000;
 
 const textEncoder = new TextEncoder();
 
-interface ListCache<T> {
-  data: T[] | null;
-  fetchedAt: number;
-  inflight: Promise<T[]> | null;
-  requestId: number;
-  revision: number;
-}
-
 interface ValueCache<T> {
   data: T | null;
   fetchedAt: number;
@@ -108,11 +100,9 @@ interface ValueCache<T> {
   revision: number;
 }
 
-function emptyCache<T>(): ListCache<T> {
-  return { data: null, fetchedAt: 0, inflight: null, requestId: 0, revision: 0 };
-}
+type ListCache<T> = ValueCache<T[]>;
 
-function emptyValueCache<T>(): ValueCache<T> {
+function emptyCache<T>(): ValueCache<T> {
   return { data: null, fetchedAt: 0, inflight: null, requestId: 0, revision: 0 };
 }
 
@@ -121,20 +111,7 @@ function cloneRows<T>(rows: T[]): T[] {
 }
 
 function writeListCache<T>(cache: ListCache<T>, rows: T[]): T[] {
-  cache.requestId += 1;
-  cache.revision += 1;
-  cache.data = cloneRows(rows);
-  cache.fetchedAt = Date.now();
-  cache.inflight = null;
-  return cloneRows(cache.data);
-}
-
-function invalidateListCache<T>(cache: ListCache<T>): void {
-  cache.requestId += 1;
-  cache.revision += 1;
-  cache.data = null;
-  cache.fetchedAt = 0;
-  cache.inflight = null;
+  return cloneRows(writeValueCache(cache, cloneRows(rows)));
 }
 
 function writeValueCache<T>(cache: ValueCache<T>, value: T): T {
@@ -146,7 +123,7 @@ function writeValueCache<T>(cache: ValueCache<T>, value: T): T {
   return value;
 }
 
-function invalidateValueCache<T>(cache: ValueCache<T>): void {
+function invalidateCache<T>(cache: ValueCache<T>): void {
   cache.requestId += 1;
   cache.revision += 1;
   cache.data = null;
@@ -240,9 +217,9 @@ const taskListCache: ListCache<TaskAssignment> = emptyCache();
 const toolListCache: ListCache<ToolInfo> = emptyCache();
 const toolListWithDisabledCache: ListCache<ToolInfo> = emptyCache();
 const integrationCredentialCache: ListCache<Credential> = emptyCache();
-const integrationListCache: ValueCache<IntegrationsListResponse> = emptyValueCache();
-const harnessListCache: ValueCache<HarnessListResponse> = emptyValueCache();
-const recentAssistantRepliesCache: ValueCache<Array<{ agent_id: string; content: string }>> = emptyValueCache();
+const integrationListCache: ValueCache<IntegrationsListResponse> = emptyCache();
+const harnessListCache: ValueCache<HarnessListResponse> = emptyCache();
+const recentAssistantRepliesCache: ValueCache<Array<{ agent_id: string; content: string }>> = emptyCache();
 let recentAssistantRepliesListenerInstalled = false;
 
 function loadRecentAssistantReplies() {
@@ -255,37 +232,33 @@ function watchRecentAssistantReplies() {
   if (typeof window === "undefined" || recentAssistantRepliesListenerInstalled) return;
   recentAssistantRepliesListenerInstalled = true;
   window.addEventListener("jarela:thread-updated", () => {
-    invalidateValueCache(recentAssistantRepliesCache);
+    invalidateCache(recentAssistantRepliesCache);
     void loadRecentAssistantReplies().catch(() => {});
   });
 }
 
-function setAgentListCache(rows: AgentConfig[], notify = true): AgentConfig[] {
-  const snap = writeListCache(agentListCache, rows);
+function setNotifyingListCache<T>(cache: ListCache<T>, rows: T[], event: string, notify: boolean): T[] {
+  const snap = writeListCache(cache, rows);
   if (notify && typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
+    window.dispatchEvent(new CustomEvent(event));
   }
   return cloneRows(snap);
+}
+
+function setAgentListCache(rows: AgentConfig[], notify = true): AgentConfig[] {
+  return setNotifyingListCache(agentListCache, rows, "jarela:agents-changed", notify);
 }
 
 function setModelListCache(rows: ModelConfig[], notify = true): ModelConfig[] {
-  const snap = writeListCache(modelListCache, rows);
-  if (notify && typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("jarela:models-changed"));
-  }
-  return cloneRows(snap);
+  return setNotifyingListCache(modelListCache, rows, "jarela:models-changed", notify);
 }
 
 function invalidateModelListCache(): void {
-  invalidateListCache(modelListCache);
+  invalidateCache(modelListCache);
 }
 
 function setTaskListCache(rows: TaskAssignment[], notify = true): TaskAssignment[] {
-  const snap = writeListCache(taskListCache, rows);
-  if (notify && typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("jarela:tasks-changed"));
-  }
-  return cloneRows(snap);
+  return setNotifyingListCache(taskListCache, rows, "jarela:tasks-changed", notify);
 }
 
 // Tool list cache. Unlike agents/models/tasks, tool mutations don't patch the
@@ -301,36 +274,37 @@ function setToolListWithDisabledCache(rows: ToolInfo[]): ToolInfo[] {
 }
 
 function invalidateToolListCache(): void {
-  invalidateListCache(toolListCache);
-  invalidateListCache(toolListWithDisabledCache);
+  invalidateCache(toolListCache);
+  invalidateCache(toolListWithDisabledCache);
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("jarela:tools-changed"));
   }
 }
 
-function cachedList<T>(
-  cache: ListCache<T>,
-  fetchFn: () => Promise<T[]>,
-  setCache: (rows: T[], notify?: boolean) => T[],
+function cachedRead<T>(
+  cache: ValueCache<T>,
+  fetchFn: () => Promise<T>,
+  setCache: (value: T, notify?: boolean) => T,
+  copy: (value: T) => T,
   force: boolean,
-): Promise<T[]> {
+): Promise<T> {
   const now = Date.now();
-  if (!force && cache.data && now - cache.fetchedAt < LIST_TTL_MS) {
-    return Promise.resolve(cloneRows(cache.data));
+  if (!force && cache.data !== null && now - cache.fetchedAt < LIST_TTL_MS) {
+    return Promise.resolve(copy(cache.data));
   }
   if (!force && cache.inflight) return cache.inflight;
   const requestId = ++cache.requestId;
   const revision = cache.revision;
-  let req: Promise<T[]>;
+  let req: Promise<T>;
   req = fetchFn()
-    .then((rows): T[] | Promise<T[]> => {
+    .then((value): T | Promise<T> => {
       if (cache.requestId !== requestId || cache.revision !== revision) {
         const latestRequest = cache.inflight;
         if (latestRequest && latestRequest !== req) return latestRequest;
-        if (cache.data) return cloneRows(cache.data);
-        return cachedList(cache, fetchFn, setCache, true);
+        if (cache.data !== null) return copy(cache.data);
+        return cachedRead(cache, fetchFn, setCache, copy, true);
       }
-      return setCache(rows, false);
+      return setCache(value, false);
     })
     .catch((err) => {
       // Critical: clear failed inflight requests. If we keep a rejected
@@ -344,29 +318,17 @@ function cachedList<T>(
   return req;
 }
 
+function cachedList<T>(
+  cache: ListCache<T>,
+  fetchFn: () => Promise<T[]>,
+  setCache: (rows: T[], notify?: boolean) => T[],
+  force: boolean,
+): Promise<T[]> {
+  return cachedRead(cache, fetchFn, setCache, cloneRows, force);
+}
+
 function cachedValue<T>(cache: ValueCache<T>, fetchFn: () => Promise<T>): Promise<T> {
-  const now = Date.now();
-  if (cache.data !== null && now - cache.fetchedAt < LIST_TTL_MS) return Promise.resolve(cache.data);
-  if (cache.inflight) return cache.inflight;
-  const requestId = ++cache.requestId;
-  const revision = cache.revision;
-  let req: Promise<T>;
-  req = fetchFn()
-    .then((value): T | Promise<T> => {
-      if (cache.requestId !== requestId || cache.revision !== revision) {
-        const latestRequest = cache.inflight;
-        if (latestRequest && latestRequest !== req) return latestRequest;
-        if (cache.data !== null) return cache.data;
-        return cachedValue(cache, fetchFn);
-      }
-      return writeValueCache(cache, value);
-    })
-    .catch((err) => {
-      if (cache.inflight === req) cache.inflight = null;
-      throw err;
-    });
-  cache.inflight = req;
-  return req;
+  return cachedRead(cache, fetchFn, (value) => writeValueCache(cache, value), (value) => value, false);
 }
 
 // Retry classifier matching the JARELA_HTTP_MAX_ATTEMPTS schema description:
@@ -960,7 +922,7 @@ export const api = {
     create: async (data: CredentialIn, opts?: { force?: boolean }) => {
       const qs = opts?.force ? "?force=1" : "";
       const created = await request<Credential>(`/credentials${qs}`, { method: "POST", body: JSON.stringify(data) });
-      invalidateListCache(integrationCredentialCache);
+      invalidateCache(integrationCredentialCache);
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
       return created;
     },
@@ -969,14 +931,14 @@ export const api = {
       const updated = await request<Credential>(`/credentials/${encodeURIComponent(id)}${qs}`, {
         method: "PUT", body: JSON.stringify(data),
       });
-      invalidateListCache(integrationCredentialCache);
+      invalidateCache(integrationCredentialCache);
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
       return updated;
     },
     delete: async (id: string) => {
       const res = await request<{ deleted: boolean }>(`/credentials/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (res.deleted && typeof window !== "undefined") {
-        invalidateListCache(integrationCredentialCache);
+        invalidateCache(integrationCredentialCache);
         window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
       }
       return res;
@@ -1105,12 +1067,12 @@ export const api = {
       const result = await request<IntegrationStatus>(`/integrations/${encodeURIComponent(name)}`, {
         method: "PUT", body: JSON.stringify(values),
       });
-      invalidateValueCache(integrationListCache);
+      invalidateCache(integrationListCache);
       return result;
     },
     delete: async (name: string) => {
       const result = await request<{ deleted: boolean }>(`/integrations/${encodeURIComponent(name)}`, { method: "DELETE" });
-      invalidateValueCache(integrationListCache);
+      invalidateCache(integrationListCache);
       return result;
     },
     test: (name: string, credentialId?: string) =>
@@ -1387,7 +1349,7 @@ export const api = {
     get: (id: string) => request<Harness>(`/harnesses/${encodeURIComponent(id)}`),
     create: async (data: HarnessIn) => {
       const result = await request<Harness>("/harnesses", { method: "POST", body: JSON.stringify(data) });
-      invalidateValueCache(harnessListCache);
+      invalidateCache(harnessListCache);
       return result;
     },
     update: async (id: string, patch: HarnessPatch) => {
@@ -1395,12 +1357,12 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(patch),
       });
-      invalidateValueCache(harnessListCache);
+      invalidateCache(harnessListCache);
       return result;
     },
     delete: async (id: string) => {
       const result = await request<{ deleted: boolean }>(`/harnesses/${encodeURIComponent(id)}`, { method: "DELETE" });
-      invalidateValueCache(harnessListCache);
+      invalidateCache(harnessListCache);
       return result;
     },
     setDefault: async (id: string) => {
@@ -1408,7 +1370,7 @@ export const api = {
         method: "PUT",
         body: JSON.stringify({ id }),
       });
-      invalidateValueCache(harnessListCache);
+      invalidateCache(harnessListCache);
       return result;
     },
   },

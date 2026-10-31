@@ -3,7 +3,8 @@ import { z } from "zod";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { createdResponse, validateBody, errorResponse, noStoreJson } from "@/lib/api/responses";
-import { createSkillRepo, getSkillRepoByPath, listSkillRepos, type SkillRepoRow } from "@/lib/stores/skill-repos";
+import { createSkillRepo, getSkillRepoByPath, listSkillRepos } from "@/lib/stores/skill-repos";
+import { skillRepoToResponse } from "@/lib/api/serializers";
 
 const createSchema = z.object({
   path: z.string().min(1),
@@ -11,20 +12,8 @@ const createSchema = z.object({
   writable: z.boolean().optional(),
 });
 
-function rowResponse(row: SkillRepoRow) {
-  return {
-    id: row.id,
-    path: row.path,
-    label: row.label,
-    writable: row.writable === 1,
-    enabled: row.enabled === 1,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-}
-
 export function GET() {
-  return noStoreJson({ repos: listSkillRepos().map(rowResponse) });
+  return noStoreJson({ repos: listSkillRepos().map(skillRepoToResponse) });
 }
 
 export async function POST(req: NextRequest) {
@@ -42,5 +31,5 @@ export async function POST(req: NextRequest) {
   if (getSkillRepoByPath(abs)) return errorResponse("a repo already exists for this path", 409);
 
   const row = createSkillRepo({ path: abs, label: parsed.label ?? null, writable: parsed.writable });
-  return createdResponse(rowResponse(row));
+  return createdResponse(skillRepoToResponse(row));
 }

@@ -1,14 +1,19 @@
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NextRequest } from "next/server";
+
+vi.mock("@/lib/models/discover-context-window", () => ({
+  enrichParamsWithDiscoveredContext: vi.fn(async (_provider: string, _model: string, params: Record<string, unknown>) => params),
+}));
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-model-route-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
 const { upsertModelConfig, deleteModelConfig, listModelConfigs, getModelConfig } = await import("@/lib/stores/model-config");
 const { PATCH, PUT } = await import("./route");
+const { POST, GET } = await import("../route");
 
 const ctx = (name: string) => ({ params: Promise.resolve({ name }) });
 const json = (method: string, name: string, body: unknown) => new NextRequest(
@@ -85,5 +90,30 @@ describe("PUT /api/v1/models/[name]", () => {
 
     expect(res.status).toBe(200);
     expect(defaults()).toEqual(["alpha"]);
+  });
+
+  describe.each(["POST", "PUT"] as const)("%s model secret contract", (method) => {
+    it.each(["***", "********"])("preserves the %s mask using the current stored row and redacts every response", async (mask) => {
+      const prior = {
+        api_key: "synthetic-api-key", client_secret: "synthetic-client-secret",
+        refresh_token: "synthetic-refresh", access_token: "synthetic-access", temperature: 0.4,
+      };
+      upsertModelConfig("alpha", "mock", "synthetic", prior, true);
+      const body = {
+        name: "alpha", provider: "mock", model_id: "synthetic",
+        params: { api_key: mask, client_secret: mask, refresh_token: mask, access_token: mask, temperature: 0.7 },
+      };
+      const req = json(method, "alpha", body);
+      const response = method === "POST" ? await POST(req) : await PUT(req, ctx("alpha"));
+      expect(response.status).toBe(method === "POST" ? 201 : 200);
+      const result = await response.json();
+      expect(result.params).toEqual({
+        api_key: "***", client_secret: "***", refresh_token: "***", access_token: "***", temperature: 0.7,
+      });
+      expect(JSON.parse(getModelConfig("alpha")!.params)).toEqual({ ...prior, temperature: 0.7 });
+      const list = GET();
+      expect(list.headers.get("Cache-Control")).toBe("private, max-age=15, stale-while-revalidate=60");
+      await expect(list.json()).resolves.toEqual([result]);
+    });
   });
 });
