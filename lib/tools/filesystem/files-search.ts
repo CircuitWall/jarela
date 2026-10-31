@@ -27,6 +27,7 @@ import {
   conformEol,
 } from "./edit-match";
 import { getConfig } from "@/lib/env/config";
+import { errorMessage } from "@/lib/utils/error";
 
 // ---------------------------------------------------------------------------
 // Limits.
@@ -42,6 +43,7 @@ const MAX_LINE_BYTES = 2_000;            // truncate any matched line longer tha
 const MAX_GLOB_RESULTS = 1_000;          // hard cap on file_glob returns
 const MAX_MULTI_EDITS = 50;              // hard cap on edits per multi_edit call
 const MAX_GREP_FILE_BYTES = 1_000_000;   // skip files larger than ~1 MB (likely binary or vendored)
+const MAX_SKIPPED_FILE_DETAILS = 100;
 const MAX_PATTERN_CHARS = 10_000;         // keep glob/regex compilation bounded
 
 // Directories we never recurse into — same list as workspace_init's tree
@@ -248,6 +250,13 @@ interface GrepMatch {
   enclosing?: { kind: string; name: string; line: number };
 }
 
+interface GrepSkippedFile {
+  path: string;
+  reason: "size_limit" | "binary" | "unreadable";
+  size?: number;
+  error?: string;
+}
+
 // Reads one candidate file and pushes any line matches into `matches`.
 // Returns whether the cap was hit (caller stops walking) and whether this
 // file contributed at least one match (for the files_with_matches count).
@@ -259,17 +268,17 @@ async function scanFileForGrepMatches(
   cap: number,
   ctx: number,
   matches: GrepMatch[],
-): Promise<{ skipped: boolean; fileHadMatch: boolean; capReached: boolean }> {
+): Promise<{ skipped: GrepSkippedFile | null; fileHadMatch: boolean; capReached: boolean }> {
   let stat: import("node:fs").Stats;
   try { stat = await fs.stat(abs); }
-  catch { return { skipped: true, fileHadMatch: false, capReached: false }; }
-  if (stat.size > MAX_GREP_FILE_BYTES) return { skipped: true, fileHadMatch: false, capReached: false };
+  catch (error) { return { skipped: { path: rel, reason: "unreadable", error: errorMessage(error) }, fileHadMatch: false, capReached: false }; }
+  if (stat.size > MAX_GREP_FILE_BYTES) return { skipped: { path: rel, reason: "size_limit", size: stat.size }, fileHadMatch: false, capReached: false };
   let raw: string;
   try { raw = await fs.readFile(abs, "utf8"); }
-  catch { return { skipped: true, fileHadMatch: false, capReached: false }; } // unreadable / binary
+  catch (error) { return { skipped: { path: rel, reason: "unreadable", size: stat.size, error: errorMessage(error) }, fileHadMatch: false, capReached: false }; }
   // Quick binary heuristic — if a NUL byte is present, skip.
   if (raw.length > 0 && raw.indexOf("\u0000") !== -1) {
-    return { skipped: true, fileHadMatch: false, capReached: false };
+    return { skipped: { path: rel, reason: "binary", size: stat.size }, fileHadMatch: false, capReached: false };
   }
 
   const lines = raw.split(/\r?\n/);
@@ -306,11 +315,11 @@ async function scanFileForGrepMatches(
       }
       matches.push(m);
       if (matches.length >= cap) {
-        return { skipped: false, fileHadMatch, capReached: true };
+        return { skipped: null, fileHadMatch, capReached: true };
       }
     }
   }
-  return { skipped: false, fileHadMatch, capReached: false };
+  return { skipped: null, fileHadMatch, capReached: false };
 }
 
 export const fileGrepTool = tool(
@@ -350,12 +359,18 @@ export const fileGrepTool = tool(
     let filesWithMatches = 0;
     let filesScanned = 0;
     let truncated = walked.truncated;
+    const skippedFiles: GrepSkippedFile[] = [];
+    let filesSkipped = 0;
 
     for (const rel of walked.files) {
       if (fileRe && !fileRe.test(rel)) continue;
       const abs = path.join(rootAbs, rel);
       const result = await scanFileForGrepMatches(abs, rel, re, cap, ctx, matches);
-      if (result.skipped) continue;
+      if (result.skipped) {
+        filesSkipped++;
+        if (skippedFiles.length < MAX_SKIPPED_FILE_DETAILS) skippedFiles.push(result.skipped);
+        continue;
+      }
       filesScanned++;
       if (result.fileHadMatch) filesWithMatches++;
       if (result.capReached) { truncated = true; break; }
@@ -372,6 +387,13 @@ export const fileGrepTool = tool(
       count: matches.length,
       files_with_matches: filesWithMatches,
       files_scanned: filesScanned,
+      files_skipped: filesSkipped,
+      skipped_files: skippedFiles,
+      skipped_files_truncated: filesSkipped > skippedFiles.length,
+      search_complete: !truncated && filesSkipped === 0,
+      warning: filesSkipped > 0
+        ? `Search incomplete: ${filesSkipped} candidate file(s) were not scanned (size limit ${MAX_GREP_FILE_BYTES} bytes, binary or unreadable). Empty matches do not establish absence in skipped files. For large text files use file_read with start_line/end_line ranges.`
+        : undefined,
       truncated,
       truncated_reason: walked.truncated ? "scan_limit" : matches.length >= cap ? "match_cap" : undefined,
       truncated_hint: truncated
@@ -382,7 +404,7 @@ export const fileGrepTool = tool(
   {
     name: "file_grep",
     description:
-      "Search file contents under a directory by regex (or literal substring with literal=true). Prefer this over local_exec/terminal grep, rg, Select-String, or Get-ChildItem pipelines for code search. Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths, 1-based line numbers, optional N-line context, AND an `enclosing` {kind,name,line} pointing at the surrounding function/class/heading when one can be derived (lets you often skip a follow-up file_read). Skips node_modules/.git/etc, binary files (NUL-byte heuristic), and files >1 MB.",
+      "Search file contents under a directory by regex (or literal substring with literal=true). Prefer this over local_exec/terminal grep, rg, Select-String, or Get-ChildItem pipelines for code search. Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths, 1-based line numbers, optional N-line context, AND an `enclosing` {kind,name,line} pointing at the surrounding function/class/heading when one can be derived (lets you often skip a follow-up file_read). Skips node_modules/.git/etc. Reports binary, unreadable and oversized files (>1,000,000 bytes) in skipped_files (up to 100 details), files_skipped and warning; search_complete=false means empty matches do not establish absence in unscanned files. Use ranged file_read for large text files.",
     schema: grepSchema,
   },
 );

@@ -1,4 +1,5 @@
 import { promises as fsp } from "node:fs";
+import { errorMessage } from "@/lib/utils/error";
 
 const DEFAULT_MAX_INLINE_BYTES = 16 * 1024;
 const DEFAULT_PREVIEW_BYTES = 4 * 1024;
@@ -56,7 +57,7 @@ export async function postProcessToolResult(toolName: string, result: unknown): 
       size: bytes,
       sha256: ref.sha256,
     },
-    hint: `This tool result was shortened. Call tool_result_get with result_ref.name="${ref.name}" and offset/limit to read more.`,
+    hint: `This tool result was shortened. Call tool_result_get with result_ref: { name: "${ref.name}" } and offset/limit to read more. Copy the full name including its extension, not sha256. Synchronous spills are not listed by tool_result_list.`,
   };
   if (typeof preview.total_count === "number") envelope.total_count = preview.total_count;
   return JSON.stringify(envelope);
@@ -87,14 +88,18 @@ export async function readToolResultRef(args: {
   limit?: number;
 }): Promise<Record<string, unknown>> {
   const { fileAbsPath } = await import("@/lib/files");
-  const abs = fileAbsPath(args.name);
+  let name = args.name;
+  const abs = fileAbsPath(name);
   if (!abs) {
     return { ok: false, status: "unknown", error: "unsafe result_ref name", name: args.name };
   }
   const offset = Math.max(0, Math.floor(args.offset ?? 0));
   const limit = Math.min(MAX_READ_BYTES, Math.max(1, Math.floor(args.limit ?? DEFAULT_PREVIEW_BYTES)));
   try {
-    const file = await fsp.open(abs, "r");
+    const resolved = await openToolResultFile(name);
+    if ("error" in resolved) return { ok: false, status: "ambiguous", name, error: resolved.error };
+    const { file } = resolved;
+    name = resolved.name;
     try {
       const stat = await file.stat();
       // Read a few bytes either side so the window can be moved onto UTF-8
@@ -109,7 +114,7 @@ export async function readToolResultRef(args: {
       return {
         ok: true,
         status: "done",
-        name: args.name,
+        name,
         offset: actualOffset,
         limit,
         bytes: stat.size,
@@ -120,14 +125,37 @@ export async function readToolResultRef(args: {
     } finally {
       await file.close();
     }
-  } catch {
+  } catch (error) {
+    const missing = error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT";
     return {
       ok: false,
-      status: "unknown",
+      status: missing ? "unknown" : "error",
       name: args.name,
-      error: "no spilled tool result for that ref (it may have expired or never existed)",
+      error: missing
+        ? "no spilled tool result for that ref (it may have expired or never existed); copy result_ref.name including its extension, not sha256"
+        : `could not read spilled tool result: ${errorMessage(error)}`,
     };
   }
+}
+
+async function openToolResultFile(name: string): Promise<
+  { name: string; file: Awaited<ReturnType<typeof fsp.open>> } | { error: string }
+> {
+  const { fileAbsPath } = await import("@/lib/files");
+  if (!/^[a-f0-9]{64}$/.test(name)) return { name, file: await fsp.open(fileAbsPath(name)!, "r") };
+  // Older callers copied the content hash rather than the full result filename.
+  const matches: string[] = [];
+  for (const extension of ["json", "txt"]) {
+    const candidate = `${name}.${extension}`;
+    try {
+      if ((await fsp.stat(fileAbsPath(candidate)!)).isFile()) matches.push(candidate);
+    } catch (error) {
+      if (!(error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
+    }
+  }
+  if (matches.length > 1) return { error: "ambiguous content hash; pass the full result_ref.name including its extension" };
+  const resolvedName = matches[0] ?? name;
+  return { name: resolvedName, file: await fsp.open(fileAbsPath(resolvedName)!, "r") };
 }
 
 const isUtf8Continuation = (byte: number | undefined) => byte !== undefined && (byte & 0xc0) === 0x80;

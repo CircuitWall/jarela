@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterAll, afterEach, vi } from "vitest";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, promises as fsp } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -26,6 +26,7 @@ beforeEach(() => {
 });
 
 function parse(s: string) { return JSON.parse(s) as Record<string, unknown>; }
+afterEach(() => vi.restoreAllMocks());
 
 function seedProject(): void {
   mkdirSync(join(projectRoot, "src", "lib"), { recursive: true });
@@ -112,6 +113,57 @@ describe("file_glob", () => {
 // ── file_grep ───────────────────────────────────────────────────────────────
 
 describe("file_grep", () => {
+  it("reports oversized candidates instead of making unscanned content look absent", async () => {
+    const large = "synthetic target\n" + "x".repeat(1_000_000);
+    writeFileSync(join(projectRoot, "large.txt"), large);
+    const out = parse(await fileGrepTool.invoke({ pattern: "synthetic target", root: projectRoot }));
+    expect(out).toMatchObject({
+      ok: true, matches: [], files_scanned: 0, search_complete: false,
+      files_skipped: 1, skipped_files: [{ path: "large.txt", reason: "size_limit", size: Buffer.byteLength(large) }],
+    });
+    expect(out.warning).toMatch(/incomplete/i);
+    expect(out.warning).toMatch(/file_read/i);
+  });
+
+  it("scans the exact byte limit and reports skipped files alongside real matches", async () => {
+    writeFileSync(join(projectRoot, "boundary.txt"), "TARGET\n" + "x".repeat(1_000_000 - 7));
+    writeFileSync(join(projectRoot, "large.txt"), "TARGET\n" + "x".repeat(1_000_000));
+    const out = parse(await fileGrepTool.invoke({ pattern: "TARGET", root: projectRoot }));
+    expect(out).toMatchObject({ files_scanned: 1, files_skipped: 1, search_complete: false, count: 1 });
+    expect((out.matches as Array<{ path: string }>)[0].path).toBe("boundary.txt");
+  });
+
+  it("distinguishes a complete no-match result from a skipped file", async () => {
+    writeFileSync(join(projectRoot, "small.txt"), "not the target\n");
+    const out = parse(await fileGrepTool.invoke({ pattern: "ABSENT", root: projectRoot }));
+    expect(out).toMatchObject({ matches: [], files_scanned: 1, files_skipped: 0, search_complete: true, skipped_files: [] });
+    expect(out.warning).toBeUndefined();
+  });
+
+  it("reports unreadable files without interpreting them as no matches", async () => {
+    const file = join(projectRoot, "unreadable.txt");
+    writeFileSync(file, "TARGET\n");
+    const readFile = fsp.readFile.bind(fsp);
+    vi.spyOn(fsp, "readFile").mockImplementation(async (...args) => {
+      if (args[0] === file) throw Object.assign(new Error("Synthetic access denied"), { code: "EACCES" });
+      return readFile(...args);
+    });
+    const out = parse(await fileGrepTool.invoke({ pattern: "TARGET", root: projectRoot }));
+    expect(out).toMatchObject({
+      files_scanned: 0, files_skipped: 1, search_complete: false,
+      skipped_files: [{ path: "unreadable.txt", reason: "unreadable", error: "Synthetic access denied" }],
+    });
+  });
+
+  it("bounds skipped-file details without losing the total count", async () => {
+    for (let index = 0; index < 101; index++) {
+      writeFileSync(join(projectRoot, `binary-${index}.dat`), Buffer.from([0]));
+    }
+    const out = parse(await fileGrepTool.invoke({ pattern: "TARGET", root: projectRoot }));
+    expect(out).toMatchObject({ files_skipped: 101, files_scanned: 0, skipped_files_truncated: true, search_complete: false });
+    expect(out.skipped_files).toHaveLength(100);
+  });
+
   it("finds a regex match with 1-based line numbers", async () => {
     seedProject();
     const out = parse(await fileGrepTool.invoke({ pattern: "TODO", root: projectRoot }));
@@ -172,6 +224,10 @@ describe("file_grep", () => {
     const out = parse(await fileGrepTool.invoke({ pattern: "BC", root: projectRoot }));
     const paths = (out.matches as Array<{ path: string }>).map((m) => m.path);
     expect(paths).toEqual(["text.txt"]);
+    expect(out).toMatchObject({
+      files_skipped: 1, search_complete: false,
+      skipped_files: [{ path: "bin.dat", reason: "binary", size: 4 }],
+    });
   });
 
   it("returns invalid-pattern error for a bad regex", async () => {
@@ -187,6 +243,7 @@ describe("file_grep", () => {
     expect((out.matches as unknown[]).length).toBe(5);
     expect(out.truncated).toBe(true);
     expect(out.truncated_reason).toBe("match_cap");
+    expect(out.search_complete).toBe(false);
   });
 
   it("rejects overlong grep patterns before scanning", async () => {
