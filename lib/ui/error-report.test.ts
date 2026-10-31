@@ -145,4 +145,22 @@ describe("buildIssueUrl", () => {
     const url = buildIssueUrl({ title: "T", body: small });
     expect(new URL(url).searchParams.get("body")).toBe(small);
   });
+
+  it("preserves an exact UTF-8 byte budget without truncation", () => {
+    const body = "é".repeat(3_500);
+    expect(new URL(buildIssueUrl({ title: "T", body })).searchParams.get("body")).toBe(body);
+  });
+
+  it("does not split emoji at the report's UTF-8 boundary", () => {
+    const footer = "\n\n_(report truncated — paste the full version from your clipboard)_\n";
+    const room = 7_000 - Buffer.byteLength(footer);
+    const source = "a".repeat((room - 3) % 4) + "😀".repeat(5_000);
+    const body = new URL(buildIssueUrl({ title: "Unicode", body: source })).searchParams.get("body")!;
+    expect(Buffer.byteLength(body)).toBeLessThanOrEqual(7_000);
+    expect(body.endsWith(footer)).toBe(true);
+    expect(body).not.toContain("\uFFFD");
+    const prefix = body.slice(0, -footer.length);
+    expect(source.startsWith(prefix)).toBe(true);
+    expect(Buffer.byteLength(prefix + "😀")).toBeGreaterThan(room);
+  });
 });

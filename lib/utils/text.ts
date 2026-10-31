@@ -5,14 +5,17 @@
 export function truncateBytes(s: string, maxBytes: number): { text: string; truncated: boolean } {
   if (Buffer.byteLength(s, "utf8") <= maxBytes) return { text: s, truncated: false };
 
-  // Slice by char until under the byte cap. Linear scan is fine for the
-  // ~30KB caps we use; if a caller ever needs MB-scale truncation, swap for
-  // a binary search.
+  let start = 0;
   let end = s.length;
-  while (end > 0 && Buffer.byteLength(s.slice(0, end), "utf8") > maxBytes) {
-    end--;
+  while (start < end) {
+    const middle = start + Math.ceil((end - start) / 2);
+    if (Buffer.byteLength(s.slice(0, middle), "utf8") > maxBytes) {
+      end = middle - 1;
+    } else {
+      start = middle;
+    }
   }
-  end = safeUtf16Boundary(s, end);
+  end = safeUtf16Boundary(s, start);
   return { text: s.slice(0, end), truncated: true };
 }
 

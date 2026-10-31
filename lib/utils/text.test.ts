@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { truncateBytes, truncateText } from "./text";
 
 describe("truncateBytes", () => {
@@ -38,6 +38,34 @@ describe("truncateBytes", () => {
 
   it("handles zero cap", () => {
     expect(truncateBytes("anything", 0)).toEqual({ text: "", truncated: true });
+  });
+
+  it("keeps the longest complete Unicode prefix for every byte budget", () => {
+    const source = "aé中😀z";
+    for (let budget = 0; budget <= Buffer.byteLength(source); budget++) {
+      let expected = "";
+      for (const character of source) {
+        if (Buffer.byteLength(expected + character) > budget) break;
+        expected += character;
+      }
+      expect(truncateBytes(source, budget)).toEqual({
+        text: expected,
+        truncated: expected !== source,
+      });
+    }
+  });
+
+  it("bounds byte-length checks for a large input and a small output budget", () => {
+    const byteLength = vi.spyOn(Buffer, "byteLength");
+    try {
+      expect(truncateBytes("x".repeat(100_000), 64_000)).toEqual({
+        text: "x".repeat(64_000),
+        truncated: true,
+      });
+      expect(byteLength.mock.calls.length).toBeLessThanOrEqual(20);
+    } finally {
+      byteLength.mockRestore();
+    }
   });
 });
 

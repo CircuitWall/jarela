@@ -45,6 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tool-result threshold. Unbounded calls return an explicit range-required
   error with navigation metadata, not whole-file content. Preserve small
   reads, explicit-range clipping and existing configuration defaults.
+- Reuse shared UTF-8 truncation for error reports, preserving complete emoji
+  at the byte boundary. Find bounded prefixes by binary search instead of
+  repeatedly rescanning oversized text; existing byte limits are unchanged.
 - Raise the default adaptive output floor for Balanced and High Reasoning to
   8,192 tokens so short prompts have more room for large tool calls. Provider,
   model and context ceilings still apply; Fast and Cost-saving retain their
