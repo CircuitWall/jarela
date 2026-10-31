@@ -10,6 +10,7 @@
 
 import { pushToast } from "./toasts";
 import { getAppIssueUrl } from "@/lib/env/app-config";
+import { truncateBytes } from "@/lib/utils/text";
 
 // GitHub's "new issue" URL works up to ~8KB before some clients silently drop
 // the body. Stay well under that and tell the user to copy the full report
@@ -103,12 +104,7 @@ export function buildIssueUrl(report: { title: string; body: string }): string {
   if (Buffer.byteLength(body, "utf8") > MAX_ISSUE_BODY_BYTES) {
     const footer = "\n\n_(report truncated — paste the full version from your clipboard)_\n";
     const room = MAX_ISSUE_BODY_BYTES - Buffer.byteLength(footer, "utf8");
-    // Truncate by characters then re-check bytes to land safely under the cap.
-    let truncated = body.slice(0, Math.max(room, 0));
-    while (Buffer.byteLength(truncated, "utf8") > room && truncated.length > 0) {
-      truncated = truncated.slice(0, -1);
-    }
-    body = truncated + footer;
+    body = truncateBytes(body, room).text + footer;
   }
   const params = new URLSearchParams({
     title: report.title,
