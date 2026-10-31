@@ -19,6 +19,7 @@ const KEYS = [
   "JARELA_PROVIDER_RATE_LIMITS",
   "JARELA_FETCH_TOOL_MAX_BYTES",
   "JARELA_EXEC_MAX_OUTPUT_BYTES",
+  "JARELA_TOOL_RESULT_MAX_BYTES",
   "JARELA_FILES_MAX_READ_BYTES",
   "JARELA_FILES_MAX_WRITE_BYTES",
   "JARELA_DOC_MAX_FILE_BYTES",
@@ -60,6 +61,7 @@ describe("getConfig", () => {
     expect(c.providerToolLimit).toBe(512);
     expect(c.fetchToolMaxBytes).toBe(8_000_000);
     expect(c.execMaxOutputBytes).toBe(64_000);
+    expect(c.toolResultMaxBytes).toBe(16 * 1024);
     expect(c.filesMaxReadBytes).toBe(1_000_000);
     expect(c.filesMaxWriteBytes).toBe(16_000_000);
     expect(c.docMaxFileBytes).toBe(10 * 1024 * 1024);
@@ -108,6 +110,25 @@ describe("getConfig", () => {
     expect(c.filesMaxWriteBytes).toBe(32_000_000);
     expect(c.docMaxFileBytes).toBe(12_000_000);
     expect(c.docMaxFilesPerSource).toBe(25_000);
+  });
+
+  it("refreshes the shared tool-result limit after configuration invalidation", () => {
+    expect(getConfig().toolResultMaxBytes).toBe(16 * 1024);
+    process.env.JARELA_TOOL_RESULT_MAX_BYTES = "32768";
+    expect(getConfig().toolResultMaxBytes).toBe(16 * 1024);
+    resetConfigCache();
+    expect(getConfig().toolResultMaxBytes).toBe(32768);
+  });
+
+  it("preserves legacy tool-result limit parsing", () => {
+    for (const value of ["", "0", "-5", "abc", "Infinity"]) {
+      process.env.JARELA_TOOL_RESULT_MAX_BYTES = value;
+      resetConfigCache();
+      expect(getConfig().toolResultMaxBytes).toBe(16 * 1024);
+    }
+    process.env.JARELA_TOOL_RESULT_MAX_BYTES = "100.9";
+    resetConfigCache();
+    expect(getConfig().toolResultMaxBytes).toBe(100);
   });
 
   it("prefers JARELA_PORT over PORT", () => {

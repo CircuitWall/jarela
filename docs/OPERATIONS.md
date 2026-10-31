@@ -15,6 +15,12 @@ hidden-directory, dependency-directory and glob filters still define the
 search scope.
 
 Oversized tool output is persisted in the existing local artifact store.
+The inline threshold is **16 KiB** by default. Configure the existing
+`JARELA_TOOL_RESULT_MAX_BYTES` setting in the environment settings' advanced
+Tools category or through the process environment. Settings changes take effect
+without restarting. The shared limit also bounds async readback and protected
+proxy envelopes; it is not a maximum stored-result size. Preview sizes and
+readback page limits remain separate controls.
 Read it with `tool_result_get({ result_ref: { name: "<full emitted filename>" },
 offset: 0, limit: 2000 })`, then continue using `next_offset` until `done`.
 Copy **`result_ref.name`, including its extension**, not `sha256`. Legacy bare

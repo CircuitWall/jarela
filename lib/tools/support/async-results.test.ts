@@ -18,6 +18,7 @@ import {
   MAX_ENTRIES,
 } from "./async-results";
 import { toolResultGetTool, toolResultListTool } from "./async-results-tool";
+import { resetConfigCache } from "@/lib/env/config";
 
 const TMP_ROOT = mkdtempSync(join(tmpdir(), "jarela-tool-results-"));
 process.env.JARELA_DB_DIR = TMP_ROOT;
@@ -42,7 +43,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
   throw new Error("waitFor timed out");
 }
 
-beforeEach(() => { __resetStore(); });
+beforeEach(() => { __resetStore(); resetConfigCache(); });
 afterAll(() => rmSync(TMP_ROOT, { recursive: true, force: true }));
 
 describe("wallclock async_run", () => {
@@ -183,6 +184,7 @@ describe("tool_result_get", () => {
   it("reads a spilled result_ref in bounded ranges", async () => {
     const payload = "abcdefghij".repeat(20);
     process.env.JARELA_TOOL_RESULT_MAX_BYTES = "32";
+    resetConfigCache();
     try {
       const inner = tool(
         async () => payload,
@@ -197,6 +199,7 @@ describe("tool_result_get", () => {
       expect(got.next_offset).toBe(17);
     } finally {
       delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+      resetConfigCache();
     }
   });
 
@@ -206,6 +209,7 @@ describe("tool_result_get", () => {
     // deprecation warning, per the tool_result_get schema-drift fix.
     const payload = "abcdefghij".repeat(20);
     process.env.JARELA_TOOL_RESULT_MAX_BYTES = "32";
+    resetConfigCache();
     const warnSpy: unknown[] = [];
     const originalWarn = console.warn;
     console.warn = (...args: unknown[]) => { warnSpy.push(args); };
@@ -225,6 +229,7 @@ describe("tool_result_get", () => {
     } finally {
       console.warn = originalWarn;
       delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+      resetConfigCache();
     }
   });
 });
@@ -232,6 +237,7 @@ describe("tool_result_get", () => {
 describe("tool result offload", () => {
   it("returns a disclosed preview plus result_ref for oversized sync results", async () => {
     process.env.JARELA_TOOL_RESULT_MAX_BYTES = "64";
+    resetConfigCache();
     try {
       const rows = Array.from({ length: 25 }, (_, i) => ({ id: i, value: `row-${i}` }));
       const inner = tool(
@@ -252,11 +258,13 @@ describe("tool result offload", () => {
       expect(JSON.parse(readFileSync(join(FILES_DIR, out.result_ref.name), "utf8"))).toEqual(rows);
     } finally {
       delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+      resetConfigCache();
     }
   });
 
   it("stores the offload envelope instead of the raw oversized payload for async_run", async () => {
     process.env.JARELA_TOOL_RESULT_MAX_BYTES = "64";
+    resetConfigCache();
     try {
       const payload = "x".repeat(500);
       const inner = tool(
@@ -273,6 +281,7 @@ describe("tool result offload", () => {
       expect(got.result_ref.name).toMatch(/^[a-f0-9]{64}\.txt$/);
     } finally {
       delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+      resetConfigCache();
     }
   });
 });

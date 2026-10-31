@@ -114,6 +114,7 @@ export const ENV_DEFAULTS = {
   fetchToolMaxBytes: 8_000_000,
   mcpRegistryTimeoutMs: 15_000,
   execMaxOutputBytes: 64_000,
+  toolResultMaxBytes: 16 * 1024,
   filesMaxReadBytes: 1_000_000,
   filesMaxWriteBytes: 16_000_000,
   providerToolLimit: 512,
@@ -419,6 +420,17 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
   // Per-tool wall-clock deadlines are agent-controlled via the
   // `deadline_ms` field on every tool's schema (see lib/tools/wallclock.ts).
   // No operator knob to clamp them — the model picks per call.
+  {
+    name: "JARELA_TOOL_RESULT_MAX_BYTES",
+    type: "int",
+    default: ENV_DEFAULTS.toolResultMaxBytes,
+    description: "Maximum inline tool-result size in UTF-8 bytes before offloading to a retrievable result reference. Also bounds async readback and protected proxy envelopes; it does not limit stored result size.",
+    category: "tools",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 1,
+  },
   {
     name: "JARELA_VOICE_TIMEOUT_MS",
     type: "int",

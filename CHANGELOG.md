@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   8,192 tokens so short prompts have more room for large tool calls. Provider,
   model and context ceilings still apply; Fast and Cost-saving retain their
   2,048-token baselines.
+- Route the existing tool-result inline-byte limit through the shared runtime
+  configuration and expose it in advanced environment settings. Preserve its
+  16 KiB default, shared spill/readback behavior and operator-only control.
 - Share the scheduled-task and watcher detail-row layout without changing
   editor validation, controls, or in-flight state.
 - Manage advertisement generation policy once in the Agents panel and keep

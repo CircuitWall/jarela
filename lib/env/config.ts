@@ -54,6 +54,7 @@ export interface JarelaConfig {
   readonly fetchToolMaxBytes: number;
   readonly mcpRegistryTimeoutMs: number;
   readonly execMaxOutputBytes: number;
+  readonly toolResultMaxBytes: number;
   readonly filesMaxReadBytes: number;
   readonly filesMaxWriteBytes: number;
   readonly providerToolLimit: number;
@@ -223,6 +224,7 @@ export function getConfig(): JarelaConfig {
     fetchToolMaxBytes: parsePositiveInt(env.JARELA_FETCH_TOOL_MAX_BYTES, ENV_DEFAULTS.fetchToolMaxBytes),
     mcpRegistryTimeoutMs: parsePositiveInt(env.JARELA_MCP_REGISTRY_TIMEOUT_MS, ENV_DEFAULTS.mcpRegistryTimeoutMs),
     execMaxOutputBytes: parsePositiveInt(env.JARELA_EXEC_MAX_OUTPUT_BYTES, ENV_DEFAULTS.execMaxOutputBytes),
+    toolResultMaxBytes: parsePositiveInt(env.JARELA_TOOL_RESULT_MAX_BYTES, ENV_DEFAULTS.toolResultMaxBytes),
     filesMaxReadBytes: parsePositiveInt(env.JARELA_FILES_MAX_READ_BYTES, ENV_DEFAULTS.filesMaxReadBytes),
     filesMaxWriteBytes: parsePositiveInt(env.JARELA_FILES_MAX_WRITE_BYTES, ENV_DEFAULTS.filesMaxWriteBytes),
     providerToolLimit: parsePositiveInt(env.JARELA_PROVIDER_TOOL_LIMIT, ENV_DEFAULTS.providerToolLimit),

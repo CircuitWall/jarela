@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { resetConfigCache } from "@/lib/env/config";
 
 const root = mkdtempSync(join(tmpdir(), "jarela-signal-contract-"));
 process.env.JARELA_DB_DIR = root;
@@ -31,8 +32,9 @@ const { subscribe } = await import("@/lib/notifications/bus");
 const jobs = await import("@/lib/tools/delegation/claude-delegate-jobs");
 
 afterAll(() => { asyncResults.__resetStore(); jobs._resetDelegateJobs(); closeDb(); try { rmSync(root, { recursive: true, force: true }); } catch {} });
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); resetConfigCache(); });
 beforeEach(() => {
+  resetConfigCache();
   asyncResults.__resetStore(); jobs._resetDelegateJobs(); model.mockReset();
   getDb().exec("DELETE FROM signal_deliveries; DELETE FROM signal_events; DELETE FROM runtime_operations; DELETE FROM messages; DELETE FROM threads;");
   model.mockImplementation(async function* () { yield { type: "text", delta: "Background outcome inspected." }; yield { type: "stop", reason: "stop" }; });
@@ -52,6 +54,7 @@ async function output(threadId: string, text: string) {
 describe("system signal full-flow contract", () => {
   it.each([16 * 1024, 1024])("reserves the proxy envelope within the %i-byte protected-page budget", async (budget) => {
     vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", String(budget));
+    resetConfigCache();
     const thread = owner(`contract-proxy-budget-${budget}`);
     const key = await output(thread.thread_id, "S".repeat(20000));
     const { backgroundResultReference, readBackgroundResultReference } = await import("@/lib/stores/background-results");

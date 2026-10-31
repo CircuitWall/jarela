@@ -33,6 +33,22 @@ afterEach(() => {
 });
 
 describe("env-overrides validateForSchema", () => {
+  it("exposes the existing tool-result limit through the operator configuration surface", async () => {
+    const def = envSchemaByName().get("JARELA_TOOL_RESULT_MAX_BYTES");
+    expect(def).toMatchObject({
+      type: "int", default: 16 * 1024, category: "tools",
+      requiresRestart: false, agentWritable: false, min: 1,
+    });
+    if (!def) throw new Error("missing tool-result limit schema");
+    expect(validateForSchema(def, "32768")).toBeNull();
+    expect(validateForSchema(def, "0")).toMatch(/minimum/);
+    expect(validateForSchema(def, "100.9")).toMatch(/integer/);
+    await patchOverride(def.name, "32768");
+    expect((await readOverrides()).entries[def.name]).toBe("32768");
+    await patchOverride(def.name, null);
+    expect((await readOverrides()).entries[def.name]).toBeUndefined();
+  });
+
   const intDef: EnvVarDef = {
     name: "JARELA_RUN_IDLE_MS",
     type: "int",

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync, promises as fsp } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { resetConfigCache } from "@/lib/env/config";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-result-refs-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -17,11 +18,13 @@ const {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  resetConfigCache();
 });
 afterAll(() => rmSync(tmpRoot, { recursive: true, force: true }));
 
 async function spill(result: unknown, maxBytes = 64) {
   vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", String(maxBytes));
+  resetConfigCache();
   const envelope = parseToolResultReferenceEnvelope(await postProcessToolResult("my tool/x", result));
   if (!envelope) throw new Error("expected a reference envelope");
   return envelope;
@@ -43,9 +46,11 @@ describe("max inline bytes", () => {
   it("ignores invalid overrides", () => {
     for (const bad of ["0", "-5", "abc", "Infinity"]) {
       vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", bad);
+      resetConfigCache();
       expect(getToolResultMaxBytes()).toBe(16 * 1024);
     }
     vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", "100.9");
+    resetConfigCache();
     expect(getToolResultMaxBytes()).toBe(100);
   });
 });
@@ -53,12 +58,14 @@ describe("max inline bytes", () => {
 describe("postProcessToolResult", () => {
   it("passes small results through unchanged", async () => {
     vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", "1000");
+    resetConfigCache();
     expect(await postProcessToolResult("t", { a: 1 })).toBe('{"a":1}');
     expect(serializeToolResult(undefined)).toBe("undefined");
   });
 
   it("measures the limit in bytes, not characters", async () => {
     vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", "10");
+    resetConfigCache();
     // 4 characters, 16 bytes.
     const out = await postProcessToolResult("t", "😀😀😀😀");
     expect(parseToolResultReferenceEnvelope(out)?.bytes).toBe(16);
@@ -118,6 +125,7 @@ describe("readToolResultRef", () => {
     const { wrapWithWallclock } = await import("./wallclock");
     const { toolResultGetTool } = await import("./async-results-tool");
     vi.stubEnv("JARELA_TOOL_RESULT_MAX_BYTES", "16384");
+    resetConfigCache();
     const contents = JSON.stringify({ ok: true, content: `${toolName} synthetic\n`.repeat(5000) });
     const wrapped = wrapWithWallclock(tool(async () => contents, {
       name: toolName, description: "Synthetic shared-spill regression", schema: z.object({}),
