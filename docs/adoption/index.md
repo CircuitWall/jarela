@@ -17,6 +17,139 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.3.0
+
+From 3.2.0 · 2026-10-31
+
+### Tools
+
+- `advance_workflow` — added; params added: `async_run`, `deadline_ms`, `id`, `stream`, `version`; now required: `id`, `version`
+- `cancel_authoring_operation` — added; params added: `async_run`, `deadline_ms`, `id`, `stream`, `type`; now required: `id`, `type`
+- `cancel_skill_execution` — added; params added: `async_run`, `deadline_ms`, `request_id`, `stream`; now required: `request_id`
+- `cancel_workflow` — added; params added: `async_run`, `deadline_ms`, `id`, `stream`, `version`; now required: `id`, `version`
+- `check_skill_execution` — added; params added: `async_run`, `deadline_ms`, `request_id`, `stream`; now required: `request_id`
+- `delegate_to_agent` — changed; description changed; params added: `context`, `expected_output`, `validation_criteria`; params changed: `agent_id`, `task`
+- `inspect_authoring_operation` — added; params added: `async_run`, `deadline_ms`, `id`, `stream`, `type`; now required: `id`, `type`
+- `inspect_contribution_operation` — added; params added: `async_run`, `deadline_ms`, `operation_id`, `stream`; now required: `operation_id`
+- `inspect_extension_authoring` — added; params added: `async_run`, `deadline_ms`, `id`, `stream`; now required: `id`
+- `inspect_workflow` — added; params added: `async_run`, `deadline_ms`, `id`, `stream`; now required: `id`
+- `invoke_tool` — changed; description changed
+- `list_workflows` — added; params added: `async_run`, `deadline_ms`, `stream`
+- `prepare_contribution_bundle` — added; params added: `async_run`, `base_revision`, `branch`, `classification`, `deadline_ms`, `destination`, `files`, `license_review`, `ownership`, `stream`, `summary`, `tests`, `worktree`; now required: `base_revision`, `branch`, `classification`, `destination`, `files`, `license_review`, `ownership`, `summary`, `tests`, `worktree`
+- `reconcile_workflow` — added; params added: `async_run`, `deadline_ms`, `id`, `stream`, `version`; now required: `id`, `version`
+- `request_contribution_commit` — added; params added: `async_run`, `deadline_ms`, `operation_id`, `stream`; now required: `operation_id`
+- `request_contribution_draft_pr` — added; params added: `async_run`, `deadline_ms`, `operation_id`, `stream`; now required: `operation_id`
+- `request_contribution_push` — added; params added: `async_run`, `deadline_ms`, `operation_id`, `stream`; now required: `operation_id`
+- `request_contribution_tests` — added; params added: `async_run`, `base_revision`, `branch`, `classification`, `commit_message`, `deadline_ms`, `destination`, `files`, `license_review`, `ownership`, `stream`, `summary`, `test_files`; now required: `base_revision`, `branch`, `classification`, `commit_message`, `destination`, `files`, `license_review`, `ownership`, `summary`, `test_files`
+- `request_extension_stage` — added; params added: `async_run`, `deadline_ms`, `fixture_origin`, `id`, `stage`, `stream`; now required: `id`, `stage`
+- `run_skill` — added; params added: `async_run`, `deadline_ms`, `id`, `input_json`, `stream`; now required: `id`, `input_json`
+- `run_workflow` — added; params added: `async_run`, `deadline_ms`, `definition_json`, `invocation_json`, `stream`; now required: `definition_json`, `invocation_json`
+- `scaffold_extension` — added; params added: `async_run`, `deadline_ms`, `discovery`, `goal`, `name`, `stream`; now required: `discovery`, `goal`, `name`
+- `start_extension_authoring` — added; params added: `async_run`, `deadline_ms`, `discovery`, `goal`, `name`, `source`, `stream`; now required: `discovery`, `goal`, `name`
+
+### Prompts
+
+- `static.agent-advertisement` — added (`lib/agents/advertisement-prompt.ts`)
+- `static.skill.contribution-review` — added (`lib/skills/builtins/contribution-review/SKILL.md`)
+- `static.skill.extension-development` — added (`lib/skills/builtins/extension-development/SKILL.md`)
+- `static.skill.jarela-integrations` — changed (`lib/skills/builtins/jarela-integrations/SKILL.md`)
+
+    ```diff
+    + For a genuinely missing, authorized capability, load `extension-development`
+    + before scaffolding. Keep generated drafts outside auto-loaded directories;
+    + tests and installation need separate authority. Upstream sharing is optional:
+    + load `contribution-review` only for an explicitly requested contribution.
+    ```
+
+- `static.skill.memory-organization` — changed (`lib/skills/builtins/memory-organization/SKILL.md`)
+
+    ```diff
+    + ## Host and installation
+    + Resolve this bundle from the actual loaded `SKILL.md`, not the workspace or
+    + current working directory. Its script is [scripts/run.mjs](./scripts/run.mjs);
+    + keep the whole directory together, including scripts, schemas and fixtures.
+    + Built-in, workspace and personal installations use identical relative resources.
+    + The memory tool names, record format and policy controls below describe Jarela.
+    + On another host, inspect its authorized memory API before reading or writing;
+    + do not assume Jarela tools or a `facts` namespace exist. Never substitute file
+    + writes or a different memory store to bypass unavailable tools or permissions.
+    + For read-only cleanup planning, map retrieved records to the projection below
+    + only when their stable identity, kind, status and expiry are known. If that
+    + mapping is unsupported, report the blocker; do not invent missing fields.
+    - 2. Discover `plan_memory_cleanup` with `list_tools` using the exact name and
+    - `include_schema: true`. Supply an explicit current UTC `now` and at most
+    - On another host with authorized Node execution, run
+    - `node <skill-root>/scripts/run.mjs` with the JSON input on stdin and close stdin.
+    - on stderr. Inside Jarela use the typed tool, never terminal execution to bypass
+    … 19 more line(s)
+    ```
+
+- `static.skill.personal-briefing` — changed (`lib/skills/builtins/personal-briefing/SKILL.md`)
+
+    ```diff
+    + ## Host and installation
+    + Resolve this bundle from the actual loaded `SKILL.md`, not the workspace or
+    + current working directory. Its script is [scripts/run.mjs](./scripts/run.mjs);
+    + keep the whole directory together, including scripts and fixtures. Built-in,
+    + workspace and personal installations use the same relative resource paths.
+    + In Jarela, discover and use the typed tools named below. On another host, use
+    + its authorized read-only retrieval tools and the portable validator below;
+    + Jarela tool names are not commands to run in a shell. If retrieval, Node or
+    + script execution is unavailable or denied, report the blocker rather than
+    + inventing results or bypassing the host's approval rules.
+    + 1. Establish the owner's requested sources and time window. In Jarela use
+    + `list_tools`; elsewhere use the host's tool discovery to find authorized
+    - 1. Establish the owner's requested sources and time window. Use `list_tools`
+    - to discover available typed read-only tools. Do not request extra access or
+    - 4. Call `validate_personal_briefing` with that object. Its input is the
+    - On a host that authorizes Node script execution, run
+    - `node <skill-root>/scripts/run.mjs`. Send the procedure's JSON object on stdin
+    … 12 more line(s)
+    ```
+
+- `system.Available delegates` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Available skills` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + - contribution-review (builtin): Use when: preparing a local contribution bundle, reviewing an outgoing diff for privacy, or separating commit, push and draft-PR authorization.
+    + - extension-development (builtin): Use when: filling an authorized capability gap, scaffolding an extension, reviewing generated plugin code, or planning separate test and installation approval.
+    ```
+
+- `system.Enabled tools` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + You can execute the 107 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 167 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    + - Basic > Config > cancel_authoring_operation: execute/builtin/enabled reason=basic_default
+    + - Basic > Config > inspect_authoring_operation: read/builtin/enabled reason=basic_default
+    + - Basic > Config > inspect_contribution_operation: read/builtin/enabled reason=basic_default
+    + - Basic > Config > inspect_extension_authoring: read/builtin/enabled reason=basic_default
+    + - Basic > Config > prepare_contribution_bundle: read/builtin/enabled reason=basic_default
+    + - Basic > Config > request_contribution_commit: write/builtin/enabled reason=basic_default
+    + - Basic > Config > request_contribution_draft_pr: write/builtin/enabled reason=basic_default
+    + - Basic > Config > request_contribution_push: write/builtin/enabled reason=basic_default
+    + - Basic > Config > request_contribution_tests: execute/builtin/enabled reason=basic_default
+    + - Basic > Config > request_extension_stage: execute/builtin/enabled reason=basic_default
+    + - Basic > Config > scaffold_extension: read/builtin/enabled reason=basic_default
+    - You can execute the 86 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 167 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    … 10 more line(s)
+    ```
+
+### Commits
+
+- refactor(api): remove duplicate cache and response policies
+- refactor(core): remove function exceptions and align contracts
+- refactor(api): align responses and local validation guardrails
+- fix(runtime): fix tool proxy and stream recovery
+- docs(agents): document modular agent guidance
+- feat(agents): add derived advertisements and bounded delegation
+- build(deps): bump the npm group with 6 updates
+- ci(deps): bump actions/setup-node from 6 to 7 in the actions group
+- build(deps): bump the docs group with 2 updates
+- test(workflows): fix contribution ownership harness portability
+- feat(workflows): add reviewed authoring lifecycles
+- feat(workflows): add inert authoring and contribution builders
+- feat(workflows): add checked skill and durable execution
+
 ## 3.2.0
 
 From 3.1.0 · 2026-10-30
