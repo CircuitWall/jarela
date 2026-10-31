@@ -14,6 +14,15 @@ absent in unscanned files. Check the warning and skipped reasons; use
 hidden-directory, dependency-directory and glob filters still define the
 search scope.
 
+Large-file range guard (Unreleased): `file_read` requires **both**
+`start_line` and `end_line` when the source file's UTF-8 byte size exceeds
+`JARELA_TOOL_RESULT_MAX_BYTES`. Otherwise it returns `ok: false` with
+`error_code: "file_read_range_required"`, file metadata and a bounded outline
+when available, but no content. Use `file_grep` to locate relevant lines,
+then read a complete range. Small unrestricted reads remain unchanged.
+Explicit ranges keep the existing file-read clipping limit; neither
+configuration default nor result-reference page limits change.
+
 Oversized tool output is persisted in the existing local artifact store.
 The inline threshold is **16 KiB** by default. Configure the existing
 `JARELA_TOOL_RESULT_MAX_BYTES` setting in the environment settings' advanced
