@@ -3,6 +3,7 @@ import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { AdvertisementState } from "./advertisement-contract";
 import { defaultAdvertisementPolicy } from "./advertisement-contract";
 import type { ToolCatalogEntry } from "@/lib/tools";
+import { buildAdvertisementMessages } from "./advertisement-prompt";
 
 const mocks = vi.hoisted(() => ({
   agents: new Map<string, AgentConfigRow>(), states: new Map<string, AdvertisementState>(),
@@ -53,13 +54,102 @@ let catalog: ToolCatalogEntry[];
 beforeEach(() => {
   mocks.agents.clear(); mocks.states.clear(); mocks.calls = 0; mocks.model = true; mocks.modelId = "synthetic-model";
   mocks.policy = { ...defaultAdvertisementPolicy(), enabled: true, model_config_name: "configured" };
-  catalog = [tool()]; seed();
+  catalog = [tool()]; seed(); seed("peer"); mocks.agents.get("peer")!.tools = "[]";
   generator = vi.fn<Generator>(async () => valid());
   service = new AdvertisementService(generator, async () => catalog);
 });
 afterEach(async () => { await service.close(); });
 
 describe("derived advertisement lifecycle", () => {
+  it("omits a large shared catalog and includes only exclusive permitted tools", async () => {
+    const commonTools = Array.from({ length: 500 }, (_, index) => ({
+      ...tool(), name: `shared_tool_${index}`, description: "Shared capability ".repeat(10),
+    }));
+    catalog.push(...commonTools);
+    mocks.agents.get("a")!.tools = JSON.stringify(catalog.map((entry) => entry.name));
+    mocks.agents.get("peer")!.tools = JSON.stringify(commonTools.map((entry) => entry.name));
+    expect(JSON.stringify(catalog).length).toBeGreaterThan(16000);
+    await service.refresh("a"); await service.settle();
+    const source = generator.mock.calls[0][0].snapshot.source;
+    expect(source.authorized_tools).toEqual([{
+      name: "fixture_read", description: "Read synthetic fixtures", capability: "read",
+    }]);
+    expect(JSON.stringify(source).length).toBeLessThan(mocks.policy.max_input_chars);
+    expect(source.instructions).toBe(mocks.agents.get("a")!.instructions);
+    const messages = buildAdvertisementMessages(source);
+    const fullMessages = buildAdvertisementMessages({
+      ...source, authorized_tools: catalog.map((entry) => ({
+        name: entry.name, description: entry.description.slice(0, 80), capability: entry.capability,
+      })),
+    });
+    expect(JSON.stringify(fullMessages).length).toBeGreaterThan(16000);
+    expect(JSON.stringify(messages).length).toBeLessThan(3000);
+    expect(messages[0].content).toContain("Shared tools are omitted");
+    expect(messages[0].content).toContain("An omitted tool does not imply missing permission");
+    expect(messages[0].content).toContain("entire JSON<=1800 characters");
+    expect(mocks.states.get("a")?.status).toBe("ready");
+  });
+  it("omits tools shared with even one peer, not just those shared with every peer", async () => {
+    seed("other-peer"); mocks.agents.get("other-peer")!.tools = "[]";
+    mocks.agents.get("peer")!.tools = '["fixture_read"]';
+    generator.mockResolvedValue({ ...valid(), tools: [] });
+    await service.refresh("a"); await service.settle();
+    expect(generator.mock.calls[0][0].snapshot.source.authorized_tools).toEqual([]);
+    expect(mocks.states.get("a")?.status).toBe("ready");
+  });
+  it("includes no tools with only one saved agent and keeps instructions intact", async () => {
+    mocks.agents.delete("peer");
+    generator.mockResolvedValue({ ...valid(), tools: [] });
+    await service.refresh("a"); await service.settle();
+    expect(generator.mock.calls[0][0].snapshot.source).toMatchObject({
+      instructions: "Review test fixtures carefully", authorized_tools: [],
+    });
+    expect(buildAdvertisementMessages(generator.mock.calls[0][0].snapshot.source)[0].content)
+      .toContain("tools has 0-12 names and must be [] when authorized_tools is empty");
+    expect(mocks.states.get("a")?.status).toBe("ready");
+  });
+  it("recomputes exclusivity when another agent gains or loses permission", async () => {
+    await service.refresh("a"); await service.settle();
+    const original = mocks.states.get("a")!.source_fingerprint;
+    mocks.agents.get("peer")!.tools = '["fixture_read"]';
+    generator.mockResolvedValue({ ...valid(), tools: [] });
+    await service.refreshAll(); await service.settle();
+    expect(mocks.states.get("a")!.source_fingerprint).not.toBe(original);
+    expect(mocks.states.get("a")?.advertisement?.tools).toEqual([]);
+    mocks.agents.get("peer")!.tools = "[]";
+    generator.mockResolvedValue(valid());
+    await service.refresh("a"); await service.settle();
+    expect(mocks.states.get("a")!.source_fingerprint).toBe(original);
+    expect(mocks.states.get("a")?.advertisement?.tools).toEqual(["fixture_read"]);
+  });
+  it("recomputes exclusivity after a peer is deleted or created", async () => {
+    await service.refresh("a"); await service.settle();
+    mocks.agents.delete("peer");
+    generator.mockResolvedValue({ ...valid(), tools: [] });
+    await service.refreshAll(); await service.settle();
+    expect(mocks.states.get("a")?.advertisement?.tools).toEqual([]);
+    seed("peer"); mocks.agents.get("peer")!.tools = "[]";
+    generator.mockResolvedValue(valid());
+    await service.refresh("a"); await service.settle();
+    expect(mocks.states.get("a")?.advertisement?.tools).toEqual(["fixture_read"]);
+  });
+  it("rejects late exclusive-tool claims when a peer gains the same tool", async () => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    generator.mockImplementation(async () => { started.resolve(); await release.promise; return valid(); });
+    await service.refresh("a"); await started.promise;
+    mocks.agents.get("peer")!.tools = '["fixture_read"]';
+    release.resolve(); await service.settle();
+    expect(mocks.states.get("a")?.advertisement).toBeNull();
+    generator.mockResolvedValue({ ...valid(), tools: [] });
+    await service.refresh("a"); await service.settle();
+    expect(mocks.states.get("a")?.status).toBe("ready");
+  });
+  it("rejects a generated claim about a tool omitted because it is shared", async () => {
+    mocks.agents.get("peer")!.tools = '["fixture_read"]';
+    await service.refresh("a"); await service.settle();
+    expect(mocks.states.get("a")).toMatchObject({ status: "failed", error: "output_capability_refused" });
+  });
   it.each(Array.from({ length: 10 }, (_, index) => index + 1))("publishes only validated current output (%i/10)", async () => {
     expect((await service.refresh("a"))?.status).toBe("pending");
     await service.settle();

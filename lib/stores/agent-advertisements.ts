@@ -45,7 +45,7 @@ export function notifyAdvertisementSourceChanged(agentId: string): void {
     return;
   }
   void import("@/lib/agents/advertisement-service")
-    .then(({ advertisementService }) => advertisementService().refresh(agentId))
+    .then(({ advertisementService }) => advertisementService().refreshAll())
     .catch(() => console.warn("[advertisements] post-save refresh failed"));
 }
 export function reserveAdvertisementCall(timestamp: number, limit: number): boolean {

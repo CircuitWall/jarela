@@ -22,14 +22,17 @@ function policyFingerprint(policy: AdvertisementPolicy): string {
 type Snapshot = { agent: AgentConfigRow; source: { name: string; identity: string; instructions: string; authorized_tools: { name: string; description: string; capability: string }[] }; fingerprint: string; knownTools: string[] };
 function snapshot(agent: AgentConfigRow, catalog: readonly ToolCatalogEntry[]): Snapshot {
   const allowed = new Set(authorizedAgentToolNames(catalog, agent));
+  const peers = listAgentConfigs().filter((other) => other.id !== agent.id);
+  const shared = new Set(peers.flatMap((other) => authorizedAgentToolNames(catalog, other)));
+  const exclusiveTools = catalog.filter((tool) => peers.length > 0 && allowed.has(tool.name) && !shared.has(tool.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const source = {
     name: agent.name, identity: agent.identity, instructions: agent.instructions,
-    authorized_tools: catalog.filter((tool) => allowed.has(tool.name))
-      .sort((a, b) => a.name.localeCompare(b.name)).map((tool) => ({
-        name: tool.name, description: tool.description.slice(0, 80), capability: tool.capability,
-      })),
+    authorized_tools: exclusiveTools.map((tool) => ({
+      name: tool.name, description: tool.description.slice(0, 80), capability: tool.capability,
+    })),
   };
-  const metadata = catalog.filter((tool) => allowed.has(tool.name)).sort((a, b) => a.name.localeCompare(b.name))
+  const metadata = exclusiveTools
     .map((tool) => ({ name: tool.name, description: tool.description, capability: tool.capability, category: tool.category, source: tool.source }));
   return { agent, source, fingerprint: hash({ version: ADVERTISEMENT_CONTRACT_VERSION, source, metadata }), knownTools: catalog.map((tool) => tool.name) };
 }
@@ -157,7 +160,11 @@ export class AdvertisementService {
     const changed = hash(getAdvertisementPolicy()) !== hash(checked);
     setAdvertisementPolicy(checked);
     if (changed) this.controller?.abort();
-    for (const agent of listAgentConfigs()) await this.refresh(agent.id);
+    await this.refreshAll();
+  }
+  async refreshAll(): Promise<void> {
+    const catalog = getAdvertisementPolicy().enabled ? await this.catalog() : undefined;
+    for (const agent of listAgentConfigs()) await this.refresh(agent.id, false, catalog);
   }
   async setEnabled(agentId: string, enabled: boolean): Promise<AdvertisementState | null> {
     const prior = getAdvertisement(agentId);

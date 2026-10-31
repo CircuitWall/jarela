@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const ADVERTISEMENT_CONTRACT_VERSION = 1;
+export const ADVERTISEMENT_CONTRACT_VERSION = 2;
 export function isAdvertisementMemory(namespace: string, key: string): boolean {
   return namespace === "agent-advertisements" || (namespace === "app-settings"
     && (key === "agent-advertisement-policy" || key === "agent-advertisement-usage"));

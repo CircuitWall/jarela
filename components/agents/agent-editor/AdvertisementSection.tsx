@@ -29,9 +29,10 @@ const snapshotSchema = z.object({
     }).nullable(),
   }).nullable(),
 });
+const policyResponseSchema = z.object({ policy: policySchema });
 type Policy = z.infer<typeof policySchema>;
 type Snapshot = z.infer<typeof snapshotSchema>;
-type Operation = "refresh" | "save" | "regenerate" | "disable" | "enable";
+type AgentOperation = "refresh" | "regenerate" | "disable" | "enable";
 const defaults = defaultAdvertisementPolicy();
 const limits = [
   { key: "max_calls_per_hour", label: "Maximum calls per hour", min: 1, max: 100 },
@@ -56,66 +57,131 @@ async function requestJson(url: string, signal: AbortSignal, body?: unknown, met
   return response.json();
 }
 
-export function AdvertisementSection({ agentId, models }: { agentId?: string; models: ModelConfig[] }) {
+function displayGenerationError(code: string): string {
+  if (code === "source_size_refused") {
+    return "The committed agent profile and exclusive-tool descriptions exceed the input limit. Shared tools are already omitted. Increase Maximum input characters (up to 16,000), or shorten the agent name, identity, or instructions; then save the agent and refresh the advertisement.";
+  }
+  return code;
+}
+
+export function AdvertisementSection({ agentId, models, global = false }: { agentId?: string; models: ModelConfig[]; global?: boolean }) {
+  if (global) return <GlobalAdvertisementSettings models={models} />;
+
   return (
     <Section title="Agent advertisement">
       <p className="text-xs text-fg-subtle">
-        Optional generation is disabled by default. It sends this agent&apos;s committed identity and instructions,
-        plus bounded permitted tool descriptions, to your explicitly selected model. This may incur provider costs
-        and data egress. Conversations and credentials are not included.
+        Advertisements are optional model-generated claims, not proof of capabilities or safety, and grant no permissions.
+        Global generation settings are managed once in the Agents panel. This agent&apos;s committed identity and instructions,
+        plus bounded exclusive-tool descriptions, may be sent to the configured provider; conversations and credentials are not included.
       </p>
       <p className="text-xs text-fg-subtle">
-        Advertisements are model-generated claims, not proof of capabilities or safety. They grant no permissions.
         Unsaved agent editor changes are never sent. Controls require an unlocked, local loopback session.
       </p>
+      <p className="text-xs text-fg-subtle">
+        Only tools permitted for this agent and no other saved agent are included. Shared tools remain usable but are
+        omitted from advertisement generation. With only one saved agent, no tool descriptions are included.
+      </p>
       {agentId
-        ? <AdvertisementControls key={agentId} agentId={agentId} models={models} />
+        ? <AgentAdvertisementControls key={agentId} agentId={agentId} models={models} />
         : <p className="text-xs text-fg-muted">Save this agent first to manage its advertisement.</p>}
     </Section>
   );
 }
 
-function AdvertisementControls({ agentId, models }: { agentId: string; models: ModelConfig[] }) {
-  const {
-    error,
-    message,
-    busy,
-    snapshot,
-    policy,
-    setDraft,
-    setMessage,
-    selectedModelAvailable,
-    enabledModels,
-    policyError,
-    dirty,
-    run,
-    savedModelAvailable,
-    advertisement,
-    metadata,
-  } = useAdvertisementPolicy({ agentId, models });
+function GlobalAdvertisementSettings({ models }: { models: ModelConfig[] }) {
+  const [{ savedPolicy, draft }, setPolicyState] = useState<{ savedPolicy: Policy | null; draft: Policy | null }>({
+    savedPolicy: null, draft: null,
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  const enabledModels = models.filter(isModelEnabled);
+  const policy = draft ?? savedPolicy ?? defaults;
+  const selectedModelAvailable = enabledModels.some((model) => model.name === policy.model_config_name);
+  const dirty = savedPolicy !== null && JSON.stringify(policy) !== JSON.stringify(savedPolicy);
+  const invalidLimit = limits.find(({ key, min, max }) => !Number.isInteger(policy[key]) || policy[key] < min || policy[key] > max);
+  const policyError = invalidLimit
+    ? `${invalidLimit.label} must be a whole number from ${invalidLimit.min} to ${invalidLimit.max}.`
+    : ((policy.enabled || policy.model_config_name !== null) && !selectedModelAvailable)
+      ? "Choose an enabled configured model by name; there is no automatic fallback."
+      : null;
+
+  const refresh = useCallback(async () => {
+    if (controller.current) return;
+    const current = new AbortController();
+    controller.current = current;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = policyResponseSchema.parse(await requestJson(endpoint, current.signal));
+      if (!current.signal.aborted) {
+        setPolicyState((previous) => ({
+          savedPolicy: result.policy,
+          draft: previous.draft === null || JSON.stringify(previous.draft) === JSON.stringify(previous.savedPolicy)
+            ? result.policy : previous.draft,
+        }));
+      }
+    } catch (err) {
+      if (!current.signal.aborted) setError(errorMessage(err));
+    } finally {
+      if (controller.current === current) {
+        controller.current = null;
+        if (!current.signal.aborted) setBusy(false);
+      }
+    }
+  }, []);
+
+  const save = useCallback(async () => {
+    if (controller.current || !draft) return;
+    const current = new AbortController();
+    controller.current = current;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const saved = policyResponseSchema.parse(await requestJson(endpoint, current.signal, { policy: draft }, "PUT")).policy;
+      if (current.signal.aborted) return;
+      setPolicyState({ savedPolicy: saved, draft: saved });
+      setMessage("Global generation settings saved.");
+    } catch (err) {
+      if (!current.signal.aborted) setError(errorMessage(err));
+    } finally {
+      if (controller.current === current) {
+        controller.current = null;
+        if (!current.signal.aborted) setBusy(false);
+      }
+    }
+  }, [draft]);
+
+  useEffect(() => {
+    void refresh();
+    return () => {
+      controller.current?.abort();
+      controller.current = null;
+    };
+  }, [refresh]);
 
   return (
-    <div className="space-y-3">
-      {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
-      {message && <p role="status" className="text-xs text-fg-muted">{message}</p>}
-      {busy && <p role="status" className="text-xs text-fg-muted">
-        {busy === "refresh" ? "Loading advertisement status..." : busy === "save" ? "Saving generation settings..." : `Requesting ${busy}...`}
-      </p>}
-      <p className="text-xs text-fg-muted">
-        Global generation settings apply to all agents. Saving enabled settings or enabling an advertisement
-        may queue generation using committed agent data.
+    <section aria-label="Global advertisement settings" className="mx-2 my-2 rounded-xl border border-border bg-surface-1/30 p-3">
+      <h2 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Global advertisement generation</h2>
+      <p className="mt-2 text-xs text-fg-subtle">
+        These settings apply to all agents. Each agent can be individually enabled or disabled in its editor.
+        Enabling generation authorizes sending committed agent source to the selected provider and may incur costs.
       </p>
-      <fieldset disabled={!snapshot || busy !== null} className="space-y-3 disabled:opacity-50">
+      {error && <p role="alert" className="mt-2 text-xs text-red-400">{error}</p>}
+      {message && <p role="status" className="mt-2 text-xs text-fg-muted">{message}</p>}
+      <fieldset disabled={savedPolicy === null || busy} className="mt-3 space-y-3 disabled:opacity-50">
         <legend className="sr-only">Global advertisement generation settings</legend>
         <label className="flex items-center gap-2 text-xs text-fg-muted">
           <input type="checkbox" checked={policy.enabled}
-            onChange={(event) => { setDraft({ ...policy, enabled: event.target.checked }); setMessage(null); }} />
+            onChange={(event) => { setPolicyState({ savedPolicy, draft: { ...policy, enabled: event.target.checked } }); setMessage(null); }} />
           Enable advertisement generation globally
         </label>
         <label className="block text-xs text-fg-muted">
           Generation model (explicit named selection)
           <select className={inputClass} value={selectedModelAvailable ? policy.model_config_name! : ""}
-            onChange={(event) => { setDraft({ ...policy, model_config_name: event.target.value || null }); setMessage(null); }}>
+            onChange={(event) => { setPolicyState({ savedPolicy, draft: { ...policy, model_config_name: event.target.value || null } }); setMessage(null); }}>
             <option value="">Select a configured model (no fallback)</option>
             {enabledModels.map((model) => <option key={model.name} value={model.name}>
               {model.name} ({model.provider} / {model.model_id})
@@ -132,7 +198,7 @@ function AdvertisementControls({ agentId, models }: { agentId: string; models: M
               {label}
               <input aria-label={label} className={inputClass} type="number" min={min} max={max} step={1} value={Number.isNaN(policy[key]) ? "" : policy[key]}
                 onChange={(event) => {
-                  setDraft({ ...policy, [key]: event.target.valueAsNumber });
+                  setPolicyState({ savedPolicy, draft: { ...policy, [key]: event.target.valueAsNumber } });
                   setMessage(null);
                 }} />
               <span className="text-fg-faint">{min}–{max}</span>
@@ -140,22 +206,104 @@ function AdvertisementControls({ agentId, models }: { agentId: string; models: M
           ))}
         </div>
         {policyError && <p className="text-xs text-amber-500">{policyError}</p>}
-        <button type="button" className={buttonClass} disabled={!!policyError || !dirty}
-          onClick={() => { void run("save", policy); }}>Save generation settings</button>
+        <button type="button" className={buttonClass} disabled={busy || !!policyError || !dirty} onClick={() => { void save(); }}>
+          Save generation settings
+        </button>
       </fieldset>
+      <button type="button" className={`${buttonClass} mt-2`} disabled={busy} onClick={() => { void refresh(); }}>
+        Refresh global settings
+      </button>
+    </section>
+  );
+}
+
+function AgentAdvertisementControls({ agentId, models }: { agentId: string; models: ModelConfig[] }) {
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [busy, setBusy] = useState<AgentOperation | null>("refresh");
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  const enabledModels = models.filter(isModelEnabled);
+  const advertisement = snapshot?.advertisement;
+  const metadata = advertisement?.advertisement;
+  const savedModelAvailable = enabledModels.some((model) => model.name === snapshot?.policy.model_config_name);
+
+  const run = useCallback(async (operation: AgentOperation) => {
+    if (controller.current) return;
+    const current = new AbortController();
+    controller.current = current;
+    setBusy(operation);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = operation === "refresh"
+        ? await requestJson(`${endpoint}?agent_id=${encodeURIComponent(agentId)}`, current.signal)
+        : await requestJson(endpoint, current.signal, { agent_id: agentId, action: operation }, "POST");
+      const parsed = snapshotSchema.safeParse(result);
+      if (!parsed.success || (parsed.data.advertisement && parsed.data.advertisement.agent_id !== agentId)) {
+        throw new Error("Invalid advertisement response. Refresh to try again.");
+      }
+      if (current.signal.aborted) return;
+      setSnapshot(parsed.data);
+      if (operation !== "refresh") setMessage(operation === "regenerate" ? "Regeneration requested." : `Advertisement ${operation}d.`);
+    } catch (err) {
+      if (!current.signal.aborted) setError(errorMessage(err));
+    } finally {
+      if (controller.current === current) {
+        controller.current = null;
+        if (!current.signal.aborted) setBusy(null);
+      }
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    void run("refresh");
+    return () => {
+      controller.current?.abort();
+      controller.current = null;
+    };
+  }, [run]);
+
+  useEffect(() => {
+    if (snapshot?.advertisement?.status !== "pending") return;
+    const timer = setInterval(() => { void run("refresh"); }, 3_000);
+    return () => clearInterval(timer);
+  }, [snapshot?.advertisement?.status, run]);
+
+  const enabled = advertisement?.enabled !== false;
+  const canRegenerate = !!snapshot?.policy.enabled && savedModelAvailable && enabled
+    && advertisement?.status !== "pending";
+
+  return (
+    <div className="space-y-3">
+      {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
+      {message && <p role="status" className="text-xs text-fg-muted">{message}</p>}
+      {busy && <p role="status" className="text-xs text-fg-muted">
+        {busy === "refresh" ? "Loading advertisement status..." : busy === "regenerate" ? "Requesting regeneration..." : `Requesting ${busy}...`}
+      </p>}
+      <label className="flex items-center gap-2 text-xs text-fg-muted">
+        <input
+          type="checkbox"
+          aria-label="Enable advertisement for this agent"
+          checked={enabled}
+          disabled={!snapshot || busy !== null}
+          onChange={(event) => { void run(event.target.checked ? "enable" : "disable"); }}
+        />
+        Enable advertisement for this agent
+      </label>
+      <p className="text-xs text-fg-muted">
+        Enabling this agent&apos;s advertisement does not override the global generation setting.
+      </p>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={buttonClass} disabled={busy !== null}
-          onClick={() => { void run("refresh"); }}>Refresh advertisement</button>
-        <button type="button" className={buttonClass}
-          disabled={!snapshot || busy !== null || dirty || !snapshot.policy.enabled || !savedModelAvailable || advertisement?.enabled === false || advertisement?.status === "pending"}
-          onClick={() => { void run("regenerate"); }}>Regenerate advertisement</button>
-        <button type="button" className={buttonClass} disabled={!snapshot || busy !== null || advertisement?.enabled === false}
-          onClick={() => { void run("disable"); }}>Disable advertisement</button>
-        <button type="button" className={buttonClass} disabled={!snapshot || busy !== null || advertisement?.enabled !== false}
-          onClick={() => { void run("enable"); }}>Enable advertisement</button>
+        <button type="button" className={buttonClass} disabled={busy !== null} onClick={() => { void run("refresh"); }}>
+          Refresh advertisement
+        </button>
+        <button type="button" className={buttonClass} disabled={!snapshot || busy !== null || !canRegenerate}
+          onClick={() => { void run("regenerate"); }}>
+          Regenerate advertisement
+        </button>
       </div>
-      {dirty && <p className="text-xs text-amber-500">Save generation settings before regenerating. Refresh preserves unsaved generation settings.</p>}
-      {snapshot && !snapshot.policy.enabled && <p className="text-xs text-fg-muted">Global generation is disabled.</p>}
+      {snapshot && !snapshot.policy.enabled && <p className="text-xs text-fg-muted">Global generation is disabled. Manage it in the Agents panel.</p>}
       {snapshot && !advertisement && <p className="text-xs text-fg-muted">No advertisement generated for this agent.</p>}
       {advertisement && (
         <div className="space-y-2 rounded-lg border border-border p-3 text-xs text-fg-muted">
@@ -165,7 +313,9 @@ function AdvertisementControls({ agentId, models }: { agentId: string; models: M
           {advertisement.status === "pending" && <p>Generation pending. Status refreshes automatically.</p>}
           {advertisement.status === "stale" && <p>Stale: committed source or generation settings changed. Regenerate to refresh these claims.</p>}
           {advertisement.status === "ready" && <p>Ready means generated, not verified.</p>}
-          {advertisement.error && <p role="alert" className="text-red-400">Generation error: {advertisement.error}</p>}
+          {advertisement.error && (
+            <p role="alert" className="text-red-400">Generation error: {displayGenerationError(advertisement.error)}</p>
+          )}
           <dl className="space-y-1 break-words">
             <dt>Source fingerprint</dt><dd className="break-all font-mono">{advertisement.source_fingerprint || "Not available"}</dd>
             <dt>Policy fingerprint</dt><dd className="break-all font-mono">{advertisement.policy_fingerprint || "Not available"}</dd>
@@ -191,97 +341,4 @@ function AdvertisementControls({ agentId, models }: { agentId: string; models: M
 
 function MetadataList({ items }: { items: string[] }) {
   return items.length ? <ul className="list-inside list-disc">{items.map((item, index) => <li key={index}>{item}</li>)}</ul> : <>None listed</>;
-}
-
-function useAdvertisementPolicy({ agentId, models }: { agentId: string; models: ModelConfig[] }) {
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [draft, setDraft] = useState<Policy | null>(null);
-  const [busy, setBusy] = useState<Operation | null>("refresh");
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const controller = useRef<AbortController | null>(null);
-  const enabledModels = models.filter(isModelEnabled);
-  const policy = draft ?? defaults;
-  const selectedModelAvailable = enabledModels.some((model) => model.name === policy.model_config_name);
-  const dirty = snapshot !== null && JSON.stringify(policy) !== JSON.stringify(snapshot.policy);
-  const invalidLimit = limits.find(({ key, min, max }) => !Number.isInteger(policy[key]) || policy[key] < min || policy[key] > max);
-  const policyError = invalidLimit
-    ? `${invalidLimit.label} must be a whole number from ${invalidLimit.min} to ${invalidLimit.max}.`
-    : ((policy.enabled || policy.model_config_name !== null) && !selectedModelAvailable)
-      ? "Choose an enabled configured model by name; there is no automatic fallback."
-      : null;
-
-  const run = useCallback(async (operation: Operation, nextPolicy?: Policy) => {
-    if (controller.current) return;
-    const current = new AbortController();
-    controller.current = current;
-    setBusy(operation);
-    setError(null);
-    setMessage(null);
-    try {
-      if (operation === "save") {
-        const result = await requestJson(endpoint, current.signal, { policy: nextPolicy }, "PUT");
-        const saved = z.object({ policy: policySchema }).parse(result).policy;
-        if (current.signal.aborted) return;
-        setDraft(saved);
-        setMessage("Generation settings saved.");
-      }
-      const result = operation === "refresh" || operation === "save"
-        ? await requestJson(`${endpoint}?agent_id=${encodeURIComponent(agentId)}`, current.signal)
-        : await requestJson(endpoint, current.signal, { agent_id: agentId, action: operation }, "POST");
-      const parsed = snapshotSchema.safeParse(result);
-      if (!parsed.success || (parsed.data.advertisement && parsed.data.advertisement.agent_id !== agentId)) {
-        throw new Error("Invalid advertisement response. Refresh to try again.");
-      }
-      if (current.signal.aborted) return;
-      setSnapshot(parsed.data);
-      setDraft((previous) => previous ?? parsed.data.policy);
-      if (operation !== "refresh" && operation !== "save") {
-        setMessage(operation === "regenerate" ? "Regeneration requested." : `Advertisement ${operation}d.`);
-      }
-    } catch (err) {
-      if (!current.signal.aborted) setError(errorMessage(err));
-    } finally {
-      if (controller.current === current) {
-        controller.current = null;
-        if (!current.signal.aborted) setBusy(null);
-      }
-    }
-  }, [agentId]);
-
-  useEffect(() => {
-    void run("refresh");
-    return () => {
-      controller.current?.abort();
-      controller.current = null;
-    };
-  }, [run]);
-
-  useEffect(() => {
-    if (snapshot?.advertisement?.status !== "pending") return;
-    const timer = setInterval(() => { void run("refresh"); }, 3_000);
-    return () => clearInterval(timer);
-  }, [snapshot?.advertisement?.status, run]);
-
-  const advertisement = snapshot?.advertisement;
-  const metadata = advertisement?.advertisement;
-  const savedModelAvailable = enabledModels.some((model) => model.name === snapshot?.policy.model_config_name);
-
-  return {
-    error,
-    message,
-    busy,
-    snapshot,
-    policy,
-    setDraft,
-    setMessage,
-    selectedModelAvailable,
-    enabledModels,
-    policyError,
-    dirty,
-    run,
-    savedModelAvailable,
-    advertisement,
-    metadata,
-  };
 }

@@ -8,6 +8,7 @@ import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { AgentEditor } from "./AgentEditor";
+import { AdvertisementSection } from "./agent-editor/AdvertisementSection";
 import { useAppContext } from "@/contexts/AppContext";
 
 import { confirmAction } from "@/lib/ui/confirm";
@@ -124,6 +125,7 @@ export function AgentsPanel() {
 
       {/* List */}
       <div ref={containerRef} className="flex-1 overflow-y-auto px-[calc(var(--workspace-gutter)/2)] pb-2">
+        <AdvertisementSection global models={models} />
         {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 py-2">{error}</p>}
         {actionError && <p role="alert" className="text-xs text-red-700 dark:text-red-400 py-2">{actionError}</p>}
         {loading && (

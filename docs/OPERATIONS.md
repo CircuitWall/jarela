@@ -4,24 +4,39 @@ Jarela's main operational views are available from the app menu. They let you re
 
 ## Agent advertisements (Unreleased)
 
-In the agent editor, use **Agent advertisement** to inspect saved specialization
-metadata and generation state. Save a new agent first. Unsaved editor text is
-never sent for generation. Existing delegation works without advertisements;
-legacy catalog entries show names rather than private instruction excerpts.
+In the **Agents** panel, configure the shared generation policy once. In an
+agent editor, use **Agent advertisement** to enable or disable that agent and
+inspect its saved specialization metadata and generation state. Save a new
+agent first. Unsaved editor text is never sent for generation. Existing
+delegation works without advertisements; legacy catalog entries show names
+rather than private instruction excerpts.
 
 Generation is **disabled by default**. Explicitly select an existing enabled
 model configuration and save the generation settings before enabling it.
 This authorizes sending committed identity/instructions and bounded permitted
-tool descriptions to that configured provider, with its normal egress and
+exclusive-tool descriptions to that configured provider, with its normal egress and
 usage costs. No conversations, unrelated memory, tool results or credentials
 are source inputs. Credential-shaped source text is conservatively refused.
 There is no default-model fallback or automatic provider enablement.
+
+Advertisement tool selection (Unreleased): generation includes only tools
+permitted for this agent and no other saved agent. Tools shared with even one
+other agent are omitted; with only one saved agent, no tool descriptions are
+included. All saved agents participate in the comparison, even when their
+advertisements are disabled. Tool permissions and execution are unchanged.
+Identity and instructions still describe specialization. Config saves, tool
+permission changes, duplication and deletion refresh the selection; inspection
+and publication recheck freshness against the current saved agents.
 
 Defaults allow ten calls per rolling hour, 16,000 source characters, 1,024
 output tokens and a 30-second deadline. Controls bound these to 1-100 calls,
 1,000-16,000 input characters, 256-2,048 output tokens and 1-60 seconds.
 These are enforced usage limits, not a quoted monetary charge. Too-large
 sources and exhausted call limits fail explicitly; there is no blind retry.
+If generation reports `source_size_refused`, increase the input limit up to
+16,000 characters; if it is already at the maximum, shorten the committed
+agent name, identity, or instructions (shared tools are already omitted), save the agent,
+and refresh its advertisement.
 
 Config saves persist independently. Changed routing sources become stale
 immediately, then pending/ready or failed; cosmetic/no-op saves do not spend
@@ -32,8 +47,8 @@ not a change in underlying authority. Restart invalidates interrupted work.
 Failure never rolls back a valid config save. Generic memory tools/API cannot
 read or edit advertisement state or the generation policy/usage ledger.
 
-Use the distinct regenerate and per-agent disable/enable controls. Disabling
-generation invalidates publication and requests cancellation; a provider that
+Use the per-agent enable switch and regenerate control. Disabling an
+advertisement invalidates publication and requests cancellation; a provider that
 ignores abort retains its worker slot until actual settlement. Full generated
 fields, status, freshness and safe error codes are visible locally. Claims are
 model-generated, not proof of expertise, access or successful validation.

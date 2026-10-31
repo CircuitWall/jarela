@@ -31,6 +31,11 @@ vi.mock("@/api/client", () => ({
   },
 }));
 vi.mock("@/lib/ui/confirm", () => ({ confirmAction: mocks.confirm }));
+vi.mock("./agent-editor/AdvertisementSection", () => ({
+  AdvertisementSection: ({ global, models }: { global?: boolean; models: unknown[] }) => (
+    <section aria-label="Global advertisement settings" data-global={String(global)} data-model-count={models.length} />
+  ),
+}));
 vi.mock("./AgentEditor", () => ({
   AgentEditor: ({ agent, onClose }: { agent?: { name: string }; onClose: () => void }) => (
     <div role="dialog" aria-label={agent?.name ?? "New agent"}>
@@ -51,6 +56,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("agent panel feedback and access", () => {
+  it("renders global advertisement settings once outside the editor", () => {
+    render(<AgentsPanel />);
+    const sections = screen.getAllByRole("region", { name: "Global advertisement settings" });
+    expect(sections).toHaveLength(1);
+    expect(sections[0].getAttribute("data-global")).toBe("true");
+    expect(sections[0].getAttribute("data-model-count")).toBe("0");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("displays load failure instead of a misleading empty-list message", () => {
     mocks.empty = true;
     mocks.listError = "Synthetic load failure";
