@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve bounded revision history when updating encrypted structured
+  memories, including legacy records. Fail before replacing an unreadable
+  encrypted previous value instead of silently discarding it.
 - Report skipped oversized, binary and unreadable `file_grep` candidates so
   incomplete searches cannot be mistaken for confirmed no-match results.
 - Accept unambiguous legacy content hashes when reading text/JSON tool spills,
