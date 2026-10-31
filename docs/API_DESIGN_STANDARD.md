@@ -73,6 +73,11 @@ It does not infer failures from arbitrary payload variables.
   Pass already-read data (such as document source stats) to pure serializers.
   Do not hide database reads, catch corrupt persisted JSON, or expose private
   cursor/credential fields in a serializer.
+- Unreleased memory write contracts are owned by [api/memory.ts](../api/memory.ts).
+  The editor and create route share the namespace/key/value schema; the update
+  route reuses its value-only base. JSON `null` is valid but a missing value is
+  rejected. The editor still trims new identifiers; API identifiers retain
+  their existing spelling. Protected settings retain their dedicated guards.
 - Unreleased bridge-route and skill-repository collection/mutation responses
   reuse the same serializers. Bridge catch-up watermarks remain private; SQLite
   flags retain their existing strict `=== 1` conversion.

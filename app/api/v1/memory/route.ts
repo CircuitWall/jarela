@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
+import { memoryWriteSchema } from "@/api/memory";
 import { listMemory, putMemory, searchMemoryRows } from "@/lib/stores/memory";
 import { createdResponse, errorResponse, validateBody } from "@/lib/api/responses";
 import { isSkillExecutionPolicySetting } from "@/lib/skills/execution-policy";
 import { isAdvertisementMemory } from "@/lib/agents/advertisement-contract";
 import { parseJsonSafe } from "@/lib/utils/json";
-
-const PutBody = z.object({
-  namespace: z.string().min(1, "namespace required"),
-  key: z.string().min(1, "key required"),
-  value: z.unknown(),
-});
 
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
@@ -23,7 +17,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await validateBody(req, PutBody);
+  const body = await validateBody(req, memoryWriteSchema);
   if (body instanceof NextResponse) return body;
   if (isAdvertisementMemory(body.namespace, body.key)) return errorResponse("Use agent advertisement settings", 403);
   if (isSkillExecutionPolicySetting(body.namespace, body.key)) return errorResponse("Use Security settings to change skill execution policy", 403);

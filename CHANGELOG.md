@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reuse shared UTF-8 truncation for error reports, preserving complete emoji
   at the byte boundary. Find bounded prefixes by binary search instead of
   repeatedly rescanning oversized text; existing byte limits are unchanged.
+- Share memory write schemas between the editor and create/update endpoints,
+  with contract tests for missing values, JSON null, identifier spelling,
+  protected settings and save failures. Existing response shapes are unchanged.
 - Raise the default adaptive output floor for Balanced and High Reasoning to
   8,192 tokens so short prompts have more room for large tool calls. Provider,
   model and context ceilings still apply; Fast and Cost-saving retain their

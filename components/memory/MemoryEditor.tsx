@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { MemoryItem } from "@/api/types";
+import { memoryWriteSchema } from "@/api/memory";
 import { errorMessage } from "@/lib/utils/error";
 import { Dialog } from "@/components/ui/Dialog";
 import { DialogError, DialogFooter } from "@/components/ui/DialogFooter";
@@ -27,9 +28,10 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
     setError(null);
     let parsed: unknown;
     try { parsed = JSON.parse(valueStr); } catch { setError("Value must be valid JSON"); return; }
-    if (!namespace.trim() || !key.trim()) { setError("Namespace and key are required"); return; }
+    const body = memoryWriteSchema.safeParse({ namespace: namespace.trim(), key: key.trim(), value: parsed });
+    if (!body.success) { setError("Namespace and key are required"); return; }
     setSaving(true);
-    try { await onSave(namespace.trim(), key.trim(), parsed); onClose(); }
+    try { await onSave(body.data.namespace, body.data.key, body.data.value); onClose(); }
     catch (e) { setError(errorMessage(e)); }
     finally { setSaving(false); }
   }
