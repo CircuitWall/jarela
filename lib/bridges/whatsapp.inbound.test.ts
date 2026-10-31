@@ -269,6 +269,67 @@ describe("WhatsApp inbound pipeline", () => {
     expect(storeCanonicalBridgeAttachment).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [{ imageMessage: { mimetype: " IMAGE/PNG; charset=utf-8 " } }, "image-media.png", "image/png", "image"],
+    [{ imageMessage: { mimetype: "text/html" } }, "image-media.jpeg", "image/jpeg", "image"],
+    [{ stickerMessage: { mimetype: "image/png", isAnimated: true } }, "sticker-media.webp", "image/png", "sticker"],
+    [{ audioMessage: { mimetype: "audio/x-wav" } }, "audio-media.wav", "audio/x-wav", "audio"],
+    [{ audioMessage: { ptt: true } }, "voice-note-media.ogg", "audio/ogg", "voice note"],
+    [{ videoMessage: { mimetype: "video/quicktime" } }, "video-media.quicktime", "video/quicktime", "video"],
+    [{ documentMessage: { fileName: "named.pdf", title: "other.pdf", mimetype: "application/pdf" } }, "named.pdf", "application/pdf", "document"],
+    [{ documentMessage: { title: "title.txt", mimetype: "text/plain" } }, "title.txt", "text/plain", "document"],
+    [{ documentMessage: {} }, "document-media", "application/octet-stream", "document"],
+  ])("preserves media naming, MIME and annotation contracts (%j)", async (message, filename, mime, label) => {
+    const { received } = await connect();
+    const buffer = Buffer.from("synthetic media");
+    const raw = { key: { remoteJid: BOB, id: "media" }, message, messageTimestamp: now() };
+    downloadMediaMessage.mockResolvedValueOnce(buffer);
+    await upsert([raw]);
+
+    expect(downloadMediaMessage).toHaveBeenCalledWith(raw, "buffer", {}, expect.objectContaining({ logger: expect.any(Object) }));
+    expect(storeCanonicalBridgeAttachment).toHaveBeenCalledWith({ filename, media_type: mime, buffer });
+    expect(received[0].attachments).toHaveLength(1);
+    expect(received[0].text).toBe(`[Attached ${label}: ${filename} (${mime}, 1 KB); retained as a Jarela file reference.]`);
+  });
+
+  it("preserves media order and keeps later attachments after independent failures", async () => {
+    const { received } = await connect();
+    downloadMediaMessage
+      .mockRejectedValueOnce(new Error("Synthetic image failure"))
+      .mockResolvedValueOnce(Buffer.from("sticker"))
+      .mockResolvedValueOnce(Buffer.from("voice"))
+      .mockResolvedValueOnce(Buffer.from("video"))
+      .mockResolvedValueOnce(Buffer.from("document"));
+    storeCanonicalBridgeAttachment.mockRejectedValueOnce(new Error("Synthetic sticker store failure"));
+    await upsert([{
+      key: { remoteJid: BOB, id: "mixed" },
+      message: {
+        imageMessage: { caption: "original caption" },
+        stickerMessage: {},
+        audioMessage: { ptt: true },
+        videoMessage: {},
+        documentMessage: { fileName: "document.txt", mimetype: "text/plain" },
+        liveLocationMessage: { degreesLatitude: 1, degreesLongitude: 2 },
+        contactsArrayMessage: { contacts: [{ displayName: "Synthetic Contact" }] },
+      },
+      messageTimestamp: now(),
+    }]);
+
+    expect(storeCanonicalBridgeAttachment.mock.calls.map(([input]) => input.filename)).toEqual([
+      "sticker-mixed.webp", "voice-note-mixed.ogg", "video-mixed.mp4", "document.txt",
+    ]);
+    expect(received[0].attachments).toHaveLength(3);
+    expect(received[0].text.split("\n")).toEqual([
+      "original caption",
+      "[Attached voice note: voice-note-mixed.ogg (audio/ogg, 1 KB); retained as a Jarela file reference.]",
+      "[Attached video: video-mixed.mp4 (video/mp4, 1 KB); retained as a Jarela file reference.]",
+      "[Attached document: document.txt (text/plain, 1 KB); retained as a Jarela file reference.]",
+      "[live-location: lat=1 lng=2]",
+      "[contacts: Synthetic Contact]",
+    ]);
+    expect(console.warn).toHaveBeenCalledTimes(2);
+  });
+
   it("describes a document with its stored name, not the raw sender-supplied file name", async () => {
     const { received } = await connect();
     downloadMediaMessage.mockResolvedValueOnce(Buffer.from("%PDF"));
