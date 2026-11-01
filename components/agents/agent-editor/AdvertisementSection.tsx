@@ -61,15 +61,6 @@ function displayGenerationError(code: string): string {
   if (code === "source_size_refused") {
     return "The committed agent profile and exclusive-tool descriptions exceed the input limit. Shared tools are already omitted. Increase Maximum input characters (up to 16,000), or shorten the agent name, identity, or instructions; then save the agent and refresh the advertisement.";
   }
-  if (code === "output_source_copy_refused") {
-    return "The provider repeated committed instructions instead of producing a summary. Regenerate the advertisement to retry with the safety filter.";
-  }
-  if (code === "output_invalid_json") {
-    return "The provider returned an invalid structured response. Regenerate the advertisement or choose a model with JSON mode enabled.";
-  }
-  if (code === "generation_failed") {
-    return "The selected provider did not return a usable advertisement. Check the model configuration and try again.";
-  }
   return code;
 }
 
@@ -77,7 +68,7 @@ export function AdvertisementSection({ agentId, models, global = false }: { agen
   if (global) return <GlobalAdvertisementSettings models={models} />;
 
   return (
-    <Section title="Optional: Agent advertisement" defaultCollapsed>
+    <Section title="Agent advertisement">
       <p className="text-xs text-fg-subtle">
         Advertisements are optional model-generated claims, not proof of capabilities or safety, and grant no permissions.
         Global generation settings are managed once in the Agents panel. This agent&apos;s committed identity and instructions,
@@ -172,7 +163,8 @@ function GlobalAdvertisementSettings({ models }: { models: ModelConfig[] }) {
   }, [refresh]);
 
   return (
-    <Section title="Optional: Advertisement generation" defaultCollapsed>
+    <section aria-label="Global advertisement settings" className="mx-2 my-2 rounded-xl border border-border bg-surface-1/30 p-3">
+      <h2 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Global advertisement generation</h2>
       <p className="mt-2 text-xs text-fg-subtle">
         These settings apply to all agents. Each agent can be individually enabled or disabled in its editor.
         Enabling generation authorizes sending committed agent source to the selected provider and may incur costs.
@@ -221,7 +213,7 @@ function GlobalAdvertisementSettings({ models }: { models: ModelConfig[] }) {
       <button type="button" className={`${buttonClass} mt-2`} disabled={busy} onClick={() => { void refresh(); }}>
         Refresh global settings
       </button>
-    </Section>
+    </section>
   );
 }
 

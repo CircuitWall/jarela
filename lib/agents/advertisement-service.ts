@@ -72,19 +72,15 @@ async function generate(job: Job, signal: AbortSignal): Promise<unknown> {
   if (!model || !isModelConfigEnabled(model)) throw new Error("model_unavailable");
   const provider = getProvider(model.provider);
   if (!provider) throw new Error("provider_unavailable");
-  const format = model.provider === "deepseek" || model.provider === "openai"
-    ? { response_format: { type: "json_object" } } : {};
   const { stream } = await provider.chat(model.model_id, buildAdvertisementMessages(job.snapshot.source),
-    { ...getModelParams(model), temperature: 0, max_tokens: job.policy.max_output_tokens, ...format }, signal);
+    { ...getModelParams(model), temperature: 0, max_tokens: job.policy.max_output_tokens }, signal);
   let output = "";
   for await (const chunk of stream) {
     if (signal.aborted) throw new Error("generation_cancelled");
     if (output.length + chunk.length > 4096) throw new Error("output_size_refused");
     output += chunk;
   }
-  const normalized = output.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  try { return JSON.parse(normalized); }
-  catch { throw new Error("output_invalid_json"); }
+  return JSON.parse(output);
 }
 export class AdvertisementService {
   private queue = new Map<string, Job>();
@@ -95,9 +91,6 @@ export class AdvertisementService {
   constructor(private readonly generator: Generator = generate, private readonly catalog = getAllToolCatalogAsync) {}
 
   async inspect(agentId: string): Promise<AdvertisementState | null> {
-    if (!getAgentConfig(agentId)) return null;
-    const prior = getAdvertisement(agentId);
-    if (prior || getAdvertisementPolicy().enabled) return prior;
     return this.refresh(agentId);
   }
   async refresh(agentId: string, force = false, suppliedCatalog?: readonly ToolCatalogEntry[]): Promise<AdvertisementState | null> {

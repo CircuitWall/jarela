@@ -39,9 +39,14 @@ export function invalidateAdvertisement(agentId: string): void {
 export function notifyAdvertisementSourceChanged(agentId: string): void {
   try {
     invalidateAdvertisement(agentId);
+    if (!getAdvertisementPolicy().enabled) return;
   } catch {
     console.warn("[advertisements] config saved but metadata invalidation failed");
+    return;
   }
+  void import("@/lib/agents/advertisement-service")
+    .then(({ advertisementService }) => advertisementService().refreshAll())
+    .catch(() => console.warn("[advertisements] post-save refresh failed"));
 }
 export function reserveAdvertisementCall(timestamp: number, limit: number): boolean {
   return withDbTransaction(() => {

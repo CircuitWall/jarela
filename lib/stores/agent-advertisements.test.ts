@@ -48,20 +48,20 @@ describe("advertisement persistence and all shared config writes", () => {
     upsertAgentConfig({ id: agent.id, name: agent.name, identity: agent.identity, instructions: "A new saved task", tools: [] });
     expect(getAdvertisement(agent.id)?.status).toBe("stale");
     expect(getAdvertisement(agent.id)?.advertisement).toBeNull();
-    expect(refreshAll).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(refreshAll).toHaveBeenCalledExactlyOnceWith());
   });
   it("covers duplicate, atomic tool grants and deletion without copying derived metadata", async () => {
     seed(); ready();
     setAdvertisementPolicy({ ...defaultAdvertisementPolicy(), enabled: true, model_config_name: "configured" });
     const copy = duplicateAgentConfig("specialist")!;
     expect(getAdvertisement(copy.id)).toBeNull();
-    expect(refreshAll).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(refreshAll).toHaveBeenCalledExactlyOnceWith());
     compareAndSetAgentTools("specialist", "[]", ["fixture_read"]);
     expect(getAdvertisement("specialist")?.status).toBe("stale");
-    expect(refreshAll).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(refreshAll).toHaveBeenCalledTimes(2));
     deleteAgentConfig("specialist");
     expect(getAdvertisement("specialist")).toBeNull();
-    expect(refreshAll).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(refreshAll).toHaveBeenCalledTimes(3));
   });
   it("does not invalidate or schedule for a rejected store write", () => {
     seed(); ready();
