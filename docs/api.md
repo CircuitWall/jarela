@@ -11,7 +11,7 @@ JSDoc header**; everything else under `app/api/v1/*` is considered UI-internal
 and may change between minor versions.
 
 The contract follows the deprecation policy in
-[CONTRIBUTING.md → Public API surface](../CONTRIBUTING.md#public-api-surface):
+[CONTRIBUTING.md → Public API surface](https://github.com/CircuitWall/jarela/blob/main/CONTRIBUTING.md#public-api-surface):
 deprecate in `0.X.0`, remove no earlier than `0.(X+1).0`.
 
 > **Auth.** All routes require a same-origin request (or the loopback bypass

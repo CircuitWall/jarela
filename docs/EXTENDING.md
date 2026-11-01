@@ -13,7 +13,7 @@ They define future-work criteria, not new runtime protections. External code
 still executes with the trust of its host; capability labels are not a sandbox.
 
 > **Public surface contract.** Plugin authors should rely only on the type
-> exports listed in [CONTRIBUTING.md → Public API surface](../CONTRIBUTING.md#public-api-surface).
+> exports listed in [CONTRIBUTING.md → Public API surface](https://github.com/CircuitWall/jarela/blob/main/CONTRIBUTING.md#public-api-surface).
 > Anything else is internal and may change between minor versions.
 
 ## Built-in skill maintenance (Unreleased)
@@ -733,7 +733,7 @@ interface and its companion event/message types). See
 non-trivial worked example with tool calling, prompt caching, and
 multi-modal input.
 
-ADR: [0013](../docs/adr/0013-external-providers-and-tools.md).
+ADR: [0013](adr/0013-external-extension-contract.md).
 
 ---
 
@@ -779,7 +779,7 @@ Probe descriptors must use HTTPS and are checked when the plugin is loaded.
 Providers without a safe read-only auth endpoint can omit the descriptor; they
 remain available, but the integration test route will not claim to verify them.
 
-ADR: [0013](../docs/adr/0013-external-providers-and-tools.md).
+ADR: [0013](adr/0013-external-extension-contract.md).
 
 ---
 
@@ -830,7 +830,7 @@ tool policy), and surfaced through the `list_tools` agent tool.
 - `execute` — runs arbitrary code (shell, sandboxed eval, …).
 
 External (`.cjs`) and MCP tools default to `execute` until manifest-level
-overrides land. See [ADR-0038](../docs/adr/0038-tool-capability-tiers.md).
+overrides land. See [ADR-0038](adr/0038-tool-capability-axis.md).
 
 **Declare the backing integration** when the tool needs credentials the
 operator configures in the Integrations panel:
@@ -1023,7 +1023,7 @@ After save, the agent sees the new tools in its pool on the next turn —
 verify with the `list_tools` or `list_mcp_servers` tools. If a server's
 `last_error` is non-null, fix the spec and the next request retries.
 
-ADR: [0014](../docs/adr/0014-mcp-registry-online-discovery.md).
+ADR: [0014](adr/0014-mcp-registry-online-discovery.md).
 
 MCP results can include both human-readable `content` and machine-readable
 `structuredContent`. Jarela appends the structured value as a text block labelled
@@ -1058,7 +1058,7 @@ An agent binds to a harness by `harness_id` on its config row. Resolution
 order is per-agent → global default → `builtin:default` (see
 [`lib/agents/harness/resolve.ts`](../lib/agents/harness/resolve.ts)).
 
-ADR: [0036](../docs/adr/0036-agent-driven-harness-edits.md).
+ADR: [0036](adr/0036-agent-driven-harness-edits.md).
 
 ---
 
@@ -1079,7 +1079,7 @@ Steps:
 4. The manifest schema is enforced by
    `scripts/check-integration-manifests.mjs` (runs on lint).
 
-ADR: [0010](../docs/adr/0010-agent-led-setup-and-integration-manifests.md).
+ADR: [0010](adr/0010-agent-led-setup-and-integration-manifests.md).
 
 Credential tests for built-in integrations are declared next to their fields
 in [`lib/stores/integrations.ts`](../lib/stores/integrations.ts). A read-only
@@ -1196,7 +1196,7 @@ This emits a ready-to-load extension folder with a templated `manifest.json`
 `lib/brand.mjs`, and rebuilt icons. Run without `--brand` and the output
 matches the in-tree Jarela extension (a test enforces this).
 
-See [`browser-extension/README.md`](../browser-extension/README.md#rebranding).
+See [`browser-extension/README.md`](https://github.com/CircuitWall/jarela/blob/main/browser-extension/README.md#rebranding).
 
 ### What you may not rebrand
 
@@ -1221,8 +1221,8 @@ to consume the package's `.next/standalone` build and apply tree-level
 mutations in your own pipeline. Blessing arbitrary CSS overrides would turn
 internal class names into a public API.
 
-ADR: [0077](../docs/adr/0077-rebranding-overlay-contract.md), building on
-[0005](../docs/adr/0005-rebrand-jarela.md).
+ADR: [0077](adr/0077-rebranding-overlay-contract.md), building on
+[0005](adr/0005-rebrand-jarela.md).
 
 ---
 

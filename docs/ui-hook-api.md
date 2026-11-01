@@ -152,7 +152,7 @@ shorter functions alone do not verify them.
 - state + commands is the long-term API.
 - Flat fields remain available during migration windows.
 - Removals of flat fields follow the public-surface process in
-  [CONTRIBUTING.md](../CONTRIBUTING.md) and require a deprecation cycle.
+  [CONTRIBUTING.md](https://github.com/CircuitWall/jarela/blob/main/CONTRIBUTING.md) and require a deprecation cycle.
 
 ## Limitations
 

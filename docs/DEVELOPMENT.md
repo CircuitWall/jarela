@@ -218,7 +218,7 @@ privileges; directory-junction coverage is separate from that check.
 
 ## Git and PR conventions
 
-[CONTRIBUTING.md](../CONTRIBUTING.md) is the source of truth. Do not drift
+[CONTRIBUTING.md](https://github.com/CircuitWall/jarela/blob/main/CONTRIBUTING.md) is the source of truth. Do not drift
 from it when creating commits, branches, or PRs.
 
 - Work on a topic branch, never local `main`.

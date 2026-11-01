@@ -35,7 +35,7 @@ Two concrete incidents motivated this change:
    application-level bug.
 
 The repo invariant of **no required cloud calls** and the
-[CLAUDE.md](../../CLAUDE.md) rule "all persistent state goes through
+[CLAUDE.md](https://github.com/CircuitWall/jarela/blob/main/CLAUDE.md) rule "all persistent state goes through
 `lib/db` or `lib/stores`" both apply: any encryption mechanism must work
 entirely offline and must be hosted in `lib/`, not via a side-process or
 network-dependent secret service.

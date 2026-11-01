@@ -21,7 +21,7 @@ How should Jarela surface MCP servers to users?
 * Eliminate the maintenance burden of tracking upstream package deprecations by hand.
 * Give users access to the full catalog rather than a 14-server slice.
 * Keep the existing UI flow (picker → variable form → install) intact for users.
-* Honour [CLAUDE.md](../../CLAUDE.md) project invariants: no telemetry, no required cloud calls beyond what the user explicitly engages with.
+* Honour [CLAUDE.md](https://github.com/CircuitWall/jarela/blob/main/CLAUDE.md) project invariants: no telemetry, no required cloud calls beyond what the user explicitly engages with.
 
 ## Considered Options
 
