@@ -154,6 +154,7 @@ jobs:
         env:
           HOME: ${{ runner.temp }}
           USERPROFILE: ${{ runner.temp }}
+          # Next's webpack build can exceed Node's default heap on macOS runners.
           NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Resolve version + bundle name
