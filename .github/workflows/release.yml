@@ -154,6 +154,7 @@ jobs:
         env:
           HOME: ${{ runner.temp }}
           USERPROFILE: ${{ runner.temp }}
+          NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Resolve version + bundle name
         id: meta
