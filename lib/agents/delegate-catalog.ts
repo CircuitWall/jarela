@@ -7,7 +7,7 @@ export const DELEGATE_CATALOG_MAX_TARGETS = 32;
 export async function buildDelegateCatalog(
   agent: Pick<AgentConfigRow, "id" | "delegate_targets">,
   permissions: readonly Pick<ToolCatalogEntry, "name" | "permission" | "permission_reason">[],
-  _catalog: readonly ToolCatalogEntry[],
+  catalog: readonly ToolCatalogEntry[],
 ): Promise<string[]> {
   if (!permissions.some((tool) => tool.name === "delegate_to_agent"
     && (tool.permission === "enabled" || tool.permission_reason === "proxy_only"))) return [];
@@ -24,7 +24,7 @@ export async function buildDelegateCatalog(
   const generated: string[] = [];
   for (let i = 0; i < targets.length; i++) {
     try {
-      const state = await advertisementService().inspect(targets[i].id);
+      const state = await advertisementService().refresh(targets[i].id, false, catalog);
       generated.push(state?.status === "ready" && state.advertisement
         ? JSON.stringify({ id: targets[i].id, name: targets[i].name.slice(0, 80), provenance: "model-generated, not verified", ...state.advertisement })
         : legacy[i]);
