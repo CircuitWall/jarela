@@ -18,6 +18,14 @@ on:
       - "ms-todo-langchain-v*"
       - "icloud-langchain-v*"
   workflow_dispatch:
+
+# A tag push and an explicit dispatch can target the same release tag. Keep
+# those runs mutually exclusive so only one run can publish release assets,
+# npm, and container images for a given ref.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write   # softprops/action-gh-release attaches archives to the Release
   packages: write   # ghcr.io publication for GitHub Packages card
