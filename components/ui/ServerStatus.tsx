@@ -42,34 +42,41 @@ export function ServerStatus() {
 
   useEffect(() => {
     let cancelled = false;
+    let probeInFlight = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const tick = async () => {
-      const ok = await ping();
-      if (cancelled) return;
-      if (!ok) {
-        failureCountRef.current += 1;
-        if (failureCountRef.current >= FAILURE_THRESHOLD) {
-          wasDownRef.current = true;
-          setDown(true);
-          timer = setTimeout(tick, DOWN_INTERVAL_MS);
-        } else {
-          // Sub-threshold blip (likely a long agent turn briefly stalling
-          // the event loop). Retry soon without surfacing the overlay.
-          timer = setTimeout(tick, RETRY_INTERVAL_MS);
+      if (probeInFlight) return;
+      probeInFlight = true;
+      try {
+        const ok = await ping();
+        if (cancelled) return;
+        if (!ok) {
+          failureCountRef.current += 1;
+          if (failureCountRef.current >= FAILURE_THRESHOLD) {
+            wasDownRef.current = true;
+            setDown(true);
+            timer = setTimeout(tick, DOWN_INTERVAL_MS);
+          } else {
+            // Sub-threshold blip (likely a long agent turn briefly stalling
+            // the event loop). Retry soon without surfacing the overlay.
+            timer = setTimeout(tick, RETRY_INTERVAL_MS);
+          }
+          return;
         }
-        return;
+        failureCountRef.current = 0;
+        if (wasDownRef.current) {
+          // Server recovered after the overlay actually showed — full reload
+          // to drop any stale in-memory state (EventSource queues, agent
+          // cache, MCP clients) and re-bootstrap.
+          window.location.reload();
+          return;
+        }
+        setDown(false);
+        timer = setTimeout(tick, HEALTHY_INTERVAL_MS);
+      } finally {
+        probeInFlight = false;
       }
-      failureCountRef.current = 0;
-      if (wasDownRef.current) {
-        // Server recovered after the overlay actually showed — full reload
-        // to drop any stale in-memory state (EventSource queues, agent
-        // cache, MCP clients) and re-bootstrap.
-        window.location.reload();
-        return;
-      }
-      setDown(false);
-      timer = setTimeout(tick, HEALTHY_INTERVAL_MS);
     };
 
     tick();
