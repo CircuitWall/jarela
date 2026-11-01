@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-11-01
+
+### Fixed
+
+- agents: Fix panel errors and keyboard access
+- agents: Fix advertisement scope and shared controls
+- ui: Fix avatar read errors and stale upload results
+- tools: Fix incomplete grep and result reference readback
+- agents: Fix output defaults and reuse context fallback
+- e2e: Keep prompt context for mock runs
+- memory: Fix encrypted revision history on updates
+- files: Add range guard for oversized reads
+- text: Reuse bounded utf-8 truncation
+
+### Changed
+
+- runtime: Remove duplicate shared operations
+- release: Keep runtime cleanup notes unreleased
+- tasks: Remove duplicate task and watcher detail rows
+- config: Reuse runtime config for tool result limits
+- approvals: Add lifecycle tests and enforce coverage
+- config: Reuse canonical usage strategy definitions
+- stores: Restore coverage gating for six stores
+- tools: Update search-first and bounded-read guidance
+- tools: Align file-read guidance assertions
+- memory: Reuse write contracts across form and api
+- whatsapp: Reuse media download and storage flow
+
 ### Fixed
 
 - Preserve bounded revision history when updating encrypted structured
