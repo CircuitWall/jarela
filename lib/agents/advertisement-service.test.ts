@@ -61,6 +61,17 @@ beforeEach(() => {
 afterEach(async () => { await service.close(); });
 
 describe("derived advertisement lifecycle", () => {
+  it("inspects persisted metadata without scheduling a provider call", async () => {
+    mocks.states.set("a", {
+      version: 1, generation_id: "persisted-generation", agent_id: "a", enabled: true,
+      status: "failed", source_fingerprint: "source", policy_fingerprint: "policy",
+      updated_at: new Date().toISOString(), error: "generation_failed", advertisement: null,
+    });
+    const inspected = await service.inspect("a");
+    expect(inspected?.status).toBe("failed");
+    expect(generator).not.toHaveBeenCalled();
+  });
+
   it("omits a large shared catalog and includes only exclusive permitted tools", async () => {
     const commonTools = Array.from({ length: 500 }, (_, index) => ({
       ...tool(), name: `shared_tool_${index}`, description: "Shared capability ".repeat(10),
