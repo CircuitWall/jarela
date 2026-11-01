@@ -22,6 +22,26 @@ it("does not block startup while the health check is pending", async () => {
   expect(container.innerHTML).toBe("");
 });
 
+it("does not overlap health probes when the document becomes visible", async () => {
+  let respond!: (response: Response) => void;
+  const fetch = vi.fn(() => new Promise<Response>((resolve) => { respond = resolve; }));
+  vi.stubGlobal("fetch", fetch);
+  const visibilityState = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const { unmount } = render(<ServerStatus />);
+
+  try {
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await act(async () => { respond(new Response(null, { status: 200 })); });
+  } finally {
+    unmount();
+    visibilityState.mockRestore();
+  }
+});
+
 it("waits through transient failures, then reports a persistent outage", async () => {
   vi.useFakeTimers();
   const fetch = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
