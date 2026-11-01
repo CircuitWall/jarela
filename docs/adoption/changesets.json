@@ -5027,6 +5027,17 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "3.3.2",
+      "previous_version": "3.3.1",
+      "date": "2026-11-01",
+      "hints": [],
+      "commits": [
+        "chore(release): bump to 3.3.1"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }

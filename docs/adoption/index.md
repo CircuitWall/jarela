@@ -17,6 +17,22 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.3.2
+
+From 3.3.1 · 2026-11-01
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- chore(release): bump to 3.3.1
+
 ## 3.3.1
 
 From 3.3.0 · 2026-11-01
