@@ -4908,6 +4908,125 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "3.3.1",
+      "previous_version": "3.3.0",
+      "date": "2026-11-01",
+      "hints": [],
+      "commits": [
+        "refactor(whatsapp): reuse media download and storage flow",
+        "refactor(memory): reuse write contracts across form and api",
+        "perf(text): reuse bounded utf-8 truncation",
+        "test(tools): align file-read guidance assertions",
+        "fix(files): add range guard for oversized reads",
+        "docs(tools): update search-first and bounded-read guidance",
+        "test(stores): restore coverage gating for six stores",
+        "refactor(config): reuse canonical usage strategy definitions",
+        "fix(memory): fix encrypted revision history on updates",
+        "test(approvals): add lifecycle tests and enforce coverage",
+        "fix(e2e): keep prompt context for mock runs",
+        "refactor(config): reuse runtime config for tool result limits",
+        "fix(agents): fix output defaults and reuse context fallback",
+        "fix(tools): fix incomplete grep and result reference readback",
+        "fix(ui): fix avatar read errors and stale upload results",
+        "refactor(tasks): remove duplicate task and watcher detail rows",
+        "fix(agents): fix advertisement scope and shared controls",
+        "fix(agents): fix panel errors and keyboard access",
+        "docs(release): keep runtime cleanup notes unreleased",
+        "refactor(runtime): remove duplicate shared operations"
+      ],
+      "prompts": [
+        {
+          "id": "static.agent-advertisement",
+          "source": "lib/agents/advertisement-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "authorized_tools includes only permitted tools exclusive to this agent among saved agents. Shared tools are omitted; with only one saved agent the list is empty. An omitted tool does not imply missing permission. Describe specialization from identity and instructions as well; do not claim exclusivi…",
+            "purpose<=160 characters; call_when/do_not_call_for each have 1-4 single-line strings<=160; inputs/output<=200; tools has 0-12 names and must be [] when authorized_tools is empty; entire JSON<=1800 characters."
+          ],
+          "removed_lines": [
+            "purpose<=160 characters; each list has 1-4 single-line strings<=160; inputs/output<=200; tools<=12; entire JSON<=1800 characters."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.agent.tool-usage-sop",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. For file inspection, use file_glob to locate paths and file_grep with a narrow glob/pattern to find relevant lines before file_read with explicit start_line/end_line ranges. When a …"
+          ],
+          "removed_lines": [
+            "6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. Use result_ref.name with tool_result_get and offset/limit to read only the slice you need."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Tool usage SOP",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. For file inspection, use file_glob to locate paths and file_grep with a narrow glob/pattern to find relevant lines before file_read with explicit start_line/end_line ranges. When a …"
+          ],
+          "removed_lines": [
+            "6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. Use result_ref.name with tool_result_get and offset/limit to read only the slice you need."
+          ],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "file_grep",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Search file contents under a directory by regex (or literal substring with literal=true). Prefer this over local_exec/terminal grep, rg, Select-String, or Get-ChildItem pipelines for code search. Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths, 1-based line numbers, optional N-line context, AND an `enclosing` {kind,name,line} pointing at the surrounding function/class/heading when one can be derived (lets you often skip a follow-up file_read). Skips node_modules/.git/etc. Reports binary, unreadable and oversized files (>1,000,000 bytes) in skipped_files (up to 100 details)…",
+          "previous_description": "Search file contents under a directory by regex (or literal substring with literal=true). Prefer this over local_exec/terminal grep, rg, Select-String, or Get-ChildItem pipelines for code search. Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths, 1-based line numbers, optional N-line context, AND an `enclosing` {kind,name,line} pointing at the surrounding function/class/heading when one can be derived (lets you often skip a follow-up file_read). Skips node_modules/.git/etc, binary files (NUL-byte heuristic), and files >1 MB.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "file_read",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Read a UTF-8 text file. Prefer file_glob/file_grep to locate targets before reading; avoid shell cat/type/Get-Content for normal file inspection. Files larger than the configured inline tool-result budget require both 1-based start_line and end_line; otherwise the tool returns file_read_range_required with metadata and a bounded outline, but no content. Use explicit ranges around relevant search hits and read known ranges directly. Explicit ranges retain the configured read-file clipping limit (1 MB by default), separately from the inline budget. Do not walk an entire large file or reconstruc…",
+          "previous_description": "Read a UTF-8 text file. Prefer file_glob/file_grep to locate targets before reading; avoid shell cat/type/Get-Content for normal file inspection. Optional 1-based start_line/end_line slice. Output clipped at the configured read-file limit (1 MB by default) — for large files always pass a line range and walk in chunks. When called without a line range on a recognised text file, the response also includes an `outline` array of {kind,name,line} entries (markdown headings, top-level functions/classes, config keys); feed those line numbers straight back into start_line/end_line on the next call to…",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "tool_result_get",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Retrieve the result of a previously async-fired tool call by its key. Also reads result_ref payloads by the full result_ref.name (including extension, not sha256) with offset/limit. Unambiguous legacy content hashes are accepted for text/JSON spills. Owned background output stays encrypted and thread-scoped; protected pages are bounded by the inline output budget. For spilled file_read output, prefer file_grep and a bounded line-ranged file_read on the source. Read only a needed result slice with a small limit; do not exhaust pages unless the task requires complete inspection. Pass `wait_ms` …",
+          "previous_description": "Retrieve the result of a previously async-fired tool call by its key. Also reads result_ref payloads by result_ref.name with offset/limit. Owned background output stays encrypted and thread-scoped; protected pages are bounded by the inline output budget. Pass `wait_ms` to short-poll up to that long for a pending call to finish. Pass `consume: true` to delete a finished inline result, or on the final protected page to delete a paged result. Status will be 'pending' (still running), 'done' (success — `result` populated), 'error' (failed — `error` populated), or 'unknown' (no such key).",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "result_ref"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "tool_result_list",
+          "change": "changed",
+          "description_changed": true,
+          "description": "List currently tracked async tool results (newest first). Useful when you've forgotten a key or want a quick status check across pending background calls. Synchronous spilled results are read directly by result_ref.name and are not tracked in this async list. Optional `status` filter narrows to 'pending' / 'done' / 'error'.",
+          "previous_description": "List currently tracked async tool results (newest first). Useful when you've forgotten a key or want a quick status check across pending background calls. Optional `status` filter narrows to 'pending' / 'done' / 'error'.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
