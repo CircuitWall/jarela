@@ -32,10 +32,14 @@ function response(policy = defaultPolicy, record: ReturnType<typeof advertisemen
   return { ok: true, json: async () => ({ policy, advertisement: record }) };
 }
 function renderGlobal(models = [model]) {
-  return render(<AdvertisementSection global models={models} />);
+  const view = render(<AdvertisementSection global models={models} />);
+  fireEvent.click(screen.getByRole("button", { name: /Optional: Advertisement generation/ }));
+  return view;
 }
 function renderAgent() {
-  return render(<AdvertisementSection agentId="saved-agent" models={[model]} />);
+  const view = render(<AdvertisementSection agentId="saved-agent" models={[model]} />);
+  fireEvent.click(screen.getByRole("button", { name: /Optional: Agent advertisement/ }));
+  return view;
 }
 function button(name: string) {
   return screen.getByRole("button", { name }) as HTMLButtonElement;
@@ -50,6 +54,12 @@ afterEach(() => {
 });
 
 describe("AdvertisementSection", () => {
+  it("keeps rare advertisement generation collapsed and idle by default", () => {
+    render(<AdvertisementSection agentId="saved-agent" models={[model]} />);
+    expect(screen.getByRole("button", { name: /Optional: Agent advertisement/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("keeps global policy settings in the shared panel and requires an explicit model", async () => {
     renderGlobal();
     await waitFor(() => expect(screen.getByLabelText("Enable advertisement generation globally").closest("fieldset")?.disabled).toBe(false));
@@ -134,8 +144,9 @@ describe("AdvertisementSection", () => {
 
   it("keeps advertisement controls unavailable until a new agent is saved", () => {
     render(<AdvertisementSection models={[model]} />);
+    fireEvent.click(screen.getByRole("button", { name: /Optional: Agent advertisement/ }));
     expect(screen.getByText(/Save this agent first/)).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Regenerate advertisement" })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
