@@ -17,6 +17,64 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.3.1
+
+From 3.3.0 · 2026-11-01
+
+### Tools
+
+- `file_grep` — changed; description changed
+- `file_read` — changed; description changed
+- `tool_result_get` — changed; description changed; params changed: `result_ref`
+- `tool_result_list` — changed; description changed
+
+### Prompts
+
+- `static.agent-advertisement` — changed (`lib/agents/advertisement-prompt.ts`)
+
+    ```diff
+    + authorized_tools includes only permitted tools exclusive to this agent among saved agents. Shared tools are omitted; with only one saved agent the list is empty. An omitted tool does not imply missing permission. Describe specialization from identity and instructions as well; do not claim exclusivi…
+    + purpose<=160 characters; call_when/do_not_call_for each have 1-4 single-line strings<=160; inputs/output<=200; tools has 0-12 names and must be [] when authorized_tools is empty; entire JSON<=1800 characters.
+    - purpose<=160 characters; each list has 1-4 single-line strings<=160; inputs/output<=200; tools<=12; entire JSON<=1800 characters.
+    ```
+
+- `static.agent.tool-usage-sop` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. For file inspection, use file_glob to locate paths and file_grep with a narrow glob/pattern to find relevant lines before file_read with explicit start_line/end_line ranges. When a …
+    - 6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. Use result_ref.name with tool_result_get and offset/limit to read only the slice you need.
+    ```
+
+- `system.Tool usage SOP` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. For file inspection, use file_glob to locate paths and file_grep with a narrow glob/pattern to find relevant lines before file_read with explicit start_line/end_line ranges. When a …
+    - 6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. Use result_ref.name with tool_result_get and offset/limit to read only the slice you need.
+    ```
+
+### Commits
+
+- refactor(whatsapp): reuse media download and storage flow
+- refactor(memory): reuse write contracts across form and api
+- perf(text): reuse bounded utf-8 truncation
+- test(tools): align file-read guidance assertions
+- fix(files): add range guard for oversized reads
+- docs(tools): update search-first and bounded-read guidance
+- test(stores): restore coverage gating for six stores
+- refactor(config): reuse canonical usage strategy definitions
+- fix(memory): fix encrypted revision history on updates
+- test(approvals): add lifecycle tests and enforce coverage
+- fix(e2e): keep prompt context for mock runs
+- refactor(config): reuse runtime config for tool result limits
+- fix(agents): fix output defaults and reuse context fallback
+- fix(tools): fix incomplete grep and result reference readback
+- fix(ui): fix avatar read errors and stale upload results
+- refactor(tasks): remove duplicate task and watcher detail rows
+- fix(agents): fix advertisement scope and shared controls
+- fix(agents): fix panel errors and keyboard access
+- docs(release): keep runtime cleanup notes unreleased
+- refactor(runtime): remove duplicate shared operations
+
 ## 3.3.0
 
 From 3.2.0 · 2026-10-31
