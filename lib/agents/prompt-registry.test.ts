@@ -121,6 +121,15 @@ if (process.env.JARELA_PROMPT_DUMP === "1") {
 }
 
 describe("runtime ownership", () => {
+  it("puts the choice-UI preference in every agent's shared prompt prefix", () => {
+    for (const variant of variants) {
+      const sharedPrefix = variant.prompt.split(CACHE_SHARED_SPLIT_SENTINEL)[0];
+      expect(sharedPrefix, variant.id).toContain("11. Prefer the choice UI.");
+      expect(sharedPrefix, variant.id).toContain("kind=ask_choice instead of asking them to type a selection in chat");
+      expect(sharedPrefix, variant.id).toContain("a choice is not approval or permission to act");
+    }
+  });
+
   it("explains every signal kind and permits reporting trusted historical receipts without repeating actions", async () => {
     const { systemSignalKindSchema } = await import("@/lib/stores/system-signals");
     for (const variant of variants) {

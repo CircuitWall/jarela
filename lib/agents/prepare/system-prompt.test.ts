@@ -423,6 +423,9 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("7. Verify before reporting.");
     expect(ctx).toContain("8. Stop and ask.");
     expect(ctx).toContain("10. Link the source.");
+    expect(ctx).toContain("11. Prefer the choice UI.");
+    expect(ctx).toContain("use propose_config_change with kind=ask_choice instead of asking them to type a selection in chat");
+    expect(ctx).toContain("a choice is not approval or permission to act");
     // Every source-link field a tool or bridge prompt emits must be named,
     // or the model cannot tell which value links back to the item.
     for (const field of ["cite_as", "web_link", "html_link", "chat_link"]) {
