@@ -6,7 +6,7 @@ action. The headline: a user installs Jarela from npm, clicks
 client_secret to paste**. The secret lives in Secret Manager and the
 proxy injects it server-side.
 
-Reference architecture: [Google OAuth proxy](../functions/google-oauth-proxy/README.md).
+Reference architecture: [Google OAuth proxy](https://github.com/CircuitWall/jarela/blob/main/functions/google-oauth-proxy/README.md).
 
 ---
 

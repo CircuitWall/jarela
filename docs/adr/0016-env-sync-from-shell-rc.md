@@ -94,8 +94,8 @@ Hard-coded in [lib/env/allowlist.ts](../../lib/env/allowlist.ts) — only known 
 
 ## More Information
 
-* [ADR-0005 — at-rest encryption envelope](0005-at-rest-encryption.md) — credentials live in the encrypted `integrations` namespace.
-* [ADR-0009 — in-app HTTP proxy](0009-in-app-http-proxy-configuration.md) and [ADR-0012 — proxy CA bundle](0012-proxy-ca-bundle.md) — env-then-DB precedence pattern this ADR follows.
+* [ADR-0005 — at-rest encryption envelope](0005-encrypt-secrets-at-rest.md) — credentials live in the encrypted `integrations` namespace.
+* [ADR-0009 — in-app HTTP proxy](0009-in-app-http-proxy-configuration.md) and [ADR-0012 — proxy CA bundle](0012-https-proxy-and-custom-ca-bundle.md) — env-then-DB precedence pattern this ADR follows.
 * [ADR-0010 — agent-led setup](0010-agent-led-setup-and-integration-manifests.md) — defines the Connections-tab UX that env-sync feeds into.
 * [ADR-0015 — native GitHub tools](0015-native-github-tools.md) — the immediate beneficiary, since `GITHUB_TOKEN` is overwhelmingly an rc resident.
 * Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) are intentionally out of scope: they live in `ModelConfig.params` per-model, not in the integrations store, so a 1:1 env→field mapping doesn't fit. A follow-up ADR will define a "provider defaults" namespace that env-sync can target.
