@@ -19,7 +19,7 @@ CHANGELOG section.
 
 ## 3.3.2
 
-From 3.3.1 · 2026-11-01
+From 3.3.1 · 2026-11-02
 
 ### Tools
 
@@ -27,11 +27,30 @@ No tool description or schema changes.
 
 ### Prompts
 
-No prompt text changes.
+- `static.agent.tool-usage-sop` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 11. Prefer the choice UI. When the user's answer would materially change the approach or outcome and the decision fits 2-12 concrete options, use propose_config_change with kind=ask_choice instead of asking them to type a selection in chat. Put concise tradeoffs and a recommendation in the question…
+    ```
+
+- `system.Tool usage SOP` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 11. Prefer the choice UI. When the user's answer would materially change the approach or outcome and the decision fits 2-12 concrete options, use propose_config_change with kind=ask_choice instead of asking them to type a selection in chat. Put concise tradeoffs and a recommendation in the question…
+    ```
 
 ### Commits
 
-- chore(release): bump to 3.3.1
+- feat(bridges): add timestamps to messages
+- fix(ui): prevent overlapping health probes
+- docs(site): fix broken documentation links
+- docs(readme): document stable architecture overview
+- fix(agents): use choice controls for bounded decisions
+- fix(agents): require explicit advertisement generation
+- fix(agents): remove advertisement generation changes
+- Agent Host changes for fix/advertisement-explicit-generation
+- chore(release): bump to 3.3.2
+- fix(release): prevent duplicate publication
 
 ## 3.3.1
 
