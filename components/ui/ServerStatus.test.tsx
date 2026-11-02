@@ -42,7 +42,7 @@ it("does not overlap health probes when the document becomes visible", async () 
   }
 });
 
-it("waits through transient failures, then reports a persistent outage", async () => {
+it("waits through a sustained outage before reporting the server unavailable", async () => {
   vi.useFakeTimers();
   const fetch = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
   vi.stubGlobal("fetch", fetch);
@@ -53,6 +53,10 @@ it("waits through transient failures, then reports a persistent outage", async (
   expect(screen.queryByRole("status")).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
   expect(fetch).toHaveBeenCalledTimes(3);
+  expect(screen.queryByRole("status")).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(24_999); });
+  expect(screen.queryByRole("status")).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
   expect(screen.getByRole("status").textContent).toContain("Server unavailable");
   expect(screen.getByRole("button", { name: "Reload now" })).toBeTruthy();
   expect(screen.queryByText("Failed to fetch")).toBeNull();
