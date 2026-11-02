@@ -11,6 +11,7 @@ describe("bridge prompt envelope", () => {
       role: "counterpart",
       sender_id: "alice@jid",
       sender_name: "Alice",
+      timestamp: "2026-11-02T05:30:00.000Z",
       text: "hello from dm",
     });
     const parsed = parseBridgePrompt(raw);
@@ -20,7 +21,9 @@ describe("bridge prompt envelope", () => {
     expect(parsed?.isGroup).toBe(false);
     expect(parsed?.senderJid).toBe("alice@jid");
     expect(parsed?.chatLink).toBeNull();
+    expect(parsed?.timestamp).toBe("2026-11-02T05:30:00.000Z");
     expect(parsed?.body).toBe("hello from dm");
+    expect(raw).toContain("[message_timestamp:2026-11-02T05:30:00.000Z]");
   });
 
   it("stamps and round-trips an https chat link", () => {

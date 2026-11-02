@@ -349,9 +349,17 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // Update the chat cache regardless of payload shape — the chat is
         // "real" the moment we see any message from it, even one whose
         // body we end up unable to represent (e.g. reactions, polls).
-        const ts = typeof m.messageTimestamp === "number"
+        const sourceTs = typeof m.messageTimestamp === "number"
           ? m.messageTimestamp * 1000
-          : (m.messageTimestamp?.low ?? 0) * 1000 || Date.now();
+          : (m.messageTimestamp?.low ?? 0) * 1000;
+        const sourceDate = new Date(sourceTs);
+        const hasSourceTimestamp = Number.isFinite(sourceTs)
+          && sourceTs > 0
+          && Number.isFinite(sourceDate.getTime());
+        const timestamp = hasSourceTimestamp
+          ? sourceDate.toISOString()
+          : null;
+        const ts = hasSourceTimestamp ? sourceDate.getTime() : Date.now();
         // Watermark gate: on `append` batches, skip anything at or below
         // this chat's own persisted watermark. This prevents the server's
         // reconnect replay from re-delivering messages we already routed in
@@ -405,6 +413,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           sender_jid: sender.senderJid,
           sender_name: sender.senderName,
           text,
+          timestamp,
           attachments: attachments.length ? attachments : undefined,
           message_id: m.key.id ?? null,
           is_group,
@@ -676,6 +685,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       sender_jid: senderJid,
       sender_name: senderName,
       text,
+      timestamp: null,
       attachments: undefined,
       message_id: null,
       is_group: remote_jid.endsWith("@g.us"),

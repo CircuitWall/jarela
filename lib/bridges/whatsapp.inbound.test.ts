@@ -247,7 +247,14 @@ describe("WhatsApp inbound pipeline", () => {
     const ts = now();
     await upsert([{ key: { remoteJid: BOB, id: "long" }, message: { conversation: "x" }, messageTimestamp: { low: ts, high: 0 } }]);
     expect(received).toHaveLength(1);
+    expect(received[0].timestamp).toBe(new Date(ts * 1000).toISOString());
     expect(bumpRouteLastSeenTs).toHaveBeenCalledWith("wa-test", BOB, ts * 1000);
+  });
+
+  it("does not invent a source timestamp when WhatsApp omits one", async () => {
+    const { received } = await connect();
+    await upsert([{ key: { remoteJid: BOB, id: "no-ts" }, message: { conversation: "x" } }]);
+    expect(received[0].timestamp).toBeNull();
   });
 
   it("drops payloads it cannot represent and ignores other upsert types", async () => {

@@ -56,6 +56,8 @@ export interface BridgePromptInput {
   sender_name: string;
   /** Public https link that opens this chat in the platform's app, when one exists. */
   chat_link?: string | null;
+  /** Source message timestamp in ISO-8601 format, when provided by the platform. */
+  timestamp?: string | null;
   /** The raw message text the user / counterpart / agent sent. */
   text: string;
   /**
@@ -85,6 +87,7 @@ export interface BridgePromptContext {
   senderJid: string;
   senderName: string;
   chatLink: string | null;
+  timestamp: string | null;
   body: string;
 }
 
@@ -102,6 +105,7 @@ export interface BridgePromptContext {
  *   [message_role:user|counterpart|agent]
  *   [sender_id:<id>]
  *   [sender_name:<label>]
+ *   ([message_timestamp:<ISO-8601>] when the platform provides one)
  *   ([chat_link:<https url>] when the platform has a permalink for the chat)
  *   ([group_name:<label>] [participant_id:<id>] [participant_name:<label>] for groups)
  *
@@ -128,6 +132,7 @@ export function formatBridgePrompt(input: BridgePromptInput): string {
   ];
   const chatLink = httpsUrlOrNull(input.chat_link);
   if (chatLink) lines.push(`[chat_link:${chatLink}]`);
+  if (input.timestamp) lines.push(`[message_timestamp:${h(input.timestamp)}]`);
   if (input.event) {
     lines.push(`[event_type:${input.event.type}]`);
     lines.push(`[event_subtype:${h(input.event.subtype)}]`);
@@ -171,6 +176,7 @@ export function parseBridgePrompt(raw: string): BridgePromptContext | null {
     senderJid: senderId,
     senderName: headers.sender_name || senderId || "Unknown",
     chatLink: httpsUrlOrNull(headers.chat_link),
+    timestamp: headers.message_timestamp || null,
     body: lines.slice(i).join("\n").trimEnd(),
   };
 }
