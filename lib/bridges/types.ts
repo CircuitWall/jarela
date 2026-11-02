@@ -43,6 +43,8 @@ export interface InboundMessage {
   sender_name: string | null;
   /** Plain text body (or media caption for messages whose payload is an image). */
   text: string;
+  /** Source message timestamp in ISO-8601 format, when provided by the platform. */
+  timestamp: string | null;
   /**
    * Multi-modal attachments captured by the adapter (currently: WhatsApp
    * image messages, downloaded and base64-encoded). Forwarded to the agent

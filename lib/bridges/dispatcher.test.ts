@@ -73,6 +73,7 @@ function makeMessage(): InboundMessage {
     sender_jid: "bob@jid",
     sender_name: "Bob",
     text: "hello",
+    timestamp: null,
     attachments: undefined,
     message_id: "m1",
     is_group: true,
@@ -237,6 +238,17 @@ describe("handleInboundMessage silent observer mode", () => {
       type: "group_participants_update",
       subtype: "promote",
     });
+  });
+
+  it("forwards the source message timestamp to bridge prompt formatter", async () => {
+    const adapter = makeAdapter();
+    const msg = makeMessage();
+    msg.timestamp = "2026-11-02T05:30:00.000Z";
+
+    await handleInboundMessage(adapter, msg);
+
+    const fmtArg = formatBridgePromptMock.mock.calls[0][0] as { timestamp?: string | null };
+    expect(fmtArg.timestamp).toBe("2026-11-02T05:30:00.000Z");
   });
 
   it("uses explicit sender_jid for user-authored DM replies", async () => {
