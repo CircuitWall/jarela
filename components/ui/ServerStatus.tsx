@@ -1,26 +1,25 @@
 "use client";
 
 // Health-check overlay. Polls /api/v1/health on a slow cadence while the
-// server is reachable; on repeated failures, flips into a fast retry loop
-// behind a blocking banner. When the server comes back, reloads the page so
+// server is reachable; after a sustained outage, shows a blocking banner
+// while retrying. When the server comes back, reloads the page so
 // any in-flight UI state (caches, EventSource subscriptions, agent list)
 // gets a clean restart instead of trying to splice partial state back
 // together.
 //
-// A single failed ping is NOT enough to show the overlay: long agent turns
-// can briefly stall the Node event loop / SQLite reader past the fetch
-// timeout. We require FAILURE_THRESHOLD consecutive failures before
-// surfacing "Server unavailable" — otherwise normal long tool calls would
-// flash the offline banner and force a page reload mid-turn.
+// Brief health-check failures can happen during long agent turns or transient
+// network hiccups. Require consecutive failures over a minimum outage duration
+// before surfacing "Server unavailable", avoiding unnecessary interruptions.
 
 import { useEffect, useRef, useState } from "react";
 import { CloudOff } from "lucide-react";
 import { runtimeConfig } from "@/api/runtime-config";
 
 const HEALTHY_INTERVAL_MS = 20_000;
-const DOWN_INTERVAL_MS = 2_000;
+const DOWN_INTERVAL_MS = 5_000;
 const RETRY_INTERVAL_MS = 3_000;
 const FAILURE_THRESHOLD = 3;
+const DOWN_CONFIRMATION_MS = 30_000;
 
 async function ping(): Promise<boolean> {
   const ctrl = new AbortController();
@@ -44,6 +43,7 @@ export function ServerStatus() {
     let cancelled = false;
     let probeInFlight = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let outageStartedAt: number | null = null;
 
     const tick = async () => {
       if (probeInFlight) return;
@@ -53,18 +53,25 @@ export function ServerStatus() {
         if (cancelled) return;
         if (!ok) {
           failureCountRef.current += 1;
-          if (failureCountRef.current >= FAILURE_THRESHOLD) {
+          outageStartedAt ??= Date.now();
+          const outageConfirmed =
+            failureCountRef.current >= FAILURE_THRESHOLD &&
+            Date.now() - outageStartedAt >= DOWN_CONFIRMATION_MS;
+          if (outageConfirmed) {
             wasDownRef.current = true;
             setDown(true);
             timer = setTimeout(tick, DOWN_INTERVAL_MS);
           } else {
-            // Sub-threshold blip (likely a long agent turn briefly stalling
-            // the event loop). Retry soon without surfacing the overlay.
-            timer = setTimeout(tick, RETRY_INTERVAL_MS);
+            // Keep checking, but do not interrupt the user for a brief outage.
+            timer = setTimeout(
+              tick,
+              failureCountRef.current >= FAILURE_THRESHOLD ? DOWN_INTERVAL_MS : RETRY_INTERVAL_MS,
+            );
           }
           return;
         }
         failureCountRef.current = 0;
+        outageStartedAt = null;
         if (wasDownRef.current) {
           // Server recovered after the overlay actually showed — full reload
           // to drop any stale in-memory state (EventSource queues, agent
