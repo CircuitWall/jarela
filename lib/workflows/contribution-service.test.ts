@@ -188,7 +188,7 @@ afterAll(async () => {
   closeDb();
   vi.unstubAllEnvs();
   resetConfigCache();
-  rmSync(root, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 describe("trusted repository contribution lifecycle", { timeout: 120_000 }, () => {

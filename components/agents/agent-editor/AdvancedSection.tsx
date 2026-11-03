@@ -61,7 +61,7 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
           <option value="high_reasoning">High reasoning</option>
         </Select>
         <p className="text-[10px] text-fg-faint leading-snug">
-          The strategy sets model selection, token/context budgets, thinking, retries, and recall behavior. High reasoning automatically recalls saved facts and prior chats; other strategies rely on explicit searches.
+          The strategy sets model selection, context/output budgets relative to model limits (attachment turns keep full context), thinking, retries, and recall behavior. High reasoning automatically recalls saved facts and prior chats; other strategies rely on explicit searches.
         </p>
       </div>
       <Divider />

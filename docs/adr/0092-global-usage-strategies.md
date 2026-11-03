@@ -55,3 +55,14 @@ explicit thinking budgets are added before applying ceilings. See the
 [current operating guide](../OPERATIONS.md#adaptive-output-budgets-unreleased)
 for the formula and its limitations. Routing, prompt guidance, and retry
 policy remain unchanged.
+
+### Unreleased amendment: model-relative budget ceilings
+
+The fixed Cost-saving context cap and fixed output ceilings are superseded by
+selected-model-relative ceilings: 60% for Cost-saving, 50% for Fast, 80% for
+Balanced, and 100% for High reasoning. The configured/known model limits and
+remaining turn context still bound the effective budgets. Attachment turns use
+the full configured context window; output scaling and adaptive allocation
+still apply. This further limits the adaptive output allocation described
+above without changing its text-size estimate, strategy baselines, or thinking
+budget handling. See the [current operating guide](../OPERATIONS.md#adaptive-output-budgets-unreleased).

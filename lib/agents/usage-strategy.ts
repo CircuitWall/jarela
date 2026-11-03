@@ -5,7 +5,8 @@ export type UsageRouterPolicy = "cheap" | "fast" | "balanced" | "quality";
 export interface UsageStrategyProfile {
   routerPolicy: UsageRouterPolicy | null;
   enableRouter: boolean | null;
-  contextWindowCapTokens: number | null;
+  contextWindowRatio: number;
+  outputTokenRatio: number;
   outputTokenCap: number | null;
   /** Ask thinking models to reason less (or not at all) when the provider supports it. */
   reduceThinking: boolean;
@@ -18,7 +19,8 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
   cost_saving: {
     routerPolicy: "cheap",
     enableRouter: true,
-    contextWindowCapTokens: 65_536,
+    contextWindowRatio: 0.6,
+    outputTokenRatio: 0.6,
     outputTokenCap: 2_048,
     reduceThinking: true,
     stallRetries: 0,
@@ -33,7 +35,8 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
   fast: {
     routerPolicy: "fast",
     enableRouter: true,
-    contextWindowCapTokens: 32_768,
+    contextWindowRatio: 0.5,
+    outputTokenRatio: 0.5,
     outputTokenCap: 2_048,
     reduceThinking: true,
     stallRetries: 0,
@@ -45,7 +48,8 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
   balanced: {
     routerPolicy: null,
     enableRouter: null,
-    contextWindowCapTokens: null,
+    contextWindowRatio: 0.8,
+    outputTokenRatio: 0.8,
     outputTokenCap: null,
     reduceThinking: false,
     stallRetries: null,
@@ -55,7 +59,8 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
   high_reasoning: {
     routerPolicy: "quality",
     enableRouter: true,
-    contextWindowCapTokens: null,
+    contextWindowRatio: 1,
+    outputTokenRatio: 1,
     outputTokenCap: null,
     reduceThinking: false,
     stallRetries: null,
@@ -82,6 +87,14 @@ export function shouldAutoRecall(strategy: UsageStrategy, profileEnabled = true)
 
 export function getUsageStrategyProfile(strategy: UsageStrategy): UsageStrategyProfile {
   return PROFILES[strategy];
+}
+
+export function applyTokenBudgetRatio(modelLimit: number, ratio: number): number {
+  if (!Number.isFinite(modelLimit) || modelLimit < 1
+    || !Number.isFinite(ratio) || ratio <= 0 || ratio > 1) {
+    throw new RangeError("Token budget ratio requires a positive model limit and a ratio in (0, 1]");
+  }
+  return Math.max(1, Math.floor(modelLimit * ratio));
 }
 
 // Reasoning tokens share the output budget; below this a thinking model can

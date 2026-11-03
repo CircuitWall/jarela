@@ -523,7 +523,7 @@ describe("prepareThreadRun transient retry", () => {
 
     expect(collected.terminal).toBe("error");
     expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
-    expect(prepared.context_snapshot.context_window_tokens).toBe(65_536);
+    expect(prepared.context_snapshot.context_window_tokens).toBe(76_800);
     const firstOptions = streamWithConfigMock.mock.calls[0][2] as {
       agent_run_config: {
         route_decision: { source: string; policy?: string };
@@ -559,7 +559,7 @@ describe("prepareThreadRun transient retry", () => {
     });
     await collectStream(prepared.stream);
 
-    expect(prepared.context_snapshot.context_window_tokens).toBe(65_536);
+    expect(prepared.context_snapshot.context_window_tokens).toBe(600_000);
     const options = streamWithConfigMock.mock.calls[0][2] as {
       agent_run_config: { max_output_tokens?: number; thinking_params?: unknown };
     };

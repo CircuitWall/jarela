@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- agents: Scale usage-strategy context and output budgets to selected-model limits.
+
 ## [3.3.3] - 2026-11-03
 
 ### Fixed

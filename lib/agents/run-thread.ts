@@ -33,6 +33,7 @@ import { getPricingTables, modelRatesFor, estimateProviderCostUsd } from "@/lib/
 import { computeContextBudget, DEFAULT_CONTEXT_WINDOW_TOKENS, estimateTokens } from "@/lib/agents/context-budget";
 import {
   DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
+  applyTokenBudgetRatio,
   getUsageStrategyProfile,
   resolveAdaptiveOutputTokenCap,
   resolveOutputTokenCap,
@@ -795,8 +796,7 @@ function configureTurnModel(
     modelThinks,
     usageStrategy,
   );
-  // Strategy caps must apply to the model's real window, not the 8k fallback,
-  // otherwise a capped strategy shrinks a 1M-token model to 8k.
+  // Strategy percentages must use the model's real window, not the 8k fallback.
   const explicitContextWindow = typeof tierProviderParams.context_window_tokens === "number"
     && tierProviderParams.context_window_tokens > 0
     ? tierProviderParams.context_window_tokens
@@ -806,12 +806,9 @@ function configureTurnModel(
     ? Math.min(explicitContextWindow, knownContextWindow)
     : explicitContextWindow ?? knownContextWindow ?? DEFAULT_CONTEXT_WINDOW_TOKENS;
   // Attachment turns can consume substantial context, so use the model's configured window.
-  const contextWindowCap = req.attachments?.length
-    ? null
-    : usageProfile.contextWindowCapTokens;
-  const runContextWindow = contextWindowCap !== null
-    ? Math.min(configuredContextWindow, contextWindowCap)
-    : configuredContextWindow;
+  const runContextWindow = req.attachments?.length
+    ? configuredContextWindow
+    : applyTokenBudgetRatio(configuredContextWindow, usageProfile.contextWindowRatio);
   // The current user-turn size is a deterministic proxy for expected output;
   // the adaptive resolver applies headroom and the model/context hard limits.
   const inputTokenEstimate = estimateTokens(contentText(input.content));
@@ -821,15 +818,15 @@ function configureTurnModel(
     && Number.isFinite(tierProviderParams.max_tokens) && tierProviderParams.max_tokens > 0
     ? tierProviderParams.max_tokens
     : null;
-  const hardOutputCeilings = [
-    contextOutputCeiling,
-    // The static catalog is a fallback, not an authority over explicit configuration.
-    explicitOutputCeiling ?? (modelCfg ? getKnownMaxOutputTokens(modelCfg.provider, modelCfg.model_id) : null),
-  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
+  // The static catalog is a fallback, not an authority over explicit configuration.
+  const modelOutputLimit = explicitOutputCeiling
+    ?? (modelCfg ? getKnownMaxOutputTokens(modelCfg.provider, modelCfg.model_id) : null)
+    ?? contextOutputCeiling;
+  const strategyOutputCeiling = applyTokenBudgetRatio(modelOutputLimit, usageProfile.outputTokenRatio);
   const adaptiveOutputTokenCap = resolveAdaptiveOutputTokenCap(
     inputTokenEstimate,
     strategyOutputTokenCap ?? DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
-    Math.min(...hardOutputCeilings),
+    Math.min(contextOutputCeiling, strategyOutputCeiling),
     baseProviderParams.thinking?.budget_tokens ?? 0,
   );
   if (baseProviderParams.thinking?.type === "enabled"
