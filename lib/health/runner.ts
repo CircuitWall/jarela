@@ -47,7 +47,7 @@ interface RunnerState {
   probes: Map<ProbeName, ProbeState>;
   lastRunAt: number;
   // Set while a run is in flight so two concurrent triggers (scheduler +
-  // /api/v1/health?refresh=1) don't double-probe every vendor.
+  // /api/v1/health/probes?refresh=1) don't double-probe every vendor.
   inFlight: boolean;
 }
 
@@ -74,7 +74,7 @@ function getOrInit(name: ProbeName): ProbeState {
   return s;
 }
 
-// Public: snapshot for the /api/v1/health route.
+// Public: snapshot for the /api/v1/health/probes route.
 export interface HealthSnapshot {
   ranAt: number;
   probes: Array<{

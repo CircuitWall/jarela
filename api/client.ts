@@ -84,6 +84,7 @@ import type {
   VersionAdoptionState,
 } from "./types";
 import { runtimeConfig } from "./runtime-config";
+import { reportServerActivity } from "./health";
 
 const BASE = "/api/v1";
 
@@ -1536,6 +1537,7 @@ export function subscribeRun(
 
     const es = new EventSource(url, { withCredentials: true });
     es.onmessage = (e) => {
+      reportServerActivity();
       if (typeof e.data === "string") {
         queue.push(e.data);
         try {
@@ -1558,6 +1560,7 @@ export function subscribeRun(
     // and the UI activity label ("Reconnecting…") would never clear.
     let everOpened = false;
     es.onopen = () => {
+      reportServerActivity();
       everOpened = true;
       if (connectTimer !== null) {
         clearTimeout(connectTimer);

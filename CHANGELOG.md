@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - agents: Scale usage-strategy context and output budgets to selected-model limits.
 
+### Fixed
+
+- ui: Add fast server liveness, report active runs, and honor live agent streams.
+
 ## [3.3.3] - 2026-11-03
 
 ### Fixed

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { startRun, finishRun, getRun, broadcast, waitForRun, pushSteering, drainSteering, abortRun, subscribe } from "./run-registry";
+import { startRun, finishRun, getRun, getActiveRunCount, broadcast, waitForRun, pushSteering, drainSteering, abortRun, subscribe } from "./run-registry";
 import { getConfig, resetConfigCache } from "@/lib/env/config";
 import type { StreamChunk } from "./base";
 
@@ -9,6 +9,17 @@ const toolResult = (id: string): StreamChunk => ({ type: "tool_result", data: { 
 const heartbeat = (): StreamChunk => ({ type: "heartbeat", data: {} } as StreamChunk);
 
 describe("run-registry watchdog", () => {
+  it("counts only runs that are currently running", () => {
+    const initialCount = getActiveRunCount();
+    const first = startRun("active-count-one", null);
+    const second = startRun("active-count-two", null);
+    expect(getActiveRunCount()).toBe(initialCount + 2);
+    finishRun(first, "done");
+    expect(getActiveRunCount()).toBe(initialCount + 1);
+    finishRun(second, "error");
+    expect(getActiveRunCount()).toBe(initialCount);
+  });
+
   it("migrates a surviving pre-cursor active run when the module reloads", async () => {
     const run = startRun("legacy-cursor-migration", null);
     broadcast(run, delta("Existing text."));
