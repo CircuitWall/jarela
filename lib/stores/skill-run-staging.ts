@@ -20,6 +20,10 @@ const ownershipSchema = z.strictObject({
   state: z.enum(["prepared", "launched", "cleanup_verified", "retained"]),
 });
 
+function removeStagingDirectory(path: string) {
+  rmSync(path, { recursive: true, force: false, maxRetries: 10, retryDelay: 50 });
+}
+
 export class SkillRunStaging {
   readonly directory: string;
   readonly #identity: ReturnType<typeof directoryIdentity>;
@@ -60,7 +64,7 @@ export class SkillRunStaging {
         else {
           const current = directoryIdentity(directory);
           if (current.dev !== createdIdentity.dev || current.ino !== createdIdentity.ino) throw new Error("Unowned staging identity changed");
-          rmSync(directory, { recursive: true, force: false });
+          removeStagingDirectory(directory);
         }
       }
       catch (cleanup) { throw new AggregateError([error, cleanup], "Skill staging failed and cleanup failed"); }
@@ -97,7 +101,7 @@ export class SkillRunStaging {
   dispose(): void {
     if (this.#disposed) return;
     this.#assertIdentity();
-    rmSync(this.directory, { recursive: true, force: false, maxRetries: 10, retryDelay: 50 });
+    removeStagingDirectory(this.directory);
     rmSync(this.#ownerFile, { force: false });
     this.#disposed = true;
   }
@@ -170,7 +174,7 @@ export function cleanupAbandonedSkillStaging() {
         if (metadata.state === "launched") throw new Error("Process cleanup was never verified; retain for explicit review");
         const checked = directoryIdentity(directory);
         if (checked.dev !== current.dev || checked.ino !== current.ino) throw new Error("Staging identity changed");
-        rmSync(directory, { recursive: true, force: false, maxRetries: 10, retryDelay: 50 });
+        removeStagingDirectory(directory);
         rmSync(join(owners, ownerName), { force: false });
         result.removed.push(entry.name);
       } catch (error) {
