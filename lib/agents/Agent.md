@@ -496,7 +496,7 @@ try {
 ### Budgeting & Resource Management
 - `context-budget.ts` — Token budget calculation
 - `delegation-budget.ts` — Cost tracking for delegated agents
-- `usage-strategy.ts` — Model selection and output token limits
+- `usage-strategy.ts` — Model selection and per-strategy context/output budget ratios
 - `usage-profile.ts` — Cost/speed trade-off tracking
 
 ### Model & Routing
@@ -884,4 +884,3 @@ A: Yes, via the `delegate_to_agent` tool. It enforces depth limits (prevent infi
 **Q: How do I add streaming output to a tool?**
 
 A: Tools can return `AsyncGenerator<string>` for streaming. See Pattern 3 in lib/tools/Agent.md. Agent collects chunks and streams them to client via SSE.
-

@@ -104,9 +104,9 @@ describe("prepareThreadRun auto context boundary", () => {
   it.each([
     { name: "short balanced turn", model: "gpt-4o-mini", strategy: "balanced", chars: 100, max: undefined, expected: 8_192 },
     { name: "long balanced turn", model: "gpt-4o-mini", strategy: "balanced", chars: 10_000, max: undefined, expected: 10_000 },
-    { name: "explicit ceiling", model: "gpt-4o-mini", strategy: "balanced", chars: 6_000, max: 1_024, expected: 1_024 },
+    { name: "explicit ceiling", model: "gpt-4o-mini", strategy: "balanced", chars: 6_000, max: 1_024, expected: 819 },
     { name: "ceiling is not a baseline", model: "gpt-4o-mini", strategy: "balanced", chars: 100, max: 16_384, expected: 8_192 },
-    { name: "known model ceiling", model: "gpt-4o-mini", strategy: "balanced", chars: 20_000, max: undefined, expected: 16_384 },
+    { name: "known model ceiling", model: "gpt-4o-mini", strategy: "balanced", chars: 20_000, max: undefined, expected: 13_107 },
     { name: "balanced reasoning floor", model: "gpt-5", strategy: "balanced", chars: 100, max: undefined, expected: 32_768 },
     { name: "high reasoning floor", model: "gpt-5", strategy: "high_reasoning", chars: 100, max: undefined, expected: 32_768 },
     { name: "cost-saving baseline", model: "gpt-4o-mini", strategy: "cost_saving", chars: 100, max: undefined, expected: 2_048 },
@@ -135,6 +135,37 @@ describe("prepareThreadRun auto context boundary", () => {
     expect(options.agent_run_config?.output_reserve_tokens).toBe(expected);
   });
 
+  it.each([
+    { strategy: "cost_saving", context: 76_800, output: 9_830 },
+    { strategy: "fast", context: 64_000, output: 8_192 },
+    { strategy: "balanced", context: 102_400, output: 13_107 },
+    { strategy: "high_reasoning", context: 128_000, output: 16_384 },
+  ] as const)("applies $strategy percentages to the selected model's context and output limits", async ({ strategy, context, output }) => {
+    const configName = `model-limit-percent-${strategy}`;
+    upsertModelConfig(configName, "openai", "gpt-4o-mini", {}, false);
+    upsertAgentConfig({
+      id: "model-limit-percent",
+      name: "Model limit percentage",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: configName,
+      usage_strategy: strategy,
+    });
+    const thread = createThread("model-limit-percent");
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "x".repeat(40_000),
+      context_profile: { include_warm: false, include_facts: false, include_recall: false },
+    });
+
+    const options = streamWithConfigMock.mock.calls[0][2] as StreamOptions;
+    expect(options.agent_run_config?.context_window_tokens).toBe(context);
+    expect(options.agent_run_config?.max_output_tokens).toBe(output);
+    expect(options.agent_run_config?.output_reserve_tokens).toBe(output);
+  });
+
   it("bounds and reserves the output budget within an explicitly smaller context window", async () => {
     upsertModelConfig("adaptive-small-context", "openai", "gpt-4o-mini", { context_window_tokens: 2_048 }, false);
     upsertAgentConfig({
@@ -154,13 +185,14 @@ describe("prepareThreadRun auto context boundary", () => {
     });
 
     const options = streamWithConfigMock.mock.calls[0][2] as StreamOptions;
-    expect(options.agent_run_config?.max_output_tokens).toBe(823);
-    expect(options.agent_run_config?.output_reserve_tokens).toBe(823);
+    expect(options.agent_run_config?.context_window_tokens).toBe(1_638);
+    expect(options.agent_run_config?.max_output_tokens).toBe(413);
+    expect(options.agent_run_config?.output_reserve_tokens).toBe(413);
   });
 
   it.each([
-    { name: "explicit output override", max: 16_000, context: 200_000, budget: 10_000, expected: 16_000 },
-    { name: "static fallback", max: undefined, context: 200_000, budget: 1_024, expected: 8_192 },
+    { name: "explicit output override", max: 16_000, context: 200_000, budget: 10_000, expected: 12_800 },
+    { name: "static fallback", max: undefined, context: 200_000, budget: 1_024, expected: 6_553 },
     { name: "equal output and thinking limits", max: 10_000, context: 200_000, budget: 10_000, expected: null },
     { name: "context ceiling below thinking budget", max: 16_000, context: 10_000, budget: 10_000, expected: null },
     { name: "fallback below thinking budget", max: undefined, context: 200_000, budget: 10_000, expected: null },

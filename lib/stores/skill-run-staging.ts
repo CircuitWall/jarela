@@ -97,7 +97,7 @@ export class SkillRunStaging {
   dispose(): void {
     if (this.#disposed) return;
     this.#assertIdentity();
-    rmSync(this.directory, { recursive: true, force: false });
+    rmSync(this.directory, { recursive: true, force: false, maxRetries: 10, retryDelay: 50 });
     rmSync(this.#ownerFile, { force: false });
     this.#disposed = true;
   }
@@ -170,7 +170,7 @@ export function cleanupAbandonedSkillStaging() {
         if (metadata.state === "launched") throw new Error("Process cleanup was never verified; retain for explicit review");
         const checked = directoryIdentity(directory);
         if (checked.dev !== current.dev || checked.ino !== current.ino) throw new Error("Staging identity changed");
-        rmSync(directory, { recursive: true, force: false });
+        rmSync(directory, { recursive: true, force: false, maxRetries: 10, retryDelay: 50 });
         rmSync(join(owners, ownerName), { force: false });
         result.removed.push(entry.name);
       } catch (error) {

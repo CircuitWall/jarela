@@ -176,6 +176,12 @@ Chat voice controls refresh after saving without a page reload. The additions
 use the existing desktop breakpoints and sidebar widths; the mobile header and
 small-screen menu drawer are unchanged.
 
+Usage strategies (Unreleased) scale context and output budgets against the
+selected model's configured or known limits: Economical uses 60%, Fast 50%,
+Balanced 80%, and High reasoning 100%. Explicit model limits and remaining
+context still apply; turns with attachments retain the model's full context
+window.
+
 ![Wide-screen studio layout with the agent sidebar, workspace, and selected-agent controls](assets/operations-agents.png)
 
 ![Mobile-width Agents view in a simulated iPhone frame](assets/operations-mobile.jpg)
@@ -322,6 +328,12 @@ remain pending under [ADR-0112](adr/0112-checked-javascript-skill-execution.md).
 ## Review usage
 
 ### Adaptive output budgets (Unreleased)
+
+For turns without attachments, each usage strategy scales the selected model's
+configured or known context window and output limit: Economical uses 60%, Fast
+50%, Balanced 80%, and High reasoning 100%. Attachment turns retain the model's
+full context window. Explicit model limits and remaining context remain hard
+ceilings on the resulting output budget.
 
 New turns use a text-size heuristic for output allocation: estimate the current
 user text at roughly four characters per token, multiply that estimate by four

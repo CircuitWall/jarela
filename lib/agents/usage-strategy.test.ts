@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
+  applyTokenBudgetRatio,
   getUsageStrategyProfile,
   parseUsageStrategy,
   resolveAdaptiveOutputTokenCap,
@@ -37,7 +38,8 @@ describe("usage strategy profiles", () => {
     expect(getUsageStrategyProfile("cost_saving")).toMatchObject({
       routerPolicy: "cheap",
       enableRouter: true,
-      contextWindowCapTokens: 65_536,
+      contextWindowRatio: 0.6,
+      outputTokenRatio: 0.6,
       outputTokenCap: 2_048,
       reduceThinking: true,
       stallRetries: 0,
@@ -50,7 +52,8 @@ describe("usage strategy profiles", () => {
     expect(getUsageStrategyProfile("fast")).toMatchObject({
       routerPolicy: "fast",
       enableRouter: true,
-      contextWindowCapTokens: 32_768,
+      contextWindowRatio: 0.5,
+      outputTokenRatio: 0.5,
       outputTokenCap: 2_048,
       stallRetries: 0,
       providerFailureRetries: 1,
@@ -59,9 +62,28 @@ describe("usage strategy profiles", () => {
   });
 
   it("keeps balanced behavior unchanged and routes high reasoning toward quality", () => {
-    expect(getUsageStrategyProfile("balanced").promptInstruction).toBe("");
+    expect(getUsageStrategyProfile("balanced")).toMatchObject({
+      promptInstruction: "",
+      contextWindowRatio: 0.8,
+      outputTokenRatio: 0.8,
+    });
     expect(getUsageStrategyProfile("balanced").providerFailureRetries).toBeNull();
-    expect(getUsageStrategyProfile("high_reasoning")).toMatchObject({ routerPolicy: "quality", enableRouter: true });
+    expect(getUsageStrategyProfile("high_reasoning")).toMatchObject({
+      routerPolicy: "quality",
+      enableRouter: true,
+      contextWindowRatio: 1,
+      outputTokenRatio: 1,
+    });
+  });
+
+  it("scales token budgets against model limits without exceeding them", () => {
+    expect(applyTokenBudgetRatio(128_000, 0.6)).toBe(76_800);
+    expect(applyTokenBudgetRatio(128_000, 0.5)).toBe(64_000);
+    expect(applyTokenBudgetRatio(128_000, 0.8)).toBe(102_400);
+    expect(applyTokenBudgetRatio(128_000, 1)).toBe(128_000);
+    expect(applyTokenBudgetRatio(10, 0.8)).toBe(8);
+    expect(() => applyTokenBudgetRatio(0, 0.8)).toThrow(RangeError);
+    expect(() => applyTokenBudgetRatio(100, 1.01)).toThrow(RangeError);
   });
 
   it("keeps cost-saving output capped while preserving the thinking floor for other strategies", () => {
