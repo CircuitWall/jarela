@@ -30,13 +30,14 @@ const serwist = new Serwist({
   clientsClaim: true,
   navigationPreload: true,
   runtimeCaching: [
-    // Endpoints that MUST NEVER be cached. /api/v1/health is the liveness
-    // probe. Everything under /api/v1/threads/<id>/run is a streaming
+    // Endpoints that MUST NEVER be cached. /api/v1/health/liveness is the
+    // process probe and /api/v1/health runs live diagnostics. Everything
+    // under /api/v1/threads/<id>/run is a streaming
     // endpoint (POST submit returns 202 JSON, GET returns an SSE stream
     // consumed via EventSource — see ADR-0008) that must not be served
     // from cache; the per-thread/agents/etc. POSTs aren't cacheable either.
     {
-      matcher: isExactPath("/api/v1/health"),
+      matcher: isExactPath("/api/v1/health", "/api/v1/health/liveness"),
       handler: new NetworkOnly(),
     },
     {
@@ -98,6 +99,7 @@ self.addEventListener("activate", (event) => {
           if (
             u.pathname.startsWith("/api/") ||
             u.pathname === "/api/v1/health" ||
+            u.pathname === "/api/v1/health/liveness" ||
             u.pathname === "/api/v1/ws" /* legacy, removed in ADR-0008 */ ||
             (u.pathname.startsWith("/api/v1/threads/") && u.pathname.endsWith("/run"))
           ) {

@@ -55,10 +55,24 @@ policy/config response is not a claim that generation succeeded.
 
 ### `GET /api/v1/health`
 
-Liveness/readiness probe. Returns `{ ok, db_path, agent_count, master_key_source, version }`.
+Runtime readiness diagnostics. Returns `{ status, agents, crypto, db_path? }`.
+The filesystem path is only included for loopback requests.
 
 - **Source:** [`app/api/v1/health/route.ts`](../app/api/v1/health/route.ts)
 - **Used by:** browser extension heartbeat, external uptime monitors
+- **Auth:** loopback or same-origin
+
+### `GET /api/v1/health/liveness`
+
+Fast process liveness probe. Returns `{ status: "ok", activity: { active_runs } }`
+without opening SQLite or loading agent configuration. This endpoint confirms
+the server process can answer requests; it does not claim that every
+dependency is ready. The in-app status UI calls it before requesting readiness
+diagnostics from `/api/v1/health` and also treats incoming active-run stream
+events as evidence of a responsive server.
+
+- **Source:** [`app/api/v1/health/liveness/route.ts`](../app/api/v1/health/liveness/route.ts)
+- **Used by:** in-app server status and crypto fallback warning
 - **Auth:** loopback or same-origin
 
 ---

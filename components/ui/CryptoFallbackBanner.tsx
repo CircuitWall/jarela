@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 import { ShieldAlert, X } from "lucide-react";
+import { fetchHealthDetails } from "@/api/health";
 
 const DISMISS_KEY = "jarela:crypto-fallback-banner-dismissed";
 
@@ -18,8 +19,11 @@ export function CryptoFallbackBanner() {
   useEffect(() => {
     setDismissed(typeof localStorage !== "undefined" && localStorage.getItem(DISMISS_KEY) === "1");
     let cancelled = false;
-    fetch("/api/v1/health")
-      .then((r) => r.json())
+    fetch("/api/v1/health/liveness", { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Server liveness check failed");
+        return fetchHealthDetails();
+      })
       .then((j) => {
         if (cancelled) return;
         if (j?.crypto?.source === "keyfile") setShow(true);

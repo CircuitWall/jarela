@@ -1,9 +1,8 @@
 /**
  * @public — `GET /api/v1/health`
  *
- * Liveness/readiness probe. Returns DB-path, agent count, and basic
- * runtime metadata. The browser extension and external uptime monitors
- * poll this. See `docs/api.md`.
+ * Runtime readiness diagnostics. Fast process liveness is available at
+ * `/api/v1/health/liveness`.
  */
 
 import { NextResponse } from "next/server";
@@ -13,18 +12,12 @@ import { getMasterKeySource } from "@/lib/crypto/master-key";
 import { isLoopbackRequest } from "@/lib/auth/access";
 
 export function GET(req: Request) {
-  // Touch the DB so master-key bootstrap has definitely run by the time
-  // we report its source. getDb() is idempotent.
   getDb();
-  // db_path leaks the host's filesystem layout. Only expose it to the
-  // local user (loopback Host); tailnet clients see status only.
   const body: Record<string, unknown> = {
     status: "ok",
-    agents: listAgentConfigs().map((a) => a.id),
+    agents: listAgentConfigs().map((agent) => agent.id),
     crypto: { source: getMasterKeySource() },
   };
-  if (isLoopbackRequest(req)) {
-    body.db_path = DB_PATH;
-  }
+  if (isLoopbackRequest(req)) body.db_path = DB_PATH;
   return NextResponse.json(body);
 }

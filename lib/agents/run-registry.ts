@@ -356,6 +356,14 @@ export function getRun(thread_id: string): ActiveRun | null {
   return runs.get(thread_id) ?? null;
 }
 
+export function getActiveRunCount(): number {
+  let count = 0;
+  for (const run of runs.values()) {
+    if (run.status === "running") count++;
+  }
+  return count;
+}
+
 // Signal the agent stream to cancel. The stream loop in the route is wired
 // to listen on the AbortController and exit early, emitting an error chunk
 // the client (and the queue-drain hook) can react to. Idempotent.
