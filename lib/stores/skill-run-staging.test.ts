@@ -7,6 +7,10 @@ import { cleanupAbandonedSkillStaging, SkillRunStaging } from "./skill-run-stagi
 
 const root = vi.hoisted(() => ({ path: "" }));
 vi.mock("@/lib/db/data-dir", () => ({ getDataDir: () => root.path }));
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, rmSync: vi.fn(actual.rmSync) };
+});
 afterEach(() => {
   vi.restoreAllMocks();
   if (root.path) rmSync(root.path, { recursive: true, force: true });
@@ -38,6 +42,15 @@ describe("conservative staging retention", () => {
     vi.spyOn(process, "kill").mockImplementation(() => { throw Object.assign(new Error("gone"), { code: "ESRCH" }); });
     expect(cleanupAbandonedSkillStaging()).toEqual({ removed: [basename(staging.directory)], retained: [] });
     expect(readdirSync(join(root.path, "skill-runs"))).toEqual([]);
+  });
+  it("uses bounded retries when disposing an owned directory", () => {
+    const { staging } = setup();
+    const remove = vi.mocked(rmSync);
+    remove.mockClear();
+    staging.dispose();
+    expect(remove).toHaveBeenCalledWith(staging.directory, expect.objectContaining({
+      recursive: true, force: false, maxRetries: 10, retryDelay: 50,
+    }));
   });
   it("retains launched leftovers without positive cleanup evidence, even when app owner died", () => {
     const { staging } = setup("launched");
