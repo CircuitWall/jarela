@@ -5068,6 +5068,17 @@
         }
       ],
       "tools": []
+    },
+    {
+      "version": "3.3.3",
+      "previous_version": "3.3.2",
+      "date": "2026-11-03",
+      "hints": [],
+      "commits": [
+        "fix(ui): prevent premature server outage banner"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }

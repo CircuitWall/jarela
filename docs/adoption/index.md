@@ -17,6 +17,22 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.3.3
+
+From 3.3.2 · 2026-11-03
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- fix(ui): prevent premature server outage banner
+
 ## 3.3.2
 
 From 3.3.1 · 2026-11-02
