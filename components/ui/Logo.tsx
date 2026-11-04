@@ -12,9 +12,6 @@ type LogoProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src" | "alt"> & {
 // the same `data-theme` attribute that ThemeContext writes on <html>, so a
 // manual Light/Dark override is honored alongside the OS preference.
 //
-// Sources come from the brand config, so a rebranded overlay swaps the mark
-// via NEXT_PUBLIC_APP_LOGO_LIGHT / _DARK (or by dropping replacement files
-// into public/ under the same names).
 export function Logo({ alt = "", className = "", ...rest }: LogoProps) {
   return (
     <>

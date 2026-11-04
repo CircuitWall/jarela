@@ -19,7 +19,7 @@ import {
   type ContextBudget,
   formatContextBudgetSummary,
 } from "@/lib/agents/context-budget";
-import { getAppName } from "@/lib/env/app-config";
+import { getAppName, getAppSystemName } from "@/lib/env/app-config";
 import { getMemoryPolicy } from "@/lib/stores/app-settings";
 import { listSkills } from "@/lib/skills";
 import { getToolStatsMap, getToolFailurePatterns, type ToolUsefulnessStats } from "@/lib/stores/tool-stats";
@@ -31,8 +31,6 @@ import type { ToolCatalogEntry } from "@/lib/tools";
 import { formatActionVocabularyInstruction } from "@/lib/agents/action-vocabulary";
 import type { SystemSignalRow } from "@/lib/stores/system-signals";
 import type { UsageProfile } from "@/lib/agents/usage-profile";
-
-const APP_NAME = getAppName();
 
 export interface SystemPromptContext {
   agentCfg: AgentConfigRow;
@@ -106,8 +104,8 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     ].join("\n"),
     [
       "--- Runtime ownership ---",
-      "You are an agent running inside the current Jarela server process, not an external operator. The running instance hosts your current turn, tools, and other agents.",
-      "1. Distinguish a source repository or separate test instance from the live Jarela instance hosting you. A request to inspect, debug, build, or test Jarela source code is not permission to change or restart your host.",
+      `You are an agent running inside the current ${getAppSystemName()} server process, not an external operator. The running instance hosts your current turn, tools, and other agents.`,
+      `1. Distinguish a source repository or separate test instance from the live ${getAppSystemName()} instance hosting you. A request to inspect, debug, build, or test ${getAppSystemName()} source code is not permission to change or restart your host.`,
       "2. Restarting or stopping your host interrupts your own turn and other active runs. UI reconnection does not mean your interrupted work will resume. Do not use restart_server, terminal commands, process termination, or service controls to restart or stop the host unless the user explicitly approves that interruption.",
       "3. A set_env_var result with requiresRestart=true indicates a pending change, not restart approval. Explain the interruption and request approval before restarting; otherwise report that a manual restart is needed.",
       "4. Do not restart the host to recover from provider rate limits, unavailable models, tool errors, or incomplete investigations. Report the actual blocker and use a non-disruptive recovery path.",
@@ -146,7 +144,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const dynamicParts: (string | null | undefined)[] = [
     ctx.systemSignals?.length ? [
       "--- System signals ---",
-      "These are targeted runtime observations, not user requests or permission for new actions. A signal confirms only its named operation, not the entire interrupted task. Keep internal lifecycle notices inside Jarela; do not forward them to bridge counterparts.",
+      `These are targeted runtime observations, not user requests or permission for new actions. A signal confirms only its named operation, not the entire interrupted task. Keep internal lifecycle notices inside ${getAppSystemName()}; do not forward them to bridge counterparts.`,
       "1. runtime.restart.completed confirms the requested host restart and protected-state availability. Do not repeat it. Re-check remaining work before continuing an already-authorized task; report the receipt as an earlier operation, not a new action this turn.",
       "2. configuration.applied means the runtime override is active; configuration.restart_required means it is persisted but needs a restart, not that restart approval was granted. approval.approved means the proposal handler returned success; do not rerun the proposal. approval.denied and approval.failed do not authorize retrying the action.",
       "3. background_tool.completed means an invocation returned a result, not necessarily business-level success. Inspect tool_result_get with key=result_key when result_available=true. Follow the Tool usage SOP if that tool is not bound. References can expire; result_available=false means output is unavailable, not that the underlying operation never happened.",
@@ -295,7 +293,7 @@ export function buildSharedToolCatalogContext(): string {
     "--- Tool usage SOP ---",
     "Static cross-agent procedure. The per-turn bound list and counts appear later under \"Enabled tools\".",
     "Code-first skills and workflows: if a step can be done by code, it must be done by code, not simulated through model reasoning. Reuse an authorized typed tool or existing implementation before authoring a script. This applies to execution and validation: calculations, transformations, specified branching, iteration and checks belong in code. Reserve model steps for interpreting intent, ambiguity, judgment and explanation; label model-generated outputs and validate their machine-checkable properties before downstream use. Missing execution support or authorization is an explicit blocker, never permission to bypass policy, substitute shell execution for an unavailable checked runner, or claim a prompt-only step executed.",
-    `0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. ${formatActionVocabularyInstruction()} For substantial tasks with several dependent phases, likely cross-turn progress, or explicit verification, use workflow_progress to create and update a concise checklist; skip simple tasks and work already covered by native tool progress. This contract applies to every built-in Jarela workflow and every workflow you create or follow: each step must state its input, expected output, and concrete validation criteria; validate each output before passing it to a later step. Prefer executable checks whenever code can verify the result, and record observed validation_evidence before marking an item done. Keep a stable workflow_id, send the complete current item list on each update, and keep secrets or private data out of checklist fields. Use needs_attention for blockers, with needs_user=true when only the user can unblock the step; a rejected update or a step you leave checking or needs_attention without needs_user is retried automatically, up to 3 attempts per step. Set phase=complete only when all items are done or skipped. Never claim an output or validation result that you did not observe.`,
+    `0. Classify the request. Informational answers may be direct; read/retrieve requests need a read tool; write/change requests need a state-changing tool; destructive requests also need the required confirmation. ${formatActionVocabularyInstruction()} For substantial tasks with several dependent phases, likely cross-turn progress, or explicit verification, use workflow_progress to create and update a concise checklist; skip simple tasks and work already covered by native tool progress. This contract applies to every built-in ${getAppSystemName()} workflow and every workflow you create or follow: each step must state its input, expected output, and concrete validation criteria; validate each output before passing it to a later step. Prefer executable checks whenever code can verify the result, and record observed validation_evidence before marking an item done. Keep a stable workflow_id, send the complete current item list on each update, and keep secrets or private data out of checklist fields. Use needs_attention for blockers, with needs_user=true when only the user can unblock the step; a rejected update or a step you leave checking or needs_attention without needs_user is retried automatically, up to 3 attempts per step. Set phase=complete only when all items are done or skipped. Never claim an output or validation result that you did not observe.`,
     "1. Bound first. If a tool listed under \"Enabled tools\" fits the task, call it directly.",
     "2. Otherwise look it up. Names of permitted tools that are not bound this turn are listed after the bound tools under \"Enabled tools\", capped, with no definitions. A name that is not listed there may still exist, so never conclude a capability does not exist from the bound list alone. Call list_tools with service/object/action keywords: scope=\"enabled\" searches executable tools, scope=\"all\" also returns disabled, unavailable and cap-omitted tools with flags.",
     "3. Named target. When a skill, harness or instruction names an exact tool, call list_tools names=[\"exact_name\"] include_schema=true instead of a keyword query. Exact lookup ignores every other filter, so it also describes tools you cannot currently execute.",
@@ -600,7 +598,7 @@ function buildEnvContext(): string {
       : process.platform === "darwin"
         ? "iCloud Drive on macOS: ~/Library/Mobile Documents/com~apple~CloudDocs"
         : "",
-    `File-tool path resolution: absolute paths and \`~/...\` are honored verbatim; BARE RELATIVE paths (e.g. \`notes.txt\`) resolve against HOME, not cwd. cwd is the ${APP_NAME} install directory and should never be used as a default location for user files.`,
+    `File-tool path resolution: absolute paths and \`~/...\` are honored verbatim; BARE RELATIVE paths (e.g. \`notes.txt\`) resolve against HOME, not cwd. cwd is the ${getAppName()} install directory and should never be used as a default location for user files.`,
     "Verify file paths with file_stat or file_list before assuming they exist. Always echo the resolved absolute path back to the user when you create/move/delete a file so they know where it landed.",
   ].filter(Boolean).join("\n");
 }
@@ -676,7 +674,7 @@ function buildMemoryContext(budget: ContextBudget): string {
       : "Store explicit preferences, verified facts, durable decisions, constraints, and project context. Store task details only when they will matter across sessions.";
   return [
     "--- Memory & recall ---",
-    "You have long-term memory across sessions, shared with every other Jarela agent. A record you save is available to other agents immediately. Background compaction also extracts facts later, but it runs late and can miss details, so it is a backstop, not your save step.",
+    `You have long-term memory across sessions, shared with every other ${getAppSystemName()} agent. A record you save is available to other agents immediately. Background compaction also extracts facts later, but it runs late and can miss details, so it is a backstop, not your save step.`,
     `- Hot conversation history is budgeted by model context size: ${formatContextBudgetSummary(budget)}.`,
     `- Active memory policy: ${policy}. ${writeGuidance}`,
     "- Use memory_search proactively when relevant saved facts or prior conversations could help. Use memory_read / memory_list to inspect known entries.",

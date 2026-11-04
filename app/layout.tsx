@@ -13,31 +13,14 @@ export const metadata: Metadata = {
   description: getAppDescription(),
   manifest: "/manifest.webmanifest",
   icons: {
-    // SVG favicon is theme-aware (prefers-color-scheme inside the SVG),
-    // so it flips between navy J (light UI) and sky J (dark UI) without
-    // shipping two payloads. PNG/ICO fall through for older browsers.
-    // Paths come from the brand config so a rebranded overlay can point
-    // them at its own asset set (see docs/EXTENDING.md → Branding).
     icon: [
       { url: brandIcons.faviconSvg, type: "image/svg+xml" },
       { url: brandIcons.faviconIco, sizes: "any" },
       { url: brandIcons.icon192, type: "image/png", sizes: "192x192" },
       { url: brandIcons.icon512, type: "image/png", sizes: "512x512" },
     ],
-    // iOS reads ONE apple-touch-icon and ignores prefers-color-scheme,
-    // so we hand it the dark navy variant (reads on any wallpaper). The
-    // light-bg companion is shipped at /apple-touch-icon-light.png for
-    // anyone who wants to opt in via a custom <link> tag.
     apple: [{ url: brandIcons.appleTouchIcon, sizes: "180x180" }],
   },
-  // iOS standalone-mode PWA chrome. Safari ignores the manifest's
-  // `theme_color` once the app is installed to the home screen and only
-  // honors these Apple-specific tags. `black-translucent` is the only
-  // value that produces an arbitrary status-bar color: the bar overlays
-  // the page and whatever paints under it (the AppShell top bar, which
-  // already pads itself with env(safe-area-inset-top) via --app-safe-top)
-  // becomes the visible status-bar background. So the top bar's surface
-  // color follows the active light/dark theme automatically.
   appleWebApp: {
     capable: true,
     title: getAppName(),
@@ -225,11 +208,6 @@ const iosViewportBootstrap = `(() => {
 })();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Brand accent override. Emitted as a plain <style> after globals.css so
-  // it wins over the @theme defaults for every `bg-accent` / `text-accent`
-  // utility at once. Values are hex-validated in app-config, so nothing
-  // user-supplied reaches the stylesheet unescaped. Nothing is emitted
-  // unless the overlay actually set an accent.
   const accent = getAppAccentColor();
   const accentHover = getAppAccentHoverColor();
   const accentCss = accent

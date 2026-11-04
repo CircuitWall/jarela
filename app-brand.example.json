@@ -1,0 +1,14 @@
+{
+  "name": "Acme Assistant",
+  "shortName": "Acme",
+  "description": "A local-first assistant workspace for Acme.",
+  "issueUrl": "https://example.com/support",
+  "systemName": "Acme",
+  "assistantName": "Acme Assistant",
+  "assistantIdentity": "You are {{assistantName}}, a helpful assistant running in {{systemName}}.",
+  "accentColor": "#3b82f6",
+  "assets": {
+    "logoLight": "./brand-assets/logo-mark-transparent.png",
+    "logoDark": "./brand-assets/logo-mark-transparent-dark.png"
+  }
+}

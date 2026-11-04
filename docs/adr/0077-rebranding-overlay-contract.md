@@ -82,15 +82,14 @@ Two consequences follow from Next's build-time inlining:
    `lib/env/app-manifest.ts` so it's unit-testable), served at
    `/manifest.webmanifest`.
 
-**This means overlays must run their own build.** The published npm package
-ships a prebuilt `.next/standalone` with the upstream name already inlined, and
-`jarela-bin.mjs` refuses to rebuild from inside `node_modules`. So installing
+**Original package limitation (superseded by the unreleased amendment below).**
+The published npm package ships a prebuilt `.next/standalone` with the
+upstream name already inlined, and `jarela-bin.mjs` refuses to rebuild from
+inside `node_modules`. At the time of this decision, installing
 `@circuitwall/jarela` as a plain dependency and setting `NEXT_PUBLIC_APP_*`
-does *not* rebrand it. Overlays either fork and rebase (config + assets only,
-no rename diff) or keep a wrapper repo whose CI builds a pinned upstream tag.
-The value delivered here is the absence of a rename diff, not the absence of a
-build. The browser extension is exempt — its build is a packaging step over
-static files.
+did *not* rebrand it. The original options were a fork/rebase or a wrapper
+repo whose CI built a pinned upstream tag. The browser extension is exempt —
+its build is a packaging step over static files.
 
 The accent color is injected as a `<style>` block overriding
 `--color-accent` / `--color-accent-hover`, which every `bg-accent` utility
@@ -153,10 +152,26 @@ applied to DB tables.
 * Good, because attribution survives rebranding by construction rather than by
   license text alone.
 * Bad, because `NEXT_PUBLIC_*` is build-time: changing the brand means a
-  rebuild, not a restart — and overlays must own a build pipeline rather than
-  consuming the prebuilt npm artifact as-is.
+  rebuild, not a restart.
 * Bad, because the extension now has a build step where it previously had
   none. Loading `browser-extension/` unpacked still works unchanged for
   upstream development.
 * Bad, because deep visual rebranding beyond the accent color still requires
   the overlay to post-process the standalone build.
+
+## Unreleased amendment: build from the installed dependency
+
+The app's build-time brand surface remains option A; the package now supplies
+the missing build path for consumers. Run
+`jarela build-branded --brand ./brand.json` from an overlay project, then
+`jarela start`. The command stages source shipped in the installed npm package
+outside `node_modules`, applies the validated config and local assets, runs a
+Next.js production build, and replaces that installation's standalone bundle.
+No Jarela source checkout or source edits are required.
+
+Brand changes still require rebuilding and restarting. The builder validates
+config fields, placeholders, local asset containment, file types and sizes
+before compiling. The upstream name, logo credit, and version attribution are
+not configurable; the existing "Powered by Jarela" credit remains on
+rebranded builds. The package's build-time dependencies are production
+dependencies so a plain npm installation can perform this build.

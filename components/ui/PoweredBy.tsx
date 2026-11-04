@@ -11,7 +11,7 @@
 // This is distinct from `getAppIssueUrl()`, which IS overridable and points
 // at the *fork's* bug tracker.
 
-import { UPSTREAM_NAME, UPSTREAM_URL, getAppName } from "@/lib/env/app-config";
+import { getAppName, UPSTREAM_NAME, UPSTREAM_URL } from "@/lib/env/app-config";
 
 export function PoweredBy({ className = "" }: { className?: string }) {
   // Upstream builds already say "Jarela" everywhere; a "Powered by Jarela"

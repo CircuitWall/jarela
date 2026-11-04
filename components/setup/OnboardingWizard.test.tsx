@@ -15,6 +15,8 @@ const apiMocks = vi.hoisted(() => ({
   persistKickoff: vi.fn(),
   dispatch: vi.fn(),
   routerPush: vi.fn(),
+  brandAssistantName: "",
+  brandAssistantIdentity: "A friendly, adaptable personal assistant.",
 }));
 
 vi.mock("@/api/client", () => ({
@@ -32,7 +34,11 @@ vi.mock("@/contexts/AppContext", () => ({
   persistFirstRunChatKickoff: apiMocks.persistKickoff,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: apiMocks.routerPush }) }));
-vi.mock("@/lib/env/app-config", () => ({ getAppName: () => "Jarela" }));
+vi.mock("@/lib/env/app-config", () => ({
+  getAppName: () => "Jarela",
+  getAppAssistantName: () => apiMocks.brandAssistantName,
+  getAppAssistantIdentity: () => apiMocks.brandAssistantIdentity,
+}));
 vi.mock("@/components/ui/Logo", () => ({ Logo: () => null }));
 vi.mock("./wizard/StepProfile", () => ({
   StepProfile: ({ name, onNameChange }: { name: string; onNameChange: (value: string) => void }) => (
@@ -58,6 +64,8 @@ vi.mock("./wizard/WizardStepper", () => ({ WizardStepper: () => null }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  apiMocks.brandAssistantName = "";
+  apiMocks.brandAssistantIdentity = "A friendly, adaptable personal assistant.";
   apiMocks.profileGet.mockResolvedValue({ name: "", about: "" });
   apiMocks.profileUpdate.mockResolvedValue({});
   apiMocks.modelsList.mockResolvedValue([]);
@@ -81,6 +89,8 @@ it("explains setup-data failures and retries loading", async () => {
 });
 
 it("creates the minimal starter agent and starts a personalized first chat on finish", async () => {
+  apiMocks.brandAssistantName = "Robin's assistant";
+  apiMocks.brandAssistantIdentity = "You are Robin's helpful Acme assistant.";
   apiMocks.profileGet.mockResolvedValue({ name: "Robin", about: "I manage a small project team." });
   apiMocks.modelsList.mockResolvedValue([{
     name: "default-model",
@@ -101,9 +111,7 @@ it("creates the minimal starter agent and starts a personalized first chat on fi
   for (let index = 0; index < 3; index++) {
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   }
-  fireEvent.change(screen.getByRole("textbox", { name: "Assistant name" }), {
-    target: { value: "Robin's assistant" },
-  });
+  expect(screen.getByRole("textbox", { name: "Assistant name" })).toHaveProperty("value", "Robin's assistant");
   fireEvent.change(screen.getByRole("textbox", { name: "Starter goal" }), {
     target: { value: "Help me plan weekly team check-ins." },
   });
@@ -113,6 +121,7 @@ it("creates the minimal starter agent and starts a personalized first chat on fi
   await waitFor(() => expect(apiMocks.agentsCreate).toHaveBeenCalledOnce());
   expect(apiMocks.agentsCreate).toHaveBeenCalledWith(expect.objectContaining({
     name: "Robin's assistant",
+    identity: "You are Robin's helpful Acme assistant.",
     is_default: true,
     model_config_name: "default-model",
     tools: ["update_agent_instruction"],

@@ -14,7 +14,8 @@ export function AppearancePanel() {
   const { state, dispatch } = useAppContext();
   const { theme, setTheme, accentColor, setAccentColor, surfaceStyle, setSurfaceStyle } = useTheme();
   const isFullMode = state.experienceMode === "full";
-  const defaultAccent = getAppAccentColor() ?? "#2563eb";
+  const brandAccentColor = getAppAccentColor();
+  const defaultAccent = brandAccentColor ?? "#2563eb";
 
   const themeOptions: { value: Theme; label: string; icon: React.ReactNode; description: string }[] = [
     { value: "light",  label: "Light",  icon: <Sun size={14} />,     description: "Bright UI; ignores system preference." },
@@ -27,7 +28,7 @@ export function AppearancePanel() {
     { value: "full",      label: "Full",      description: "Everything visible: engine-room tabs, power-user settings, all advanced sub-tabs." },
   ];
 
-  const hasBrandAccent = getAppAccentColor() !== null;
+  const hasBrandAccent = brandAccentColor !== null;
   const accentOptions: { value: AccentColor; label: string; swatch: string }[] = [
     { value: "default", label: hasBrandAccent ? "Brand" : "Blue", swatch: defaultAccent },
     ...(hasBrandAccent ? [{ value: "blue" as const, label: "Blue", swatch: "#2563eb" }] : []),

@@ -4,6 +4,7 @@
 // Subcommands:
 //   jarela [start]         — build if needed, then run server (default)
 //   jarela update          — upgrade to the latest published version
+//   jarela build-branded   — build the installed package with a brand overlay
 //   jarela backup [dir]    — snapshot the data dir (no key material)
 //   jarela install-service — register OS-native autostart (per-user, no admin)
 //   jarela uninstall-service
@@ -30,6 +31,7 @@ function printHelp() {
 
 Usage:
   jarela [start]              start the server in the foreground (default)
+  jarela build-branded        build the installed package with brand.json
   jarela update               upgrade Jarela to the latest published version
   jarela backup [folder]      write a consistent snapshot of your data
                               (databases, attachments, provider config) to a
@@ -79,6 +81,21 @@ if (cmd === "update") {
   const { runUpdate } = await import("./update.mjs");
   try { const code = await runUpdate({ root }); process.exit(code); }
   catch (e) { console.error(`[jarela] update failed: ${e?.message ?? e}`); process.exit(1); }
+}
+
+if (cmd === "build-branded") {
+  const result = spawnSync(process.execPath, [
+    join(here, "build-branded-app.mjs"),
+    ...process.argv.slice(3),
+  ], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+  });
+  if (result.error) {
+    console.error(`[jarela] branded build failed: ${result.error.message}`);
+    process.exit(1);
+  }
+  process.exit(result.status ?? 1);
 }
 
 if (cmd === "backup") {

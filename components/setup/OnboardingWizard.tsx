@@ -12,7 +12,7 @@ import type {
   UserProfile,
 } from "@/api/types";
 import { persistFirstRunChatKickoff, useAppContext } from "@/contexts/AppContext";
-import { getAppName } from "@/lib/env/app-config";
+import { getAppAssistantIdentity, getAppAssistantName, getAppName } from "@/lib/env/app-config";
 import { isBasicToolCategory } from "@/lib/tools/runtime/categories";
 import { PROVIDER_TO_INTEGRATION } from "@/lib/providers/provider-integration-map";
 import { buildFirstRunAgentInstructions, buildFirstRunKickoff } from "@/lib/agents/first-run-onboarding";
@@ -151,7 +151,7 @@ function useWizardController({ context, onReady }: Props) {
   const data = useWizardData();
   const { loading, name, about, preset, models, agents, setAgents, integrations } = data;
   const [step, setStep] = useState(0);
-  const [assistantName, setAssistantName] = useState("");
+  const [assistantName, setAssistantName] = useState(getAppAssistantName());
   const [assistantIcon, setAssistantIcon] = useState<string | null>(null);
   const [starterGoal, setStarterGoal] = useState("");
   const [createdAgent, setCreatedAgent] = useState<AgentConfig | null>(null);
@@ -189,7 +189,7 @@ function useWizardController({ context, onReady }: Props) {
           const created = await api.agents.create({
             name: assistantName.trim(),
             icon: assistantIcon,
-            identity: "A friendly, adaptable personal assistant.",
+            identity: getAppAssistantIdentity(),
             instructions: buildFirstRunAgentInstructions(starterGoal.trim()),
             tools: availableTools
               .filter((tool) => tool.status !== "disabled" && tool.status !== "unavailable" && isBasicToolCategory(tool.category))

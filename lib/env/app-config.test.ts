@@ -4,6 +4,8 @@ import {
   UPSTREAM_URL,
   getAppAccentColor,
   getAppAccentHoverColor,
+  getAppAssistantIdentity,
+  getAppAssistantName,
   getAppDescription,
   getAppIcons,
   getAppIssueUrl,
@@ -11,6 +13,7 @@ import {
   getAppLogoLight,
   getAppName,
   getAppShortName,
+  getAppSystemName,
 } from "./app-config";
 
 vi.mock("@serwist/next", () => ({
@@ -21,6 +24,9 @@ const KEYS = [
   "NEXT_PUBLIC_APP_NAME",
   "NEXT_PUBLIC_APP_SHORT_NAME",
   "NEXT_PUBLIC_APP_DESCRIPTION",
+  "NEXT_PUBLIC_SYSTEM_NAME",
+  "NEXT_PUBLIC_APP_ASSISTANT_NAME",
+  "NEXT_PUBLIC_APP_ASSISTANT_IDENTITY",
   "NEXT_PUBLIC_APP_ISSUE_URL",
   "NEXT_PUBLIC_APP_LOGO_LIGHT",
   "NEXT_PUBLIC_APP_LOGO_DARK",
@@ -113,6 +119,24 @@ describe("app-config", () => {
       expect(getAppDescription()).toBe(
         "Jarela — local chat interface for LangGraph agents",
       );
+    });
+  });
+
+  describe("system and starter assistant branding", () => {
+    it("defaults the system name to the app name and keeps starter branding opt-in", () => {
+      expect(getAppSystemName()).toBe("Jarela");
+      expect(getAppAssistantName()).toBe("");
+      expect(getAppAssistantIdentity()).toBe("A friendly, adaptable personal assistant.");
+    });
+
+    it("uses configured system, starter assistant name, and identity", () => {
+      process.env.NEXT_PUBLIC_APP_NAME = "Synthetic Workspace";
+      process.env.NEXT_PUBLIC_SYSTEM_NAME = "Synthetic System";
+      process.env.NEXT_PUBLIC_APP_ASSISTANT_NAME = "Nova";
+      process.env.NEXT_PUBLIC_APP_ASSISTANT_IDENTITY = "You are Nova, a helpful assistant.";
+      expect(getAppSystemName()).toBe("Synthetic System");
+      expect(getAppAssistantName()).toBe("Nova");
+      expect(getAppAssistantIdentity()).toBe("You are Nova, a helpful assistant.");
     });
   });
 
