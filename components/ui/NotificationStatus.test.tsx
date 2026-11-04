@@ -10,7 +10,6 @@ class DeniedNotification {
 
 describe("NotificationStatus", () => {
   beforeEach(() => {
-    localStorage.removeItem("jarela:notif-banner-dismissed");
     vi.stubGlobal("Notification", DeniedNotification);
   });
 
@@ -19,7 +18,7 @@ describe("NotificationStatus", () => {
     vi.unstubAllGlobals();
   });
 
-  it("still enables notifications and sends the confirmation before hiding the banner", async () => {
+  it("enables notifications from the existing navigation-style control", async () => {
     const confirmation = vi.fn();
     const requestPermission = vi.fn().mockResolvedValue("granted");
     class AvailableNotification {
@@ -30,26 +29,27 @@ describe("NotificationStatus", () => {
       }
     }
     vi.stubGlobal("Notification", AvailableNotification);
-    render(<NotificationStatus />);
-    fireEvent.click(await screen.findByRole("button", { name: "Enable" }));
+    const { container } = render(<NotificationStatus />);
+    const enableButton = await screen.findByRole("button", { name: /Enable system alerts/ });
+    expect(enableButton.className).toContain("control-tap");
+    expect(enableButton.className).not.toContain("fixed");
+    expect(enableButton.className).not.toContain("absolute");
+    fireEvent.click(enableButton);
     await waitFor(() => expect(requestPermission).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(confirmation).toHaveBeenCalledWith(
       expect.stringContaining("notifications enabled"),
       expect.objectContaining({ tag: "jarela-enable" }),
     ));
-    expect(screen.queryByRole("button", { name: "Enable" })).toBeNull();
-    expect(screen.queryByText("test sent")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Enable system alerts/ })).toBeNull();
+    expect(container.innerHTML).toBe("");
   });
 
-  it("renders a theme-safe denied state with an accessible dismiss action", async () => {
+  it("explains how to re-enable notifications when browser permission is denied", async () => {
     render(<NotificationStatus />);
 
-    const copy = await screen.findByText(/System notifications are blocked/);
-    const banner = copy.closest(".rounded-lg");
-    expect(banner?.className).toContain("bg-rose-500/10");
-    expect(screen.getByRole("button", { name: "Dismiss notification prompt" })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss notification prompt" }));
-    expect(screen.queryByText(/System notifications are blocked/)).toBeNull();
+    await screen.findByText(/System alerts are blocked/);
+    expect(await screen.findByText(/browser site settings/)).toBeTruthy();
+    expect(screen.getByRole("status").className).toContain("control-tap");
+    expect(screen.queryByRole("button", { name: /Enable system alerts/ })).toBeNull();
   });
 });
