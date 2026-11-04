@@ -98,7 +98,7 @@ function RuntimeStatusNotice({ activeRuns, diagnostics, streamResponsive }: {
 
   return (
     <div className="fixed bottom-3 right-3 z-[90] pointer-events-none">
-      <div role="status" aria-live="polite" className="pointer-events-auto flex max-w-sm items-center gap-2 rounded-lg border border-border bg-surface/95 px-3 py-2 text-xs text-fg shadow-lg backdrop-blur">
+      <div role="status" aria-live="polite" className="pointer-events-none flex max-w-sm items-center gap-2 rounded-lg border border-border bg-surface/95 px-3 py-2 text-xs text-fg shadow-lg backdrop-blur">
         {hasActiveRuns
           ? <Activity size={14} className="shrink-0 text-accent" />
           : detailsChecking
