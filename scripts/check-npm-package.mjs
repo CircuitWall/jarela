@@ -1,5 +1,6 @@
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { createServer } from "node:net";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,6 +25,61 @@ function run(command, args, options = {}) {
     );
   }
   return result.stdout;
+}
+
+async function verifyBrandedServer(standalone, expectedName, dataDirectory) {
+  const portServer = createServer();
+  await new Promise((resolveListen, rejectListen) => {
+    portServer.once("error", rejectListen);
+    portServer.listen(0, "127.0.0.1", resolveListen);
+  });
+  const { port } = portServer.address();
+  await new Promise((resolveClose, rejectClose) => {
+    portServer.close((error) => (error ? rejectClose(error) : resolveClose()));
+  });
+
+  const server = spawn(process.execPath, [join(standalone, "server.js")], {
+    cwd: standalone,
+    env: {
+      ...process.env,
+      HOSTNAME: "127.0.0.1",
+      JARELA_DB_DIR: dataDirectory,
+      NODE_ENV: "production",
+      PORT: String(port),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  server.stdout.setEncoding("utf8").on("data", (chunk) => { output += chunk; });
+  server.stderr.setEncoding("utf8").on("data", (chunk) => { output += chunk; });
+
+  try {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      if (server.exitCode !== null) {
+        throw new Error(`branded standalone server exited with ${server.exitCode}:\n${output}`);
+      }
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/`);
+        const html = await response.text();
+        if (response.ok) {
+          if (!html.includes(expectedName)) {
+            throw new Error(`branded home page does not contain "${expectedName}"`);
+          }
+          return;
+        }
+      } catch (error) {
+        if (error.message.includes("branded home page")) throw error;
+      }
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+    }
+    throw new Error(`branded standalone server did not become ready:\n${output}`);
+  } finally {
+    if (server.exitCode === null) {
+      server.kill();
+      await new Promise((resolveExit) => server.once("exit", resolveExit));
+    }
+  }
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -87,6 +143,7 @@ try {
     "package/.next/standalone/.next/server/app/manifest.webmanifest/route.js",
     "package/package.json",
     "package/scripts/jarela-bin.mjs",
+    "package/scripts/build-branded-app.mjs",
     "package/scripts/backup.mjs",
     "package/scripts/update.mjs",
     "package/scripts/service-install.mjs",
@@ -97,7 +154,6 @@ try {
     "package/lib/embeddings/local-model-assets.mjs",
     "package/lib/embeddings/fetch-with-retry.mjs",
     "package/lib/security/secret-patterns.mjs",
-    "package/scripts/release-docs.mjs",
     "package/scripts/run-workspace-script-if-present.mjs",
     "package/scripts/prune-npm-source-maps.mjs",
     "package/docs/adoption/changesets.json",
@@ -185,7 +241,34 @@ try {
   ].join("\n")], { cwd: consumerPackageRoot });
   run("npm", ["run", "build", "--silent"], { cwd: consumerPackageRoot });
 
-  console.log(`[npm-package] ok: ${filename} contains runnable standalone bundle`);
+  const brandAssetsDirectory = join(extractDir, "brand-assets");
+  mkdirSync(brandAssetsDirectory);
+  const logoContents = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r=".5"/></svg>';
+  writeFileSync(join(brandAssetsDirectory, "logo.svg"), logoContents);
+  const brandConfigPath = join(extractDir, "brand.json");
+  writeFileSync(brandConfigPath, JSON.stringify({
+    name: "Jarela Package Branding Test",
+    systemName: "Package Brand System",
+    assets: { logoLight: "brand-assets/logo.svg" },
+  }));
+  run("node", [
+    "scripts/jarela-bin.mjs",
+    "build-branded",
+    "--brand",
+    brandConfigPath,
+  ], { cwd: consumerPackageRoot });
+
+  const brandedStandalone = join(consumerPackageRoot, ".next", "standalone");
+  if (readFileSync(join(brandedStandalone, "public", "branding", "logoLight.svg"), "utf8") !== logoContents) {
+    throw new Error("branded build did not copy the configured logo into the standalone bundle");
+  }
+  await verifyBrandedServer(
+    brandedStandalone,
+    "Jarela Package Branding Test",
+    join(extractDir, "runtime-data"),
+  );
+
+  console.log(`[npm-package] ok: ${filename} contains a runnable branded standalone bundle`);
 } finally {
   writeFileSync(rootPkgPath, originalRootPkg);
   if (filename) rmSync(filename, { force: true });

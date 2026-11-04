@@ -20,6 +20,7 @@ const { listStaticPrompts, promptsAffectedBy, SYSTEM_PROMPT_SOURCE_PREFIXES } = 
 const { getAllToolCatalogAsync, applyAgentPermissionsToCatalog } = await import("@/lib/tools");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import { getUsageStrategyProfile } from "./usage-strategy";
+import { getAppSystemName } from "@/lib/env/app-config";
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* held open */ }
@@ -173,8 +174,8 @@ describe("runtime ownership", () => {
   it("explains host ownership and restart approval in every shared prefix", () => {
     for (const variant of variants) {
       const sharedPrefix = variant.prompt.split(CACHE_SHARED_SPLIT_SENTINEL)[0];
-      expect(sharedPrefix, variant.id).toContain("running inside the current Jarela server process");
-      expect(sharedPrefix, variant.id).toContain("source repository or separate test instance");
+      expect(sharedPrefix, variant.id).toContain(`running inside the current ${getAppSystemName()} server process`);
+      expect(sharedPrefix, variant.id).toContain(`source repository or separate test instance from the live ${getAppSystemName()} instance`);
       expect(sharedPrefix, variant.id).toContain("interrupts your own turn and other active runs");
       expect(sharedPrefix, variant.id).toContain("unless the user explicitly approves that interruption");
       expect(sharedPrefix, variant.id).toContain("requiresRestart=true indicates a pending change, not restart approval");
@@ -501,7 +502,7 @@ describe("assembled agent system prompt", () => {
       expect(sharedBlock, `${id}: SOP must be cacheable across agents`).toContain("--- Tool usage SOP ---");
       // Per-turn state in the shared block would break the cross-agent cache.
       expect(sharedBlock, `${id}: shared block leaked per-turn state`).not.toContain("--- Enabled tools ---");
-      expect(sharedBlock, `${id}: shared block leaked the agent identity`).not.toContain("You are Jarela");
+      expect(sharedBlock, `${id}: shared block leaked the agent identity`).not.toContain(`You are ${getAppSystemName()}`);
     }
   });
 

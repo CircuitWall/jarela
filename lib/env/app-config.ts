@@ -54,6 +54,24 @@ export function getAppName(): string {
   return pick(process.env.NEXT_PUBLIC_APP_NAME, DEFAULT_APP_NAME);
 }
 
+/** @public */
+export function getAppSystemName(): string {
+  return pick(process.env.NEXT_PUBLIC_SYSTEM_NAME, getAppName());
+}
+
+/** @public */
+export function getAppAssistantName(): string {
+  return pick(process.env.NEXT_PUBLIC_APP_ASSISTANT_NAME, "");
+}
+
+/** @public */
+export function getAppAssistantIdentity(): string {
+  return pick(
+    process.env.NEXT_PUBLIC_APP_ASSISTANT_IDENTITY,
+    "A friendly, adaptable personal assistant.",
+  );
+}
+
 /**
  * PWA `short_name`. Falls back to the full app name, so an overlay only has
  * to set `NEXT_PUBLIC_APP_SHORT_NAME` when its name is too long for a

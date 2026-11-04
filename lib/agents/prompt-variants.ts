@@ -10,6 +10,7 @@ import { getAllToolCatalogAsync, applyAgentPermissionsToCatalog, markProxyOnlyTo
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ContextBudget } from "@/lib/agents/context-budget";
 import { DEFAULT_PERSONA_STYLE, USAGE_PROFILES, USAGE_PROFILE_VALUES } from "./usage-profile";
+import { getAppSystemName } from "@/lib/env/app-config";
 export const budget: ContextBudget = {
   contextWindowTokens: 200000,
   outputReserveTokens: 8000,
@@ -24,7 +25,7 @@ export function agentCfg(overrides: Partial<AgentConfigRow> = {}): AgentConfigRo
     id: "verify-agent",
     name: "Verify",
     icon: null,
-    identity: "You are Jarela, a local assistant.",
+    identity: `You are ${getAppSystemName()}, a local assistant.`,
     instructions: "Be terse.",
     tools: "[]",
     model_config_name: null,

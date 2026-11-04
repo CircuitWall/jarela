@@ -7,9 +7,9 @@ import {
 } from "./app-config";
 
 // PWA manifest content, derived from the brand config rather than a static
-// public/manifest.json, so a rebranded overlay gets its own name /
-// short_name / description / icons from the NEXT_PUBLIC_APP_* knobs without
-// editing JSON inside the package.
+// public/manifest.json, so a rebranded overlay gets its own name / short_name /
+// description / icons from the NEXT_PUBLIC_APP_* knobs without editing JSON
+// inside the package.
 //
 // Lives in lib/ (not app/) so it's unit-testable — app/manifest.ts is a thin
 // route wrapper that Next serves at /manifest.webmanifest.

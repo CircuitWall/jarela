@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { getUsageStrategyProfile } from "@/lib/agents/usage-strategy";
 import { USAGE_PROFILE_VALUES } from "@/lib/agents/usage-profile";
 import { USAGE_STRATEGIES } from "@/lib/agents/usage-strategy";
+import { getAppSystemName } from "@/lib/env/app-config";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-system-prompt-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -433,7 +434,7 @@ describe("buildToolPermissionContext", () => {
     }
     expect(ctx).toContain("never construct, guess, or edit one");
     expect(ctx).toContain("For substantial tasks with several dependent phases, likely cross-turn progress, or explicit verification, use workflow_progress");
-    expect(ctx).toContain("every built-in Jarela workflow and every workflow you create or follow");
+    expect(ctx).toContain(`every built-in ${getAppSystemName()} workflow and every workflow you create or follow`);
     expect(ctx).toContain("each step must state its input, expected output, and concrete validation criteria");
     expect(ctx).toContain("validate each output before passing it to a later step");
     expect(ctx).toContain("record observed validation_evidence before marking an item done");

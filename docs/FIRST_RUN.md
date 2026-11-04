@@ -34,6 +34,10 @@ Choose what to call your assistant. An icon and a starting goal are optional; yo
 
 ![Give your assistant an identity](assets/first-run-assistant.png)
 
+A rebranded installation may prefill the assistant name and starting identity. These
+are defaults for a new assistant only; they do not rename or rewrite existing
+agents.
+
 ### 5. Review and start chatting
 
 Review your profile, model, and assistant, then select **Start our first chat**. The assistant introduces what is ready and asks one question to learn more about your role or day-to-day. After you answer, it summarizes what it learned and offers a draft of its standing instructions for you to approve or revise. It only saves changes after you approve them, then suggests a few useful first tasks.

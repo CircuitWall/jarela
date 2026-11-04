@@ -1098,46 +1098,96 @@ Brand overlays (internal forks, white-label deployments) override identity
 through configuration and assets — **no source edits**, so there is no rename
 diff to rebase on every upstream release.
 
-### You need a build you control
+### Installed-package build (Unreleased)
 
-Read this before planning a rollout. The web app's brand values are
-`NEXT_PUBLIC_*` env vars, which Next **inlines textually during `next build`**.
-They are not read at runtime.
+The npm package includes a branded build command, so an overlay needs only
+the Jarela dependency, a config file, and local assets—not a Jarela source
+checkout or source edits:
 
-The npm package ships a *prebuilt* `.next/standalone`, already carrying the
-Jarela name. So `npm i @circuitwall/jarela && jarela start` **cannot** be
-rebranded by setting env vars — the strings are baked in, and `jarela-bin.mjs`
-deliberately refuses to rebuild from inside `node_modules` (webpack excludes
-that path). Rebranding the web app therefore means running the build yourself:
+For example:
 
-- **Fork and rebase.** Clone the repo, add `.env.production` with your
-  `NEXT_PUBLIC_APP_*` values, drop your assets into `public/`, run
-  `npm run build`. Your diff against upstream is config and assets only, so
-  tracking each release stays cheap. This is the common case.
-- **Wrapper repo.** Keep only `brand.json`, `.env.production`, and logos in
-  your repo; have CI check out Jarela at a pinned tag, apply your env, build,
-  and publish the artifact. Cleaner ownership boundary, same build step.
+```json
+{
+  "name": "Acme Assistant",
+  "systemName": "Acme",
+  "assistantName": "Acme Assistant",
+  "assistantIdentity": "You are {{assistantName}}, a helpful assistant for {{systemName}}.",
+  "assets": {
+    "logoLight": "./brand/logo-light.svg",
+    "logoDark": "./brand/logo-dark.svg",
+    "icon192": "./brand/icon-192.png",
+    "icon512": "./brand/icon-512.png"
+  }
+}
+```
 
-Runtime-switchable branding (no rebuild) is **not** supported — it would mean
-serving brand config from an API and fetching it on boot. See ADR-0077.
+Install the dependency in the overlay project, then build and start Jarela:
+
+```shell
+npm install @circuitwall/jarela
+npx jarela build-branded --brand ./brand.json
+npx jarela start
+```
+
+The command stages source shipped in the installed package outside
+`node_modules` (where Next.js/webpack excludes packages), applies the config
+and assets, builds a standalone app, and replaces that package installation's
+standalone bundle. Stop Jarela before building. The package installation must
+be writable; each installation can hold one brand. Editing the config/assets
+or updating Jarela requires rerunning the build and restarting the app. No
+brand file is read at runtime.
+
+Relative paths in `assets` resolve from `brand.json` and must resolve to
+regular local files within its directory. Absolute paths, URLs, and symlinks
+escaping that directory are rejected. Supported asset keys are
+`logoLight`, `logoDark`, `faviconSvg`, `faviconIco`, `icon192`, `icon512`,
+`icon192Maskable`, `icon512Maskable`, `icon192Light`, `icon512Light`,
+`icon192MaskableLight`, `icon512MaskableLight`, and `appleTouchIcon`. Each is
+optional; omitted assets use the upstream defaults. Supported file types are
+SVG, ICO, JPEG, PNG, and WebP, up to 10 MB per asset. The builder copies these
+assets into the branded static bundle.
+
+`name` is required. `systemName` defaults to `name`; `assistantName` defaults
+to `<systemName> Assistant`. `assistantIdentity` defaults to a friendly
+assistant identity for that system. Identity and description strings may use
+`{{appName}}`, `{{systemName}}`, and `{{assistantName}}`. The assistant name
+is a first-run default only: it does not rename existing agents or overwrite
+their saved identities. Other optional top-level keys are `shortName`,
+`description`, `issueUrl`, `accentColor`, and `accentHoverColor`. The two
+color fields accept 3- or 6-digit hex colors. Invalid JSON, unsupported
+fields, unsafe paths, and missing assets fail the build with an explicit
+error.
+
+`NEXT_PUBLIC_APP_*` environment variables remain supported for custom
+source builds. The branded command maps `brand.json` values to those same
+build-time settings. The upstream app continues to show no attribution under
+its own name; rebranded UI keeps the existing **"Powered by Jarela"** credit
+and version display. Apache-2.0 requires preservation of applicable notices but
+does not itself require that visible product credit. Jarela's name and logo
+are trademarks, governed separately from the software license.
 
 The browser extension is the exception: its build is a packaging step over
 static files, so it needs no Next build.
 
-Accordingly the two surfaces differ: the web app reads build-time env vars,
-while the browser extension takes a `brand.json` packaging step (its MV3
-manifest and icons are static files).
+The app and browser extension use separate brand configs: this `brand.json`
+is consumed by the app build, while the browser extension's `brand.json` is
+used when packaging its static MV3 manifest and icons.
 
 ### Web app: `NEXT_PUBLIC_APP_*`
 
-Everything lives in [`lib/env/app-config.ts`](../lib/env/app-config.ts),
-exported as the public subpath `@circuitwall/jarela/lib/env/app-config`.
+The build-time env vars below are the shared web-app branding contract. The
+client-safe getters live in
+[`lib/env/app-config.ts`](../lib/env/app-config.ts), exported as the public
+subpath `@circuitwall/jarela/lib/env/app-config`.
 
 | Env var                                    | Drives                                           |
 |--------------------------------------------|--------------------------------------------------|
 | `NEXT_PUBLIC_APP_NAME`                     | Page title, PWA `name`, notification titles       |
 | `NEXT_PUBLIC_APP_SHORT_NAME`               | PWA `short_name` (defaults to the app name)       |
 | `NEXT_PUBLIC_APP_DESCRIPTION`              | Meta description, PWA `description`               |
+| `NEXT_PUBLIC_SYSTEM_NAME`                  | System ownership wording in agent prompts (defaults to app name) |
+| `NEXT_PUBLIC_APP_ASSISTANT_NAME`           | Initial assistant name in first-run setup         |
+| `NEXT_PUBLIC_APP_ASSISTANT_IDENTITY`       | Initial assistant identity in first-run setup     |
 | `NEXT_PUBLIC_APP_ISSUE_URL`                | "Report a bug" link — **your** tracker            |
 | `NEXT_PUBLIC_APP_LOGO_LIGHT`               | In-app wordmark on light surfaces                 |
 | `NEXT_PUBLIC_APP_LOGO_DARK`                | Wordmark on dark surfaces (defaults to the light one) |
@@ -1149,20 +1199,23 @@ exported as the public subpath `@circuitwall/jarela/lib/env/app-config`.
 | `NEXT_PUBLIC_APP_ICON_192_LIGHT` / `_512_LIGHT` (+ `_MASKABLE_LIGHT`) | Light-background icon variants |
 | `NEXT_PUBLIC_APP_APPLE_TOUCH_ICON`         | iOS home-screen icon                              |
 
-The simplest icon/logo swap is to **drop replacement files into `public/`
-under the same names** — then you need none of the asset env vars. Set them
-only when your assets live on other paths or a CDN.
+For installed-package rebranding, use the `assets` object in `brand.json`;
+the branded command translates each asset to the matching env var and copies
+it into the generated static bundle.
 
-Two things to know:
+The rebranded UI keeps its upstream credit by design. Apache-2.0's
+copyright/license notices are separate from that product UI treatment.
+The software license does not grant permission to imply that a rebranded
+distribution is an official Jarela release.
 
-- These are inlined by Next at **build time**, so changing the brand means a
-  rebuild, not a restart.
+Build-time environment details:
+
+- These values are inlined by Next at **build time**. Rebuild the package to
+  apply a changed brand config.
 - The accent color must be a hex literal — 6-digit (`#7c3aed`) or 3-digit
   (`#7c3`). It is injected into a `<style>` block, so anything else is
   rejected and ignored.
 
-The data directory follows the brand too: `JARELA_DB_DIR=~/.foo` gets isolated
-state.
 
 ### Browser extension: `brand.json` + `npm run build:extension`
 
