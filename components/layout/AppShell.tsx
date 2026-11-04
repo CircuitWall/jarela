@@ -22,7 +22,6 @@ import { EnvVarsPanel } from "@/components/env/EnvVarsPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { UnifiedMemoryPanel } from "@/components/memory/UnifiedMemoryPanel";
 import { HeaderActivity } from "@/components/ui/HeaderActivity";
-import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { TopStatusBanners } from "@/components/ui/TopStatusBanners";
 import { Toaster } from "@/components/ui/Toaster";
 import { BootScreen } from "@/components/ui/BootScreen";
@@ -120,7 +119,6 @@ export function AppShell() {
       style={{ height: "var(--actual-vh, 100dvh)" }}
     >
       <SessionGates bootSeq={bootSeq} agents={agents} agentsLoaded={agentsLoaded} state={state} dispatch={dispatch} screenLocked={screenLocked} masterKeyLocked={masterKeyLocked} landOnAgentPicker={landOnAgentPicker} setScreenLocked={setScreenLocked} setMasterKeyLocked={setMasterKeyLocked} />
-<NotificationStatus />
       <Toaster />
       {/*
         Spacer reserving the slot the floating header visually occupies.

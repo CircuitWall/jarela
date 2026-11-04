@@ -3,6 +3,7 @@ import { BarChart3, Bot, Brain, Calendar, ChevronDown, Settings, User, Wrench, t
 import { useAppContext, type Tab } from "@/contexts/AppContext";
 import { useSettingsAttention } from "@/hooks/useSettingsAttention";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import type { AgentConfig } from "@/api/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -179,7 +180,10 @@ export function MenuPanel({ activeTab, open = true, onClose, onSetTab, activeAge
         </section>
         <section aria-labelledby="menu-preferences" className="border-t border-border/60 pt-3">
           <h2 id="menu-preferences" className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-fg-faint">Preferences</h2>
-          <div className="space-y-1">{PREFERENCES.map(renderItem)}</div>
+          <div className="space-y-1">
+            {PREFERENCES.map(renderItem)}
+            <NotificationStatus />
+          </div>
         </section>
         {isFullMode && (
           <details open={ADVANCED.some((item) => item.tab === activeTab)} className="group border-t border-border/60 pt-2">

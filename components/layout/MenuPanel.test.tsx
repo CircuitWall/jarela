@@ -104,6 +104,22 @@ describe("MenuPanel", () => {
     expect(summary.querySelector('a[href^="javascript:"]')).toBeNull();
   });
 
+  it("places the browser notification permission action in the existing Preferences menu", () => {
+    class AvailableNotification {
+      static permission: NotificationPermission = "default";
+      static requestPermission = vi.fn();
+    }
+    vi.stubGlobal("Notification", AvailableNotification);
+
+    render(<MenuPanel activeTab="chat" onSetTab={vi.fn()} onClose={vi.fn()} />);
+
+    const preferences = screen.getByRole("region", { name: "Preferences" });
+    const enableButton = within(preferences).getByRole("button", { name: /Enable system alerts/ });
+    expect(enableButton.className).toContain("control-tap");
+    expect(enableButton.className).not.toContain("fixed");
+    expect(enableButton.className).not.toContain("absolute");
+  });
+
   it("handles missing, loading, and failed agent data without presenting stale details", () => {
     const { rerender } = render(<MenuPanel activeTab="chat" onSetTab={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByText("Select an agent to see its details.")).toBeTruthy();
