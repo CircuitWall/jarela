@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { scaffoldExtension, prepareContributionBundle } from "./authoring";
-import { SECRET_PATTERNS } from "../../scripts/lib/secret-patterns.mjs";
+import { SECRET_PATTERNS } from "../security/secret-patterns.mjs";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });

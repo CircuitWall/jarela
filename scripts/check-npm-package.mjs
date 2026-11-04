@@ -96,6 +96,7 @@ try {
     "package/scripts/prepare-local-embedding-model.mjs",
     "package/lib/embeddings/local-model-assets.mjs",
     "package/lib/embeddings/fetch-with-retry.mjs",
+    "package/lib/security/secret-patterns.mjs",
     "package/scripts/run-workspace-script-if-present.mjs",
     "package/scripts/prune-npm-source-maps.mjs",
     // The extension rebranding step (ADR-0077) is only reachable by an

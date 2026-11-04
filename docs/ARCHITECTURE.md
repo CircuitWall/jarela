@@ -207,7 +207,7 @@ tool scaffolds and exact-diff local contribution review bundles. Discovery and
 repository/test/rights claims remain caller-supplied; output revisions bind the
 selected content and scope, never authorization. Built-in procedures require
 independent evidence and separate execution/install/commit/push/PR gates.
-The shared secret-marker list under `scripts/lib/secret-patterns.mjs` supports
+The shared secret-marker list under `lib/security/secret-patterns.mjs` supports
 both the commit scanner and unsuppressible bundle checks; neither proves privacy.
 
 ```mermaid

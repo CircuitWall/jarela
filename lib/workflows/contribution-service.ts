@@ -24,7 +24,7 @@ import { isScreenLocked } from "@/lib/security/screen-lock";
 import { resolveSafetyMode } from "@/lib/tools/security/safety";
 import { portableSkillPath, readSkillFileBytes } from "@/lib/skills/bundle-files";
 import { listSkillRepos } from "@/lib/stores/skill-repos";
-import { SECRET_PATTERNS } from "../../scripts/lib/secret-patterns.mjs";
+import { SECRET_PATTERNS } from "../security/secret-patterns.mjs";
 import { ContributionBundleInput, prepareContributionBundle } from "./authoring";
 
 const execFileAsync = promisify(execFile);

@@ -7,7 +7,7 @@ import { getAllToolCatalogAsync, authorizedAgentToolNames, type ToolCatalogEntry
 import { getModelConfig, getModelParams, isModelConfigEnabled } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
-import { SECRET_PATTERNS } from "../../scripts/lib/secret-patterns.mjs";
+import { SECRET_PATTERNS } from "../security/secret-patterns.mjs";
 import {
   ADVERTISEMENT_CONTRACT_VERSION, AdvertisementSchema, AdvertisementPolicySchema,
   type Advertisement, type AdvertisementPolicy, type AdvertisementState,

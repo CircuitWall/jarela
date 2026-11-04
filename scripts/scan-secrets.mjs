@@ -19,7 +19,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { SECRET_PATTERNS } from "./lib/secret-patterns.mjs";
+import { SECRET_PATTERNS } from "../lib/security/secret-patterns.mjs";
 
 const SKIP_DIRS = new Set([
   ".git", "node_modules", ".next", "dist", "build", "out", "coverage",
