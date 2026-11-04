@@ -5,6 +5,7 @@
 // blocking outage overlay.
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Activity, AlertTriangle, CheckCircle2, CloudOff, LoaderCircle } from "lucide-react";
 import { runtimeConfig } from "@/api/runtime-config";
 import { fetchHealthDetails, SERVER_ACTIVITY_EVENT, SERVER_ACTIVITY_UPDATE_EVENT } from "@/api/health";
@@ -97,17 +98,15 @@ function RuntimeStatusNotice({ activeRuns, diagnostics, streamResponsive }: {
         : "Jarela is responding; runtime details could not be checked.";
 
   return (
-    <div className="fixed bottom-3 right-3 z-[90] pointer-events-none">
-      <div role="status" aria-live="polite" className="pointer-events-none flex max-w-sm items-center gap-2 rounded-lg border border-border bg-surface/95 px-3 py-2 text-xs text-fg shadow-lg backdrop-blur">
-        {hasActiveRuns
-          ? <Activity size={14} className="shrink-0 text-accent" />
-          : detailsChecking
-            ? <LoaderCircle size={14} className="shrink-0 animate-spin text-accent" />
-            : detailsUnavailable
-              ? <AlertTriangle size={14} className="shrink-0 text-amber-500" />
-              : <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />}
-        <span>{message}</span>
-      </div>
+    <div role="status" aria-live="polite" className="pointer-events-none flex items-center gap-2 rounded-lg border border-border bg-surface/95 px-3 py-2 text-xs text-fg shadow-sm backdrop-blur">
+      {hasActiveRuns
+        ? <Activity size={14} className="shrink-0 text-accent" />
+        : detailsChecking
+          ? <LoaderCircle size={14} className="shrink-0 animate-spin text-accent" />
+          : detailsUnavailable
+            ? <AlertTriangle size={14} className="shrink-0 text-amber-500" />
+            : <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />}
+      <span>{message}</span>
     </div>
   );
 }
@@ -244,7 +243,11 @@ export function ServerStatus() {
   }, []);
 
   const hasActiveRuns = (activeRuns ?? 0) > 0;
-  if (down && !streamResponsive) return <ServerUnavailable activeRuns={activeRuns} />;
+  if (down && !streamResponsive) {
+    return typeof document === "undefined"
+      ? null
+      : createPortal(<ServerUnavailable activeRuns={activeRuns} />, document.body);
+  }
   if (!hasActiveRuns && !showDiagnostics && !streamResponsive) return null;
   return <RuntimeStatusNotice activeRuns={activeRuns} diagnostics={diagnostics} streamResponsive={streamResponsive} />;
 }

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- ui: Read active agent run updates from the shared app event stream.
+- ui: Show live agent run status in the shared top-banner stack.
 
 ### Changed
 
