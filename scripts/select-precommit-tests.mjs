@@ -1,19 +1,16 @@
 #!/usr/bin/env node
-// Decides which unit tests the pre-commit hook runs for the staged change.
+// Selects staged unit tests and direct sibling unit tests for pre-commit.
 //
 // Input (stdin): `git diff --cached --name-status -z` output.
 // Output (stdout): NUL-separated tokens. The first is the mode:
-//   "none"    – nothing test-relevant staged (docs only)
-//   "related" – remaining tokens are files for `vitest related`
-//   "full"    – run the whole suite
-// CI runs the full suite. Local commits never escalate automatically;
-// shared setup, configuration, and deleted modules require CI coverage.
+//   "none" – no directly associated unit tests are available
+//   "unit" – remaining tokens are unit-test files to run directly
+// CI handles transitive coverage, shared setup/configuration, and the full suite.
 import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const CODE_EXTENSIONS = /\.(?:[cm]?[jt]sx?)$/i;
 const TEST_FILE = /\.test\.[cm]?[jt]sx?$/i;
-const TEST_EXTENSIONS = [".test.ts", ".test.tsx", ".test.mjs"];
+const TEST_EXTENSIONS = [".test.ts", ".test.tsx", ".test.js", ".test.jsx", ".test.mjs", ".test.cjs"];
 
 // Files that change how every test runs (config, setup, deps, toolchain).
 const CI_ONLY_TRIGGERS = [
@@ -50,44 +47,34 @@ export function parseNameStatus(raw) {
   return entries;
 }
 
-// `vitest related` follows imports only; tests that spawn a script (for
-// example scripts/jarela-bin.test.mjs) would be missed without this.
 function siblingTests(file, exists) {
   if (TEST_FILE.test(file)) return [];
   const stem = file.replace(/\.[^/.]+$/, "");
   return TEST_EXTENSIONS.map((ext) => stem + ext).filter((candidate) => exists(candidate));
 }
 
-export function selectTests(entries, { forceFull = false, exists = existsSync } = {}) {
-  if (forceFull) return { mode: "full", files: [] };
-  const related = [];
+export function selectTests(entries, { exists = existsSync } = {}) {
+  const files = [];
   for (const { status, path } of entries) {
     const normalized = path.replace(/\\/g, "/");
     if (IGNORED.some((pattern) => pattern.test(normalized))) continue;
     if (normalized.startsWith(".githooks/")) {
-      related.push("scripts/select-precommit-tests.mjs");
+      files.push(...siblingTests("scripts/select-precommit-tests.mjs", exists));
       continue;
     }
     if (CI_ONLY_TRIGGERS.some((pattern) => pattern.test(normalized))) continue;
-    // `vitest related` can't trace importers of a file that no longer exists.
     if (status === "D") continue;
-    if (CODE_EXTENSIONS.test(normalized)) related.push(normalized);
-    else related.push(...siblingTests(normalized, exists));
+    if (TEST_FILE.test(normalized)) files.push(normalized);
+    else files.push(...siblingTests(normalized, exists));
   }
-  if (related.length === 0) return { mode: "none", files: [] };
-  const files = [];
-  for (const file of related) {
-    for (const candidate of [file, ...siblingTests(file, exists)]) {
-      if (!files.includes(candidate)) files.push(candidate);
-    }
-  }
-  return { mode: "related", files };
+  return files.length === 0
+    ? { mode: "none", files: [] }
+    : { mode: "unit", files: [...new Set(files)] };
 }
 
 function main() {
   const raw = readFileSync(0, "utf8");
-  const forceFull = process.env.JARELA_PRECOMMIT_FULL_TESTS === "1";
-  const { mode, files } = selectTests(parseNameStatus(raw), { forceFull });
+  const { mode, files } = selectTests(parseNameStatus(raw));
   process.stdout.write([mode, ...files].join("\0") + "\0");
 }
 

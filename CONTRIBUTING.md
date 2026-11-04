@@ -122,15 +122,12 @@ These rules are executable, not advisory: `.githooks/pre-commit` checks the
 topic branch, `.githooks/commit-msg` checks the commit message, and CI checks
 pull request titles plus post-merge commit subjects on `main`.
 
-The pre-commit hook also runs lint, typecheck, and the unit tests related to
-the staged files (`vitest related`, selected by
-`scripts/select-precommit-tests.mjs`). Docs-only commits skip tests. Shared test
-config/setup, dependencies, deleted modules, and non-code changes do not
-automatically trigger the full suite locally; CI covers their broader impact.
-Non-code changes include an existing sibling unit test when available; hook
-changes run the test-selector tests. Large code changes still use related tests.
-Set `JARELA_PRECOMMIT_FULL_TESTS=1` to explicitly request the full local suite.
-CI always runs the full suite; focused pre-commit success is not a CI substitute.
+The pre-commit hook checks the topic branch and runs only staged unit-test files
+plus direct sibling unit tests when they exist. It does not run lint, typecheck,
+transitive `vitest related` tests, or the full suite; CI owns those broader
+checks. Docs-only commits and changes without a directly paired unit test skip
+local tests. Hook changes run the test-selector unit tests. A passing focused
+pre-commit check is not a CI substitute.
 
 When a local commit accidentally lands on `main`, move it to a topic branch
 before pushing:
