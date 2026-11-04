@@ -1,6 +1,7 @@
 import type { StreamChunk } from "./base";
 import { getConfig } from "@/lib/env/config";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
+import { publishTransient } from "@/lib/notifications/bus";
 import { randomUUID } from "node:crypto";
 
 // In-memory registry of in-flight agent runs, keyed by thread_id. When the user
@@ -147,6 +148,7 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     phase_label: "Starting…",
   };
   runs.set(thread_id, run);
+  publishTransient({ type: "activity_update", active_runs: getActiveRunCount() });
   // Wake any GET subscribers that attached before the run was registered.
   const pending = waiters.get(thread_id);
   if (pending) {
@@ -340,8 +342,10 @@ export function finishRun(run: ActiveRun, status: "done" | "error"): void {
   // Identity-check: a stale run finishing late must not flip the
   // replacement's status or evict it from the registry.
   if (runs.get(run.thread_id) !== run) return;
+  const wasRunning = run.status === "running";
   run.status = status;
   run.finished_at = Date.now();
+  if (wasRunning) publishTransient({ type: "activity_update", active_runs: getActiveRunCount() });
   // Drop subscribers — late attachers should NOT keep getting events on a
   // dead run. They'll get the buffered events on subscribe and that's it.
   run.subscribers.clear();

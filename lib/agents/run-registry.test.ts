@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { startRun, finishRun, getRun, getActiveRunCount, broadcast, waitForRun, pushSteering, drainSteering, abortRun, subscribe } from "./run-registry";
 import { getConfig, resetConfigCache } from "@/lib/env/config";
+import { subscribe as subscribeAppEvents } from "@/lib/notifications/bus";
 import type { StreamChunk } from "./base";
 
 const delta = (s: string): StreamChunk => ({ type: "text_delta", data: { delta: s } } as StreamChunk);
@@ -18,6 +19,19 @@ describe("run-registry watchdog", () => {
     expect(getActiveRunCount()).toBe(initialCount + 1);
     finishRun(second, "error");
     expect(getActiveRunCount()).toBe(initialCount);
+  });
+
+  it("publishes activity changes only when a run starts or finishes", () => {
+    const activityCounts: number[] = [];
+    const unsubscribe = subscribeAppEvents((event) => {
+      if (event.type === "activity_update") activityCounts.push(event.active_runs);
+    });
+    const initialCount = getActiveRunCount();
+    const run = startRun("activity-event-count", null);
+    finishRun(run, "done");
+    unsubscribe();
+
+    expect(activityCounts).toEqual([initialCount + 1, initialCount]);
   });
 
   it("migrates a surviving pre-cursor active run when the module reloads", async () => {

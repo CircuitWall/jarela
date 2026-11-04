@@ -3,6 +3,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEventNotifications } from "@/hooks/useEventNotifications";
+import { SERVER_ACTIVITY_UPDATE_EVENT } from "@/api/health";
 
 const pushToastMock = vi.fn();
 const eventSources: FakeEventSource[] = [];
@@ -129,6 +130,29 @@ describe("useEventNotifications contract", () => {
 });
 
 describe("useEventNotifications routing", () => {
+  it("forwards activity updates without advancing the notification replay cursor", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const updates: unknown[] = [];
+    const onActivity = (event: Event) => updates.push((event as CustomEvent).detail);
+    window.addEventListener(SERVER_ACTIVITY_UPDATE_EVENT, onActivity);
+    const { result, unmount } = renderHook(() => useEventNotifications({
+      shouldNotify: () => false,
+      resolveAgentName: () => "Agent",
+    }));
+
+    act(() => {
+      eventSources[0]!.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({ type: "activity_update", active_runs: 3 }),
+      }));
+    });
+
+    expect(updates).toEqual([{ active_runs: 3 }]);
+    expect(result.current.lastEventTs).toBe(0);
+    expect(window.localStorage.getItem("jarela.notif.lastTs")).toBeNull();
+    unmount();
+    window.removeEventListener(SERVER_ACTIVITY_UPDATE_EVENT, onActivity);
+  });
+
   it("uses the latest options without reconnecting and advances only supported replay events", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const { result, rerender } = renderHook(({ name }) =>

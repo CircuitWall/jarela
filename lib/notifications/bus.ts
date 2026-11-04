@@ -1,6 +1,4 @@
-// Tiny in-process pub/sub for app-level events the UI wants to surface as
-// browser notifications. Run completions and scheduled-task firings both
-// publish here; the frontend subscribes via a single SSE endpoint.
+// Tiny in-process pub/sub for app events delivered through a single SSE endpoint.
 
 import { getConfig } from "@/lib/env/config";
 
@@ -95,9 +93,16 @@ export type NotificationEvent =
       ts: number;
     };
 
+export interface ActivityUpdateEvent {
+  type: "activity_update";
+  active_runs: number;
+}
+
+export type AppEvent = NotificationEvent | ActivityUpdateEvent;
+
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 
-type Listener = (ev: NotificationEvent) => void;
+type Listener = (ev: AppEvent) => void;
 // JARELA_NOTIFICATION_RING_SIZE overrides this. Captured at module init —
 // changes require restart.
 const RECENT_LIMIT = getConfig().notificationRingSize;
@@ -121,8 +126,18 @@ export function publish(ev: NotificationEvent): void {
   const event = ev.ts > lastTs ? ev : { ...ev, ts: lastTs + 1 } as NotificationEvent;
   recent.push(event);
   if (recent.length > RECENT_LIMIT) recent.shift();
-  for (const l of listeners) {
-    try { l(event); } catch { /* listener errored, ignore */ }
+  dispatch(event);
+}
+
+// Activity is current state, not notification history. A fresh SSE subscriber
+// receives a snapshot, so these changes do not consume the replay ring.
+export function publishTransient(ev: ActivityUpdateEvent): void {
+  dispatch(ev);
+}
+
+function dispatch(ev: AppEvent): void {
+  for (const listener of listeners) {
+    try { listener(ev); } catch { /* listener errored, ignore */ }
   }
 }
 
