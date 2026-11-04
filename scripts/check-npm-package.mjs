@@ -97,8 +97,10 @@ try {
     "package/lib/embeddings/local-model-assets.mjs",
     "package/lib/embeddings/fetch-with-retry.mjs",
     "package/lib/security/secret-patterns.mjs",
+    "package/scripts/release-docs.mjs",
     "package/scripts/run-workspace-script-if-present.mjs",
     "package/scripts/prune-npm-source-maps.mjs",
+    "package/docs/adoption/changesets.json",
     // The extension rebranding step (ADR-0077) is only reachable by an
     // overlay if both the script and its source tree are published.
     "package/scripts/build-extension.mjs",
@@ -177,7 +179,7 @@ try {
     '  if (vector.length !== 384 || !vector.every(Number.isFinite)) throw new Error("local embedding smoke test returned an invalid vector");',
   '})().catch((error) => { console.error(error); process.exitCode = 1; });',
   ].join("\n")], { cwd: extractedPackageRoot });
-  run("npm", ["run", "packages:build", "--silent"], { cwd: extractedPackageRoot });
+  run("npm", ["run", "build", "--silent"], { cwd: extractedPackageRoot });
 
   console.log(`[npm-package] ok: ${filename} contains runnable standalone bundle`);
 } finally {
