@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - agents: Scale usage-strategy context and output budgets to selected-model limits.
+- ui: Move system notification permission controls into navigation preferences.
 
 ### Fixed
 
