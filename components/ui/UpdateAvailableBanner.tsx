@@ -226,62 +226,57 @@ export function UpdateAvailableBanner() {
             : "Update failed";
 
   return (
-    <div
-      className="fixed left-0 right-0 z-30 px-3 pt-2 pointer-events-none"
-      style={{ top: "calc(3rem + var(--app-safe-top))" }}
-    >
-      <div className="mx-auto max-w-4xl pointer-events-auto flex flex-col gap-1 border border-emerald-900/40 rounded-lg bg-emerald-950/60 backdrop-blur px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
-        <div className="flex items-start gap-2">
-          <Download size={14} className="mt-0.5 shrink-0" />
-          <div className="flex-1">
-            <span className="font-medium">{headline}:</span>{" "}
-            {isMain && shortRemote
-              ? <>{shortLocal ?? info.current} → {shortRemote} ({info.latest}).</>
-              : <>{info.current} → {info.latest}.</>}
-            {phase === "preview" && (
-              <>
-                {" "}
-                Click <span className="font-medium">Update now</span> to apply
-                automatically, or run <code className="font-mono text-[11px]">jarela update</code>{" "}
-                and restart manually.
-              </>
-            )}
-          </div>
+    <div className="pointer-events-auto flex flex-col gap-1 border border-emerald-900/40 rounded-lg bg-emerald-950/60 backdrop-blur px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
+      <div className="flex items-start gap-2">
+        <Download size={14} className="mt-0.5 shrink-0" />
+        <div className="flex-1">
+          <span className="font-medium">{headline}:</span>{" "}
+          {isMain && shortRemote
+            ? <>{shortLocal ?? info.current} → {shortRemote} ({info.latest}).</>
+            : <>{info.current} → {info.latest}.</>}
           {phase === "preview" && (
-            <button
-              type="button"
-              onClick={applyUpdate}
-              className="shrink-0 inline-flex items-center gap-1 rounded bg-emerald-700/40 px-2 py-0.5 text-[11px] font-medium hover:bg-emerald-700/60"
-            >
-              <RefreshCw size={11} />
-              Update now
-            </button>
-          )}
-          {phase !== "preview" && phase !== "failed" && (
-            <RefreshCw size={14} className="mt-0.5 shrink-0 animate-spin" aria-hidden />
-          )}
-          {phase === "preview" && (
-            <button
-              type="button"
-              onClick={dismiss}
-              className="shrink-0 rounded p-0.5 hover:bg-emerald-900/40"
-              aria-label="Dismiss update notice"
-            >
-              <X size={14} />
-            </button>
+            <>
+              {" "}
+              Click <span className="font-medium">Update now</span> to apply
+              automatically, or run <code className="font-mono text-[11px]">jarela update</code>{" "}
+              and restart manually.
+            </>
           )}
         </div>
-        {(lines.length > 0 || errorMsg) && (
-          <div className="ml-6 mt-1 max-h-32 overflow-y-auto rounded bg-emerald-950/40 px-2 py-1 font-mono text-[10px] leading-snug text-emerald-100/80">
-            {errorMsg && <div className="text-rose-300">{errorMsg}</div>}
-            {lines.map((l, i) => (
-              <div key={i} className="whitespace-pre-wrap break-all">
-                {l}
-              </div>
-            ))}
-          </div>
+        {phase === "preview" && (
+          <button
+            type="button"
+            onClick={applyUpdate}
+            className="shrink-0 inline-flex items-center gap-1 rounded bg-emerald-700/40 px-2 py-0.5 text-[11px] font-medium hover:bg-emerald-700/60"
+          >
+            <RefreshCw size={11} />
+            Update now
+          </button>
+        )}
+        {phase !== "preview" && phase !== "failed" && (
+          <RefreshCw size={14} className="mt-0.5 shrink-0 animate-spin" aria-hidden />
+        )}
+        {phase === "preview" && (
+          <button
+            type="button"
+            onClick={dismiss}
+            className="shrink-0 rounded p-0.5 hover:bg-emerald-900/40"
+            aria-label="Dismiss update notice"
+          >
+            <X size={14} />
+          </button>
         )}
       </div>
+      {(lines.length > 0 || errorMsg) && (
+        <div className="ml-6 mt-1 max-h-32 overflow-y-auto rounded bg-emerald-950/40 px-2 py-1 font-mono text-[10px] leading-snug text-emerald-100/80">
+          {errorMsg && <div className="text-rose-300">{errorMsg}</div>}
+          {lines.map((l, i) => (
+            <div key={i} className="whitespace-pre-wrap break-all">
+              {l}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

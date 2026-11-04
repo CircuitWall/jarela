@@ -23,9 +23,7 @@ import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { UnifiedMemoryPanel } from "@/components/memory/UnifiedMemoryPanel";
 import { HeaderActivity } from "@/components/ui/HeaderActivity";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
-import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
-import { UpdateAvailableBanner } from "@/components/ui/UpdateAvailableBanner";
-import { ServerStatus } from "@/components/ui/ServerStatus";
+import { TopStatusBanners } from "@/components/ui/TopStatusBanners";
 import { Toaster } from "@/components/ui/Toaster";
 import { BootScreen } from "@/components/ui/BootScreen";
 import { ScreenLock } from "@/components/setup/ScreenLock";
@@ -124,7 +122,6 @@ export function AppShell() {
       <SessionGates bootSeq={bootSeq} agents={agents} agentsLoaded={agentsLoaded} state={state} dispatch={dispatch} screenLocked={screenLocked} masterKeyLocked={masterKeyLocked} landOnAgentPicker={landOnAgentPicker} setScreenLocked={setScreenLocked} setMasterKeyLocked={setMasterKeyLocked} />
 <NotificationStatus />
       <Toaster />
-      <ServerStatus />
       {/*
         Spacer reserving the slot the floating header visually occupies.
         Keeps the flex layout intact so panel content doesn't slide under
@@ -144,8 +141,7 @@ export function AppShell() {
           style={{ height: "calc(3rem + var(--app-safe-top))" }}
         />
       )}
-      <CryptoFallbackBanner />
-      <UpdateAvailableBanner />
+      <TopStatusBanners />
       <WorkspaceNavigation
         agents={agents}
         state={state}
