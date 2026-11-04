@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Pre-commit gate: lint, typecheck, and focused unit tests locally.
-# The required full regression suite runs in CI.
+# Pre-commit gate: commit conventions and focused unit tests.
+# Lint, typecheck, and the full regression suite run in CI.
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -12,7 +12,6 @@ trap 'rm -f "$staged"' EXIT
 git diff --cached --name-status -z > "$staged"
 
 # Nothing staged → nothing to check. Lets `git commit --allow-empty` etc.
-# pass without paying the lint+typecheck+test tax.
 if [ ! -s "$staged" ]; then
   exit 0
 fi
@@ -26,24 +25,17 @@ unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_CEILING_DIRECTORIES GIT_QU
 echo "[pre-commit] git conventions"
 node scripts/check-git-conventions.mjs --branch
 
-echo "[pre-commit] lint"
-npm run -s lint
-
-echo "[pre-commit] typecheck"
-npx -y tsc --noEmit
-
-# Only tests related to the staged files run locally; CI runs the full
-# suite, including shared setup/config changes. Set
-# JARELA_PRECOMMIT_FULL_TESTS=1 to explicitly request a full local run.
+# Only staged unit tests and direct sibling unit tests run locally. CI runs
+# lint, typecheck, transitive test coverage, and the full regression suite.
 # A read loop rather than `mapfile -d` keeps this working on macOS Bash 3.2.
 selection="$(mktemp)"
 trap 'rm -f "$staged" "$selection"' EXIT
 node scripts/select-precommit-tests.mjs < "$staged" > "$selection"
 
 mode=""
-related=()
+unit_tests=()
 while IFS= read -r -d '' token; do
-  if [ -z "$mode" ]; then mode="$token"; else related+=("./$token"); fi
+  if [ -z "$mode" ]; then mode="$token"; else unit_tests+=("./$token"); fi
 done < "$selection"
 
 run_tests() {
@@ -55,15 +47,9 @@ case "$mode" in
   none)
     echo "[pre-commit] unit tests: no focused targets; full suite runs in CI"
     ;;
-  related)
-    echo "[pre-commit] unit tests related to ${#related[@]} staged file(s)"
-    # No `--` separator: vitest treats everything after it as non-filters and
-    # would silently find zero tests. The ./ prefix guards against leading dashes.
-    run_tests npx vitest related --run --passWithNoTests "${related[@]}"
-    ;;
-  full)
-    echo "[pre-commit] unit tests (full suite)"
-    run_tests npm test --silent
+  unit)
+    echo "[pre-commit] focused unit tests (${#unit_tests[@]} file(s))"
+    run_tests npx vitest run "${unit_tests[@]}"
     ;;
   *)
     echo "[pre-commit] invalid test selection mode: $mode" >&2

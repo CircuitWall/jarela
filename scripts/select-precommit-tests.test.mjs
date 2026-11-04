@@ -30,10 +30,17 @@ describe("parseNameStatus", () => {
 });
 
 describe("selectTests", () => {
-  it("runs related tests when only code files changed", () => {
-    expect(selectTests(modified("lib/tools/foo.ts", "components/Bar.tsx", "scripts/x.mjs"))).toEqual({
-      mode: "related",
-      files: ["lib/tools/foo.ts", "components/Bar.tsx", "scripts/x.mjs"],
+  it("selects only directly paired unit tests for changed code", () => {
+    const siblings = new Set([
+      "lib/tools/foo.test.ts",
+      "components/Bar.test.tsx",
+      "scripts/x.test.mjs",
+    ]);
+    expect(selectTests(modified("lib/tools/foo.ts", "components/Bar.tsx", "scripts/x.mjs"), {
+      exists: (file) => siblings.has(file),
+    })).toEqual({
+      mode: "unit",
+      files: ["lib/tools/foo.test.ts", "components/Bar.test.tsx", "scripts/x.test.mjs"],
     });
   });
 
@@ -44,8 +51,10 @@ describe("selectTests", () => {
     });
   });
 
-  it("ignores docs alongside code", () => {
-    expect(selectTests(modified("docs/x.md", "lib/a.ts"))).toEqual({ mode: "related", files: ["lib/a.ts"] });
+  it("ignores docs alongside code while selecting a direct sibling test", () => {
+    expect(selectTests(modified("docs/x.md", "lib/a.ts"), {
+      exists: (file) => file === "lib/a.test.ts",
+    })).toEqual({ mode: "unit", files: ["lib/a.test.ts"] });
   });
 
   it.each([
@@ -57,7 +66,9 @@ describe("selectTests", () => {
     "tsconfig.json",
     ".npmrc",
   ])("leaves broad %s validation to CI without escalating local code tests", (file) => {
-    expect(selectTests(modified("lib/a.ts", file))).toEqual({ mode: "related", files: ["lib/a.ts"] });
+    expect(selectTests(modified("lib/a.ts", file), {
+      exists: (candidate) => candidate === "lib/a.test.ts",
+    })).toEqual({ mode: "unit", files: ["lib/a.test.ts"] });
     expect(selectTests(modified(file))).toEqual({ mode: "none", files: [] });
   });
 
@@ -67,61 +78,62 @@ describe("selectTests", () => {
     }
   });
 
-  it("leaves deleted-module coverage to CI and selects the destination of renamed code", () => {
+  it("leaves deleted-module coverage to CI and selects a direct test of renamed code", () => {
     expect(selectTests([{ status: "D", path: "lib/a.ts" }])).toEqual({ mode: "none", files: [] });
-    expect(selectTests(parseNameStatus("R090\0lib/a.ts\0lib/b.ts\0")))
-      .toEqual({ mode: "related", files: ["lib/b.ts"] });
+    expect(selectTests(parseNameStatus("R090\0lib/a.ts\0lib/b.ts\0"), {
+      exists: (file) => file === "lib/b.test.ts",
+    })).toEqual({ mode: "unit", files: ["lib/b.test.ts"] });
   });
 
   it("normalizes Windows separators", () => {
-    expect(selectTests(modified("lib\\a.ts"))).toEqual({ mode: "related", files: ["lib/a.ts"] });
+    expect(selectTests(modified("lib\\a.ts"), {
+      exists: (file) => file === "lib/a.test.ts",
+    })).toEqual({ mode: "unit", files: ["lib/a.test.ts"] });
     expect(selectTests(modified("tests\\setup-rtl.ts")).mode).toBe("none");
   });
 
-  it("adds sibling test files so subprocess-tested scripts still run their tests", () => {
+  it("selects only direct sibling tests, including subprocess-tested scripts", () => {
     const exists = (p) => p === "scripts/jarela-bin.test.mjs" || p === "lib/a.test.ts";
     expect(selectTests(modified("scripts/jarela-bin.mjs", "lib/a.ts", "lib/b.ts"), { exists })).toEqual({
-      mode: "related",
-      files: ["scripts/jarela-bin.mjs", "scripts/jarela-bin.test.mjs", "lib/a.ts", "lib/a.test.ts", "lib/b.ts"],
+      mode: "unit",
+      files: ["scripts/jarela-bin.test.mjs", "lib/a.test.ts"],
     });
   });
 
-  it("does not duplicate a staged sibling test or look for tests of test files", () => {
+  it("runs staged tests directly and does not add a test of the test file", () => {
     const exists = (p) => p === "lib/a.test.ts" || p.startsWith("lib/a.test.test");
-    expect(selectTests(modified("lib/a.ts", "lib/a.test.ts"), { exists }).files).toEqual(["lib/a.ts", "lib/a.test.ts"]);
+    expect(selectTests(modified("lib/a.ts", "lib/a.test.ts"), { exists })).toEqual({
+      mode: "unit",
+      files: ["lib/a.test.ts"],
+    });
   });
 
-  it("keeps focused selection for very large changes", () => {
+  it("keeps only available sibling unit tests for very large changes", () => {
     const many = modified(...Array.from({ length: 101 }, (_, i) => `lib/f${i}.ts`));
-    const result = selectTests(many);
-    expect(result.mode).toBe("related");
-    expect(result.files).toHaveLength(101);
+    const result = selectTests(many, { exists: (file) => file === "lib/f50.test.ts" });
+    expect(result).toEqual({ mode: "unit", files: ["lib/f50.test.ts"] });
   });
 
   it("selects selector coverage for hook changes", () => {
     expect(selectTests(modified(".githooks/pre-commit"), {
       exists: (file) => file === "scripts/select-precommit-tests.test.mjs",
     })).toEqual({
-      mode: "related",
-      files: ["scripts/select-precommit-tests.mjs", "scripts/select-precommit-tests.test.mjs"],
+      mode: "unit",
+      files: ["scripts/select-precommit-tests.test.mjs"],
     });
   });
 
   it("selects existing sibling tests of data files without adding non-code import targets", () => {
     expect(selectTests(modified("lib/example.json"), {
       exists: (file) => file === "lib/example.test.ts",
-    })).toEqual({ mode: "related", files: ["lib/example.test.ts"] });
+    })).toEqual({ mode: "unit", files: ["lib/example.test.ts"] });
   });
 
-  it("retains focused tests when mixed with shared setup and deleted files", () => {
+  it("runs only explicitly staged tests alongside shared setup and deleted files", () => {
     expect(selectTests([
       ...modified("tests/setup-rtl.ts", "lib/a.test.ts", "package.json"),
       { status: "D", path: "lib/old.ts" },
-    ])).toEqual({ mode: "related", files: ["lib/a.test.ts"] });
-  });
-
-  it("honors the force-full override", () => {
-    expect(selectTests(modified("lib/a.ts"), { forceFull: true })).toEqual({ mode: "full", files: [] });
+    ])).toEqual({ mode: "unit", files: ["lib/a.test.ts"] });
   });
 });
 
@@ -133,22 +145,17 @@ describe("CLI", () => {
   }
 
   it("prints the mode and files as NUL-separated tokens", () => {
-    expect(run("M\0lib/a.ts\0A\0lib/b c.ts\0")).toEqual(["related", "lib/a.ts", "lib/b c.ts"]);
+    expect(run("M\0README.md\0")).toEqual(["none"]);
   });
 
   it("includes the existing sibling test of a staged script", () => {
     expect(run("M\0scripts/select-precommit-tests.mjs\0")).toEqual([
-      "related",
-      "scripts/select-precommit-tests.mjs",
+      "unit",
       "scripts/select-precommit-tests.test.mjs",
     ]);
   });
 
   it("prints none for empty input", () => {
     expect(run("")).toEqual(["none"]);
-  });
-
-  it("forces the full suite with JARELA_PRECOMMIT_FULL_TESTS=1", () => {
-    expect(run("M\0lib/a.ts\0", { JARELA_PRECOMMIT_FULL_TESTS: "1" })).toEqual(["full"]);
   });
 });
