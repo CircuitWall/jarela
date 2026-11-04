@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - ui: Add fast server liveness, report active runs, and honor live agent streams.
+- release: Include shared secret patterns in npm packages and keep dev lint out of builds.
 
 ## [3.3.3] - 2026-11-03
 

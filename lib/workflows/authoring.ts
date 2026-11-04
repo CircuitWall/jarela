@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { portableSkillPath } from "@/lib/skills/bundle-files";
 import { syntheticToolFiles } from "./authoring-scaffold";
-import { SECRET_PATTERNS } from "../../scripts/lib/secret-patterns.mjs";
+import { SECRET_PATTERNS } from "../security/secret-patterns.mjs";
 
 const utf8Text = z.string().refine((value) => value.isWellFormed() && !value.includes("\0"), "Expected well-formed UTF-8 text without NUL");
 const text = utf8Text.min(1).max(2000).refine((value) => value.trim().length > 0, "Text cannot be blank");
