@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -142,15 +142,19 @@ try {
   if (!packedPackage.dependencies?.["@huggingface/transformers"]) {
     throw new Error("npm package must install @huggingface/transformers and its Node ONNX runtime dependencies");
   }
+  if (!packedPackage.dependencies?.["@serwist/next"]) {
+    throw new Error("npm package must install @serwist/next to support consumer builds");
+  }
 
   extractDir = mkdtempSync(join(tmpdir(), "jarela-package-"));
-  const extractedPackageRoot = join(extractDir, "package");
+  const consumerPackageRoot = join(extractDir, "package");
   run("tar", ["-xf", filename, "-C", extractDir]);
-  symlinkSync(
-    resolve(repoRoot, "node_modules"),
-    join(extractedPackageRoot, "node_modules"),
-    process.platform === "win32" ? "junction" : "dir",
-  );
+  run("npm", [
+    "install",
+    "--omit=dev",
+    "--no-audit",
+    "--no-fund",
+  ], { cwd: consumerPackageRoot });
   run("node", ["-e", [
     'const { createRequire } = require("node:module");',
     'const { resolve, sep } = require("node:path");',
@@ -163,7 +167,7 @@ try {
     '  throw new Error(`ONNX runtime resolved from standalone instead of installed dependencies: ${onnxRuntime}`);',
     '}',
     'require(onnxRuntime);',
-  ].join("\n")], { cwd: extractedPackageRoot });
+  ].join("\n")], { cwd: consumerPackageRoot });
   // Fetch/verify the pinned model (cached in CI) and run it through the
   // installed ONNX runtime the package resolves.
   run("node", ["scripts/prepare-local-embedding-model.mjs"], { cwd: repoRoot });
@@ -178,8 +182,8 @@ try {
     '  const vector = result.tolist()[0];',
     '  if (vector.length !== 384 || !vector.every(Number.isFinite)) throw new Error("local embedding smoke test returned an invalid vector");',
   '})().catch((error) => { console.error(error); process.exitCode = 1; });',
-  ].join("\n")], { cwd: extractedPackageRoot });
-  run("npm", ["run", "build", "--silent"], { cwd: extractedPackageRoot });
+  ].join("\n")], { cwd: consumerPackageRoot });
+  run("npm", ["run", "build", "--silent"], { cwd: consumerPackageRoot });
 
   console.log(`[npm-package] ok: ${filename} contains runnable standalone bundle`);
 } finally {
