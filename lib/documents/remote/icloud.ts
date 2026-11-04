@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type { scanICloudMail } from "@circuitwall/icloud-langchain";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseSourceConfig, type DocumentSourceRow } from "@/lib/stores/document-sources";
 import { optionalFunction } from "@/lib/tools/packages/optional-package";
@@ -8,7 +7,26 @@ import { stripHtml } from "@/lib/utils/html";
 import { upsertRemoteDocument, evictMissing } from "./upsert";
 import type { RemoteIndexStats } from "./index";
 
-const scanMail = optionalFunction<typeof scanICloudMail>(
+type ICloudMailScan = (
+  auth: { appleId: string; appPassword: string },
+  options: {
+    scope: "inbox" | "folder" | "all";
+    folder?: string;
+    query?: string;
+    maxResults?: number;
+  },
+  onMessage: (message: {
+    id: string;
+    subject: string;
+    from: string;
+    to: string;
+    date: string | null;
+    text: string;
+    html: boolean;
+  }) => Promise<void>,
+) => Promise<void>;
+
+const scanMail = optionalFunction<ICloudMailScan>(
   "@circuitwall/icloud-langchain",
   "scanICloudMail",
   async () => { throw new Error("iCloud indexing requires an updated @circuitwall/icloud-langchain package. Install or update it in Packages."); },
