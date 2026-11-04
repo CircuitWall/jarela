@@ -79,6 +79,7 @@
     "scripts/standalone-footprint.mjs",
     "scripts/check-integration-manifests.mjs",
     "scripts/check-change-impact.mjs",
+    "scripts/release-docs.mjs",
     "scripts/run-workspace-script-if-present.mjs",
     "scripts/check-npm-package.mjs",
     "scripts/prune-npm-source-maps.mjs",
@@ -94,7 +95,8 @@
     "tsconfig.json",
     "postcss.config.mjs",
     "CHANGELOG.md",
-    "docs/INSTALL.md"
+    "docs/INSTALL.md",
+    "docs/adoption/changesets.json"
   ],
   "scripts": {
     "setup:hooks": "node scripts/setup-git-hooks.mjs",
