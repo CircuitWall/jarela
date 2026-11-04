@@ -20,6 +20,7 @@ describe("TopStatusBanners", () => {
 
     const stack = screen.getByTestId("top-status-banners");
     expect(stack.className).toContain("pointer-events-none");
+    expect(stack.className).toContain("z-[45]");
     expect(stack.style.top).toBe("calc(3rem + var(--app-safe-top))");
     expect(stack.querySelector(".flex.flex-col.gap-2")).not.toBeNull();
     expect(Array.from(stack.querySelectorAll("[data-testid$='-banner']"))

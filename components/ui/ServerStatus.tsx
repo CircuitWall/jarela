@@ -1,26 +1,20 @@
 "use client";
 
-// Keep liveness independent from SQLite and agent-config reads. Deeper
-// diagnostics run only after the fast check succeeds and never drive the
-// blocking outage overlay.
+// Keep liveness independent from SQLite and agent-config reads. Only a
+// confirmed outage is surfaced here; routine runtime details stay out of
+// the app's primary navigation area.
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, CheckCircle2, CloudOff, LoaderCircle } from "lucide-react";
+import { CloudOff } from "lucide-react";
 import { runtimeConfig } from "@/api/runtime-config";
-import { fetchHealthDetails, SERVER_ACTIVITY_EVENT, SERVER_ACTIVITY_UPDATE_EVENT } from "@/api/health";
+import { SERVER_ACTIVITY_EVENT, SERVER_ACTIVITY_UPDATE_EVENT } from "@/api/health";
 
 const HEALTHY_INTERVAL_MS = 20_000;
 const DOWN_INTERVAL_MS = 5_000;
 const RETRY_INTERVAL_MS = 3_000;
 const FAILURE_THRESHOLD = 3;
 const DOWN_CONFIRMATION_MS = 30_000;
-const DETAILS_NOTICE_MS = 5_000;
-
-type Diagnostics =
-  | { status: "checking" }
-  | { status: "ready"; agentCount: number; cryptoSource: string }
-  | { status: "unavailable" };
 
 function activeRunCount(body: unknown): number | null {
   if (!body || typeof body !== "object" || !("activity" in body)
@@ -75,106 +69,33 @@ function ServerUnavailable({ activeRuns }: { activeRuns: number | null }) {
   );
 }
 
-function RuntimeStatusNotice({ activeRuns, diagnostics, streamResponsive }: {
-  activeRuns: number | null;
-  diagnostics: Diagnostics | null;
-  streamResponsive: boolean;
-}) {
-  const hasActiveRuns = (activeRuns ?? 0) > 0;
-  const detailsChecking = diagnostics?.status === "checking";
-  const detailsUnavailable = diagnostics?.status === "unavailable";
-  const detailsReady = diagnostics?.status === "ready" ? diagnostics : null;
-  const detailsSummary = detailsReady
-    ? `database responded; found ${detailsReady.agentCount} agent ${detailsReady.agentCount === 1 ? "configuration" : "configurations"}; encryption uses ${detailsReady.cryptoSource}`
-    : null;
-  const message = streamResponsive
-    ? `Jarela is responding to the active workflow${hasActiveRuns ? `; ${activeRuns} agent ${activeRuns === 1 ? "run is" : "runs are"} active` : ""}.`
-    : hasActiveRuns
-    ? `Jarela is responding; ${activeRuns} agent ${activeRuns === 1 ? "run is" : "runs are"} active${detailsChecking ? " · checking runtime details" : detailsSummary ? ` · ${detailsSummary}` : ""}.`
-    : detailsChecking
-      ? "Jarela is responding; checking runtime details..."
-      : detailsReady
-        ? `Runtime checks finished: ${detailsSummary}.`
-        : "Jarela is responding; runtime details could not be checked.";
-
-  return (
-    <div role="status" aria-live="polite" className="pointer-events-none flex items-center gap-2 rounded-lg border border-border bg-surface/95 px-3 py-2 text-xs text-fg shadow-sm backdrop-blur">
-      {hasActiveRuns
-        ? <Activity size={14} className="shrink-0 text-accent" />
-        : detailsChecking
-          ? <LoaderCircle size={14} className="shrink-0 animate-spin text-accent" />
-          : detailsUnavailable
-            ? <AlertTriangle size={14} className="shrink-0 text-amber-500" />
-            : <CheckCircle2 size={14} className="shrink-0 text-emerald-500" />}
-      <span>{message}</span>
-    </div>
-  );
-}
-
 export function ServerStatus() {
   const [down, setDown] = useState(false);
   const [activeRuns, setActiveRuns] = useState<number | null>(null);
-  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
-  const [streamResponsive, setStreamResponsive] = useState(false);
   const wasDownRef = useRef(false);
   const failureCountRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
     let probeInFlight = false;
-    let detailsStarted = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let noticeTimer: ReturnType<typeof setTimeout> | null = null;
-    let streamNoticeTimer: ReturnType<typeof setTimeout> | null = null;
     let outageStartedAt: number | null = null;
 
-    const recoverFromActivity = (source: "workflow" | "events") => {
+    const recoverFromActivity = () => {
       if (failureCountRef.current === 0 && !wasDownRef.current) return;
       failureCountRef.current = 0;
       outageStartedAt = null;
       wasDownRef.current = false;
       setDown(false);
-      setStreamResponsive(source === "workflow");
-      if (streamNoticeTimer) clearTimeout(streamNoticeTimer);
-      streamNoticeTimer = setTimeout(() => {
-        if (!cancelled) setStreamResponsive(false);
-      }, DETAILS_NOTICE_MS);
     };
 
-    const onServerActivity = () => recoverFromActivity("workflow");
+    const onServerActivity = () => recoverFromActivity();
 
     const onActivityUpdate = (event: Event) => {
       const count = activeRunCount({ activity: (event as CustomEvent).detail });
       if (count === null) return;
       setActiveRuns(count);
-      recoverFromActivity("events");
-    };
-
-    const loadDetails = () => {
-      if (detailsStarted) return;
-      detailsStarted = true;
-      setDiagnostics({ status: "checking" });
-      setShowDiagnostics(true);
-      void fetchHealthDetails()
-        .then((result) => {
-          if (cancelled) return;
-          setDiagnostics({
-            status: "ready",
-            agentCount: result.agents.length,
-            cryptoSource: result.crypto.source,
-          });
-          noticeTimer = setTimeout(() => {
-            if (!cancelled) setShowDiagnostics(false);
-          }, DETAILS_NOTICE_MS);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setDiagnostics({ status: "unavailable" });
-          noticeTimer = setTimeout(() => {
-            if (!cancelled) setShowDiagnostics(false);
-          }, DETAILS_NOTICE_MS);
-        });
+      recoverFromActivity();
     };
 
     const tick = async () => {
@@ -204,10 +125,7 @@ export function ServerStatus() {
         }
         failureCountRef.current = 0;
         outageStartedAt = null;
-        setStreamResponsive(false);
-        if (streamNoticeTimer) clearTimeout(streamNoticeTimer);
         setActiveRuns(result.activeRuns);
-        loadDetails();
         if (wasDownRef.current) {
           window.location.reload();
           return;
@@ -234,20 +152,16 @@ export function ServerStatus() {
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
-      if (noticeTimer) clearTimeout(noticeTimer);
-      if (streamNoticeTimer) clearTimeout(streamNoticeTimer);
       window.removeEventListener(SERVER_ACTIVITY_EVENT, onServerActivity);
       window.removeEventListener(SERVER_ACTIVITY_UPDATE_EVENT, onActivityUpdate);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
-  const hasActiveRuns = (activeRuns ?? 0) > 0;
-  if (down && !streamResponsive) {
+  if (down) {
     return typeof document === "undefined"
       ? null
       : createPortal(<ServerUnavailable activeRuns={activeRuns} />, document.body);
   }
-  if (!hasActiveRuns && !showDiagnostics && !streamResponsive) return null;
-  return <RuntimeStatusNotice activeRuns={activeRuns} diagnostics={diagnostics} streamResponsive={streamResponsive} />;
+  return null;
 }
