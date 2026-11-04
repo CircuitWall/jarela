@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- ui: Show live agent run status in the shared top-banner stack.
+- ui: Share live run activity over the app event stream.
 
 ### Changed
 
 - agents: Scale usage-strategy context and output budgets to selected-model limits.
+- ui: Keep routine runtime-health details out of the top-banner area.
 - ui: Move system notification permission controls into navigation preferences.
 
 ### Fixed
