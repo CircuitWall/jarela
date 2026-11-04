@@ -55,6 +55,19 @@ describe("publish + subscribe", () => {
     bus.publish(ev("ok", 1));
     expect(seen).toEqual(["ok"]);
   });
+
+  it("delivers transient activity without adding it to notification replay history", async () => {
+    const bus = await freshBus();
+    const seen: number[] = [];
+    bus.subscribe((event) => {
+      if (event.type === "activity_update") seen.push(event.active_runs);
+    });
+
+    bus.publishTransient({ type: "activity_update", active_runs: 2 });
+
+    expect(seen).toEqual([2]);
+    expect(bus.recentSince(0)).toEqual([]);
+  });
 });
 
 describe("recentSince", () => {

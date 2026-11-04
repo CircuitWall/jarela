@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UnifiedHookResult } from "@/hooks/useListState";
 import { pushToast, type NotifSource } from "@/lib/ui/toasts";
+import { SERVER_ACTIVITY_UPDATE_EVENT } from "@/api/health";
 
 interface RunCompleted {
   type: "run_completed";
@@ -68,8 +69,13 @@ interface HealthAlert {
   ts: number;
 }
 
+interface ActivityUpdate {
+  type: "activity_update";
+  active_runs: number;
+}
+
 type NotifEvent = RunCompleted | TaskCompleted | BridgeMessageReceived;
-type StreamEvent = NotifEvent | ThreadMessageAdded | AutomationActivity | HealthAlert;
+type StreamEvent = NotifEvent | ThreadMessageAdded | AutomationActivity | HealthAlert | ActivityUpdate;
 
 interface AgentSummary {
   id: string;
@@ -214,6 +220,14 @@ function routeStreamMessage(
 ) {
   let ev: StreamEvent;
   try { ev = JSON.parse(data) as StreamEvent; } catch { return; }
+  if (ev.type === "activity_update") {
+    if (Number.isSafeInteger(ev.active_runs) && ev.active_runs >= 0) {
+      window.dispatchEvent(new CustomEvent(SERVER_ACTIVITY_UPDATE_EVENT, {
+        detail: { active_runs: ev.active_runs },
+      }));
+    }
+    return;
+  }
   if (!ev.ts) return;
   setLastEventTs(ev.ts);
   // Unknown bus events may update connection diagnostics, but must not

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- ui: Read active agent run updates from the shared app event stream.
+
 ### Changed
 
 - agents: Scale usage-strategy context and output budgets to selected-model limits.

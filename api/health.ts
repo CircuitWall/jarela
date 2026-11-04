@@ -1,6 +1,7 @@
 import { runtimeConfig } from "./runtime-config";
 
 export const SERVER_ACTIVITY_EVENT = "jarela:server-activity";
+export const SERVER_ACTIVITY_UPDATE_EVENT = "jarela:activity-update";
 
 export interface HealthDetails {
   agents: string[];

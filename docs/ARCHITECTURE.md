@@ -23,6 +23,7 @@ C4Container
       Container(sched, "Scheduler", "cron-parser", "Runs scheduled tasks + polls event-driven watchers; persists in DB (ADR-0022, ADR-0025, ADR-0027)")
       Container(bridges, "Bridges", "lib/bridges", "Inbound transports (WhatsApp/Baileys) routed to agents")
       Container(registry, "Run Registry", "lib/agents/run-registry", "In-memory pub/sub of in-flight agent chunks; replay buffer for reattaching EventSource clients")
+      Container(notifications, "App Event Bus", "lib/notifications/bus", "Replayable app notifications and transient run activity updates")
       Container(crypto, "Crypto Envelope", "lib/crypto", "AES-GCM-at-rest for sensitive memory + OAuth tokens; OS keychain or .secret-key fallback")
       Container(proxy, "Proxy Dispatcher", "lib/proxy", "undici GlobalDispatcher; reads HTTP_PROXY env vars + encrypted proxy_config row; gates all outbound HTTP (ADR-0009)")
       Container(envsync, "Env Sync", "lib/env", "Caches user shell env for exec, terminal, delegation and MCP children; checked skill runners deliberately do not inherit it")
@@ -71,7 +72,9 @@ C4Container
     Rel(proxy, openrouter, "HTTPS pricing catalog")
     Rel(proxy, litellm, "HTTPS model pricing catalog")
     Rel(agents, registry, "broadcast chunks")
+    Rel(agents, notifications, "publish run activity lifecycle")
     Rel(routes, registry, "subscribe (GET SSE) / submit (POST 202)")
+    Rel(routes, notifications, "subscribe / replay via GET SSE")
     Rel(routes, filestore, "POST /attachments/{images,files} + GET /files/[name]")
     Rel(routes, sched, "register / trigger")
     Rel(sched, agents, "run scheduled job")
@@ -456,6 +459,7 @@ flowchart LR
     EN -."full shell env<br/>(ADR-0072)".-> D
     EN -."full shell env<br/>(ADR-0072)".-> E
     RR[Run Registry<br/>lib/agents/run-registry] -.pub/sub + replay buffer.-> A
+    RR -.activity lifecycle updates.-> L
 ```
 
 ### Tool proxy execution (unreleased)

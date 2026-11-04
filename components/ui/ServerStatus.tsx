@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle2, CloudOff, LoaderCircle } from "lucide-react";
 import { runtimeConfig } from "@/api/runtime-config";
-import { fetchHealthDetails, SERVER_ACTIVITY_EVENT } from "@/api/health";
+import { fetchHealthDetails, SERVER_ACTIVITY_EVENT, SERVER_ACTIVITY_UPDATE_EVENT } from "@/api/health";
 
 const HEALTHY_INTERVAL_MS = 20_000;
 const DOWN_INTERVAL_MS = 5_000;
@@ -130,17 +130,26 @@ export function ServerStatus() {
     let streamNoticeTimer: ReturnType<typeof setTimeout> | null = null;
     let outageStartedAt: number | null = null;
 
-    const onServerActivity = () => {
+    const recoverFromActivity = (source: "workflow" | "events") => {
       if (failureCountRef.current === 0 && !wasDownRef.current) return;
       failureCountRef.current = 0;
       outageStartedAt = null;
       wasDownRef.current = false;
       setDown(false);
-      setStreamResponsive(true);
+      setStreamResponsive(source === "workflow");
       if (streamNoticeTimer) clearTimeout(streamNoticeTimer);
       streamNoticeTimer = setTimeout(() => {
         if (!cancelled) setStreamResponsive(false);
       }, DETAILS_NOTICE_MS);
+    };
+
+    const onServerActivity = () => recoverFromActivity("workflow");
+
+    const onActivityUpdate = (event: Event) => {
+      const count = activeRunCount({ activity: (event as CustomEvent).detail });
+      if (count === null) return;
+      setActiveRuns(count);
+      recoverFromActivity("events");
     };
 
     const loadDetails = () => {
@@ -212,6 +221,7 @@ export function ServerStatus() {
     };
 
     window.addEventListener(SERVER_ACTIVITY_EVENT, onServerActivity);
+    window.addEventListener(SERVER_ACTIVITY_UPDATE_EVENT, onActivityUpdate);
     tick();
 
     const onVisible = () => {
@@ -228,6 +238,7 @@ export function ServerStatus() {
       if (noticeTimer) clearTimeout(noticeTimer);
       if (streamNoticeTimer) clearTimeout(streamNoticeTimer);
       window.removeEventListener(SERVER_ACTIVITY_EVENT, onServerActivity);
+      window.removeEventListener(SERVER_ACTIVITY_UPDATE_EVENT, onActivityUpdate);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);

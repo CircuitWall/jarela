@@ -2,7 +2,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ServerStatus } from "./ServerStatus";
-import { SERVER_ACTIVITY_EVENT } from "@/api/health";
+import { SERVER_ACTIVITY_EVENT, SERVER_ACTIVITY_UPDATE_EVENT } from "@/api/health";
 
 vi.mock("@/api/runtime-config", () => ({
   runtimeConfig: () => ({ healthCheckTimeoutMs: 5_000 }),
@@ -101,6 +101,25 @@ it("clears the outage overlay when an active workflow stream responds", async ()
     window.dispatchEvent(new Event(SERVER_ACTIVITY_EVENT));
   });
   expect(screen.getByRole("status").textContent).toContain("responding to the active workflow");
+  expect(screen.queryByText("Server unavailable")).toBeNull();
+});
+
+it("updates active run status from the shared event stream and clears a stale outage", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+  render(<ServerStatus />);
+  await act(async () => {});
+  await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+  expect(screen.getByRole("status").textContent).toContain("Server unavailable");
+
+  await act(async () => {
+    window.dispatchEvent(new CustomEvent(SERVER_ACTIVITY_UPDATE_EVENT, {
+      detail: { active_runs: 2 },
+    }));
+  });
+
+  expect(screen.getByRole("status").textContent).toContain("2 agent runs are active");
+  expect(screen.getByRole("status").textContent).not.toContain("active workflow");
   expect(screen.queryByText("Server unavailable")).toBeNull();
 });
 

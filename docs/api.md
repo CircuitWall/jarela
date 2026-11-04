@@ -421,8 +421,12 @@ CORS preflight.
 
 ### `GET /api/v1/events`
 
-Server-Sent Events stream of in-process notifications: run completion,
-watcher fires, queue progress, bridge messages.
+Server-Sent Events stream of in-process notifications and transient app state
+updates. Run completion, watcher fires, queue progress, and bridge messages are
+replayable notifications; `activity_update` is `{ type, active_runs }`, a
+snapshot on connection and a transient update when a run starts or finishes.
+It has no replay timestamp and does not advance the replay cursor or consume
+notification history.
 
 - **Source:** [`app/api/v1/events/route.ts`](../app/api/v1/events/route.ts)
 - **Event types:** see `lib/notifications/bus.ts` for the full union (`run_completed`, `task_completed`, `bridge_message_received`, etc.)
