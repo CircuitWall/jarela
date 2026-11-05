@@ -156,6 +156,26 @@ git push -u origin <type>/<slug>
    merging rather than relying on a squash to hide it.
 6. **Delete the branch.** GitHub offers a button; use it.
 
+### Open PRs and chained PRs
+
+Rebase merge rewrites commit SHAs, so every PR still open when an earlier one
+lands must be rebased. Keep that churn small:
+
+- **Drain the queue before starting new work.** Before branching, list open PRs
+  (`gh pr list --repo CircuitWall/jarela --state open`). Review, fix, and merge
+  residual PRs first, and fast-forward local `main` to `origin/main`.
+- **Chaining is allowed** when new work depends on an unmerged PR. Branch from
+  the tip of the chain (the newest PR branch), not from `main`, and set the PR
+  base to the previous PR's branch.
+- **Always build on top of the chain.** Never start a parallel branch off
+  `main` that touches the same files as an open PR.
+- **Merge sequentially, bottom first.** Merge the PR closest to `main`, wait for
+  `main` to advance, then run `git rebase --onto origin/main <old-parent-tip>`
+  on the next branch, force-push with `--force-with-lease`, retarget its base to
+  `main`, wait for CI, and merge. Repeat up the chain.
+- **Do not merge out of order** or let a chain sit; unmerged chains of more than
+  three PRs should be merged before new work begins.
+
 Self-merge is fine while Jarela has a single maintainer. Once outside
 contributors arrive, flip on "Require at least 1 approval" in branch
 protection.

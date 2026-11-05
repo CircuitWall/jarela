@@ -19,6 +19,11 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
    - If the request is broad, do one targeted search to find the owning code path, then work locally from there.
    - Before the first edit, name one falsifiable local hypothesis and one cheap check that could disprove it.
 
+1a. Drain open PRs before branching.
+   - Run `gh pr list --repo CircuitWall/jarela --state open` and `git fetch origin`. Review and merge residual PRs (bottom of any chain first) and update `main` before starting a new PR.
+   - If new work depends on an unmerged PR, chain it: branch from the tip of the chain, set the PR base to the previous PR's branch, and never branch from `main` for overlapping files.
+   - Merge chains sequentially from the bottom. After each merge, `git fetch origin` then `git rebase --onto origin/main <old-parent-tip>` on the next branch, `git push --force-with-lease`, retarget the base to `main`, wait for CI, merge, repeat. See CONTRIBUTING.md "Open PRs and chained PRs".
+
 2. Respect the current worktree.
    - Run `git status --short --branch` before editing.
    - Treat unexpected changes as user work. Do not revert, overwrite, or reformat them unless the user explicitly asks.
