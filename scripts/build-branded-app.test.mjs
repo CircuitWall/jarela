@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { resolveBrandConfig } from "./build-branded-app.mjs";
+import { createNodeModulesOverlay, resolveBrandConfig } from "./build-branded-app.mjs";
 
 const temporaryDirectories = [];
 
@@ -123,5 +123,53 @@ describe("resolveBrandConfig", () => {
     writeFileSync(oversizedPath, "");
     truncateSync(oversizedPath, 10 * 1024 * 1024 + 1);
     expect(() => resolveBrandConfig(oversized.configPath)).toThrow(/10 MB limit/);
+  });
+
+  it("requires icon assets to match their declared MIME types", () => {
+    const mismatchedAssets = [
+      ["faviconSvg", "favicon.png", "png", ".svg"],
+      ["faviconIco", "favicon.svg", "svg", ".ico"],
+      ["icon192", "icon.webp", "webp", ".png"],
+      ["icon512Maskable", "icon.jpg", "jpg", ".png"],
+      ["appleTouchIcon", "apple.webp", "webp", ".png"],
+    ];
+
+    for (const [key, path, contents, expectedExtension] of mismatchedAssets) {
+      const { configPath } = createBrandDirectory({
+        name: "Acme",
+        assets: { [key]: path },
+      }, { [path]: contents });
+
+      expect(() => resolveBrandConfig(configPath)).toThrow(
+        new RegExp(`${key} must use ${expectedExtension}`),
+      );
+    }
+  });
+});
+
+describe("createNodeModulesOverlay", () => {
+  it("preserves nested dependency priority and includes hoisted packages", () => {
+    const root = mkdtempSync(join(tmpdir(), "jarela-modules-test-"));
+    temporaryDirectories.push(root);
+    const nestedModules = join(root, "package", "node_modules");
+    const hoistedModules = join(root, "consumer", "node_modules");
+    const destination = join(root, "staging", "node_modules");
+    const nestedNext = join(nestedModules, "next");
+    const hoistedNext = join(hoistedModules, "next");
+    const nestedTypescript = join(nestedModules, "typescript");
+    const nestedSerwistUtils = join(nestedModules, "@serwist", "utils");
+    const hoistedSerwist = join(hoistedModules, "@serwist", "next");
+
+    mkdirSync(nestedNext, { recursive: true });
+    mkdirSync(hoistedNext, { recursive: true });
+    mkdirSync(nestedTypescript, { recursive: true });
+    mkdirSync(nestedSerwistUtils, { recursive: true });
+    mkdirSync(hoistedSerwist, { recursive: true });
+    createNodeModulesOverlay([nestedModules, hoistedModules], destination);
+
+    expect(realpathSync(join(destination, "next"))).toBe(realpathSync(nestedNext));
+    expect(realpathSync(join(destination, "typescript"))).toBe(realpathSync(nestedTypescript));
+    expect(realpathSync(join(destination, "@serwist", "utils"))).toBe(realpathSync(nestedSerwistUtils));
+    expect(realpathSync(join(destination, "@serwist", "next"))).toBe(realpathSync(hoistedSerwist));
   });
 });

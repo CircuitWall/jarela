@@ -139,6 +139,9 @@ try {
   const required = [
     "package/.next/standalone/server.js",
     "package/.next/standalone/node_modules/@huggingface/transformers/package.json",
+    "package/proxy.ts",
+    "package/instrumentation.ts",
+    "package/instrumentation-node.ts",
     // The PWA manifest is a route now (ADR-0077), not a static public/ file.
     "package/.next/standalone/.next/server/app/manifest.webmanifest/route.js",
     "package/package.json",

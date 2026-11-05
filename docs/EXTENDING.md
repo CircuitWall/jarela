@@ -1144,8 +1144,11 @@ escaping that directory are rejected. Supported asset keys are
 `icon192Maskable`, `icon512Maskable`, `icon192Light`, `icon512Light`,
 `icon192MaskableLight`, `icon512MaskableLight`, and `appleTouchIcon`. Each is
 optional; omitted assets use the upstream defaults. Supported file types are
-SVG, ICO, JPEG, PNG, and WebP, up to 10 MB per asset. The builder copies these
-assets into the branded static bundle.
+slot-specific to match the app's declared icon types: `faviconSvg` requires
+SVG, `faviconIco` requires ICO, and all `icon...` and `appleTouchIcon` assets
+require PNG. `logoLight` and `logoDark` accept SVG, ICO, JPEG, PNG, or WebP.
+Assets are limited to 10 MB each. The builder copies them into the branded
+static bundle.
 
 `name` is required. `systemName` defaults to `name`; `assistantName` defaults
 to `<systemName> Assistant`. `assistantIdentity` defaults to a friendly
