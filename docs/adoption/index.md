@@ -17,6 +17,37 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.4.0
+
+From 3.3.3 · 2026-11-05
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- docs(contributing): add open and chained pull request sop
+- fix(branding): validate assets and resolve hoisted dependencies
+- feat(branding): add branded builds for installed package
+- fix(package): verify production consumer builds
+- fix(package): add release assets to packed builds
+- fix(package): restore published build resources
+- fix(ui): reserve docked sidebar space for status banners
+- fix(ui): keep routine runtime status out of banners
+- fix(ui): move notification prompt to navigation
+- refactor(ui): reuse top banner stack for runtime status
+- ci(hooks): keep pre-commit tests focused
+- fix(ui): keep runtime status notice click-through
+- feat(ui): stream active run status through app events
+- fix(ui): split liveness from runtime diagnostics
+- fix(stores): clean staging directories with bounded retries
+- feat(agents): align token budgets with model limits
+
 ## 3.3.3
 
 From 3.3.2 · 2026-11-03

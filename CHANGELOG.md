@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-11-05
+
+### Added
+
+- agents: Align token budgets with model limits
+- ui: Stream active run status through app events
+- branding: Add branded builds for installed package
+
+### Fixed
+
+- stores: Clean staging directories with bounded retries
+- ui: Split liveness from runtime diagnostics
+- ui: Keep runtime status notice click-through
+- ui: Move notification prompt to navigation
+- ui: Keep routine runtime status out of banners
+- ui: Reserve docked sidebar space for status banners
+- package: Restore published build resources
+- package: Add release assets to packed builds
+- package: Verify production consumer builds
+- branding: Validate assets and resolve hoisted dependencies
+
+### Changed
+
+- hooks: Keep pre-commit tests focused
+- ui: Reuse top banner stack for runtime status
+- contributing: Add open and chained pull request sop
+
 ### Added
 
 - ui: Share live run activity over the app event stream.
