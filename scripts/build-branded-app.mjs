@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -18,7 +19,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
@@ -55,6 +56,19 @@ const BRAND_SCHEMA = z.strictObject({
 });
 
 const ALLOWED_ASSET_EXTENSIONS = new Set([".ico", ".jpg", ".jpeg", ".png", ".svg", ".webp"]);
+const REQUIRED_ASSET_EXTENSIONS = Object.freeze({
+  faviconSvg: ".svg",
+  faviconIco: ".ico",
+  icon192: ".png",
+  icon512: ".png",
+  icon192Maskable: ".png",
+  icon512Maskable: ".png",
+  icon192Light: ".png",
+  icon512Light: ".png",
+  icon192MaskableLight: ".png",
+  icon512MaskableLight: ".png",
+  appleTouchIcon: ".png",
+});
 const MAX_ASSET_BYTES = 10 * 1024 * 1024;
 const PLACEHOLDER_PATTERN = /\{\{([^{}]+)\}\}/g;
 const EXCLUDED_STAGING_DIRS = new Set([
@@ -99,6 +113,10 @@ function readAsset(configDirectory, key, value) {
   const extension = extname(source).toLowerCase();
   if (!ALLOWED_ASSET_EXTENSIONS.has(extension)) {
     throw new Error(`brand.assets.${key} must use SVG, ICO, JPEG, PNG, or WebP`);
+  }
+  const requiredExtension = REQUIRED_ASSET_EXTENSIONS[key];
+  if (requiredExtension && extension !== requiredExtension) {
+    throw new Error(`brand.assets.${key} must use ${requiredExtension} to match its declared icon type`);
   }
 
   const realDirectory = realpathSync(configDirectory);
@@ -170,13 +188,49 @@ function copyBrandAssets(publicDirectory, assets) {
   }
 }
 
-function findNodeModulesDirectory(nextBinary) {
-  let directory = dirname(nextBinary);
+function findNodeModulesDirectories(directory) {
+  const directories = [];
   while (directory !== dirname(directory)) {
-    if (basename(directory) === "node_modules") return directory;
+    const nodeModulesDirectory = join(directory, "node_modules");
+    if (existsSync(nodeModulesDirectory)) directories.push(nodeModulesDirectory);
     directory = dirname(directory);
   }
-  throw new Error(`could not locate the installed node_modules directory for ${nextBinary}`);
+  if (directories.length === 0) {
+    throw new Error(`could not locate installed node_modules directories for ${packageRoot}`);
+  }
+  return directories;
+}
+
+export function createNodeModulesOverlay(moduleDirectories, destination) {
+  if (moduleDirectories.length === 0) {
+    throw new Error("no node_modules directories were provided for the branded build");
+  }
+  const linkType = process.platform === "win32" ? "junction" : "dir";
+  if (moduleDirectories.length === 1) {
+    symlinkSync(moduleDirectories[0], destination, linkType);
+    return;
+  }
+
+  mkdirSync(destination, { recursive: true });
+  for (const moduleDirectory of moduleDirectories) {
+    for (const entry of readdirSync(moduleDirectory)) {
+      if (entry === ".bin" || entry.startsWith(".")) continue;
+
+      const source = join(moduleDirectory, entry);
+      const target = join(destination, entry);
+      if (entry.startsWith("@")) {
+        mkdirSync(target, { recursive: true });
+        for (const packageName of readdirSync(source)) {
+          const packageTarget = join(target, packageName);
+          if (!existsSync(packageTarget)) {
+            symlinkSync(realpathSync(join(source, packageName)), packageTarget, linkType);
+          }
+        }
+      } else if (!existsSync(target)) {
+        symlinkSync(realpathSync(source), target, linkType);
+      }
+    }
+  }
 }
 
 function copyPackageSource(destination) {
@@ -234,16 +288,12 @@ export async function buildBrandedApp({ brandFile, quiet = false } = {}) {
   const brand = resolveBrandConfig(brandPath);
   const require = createRequire(join(packageRoot, "package.json"));
   const nextBinary = require.resolve("next/dist/bin/next");
-  const nodeModulesDirectory = findNodeModulesDirectory(nextBinary);
+  const nodeModulesDirectories = findNodeModulesDirectories(packageRoot);
   const stagingDirectory = mkdtempSync(join(tmpdir(), "jarela-branded-build-"));
 
   try {
     copyPackageSource(stagingDirectory);
-    symlinkSync(
-      nodeModulesDirectory,
-      join(stagingDirectory, "node_modules"),
-      process.platform === "win32" ? "junction" : "dir",
-    );
+    createNodeModulesOverlay(nodeModulesDirectories, join(stagingDirectory, "node_modules"));
     copyBrandAssets(join(stagingDirectory, "public"), brand.assets);
 
     const env = {
