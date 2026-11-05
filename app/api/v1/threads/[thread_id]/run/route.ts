@@ -20,11 +20,11 @@ import {
   snapshotThreadModelConfigName,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
-import { broadcast, finishRun, startRun, subscribe, abortRun, pushSteering, drainSteering, getRun, waitForRun } from "@/lib/agents/run-registry";
+import { broadcast, finishRun, startRun, subscribe, abortRun, pushSteering, removeSteering, drainSteering, getRun, waitForRun } from "@/lib/agents/run-registry";
 import { runAgentTurn } from "@/lib/agents/agent-turn";
 import { enqueueThreadRun, QueueFullError, getQueueDepth } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
-import { getThread, getThreadMessageBySeq, isValidThreadContextCursor, addMessage, updateMessageContent } from "@/lib/stores/threads";
+import { getThread, getThreadMessageBySeq, getMessageBySteeringRequestId, isValidThreadContextCursor, addMessage, updateMessageContent } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { sseResponse } from "@/lib/api/sse";
 import { validateBody, errorJson } from "@/lib/api/responses";
@@ -36,6 +36,7 @@ import { parseToolResultReferenceEnvelope } from "@/lib/tools/support/result-ref
 import { safeTranscriptFailureReason } from "@/api/message-content";
 import { createAssistantTranscriptDraft, persistAssistantDraftChunk, type AssistantTranscriptDraft } from "@/lib/agents/transcript-draft";
 import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
+import { randomUUID } from "node:crypto";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -586,7 +587,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   return attachStream(thread_id, stream_options, req.headers.get("last-event-id"));
 }
 
-const SteerBody = z.object({ message: z.string().min(1) });
+const SteerBody = z.object({ message: z.string().min(1), request_id: z.uuid().optional() });
 
 // The steering text is already the last user row in the transcript, so the
 // continuation only needs to explain why the agent is seeing it late.
@@ -595,19 +596,34 @@ const STEERING_CONTINUATION_PREFIX =
 
 // PATCH steers the currently-running agent: the message is queued and the
 // agent's preModelHook delivers it before the next model call, alongside the
-// tool results it should react to (ADR-0080). 409 means there was nothing to
-// steer, and the caller should submit a normal run instead.
+// tool results it should react to (ADR-0080). A 409 with reason
+// `no_active_run` tells the caller to submit a normal run instead.
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
   const body = await validateBody(req, SteerBody);
   if (body instanceof NextResponse) return body;
 
+  const requestId = body.request_id ?? randomUUID();
+  if (body.request_id) {
+    const existing = getMessageBySteeringRequestId(thread_id, body.request_id);
+    if (existing) {
+      if (existing.content !== body.message) {
+        return NextResponse.json({ steered: false, reason: "request_id_conflict" }, { status: 409 });
+      }
+      return NextResponse.json({ steered: true, duplicate: true });
+    }
+  }
   if (!pushSteering(thread_id, body.message)) {
     return NextResponse.json({ steered: false, reason: "no_active_run" }, { status: 409 });
   }
-  // Persist only once the queue accepted it, so a 409 fallback to POST /run
-  // doesn't write the same message twice.
-  addMessage(thread_id, "user", body.message);
+  try {
+    addMessage(thread_id, "user", body.message, undefined, null, { steering_request_id: requestId });
+  } catch (error) {
+    // The synchronous handler hasn't yielded since enqueueing, so removing the
+    // latest matching text rolls back this request even if earlier text matches.
+    removeSteering(thread_id, body.message);
+    throw error;
+  }
   return NextResponse.json({ steered: true });
 }
 

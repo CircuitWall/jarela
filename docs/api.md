@@ -145,11 +145,17 @@ terminal event after the snapshot.
 
 ### `PATCH /api/v1/threads/[thread_id]/run`
 
-Steer the run that is already streaming (ADR-0080). Body: `{ "message": "…" }`.
+Steer the run that is already streaming (ADR-0080). Body:
+`{ "message": "…", "request_id": "<UUID>" }`. `request_id` is optional for
+older clients; clients should send a stable UUID per steering attempt so
+network retries do not persist or deliver the same message twice. Reusing an
+ID with different message text returns `409 { "steered": false,
+"reason": "request_id_conflict" }`.
+
 The message is queued and delivered before the agent's next model call,
 alongside the tool results it should react to — the run is not aborted.
-Returns `409 { "steered": false }` when no run is active, in which case submit a
-normal `POST` instead.
+Returns `409 { "steered": false, "reason": "no_active_run" }` when no run is
+active, in which case submit a normal `POST` instead.
 
 ### `DELETE /api/v1/threads/[thread_id]/run`
 

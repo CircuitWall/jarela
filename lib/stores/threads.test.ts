@@ -21,6 +21,7 @@ const {
   createThread,
   listThreadsByAgent,
   getMessages,
+  getMessageBySteeringRequestId,
   getMessagesAfter,
   getMessagesPage,
   getThread,
@@ -70,6 +71,27 @@ describe("thread statement reuse", () => {
     } finally {
       prepare.mockRestore();
     }
+  });
+});
+
+describe("steering request lookup", () => {
+  it("finds the persisted request in its thread and ignores other threads", () => {
+    const first = createThread("steering-request-first");
+    const second = createThread("steering-request-second");
+    const requestId = "00000000-0000-4000-8000-000000000001";
+    addMessage(first.thread_id, "user", "Steer once.", undefined, null, {
+      steering_request_id: requestId,
+    });
+    addMessage(second.thread_id, "user", "Same id, another thread.", undefined, null, {
+      steering_request_id: requestId,
+    });
+
+    expect(getMessageBySteeringRequestId(first.thread_id, requestId)).toMatchObject({
+      thread_id: first.thread_id,
+      role: "user",
+      content: "Steer once.",
+    });
+    expect(getMessageBySteeringRequestId(first.thread_id, "00000000-0000-4000-8000-000000000002")).toBeNull();
   });
 });
 

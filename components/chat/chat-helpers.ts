@@ -122,7 +122,7 @@ export interface ThreadGetPayload {
 // A bubble the client created optimistically and the server has not yet
 // echoed back. All of these reconcile in place; only the label differs.
 export function isUnconfirmed(m: Message): boolean {
-  return m.status === 'pending' || m.status === 'sent' || m.status === 'steering';
+  return m.status === 'pending' || m.status === 'sent' || m.status === 'steering' || m.status === 'steering_uncertain';
 }
 
 export function appendUnique(prev: Message[], incoming: Message[]): Message[] {

@@ -310,17 +310,30 @@ function useChatRunActions({ threadId, thread, messageFilters, hideInternalOpera
   const steerRun = useCallback(async (text: string): Promise<boolean> => {
     if (!threadId) return false;
     const optId = `opt-${makeQueuedId("")}`;
+    const requestId = globalThis.crypto.randomUUID();
     sse.armSteeredContinuation(optId);
     thread.setMessages((p) => [
       ...p,
       { id: optId, role: "user", content: text, created_at: new Date().toISOString(), status: 'steering' },
     ]);
-    const { steered } = await api.threads.steerRun(threadId, text);
-    if (!steered) {
+    try {
+      const { steered } = await api.threads.steerRun(threadId, text, requestId);
+      if (steered) return true;
       thread.setMessages((p) => p.filter((m) => m.id !== optId));
       sse.rollbackSteeredSegment(optId);
+      return false;
+    } catch (error) {
+      thread.setMessages((p) => p.map((m) => m.id === optId
+        ? { ...m, status: 'steering_uncertain' }
+        : m));
+      sse.rollbackSteeredSegment(optId);
+      pushErrorToast({
+        title: "Couldn't confirm whether your message was delivered",
+        error,
+        context: { panel: "chat", action: "steer", thread_id: threadId },
+      });
+      return true;
     }
-    return steered;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);
 

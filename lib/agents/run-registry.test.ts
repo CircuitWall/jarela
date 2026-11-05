@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { startRun, finishRun, getRun, getActiveRunCount, broadcast, waitForRun, pushSteering, drainSteering, abortRun, subscribe } from "./run-registry";
+import { startRun, finishRun, getRun, getActiveRunCount, broadcast, waitForRun, pushSteering, removeSteering, drainSteering, abortRun, subscribe } from "./run-registry";
 import { getConfig, resetConfigCache } from "@/lib/env/config";
 import { subscribe as subscribeAppEvents } from "@/lib/notifications/bus";
 import type { StreamChunk } from "./base";
@@ -513,6 +513,17 @@ describe("steering queue (ADR-0080)", () => {
     const run = startRun(tid, null);
     abortRun(tid);
     expect(pushSteering(tid, "too late")).toBe(false);
+    finishRun(run, "done");
+  });
+
+  it("removes the latest matching message when transcript persistence fails", () => {
+    const tid = `t-steer-rollback-${Date.now()}`;
+    const run = startRun(tid, null);
+    pushSteering(tid, "keep this");
+    pushSteering(tid, "do not deliver");
+    expect(removeSteering(tid, "do not deliver")).toBe(true);
+    expect(removeSteering(tid, "do not deliver")).toBe(false);
+    expect(drainSteering(tid)).toEqual(["keep this"]);
     finishRun(run, "done");
   });
 });

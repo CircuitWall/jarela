@@ -272,9 +272,11 @@ export interface Message {
   // so the message is durable but the row hasn't been fetched back yet.
   // 'steering' = optimistic bubble handed to a run that is already streaming
   // (ADR-0080); it is not opening a turn, so it reads differently in the UI.
+  // 'steering_uncertain' = the server outcome was ambiguous and needs
+  // reconciliation; the message stays visible until server history confirms it.
   // 'confirmed' = received from and reconciled with the server. Absent means
   // the same as 'confirmed'.
-  status?: 'pending' | 'sent' | 'steering' | 'confirmed';
+  status?: 'pending' | 'sent' | 'steering' | 'steering_uncertain' | 'confirmed';
 }
 
 export interface CitationClaim {

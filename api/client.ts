@@ -381,14 +381,14 @@ function startupRead<T>(path: string): Promise<T> {
   return entry.promise.then((value) => structuredClone(value as T));
 }
 
-async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number; startup?: boolean }): Promise<T> {
+async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number; startup?: boolean; allowConflict?: boolean }): Promise<T> {
   const mutation = !!init?.method && init.method !== "GET";
   if (mutation) startupReads.clear();
   else if (!init?.startup) startupReads.delete(path);
   const cfg = runtimeConfig();
   const maxAttempts = Math.max(1, cfg.httpMaxAttempts);
   const timeoutMs = init?.timeoutMs ?? cfg.httpRequestTimeoutMs;
-  const { timeoutMs: _ignoreTimeoutMs, startup: _ignoreStartup, ...fetchInit } = init ?? {};
+  const { timeoutMs: _ignoreTimeoutMs, startup: _ignoreStartup, allowConflict: _ignoreAllowConflict, ...fetchInit } = init ?? {};
   const callerSignal = fetchInit.signal ?? null;
 
   let lastErr: unknown = null;
@@ -431,6 +431,7 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
           }
           throw new Error(`423 ${body?.error ?? "locked"}`);
         }
+        if (res.status === 409 && init?.allowConflict) return parseJsonResponse<T>(res);
         const text = await res.text().catch(() => res.statusText);
         // Retryable status codes: try again unless we've burned the budget
         // or the caller aborted.
@@ -782,12 +783,18 @@ export const api = {
       request<{ aborted: boolean }>(`/threads/${thread_id}/run`, { method: "DELETE" }),
     // ADR-0080. Deliver a message typed mid-run to the agent that is already
     // streaming, instead of aborting it. Resolves `{ steered: false }` when no
-    // run is active, in which case the caller should submit a normal run.
-    steerRun: (thread_id: string, message: string) =>
-      request<{ steered: boolean }>(`/threads/${thread_id}/run`, {
+    // run is active; a reused id with different content is an error.
+    steerRun: async (thread_id: string, message: string, request_id: string) => {
+      const result = await request<{ steered: boolean; reason?: string }>(`/threads/${thread_id}/run`, {
         method: "PATCH",
-        body: JSON.stringify({ message }),
-      }).catch(() => ({ steered: false })),
+        body: JSON.stringify({ message, request_id }),
+        allowConflict: true,
+      });
+      if (!result.steered && result.reason !== "no_active_run") {
+        throw new Error(`Steering request rejected: ${result.reason ?? "unknown reason"}`);
+      }
+      return result;
+    },
     // ADR-0042. Move the explicit hot/warm context boundary on this thread.
     // Pass `null` to clear the pin and let the agent's default window apply.
     // Fire-and-forget from the chat — UI updates optimistically and the

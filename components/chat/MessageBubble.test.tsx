@@ -18,6 +18,21 @@ afterEach(() => {
 });
 
 describe("MessageBubble image attachments", () => {
+  it("keeps a steering message visible when delivery is uncertain", () => {
+    const message: Message = {
+      id: "uncertain-steer",
+      role: "user",
+      content: "Focus on the API.",
+      created_at: "2026-11-05T00:00:00.000Z",
+      status: "steering_uncertain",
+    };
+
+    render(<AppProvider><MessageBubble message={message} showAvatar={false} /></AppProvider>);
+
+    expect(screen.getByText("Focus on the API.")).toBeTruthy();
+    expect(screen.getByText("Delivery uncertain")).toBeTruthy();
+  });
+
   it("hides technical metadata but not failed responses, and reveals diagnostics on request", () => {
     const message: Message = {
       id: "profile-diagnostics",

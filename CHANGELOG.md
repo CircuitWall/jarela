@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- api: Make chat-steering retries idempotent and retain messages with uncertain delivery
+
 ## [3.4.0] - 2026-11-05
 
 ### Added
