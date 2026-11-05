@@ -7,6 +7,8 @@
 
 export const STORAGE_KEY = "jarelaConfig";
 export const SELECTED_AGENT_STORAGE_KEY = "jarelaSelectedAgentId";
+export const FORM_SUBMISSION_CAPTURE_KEY = "jarelaFormSubmissionCaptureEnabled";
+export const FORM_SUBMISSION_CAPTURE_ORIGINS = Object.freeze(["http://*/*", "https://*/*"]);
 
 export const DEFAULT_CONFIG = Object.freeze({
   scheme: "http",
@@ -82,6 +84,7 @@ export function extensionRefineUrl(cfg) { return `${buildBase(cfg)}/api/v1/exten
 export function extensionFillUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/fill`; }
 export function extensionTurnUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/turn`; }
 export function extensionAgentsUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/agents`; }
+export function formSubmissionUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/form-submission`; }
 export function allowedSitesUrl(cfg) { return `${buildBase(cfg)}/api/v1/allowed-sites`; }
 export function allowedSiteHostUrl(cfg, hostname) {
   return `${buildBase(cfg)}/api/v1/allowed-sites/${encodeURIComponent(hostname)}`;

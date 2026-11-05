@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   DEFAULT_CONFIG,
+  FORM_SUBMISSION_CAPTURE_KEY,
+  FORM_SUBMISSION_CAPTURE_ORIGINS,
   STORAGE_KEY,
   parseConfig,
   isValidHost,
@@ -16,12 +18,18 @@ import {
   extensionFillUrl,
   extensionTurnUrl,
   extensionAgentsUrl,
+  formSubmissionUrl,
   appUrl,
 } from "./config.mjs";
 
 describe("config constants", () => {
   it("exposes a stable storage key", () => {
     expect(STORAGE_KEY).toBe("jarelaConfig");
+  });
+
+  it("uses explicit HTTP(S) host patterns for preference capture", () => {
+    expect(FORM_SUBMISSION_CAPTURE_KEY).toBe("jarelaFormSubmissionCaptureEnabled");
+    expect(FORM_SUBMISSION_CAPTURE_ORIGINS).toEqual(["http://*/*", "https://*/*"]);
   });
 
   it("ships sensible defaults", () => {
@@ -215,6 +223,7 @@ describe("healthUrl / captureUrl / appUrl", () => {
     expect(extensionFillUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/extension/fill");
     expect(extensionTurnUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/extension/turn");
     expect(extensionAgentsUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/extension/agents");
+    expect(formSubmissionUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/extension/form-submission");
     expect(appUrl(cfg)).toBe("http://127.0.0.1:4312/");
   });
 

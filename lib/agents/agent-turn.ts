@@ -50,6 +50,8 @@ export interface RunAgentTurnRequest {
   queue_expires_at?: number;
   /** Synthetic one-shot prompts can remain visible only through activity rows. */
   persist_user_message?: boolean;
+  /** Prevent transient observer output from entering the chat transcript. */
+  persist_assistant_message?: boolean;
   /** Lifecycle hook used to update an automation activity row. */
   on_queue_state?: (state: "queued" | "running") => void;
   /**
@@ -151,7 +153,7 @@ function settleCollectedTurn(
   const skipSilent = req.silent === true
     && !collected.aborted
     && (trimmed.length === 0 || NO_REPLY_RE.test(trimmed));
-  if (!skipSilent) {
+  if (!skipSilent && req.persist_assistant_message !== false) {
     const contentToPersist = collected.aborted
       ? withInterruptMarker(collected.assistantContent)
       : collected.assistantContent;
@@ -230,12 +232,14 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
             ? true
             : undefined,
         _history_append_message: req.history_append_message,
-        _onTranscriptUserPersisted: req.silent ? undefined : () => {
+        _onTranscriptUserPersisted: req.silent || req.persist_assistant_message === false ? undefined : () => {
           assistantDraft = createAssistantTranscriptDraft(req.thread_id);
         },
       });
 
-      if (!req.silent && !assistantDraft) assistantDraft = createAssistantTranscriptDraft(req.thread_id);
+      if (!req.silent && req.persist_assistant_message !== false && !assistantDraft) {
+        assistantDraft = createAssistantTranscriptDraft(req.thread_id);
+      }
 
       const startedAt = Date.now();
       const collected = await collectStream(prepared.stream, {
@@ -256,7 +260,9 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
       };
     } catch (err) {
       terminal = "error";
-      if (!transcriptFinalized && (assistantDraft || !req.silent)) {
+      if (!transcriptFinalized && (
+        assistantDraft || (!req.silent && req.persist_assistant_message !== false)
+      )) {
         const reason = safeTranscriptFailureReason(err instanceof AgentTurnStreamError ? err.code : undefined);
         try {
           if (assistantDraft) {

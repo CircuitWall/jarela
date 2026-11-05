@@ -172,6 +172,20 @@
       <div id="detail" class="hint"></div>
     </section>
 
+    <section class="card">
+      <label for="formSubmissionCapture">Automatic preference capture</label>
+      <div class="hint">
+        <label style="display:inline-flex;align-items:flex-start;gap:6px;font-weight:400;">
+          <input id="formSubmissionCapture" type="checkbox" />
+          <span>Observe form submissions on websites and let the selected agent save clear, durable preferences to memory.</span>
+        </label>
+      </div>
+      <div class="hint">
+        Requires access to all HTTP and HTTPS sites. Only preference-labeled fields are sent; credentials, contact details, financial, health, and other sensitive fields are excluded. Raw submissions are not saved to chat history. Form values are sent to the configured model provider for analysis.
+      </div>
+      <div id="formCaptureError" class="error" role="alert"></div>
+    </section>
+
     <!-- Non-removable upstream credit; populated by options.js. -->
     <footer id="upstream-credit" class="credit"></footer>
   </main>
