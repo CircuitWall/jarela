@@ -34,8 +34,11 @@ existing zero-means-unlimited behavior.
 
 All automatic, manual, and retention compaction requests use the shared
 topic-aware boundary coordinator. Hot-turn overflow and near-budget hot-token
-pressure may trigger it; `warm_summary_limit` only caps its result and does not
-trigger another compaction.
+pressure may trigger it; a 50-row hot-context ceiling also triggers it when
+the configured hot-turn limit does not trigger first. `warm_summary_limit`
+only caps the warm result and does not trigger compaction itself. On incremental
+passes, new hot rows are summarized with the existing warm topic recap, and
+older topics fade out as the warm message cap is reached.
 
 ## Consequences
 

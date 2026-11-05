@@ -270,6 +270,7 @@ describe("compactThreadWarmContext — seq-exact boundary (ADR-0088)", () => {
       const context = await compactThreadWarmContext("thread-1", 5);
       expect(prompts).toHaveLength(2);
       expect(prompts.join("\n")).toContain("newly aged-out question");
+      expect(prompts.join("\n")).toContain("earlier recap");
       expect(prompts.join("\n")).not.toContain("already summarized question");
       expect(prompts.join("\n")).not.toContain("hot question");
       expect(context?.topics).toMatchObject([{ title: "Earlier topic", start_seq: 1, end_seq: 4, message_count: 4 }]);

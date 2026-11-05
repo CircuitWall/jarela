@@ -41,6 +41,8 @@ vi.mock("@/lib/embeddings", () => ({
 }));
 
 const { isHotContextNearBudget, persistThreadRunUserMessage, prepareThreadRun } = await import("./run-thread");
+const prepareApi = await import("@/lib/agents/prepare");
+const warmSummaryBackground = await import("@/lib/agents/warm-summary-background");
 const { upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 const { addMessage, createThread, getMessages, getThread, pruneThreadMessages, setThreadContextPin, updateMessageContent } = await import("@/lib/stores/threads");
@@ -99,6 +101,51 @@ describe("prepareThreadRun auto context boundary", () => {
     expect(isHotContextNearBudget(85, 100)).toBe(true);
     expect(isHotContextNearBudget(100, 100)).toBe(true);
     expect(isHotContextNearBudget(100, 0)).toBe(false);
+  });
+
+  it("routes near-budget hot context to background boundary compaction", async () => {
+    process.env.JARELA_MAX_THREAD_MESSAGES = "1000";
+    resetConfigCache();
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-hot-budget-route",
+      name: "Hot Budget Route Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 0,
+      hot_turn_limit: 100,
+    });
+    const thread = createThread("agent-hot-budget-route");
+    const boundary = addMessage(thread.thread_id, "user", "earlier context");
+    addMessage(thread.thread_id, "assistant", "earlier response");
+    const buildHistoryWindow = prepareApi.buildHistoryWindow;
+    const historyWindowSpy = vi.spyOn(prepareApi, "buildHistoryWindow").mockImplementation(async (...args) => {
+      const historyWindow = await buildHistoryWindow(...args);
+      return {
+        ...historyWindow,
+        tierUsage: {
+          ...historyWindow.tierUsage,
+          hot_tokens: historyWindow.budget.tierBudgets.hot,
+        },
+        hotSinceSeqCandidate: boundary.seq,
+      };
+    });
+    const boundaryCompactionSpy = vi.spyOn(warmSummaryBackground, "kickBoundaryCompaction").mockImplementation(() => {});
+
+    try {
+      await prepareThreadRun({
+        thread_id: thread.thread_id,
+        message: "new question",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+
+      expect(boundaryCompactionSpy).toHaveBeenCalledWith(thread.thread_id, boundary.seq);
+    } finally {
+      historyWindowSpy.mockRestore();
+      boundaryCompactionSpy.mockRestore();
+    }
   });
 
   it.each([
@@ -379,13 +426,14 @@ describe("prepareThreadRun auto context boundary", () => {
     })).resolves.toBeDefined();
   });
 
-  it("hints the agent to ask when the thread was idle for 3h or more", async () => {
-    const prompt = await runAfterIdle("agent-gap-long", 4, "hey");
+  it("hints the agent at 3h without automatically moving the context boundary", async () => {
+    const prompt = await runAfterIdle("agent-gap-threshold", 3, "hey");
     expect(prompt).toContain("--- Conversation gap ---");
+    expect(prompt).toContain("If they say to start fresh or not to continue, call compact_context once");
   });
 
-  it("omits the gap hint when the thread is warm", async () => {
-    const prompt = await runAfterIdle("agent-gap-short", 1, "hey");
+  it("omits the gap hint just before 3h without automatically moving the context boundary", async () => {
+    const prompt = await runAfterIdle("agent-gap-before-threshold", 2.99, "hey");
     expect(prompt).not.toContain("--- Conversation gap ---");
   });
 
@@ -576,6 +624,47 @@ describe("prepareThreadRun auto context boundary", () => {
       _onCompacting: onCompacting,
     });
     expect(onCompacting).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts compaction when the hot history reaches 50 message rows with turn compaction disabled", async () => {
+    process.env.JARELA_MAX_THREAD_MESSAGES = "1000";
+    resetConfigCache();
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-hot-message-limit",
+      name: "Hot Message Limit Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_limit: 0,
+      history_window_hours: 0,
+      hot_turn_limit: 0,
+    });
+    const thread = createThread("agent-hot-message-limit");
+    for (let i = 0; i < 24; i += 1) {
+      addMessage(thread.thread_id, "user", `question ${i}`);
+      addMessage(thread.thread_id, "assistant", `answer ${i}`);
+    }
+    addMessage(thread.thread_id, "user", "message 49");
+    const boundaryCompactionSpy = vi.spyOn(warmSummaryBackground, "kickBoundaryCompaction").mockImplementation(() => {});
+
+    try {
+      await prepareThreadRun({
+        thread_id: thread.thread_id,
+        message: "message 50",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+
+      expect(getMessages(thread.thread_id)).toHaveLength(50);
+      expect(boundaryCompactionSpy).toHaveBeenCalledWith(
+        thread.thread_id,
+        getMessages(thread.thread_id)[0].seq,
+        { autoBoundaryLockedUntilMessageCount: getThread(thread.thread_id)!.message_count + 27 },
+      );
+    } finally {
+      boundaryCompactionSpy.mockRestore();
+    }
   });
 
   it("does not re-run hot-turn compaction on the very next turn after a commit", async () => {

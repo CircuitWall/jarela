@@ -527,6 +527,13 @@ checking code's verdicts, not live model behaviour.
 
 Chat is the per-agent workspace for conversations and their results. Keep related follow-up work in the same thread so its existing context remains available.
 
+After three hours without foreground conversation activity, chat (Unreleased)
+asks whether to compact the thread. Choosing Yes schedules topic-aware compaction,
+which moves older messages into the bounded warm summary; No keeps the current
+context and dismisses the prompt. New foreground activity starts the idle timer
+again. Independently, the app requests automatic compaction when hot history
+reaches 50 foreground message rows.
+
 An asynchronous tool handoff means work is still running, not that its effect
 has been verified. The runtime keeps these calls out of successful-tool
 evidence while retaining them in duplicate-effect protection.

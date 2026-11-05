@@ -38,7 +38,7 @@ export interface ThreadDataApi extends ThreadMetadata {
   hotSinceSeqForRun: number | null | undefined;
   metaApplier: ThreadMetaApplier;
   loadOlder: () => Promise<void>;
-  setContextPin: (next: number | null) => Promise<void>;
+  setContextPin: (next: number | null) => Promise<boolean>;
 }
 
 function emptyThreadMetadata(): ThreadMetadata {
@@ -88,8 +88,8 @@ function useThreadMetadata(threadId: string | null) {
     setMetadataThreadId(null);
     setValue(emptyThreadMetadata());
   }, []);
-  const setContextPin = useCallback(async (next: number | null) => {
-    if (!threadId) return;
+  const setContextPin = useCallback(async (next: number | null): Promise<boolean> => {
+    if (!threadId) return false;
     if (next === null) {
       metaApplier.setHotSince(null);
       metaApplier.setHotSinceSeq(null);
@@ -115,10 +115,12 @@ function useThreadMetadata(threadId: string | null) {
         warmSummaryPending: !updated.pending_hot_since_seq && (!updated.hot_since_seq || summaryFresh)
           ? false : previous.warmSummaryPending,
       }));
+      return true;
     } catch (err) {
       metaApplier.setWarmSummaryPending?.(false);
       metaApplier.setCompactionPending?.(false);
       console.error("setContextPin failed", err);
+      return false;
     }
   }, [threadId, metaApplier]);
   return { value, metaApplier, reset, setMetadataThreadId, setContextPin, matchesThread: metadataThreadId === threadId };
