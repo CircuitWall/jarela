@@ -19,6 +19,9 @@ describe("usage strategy profiles", () => {
     expect(shouldAutoRecall("balanced", true)).toBe(false);
     expect(shouldAutoRecall("high_reasoning", false)).toBe(false);
     expect(shouldAutoRecall("high_reasoning", true)).toBe(true);
+    expect(shouldAutoRecall("balanced", true, true)).toBe(true);
+    expect(shouldAutoRecall("cost_saving", true, true)).toBe(true);
+    expect(shouldAutoRecall("balanced", false, true)).toBe(false);
   });
 
   it("defaults invalid and missing values to balanced", () => {

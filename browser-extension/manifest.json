@@ -50,7 +50,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["lib/helpers.mjs", "content.css"],
+      "resources": ["lib/helpers.mjs", "lib/config.mjs", "lib/form-submission.mjs", "content.css"],
       "matches": ["<all_urls>"]
     }
   ]

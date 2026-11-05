@@ -2,6 +2,7 @@ import { z } from "zod";
 import { createThread, listThreadsByAgent, type ThreadRow } from "@/lib/stores/threads";
 import { getAgentConfig, getDefaultAgentConfig, listAgentConfigs, type AgentConfigRow } from "@/lib/stores/agent-configs";
 import { runAgentTurn } from "@/lib/agents/agent-turn";
+import { FOREGROUND_PROFILE } from "@/lib/agents/turn-profile";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { composePrompt, ExtensionActionEnum } from "./extension-turn-prompt";
 
@@ -21,7 +22,7 @@ const GenericBody = Body.extend({
   action: ExtensionAction,
 });
 
-interface PickResult {
+export interface PickResult {
   thread_id: string;
   agent_id: string;
   agent_name: string;
@@ -45,9 +46,10 @@ function normalizeAgentIconKey(raw: string | null | undefined): "blue" | "white"
 // All extension calls land on the agent's most recent thread (or a fresh
 // "Extension turns" thread if there isn't one yet). LLM-side context
 // isolation is handled by the per-category context profile in
-// `lib/agents/turn-profile.ts`, not by spinning a new thread per call —
-// that would just spam the chat list with one entry per fill / rewrite.
-function pickThread(agentId?: string): PickResult | { error: "no-agent" } {
+// `lib/agents/turn-profile.ts`, with focused-field fills opting into the
+// foreground profile so they can use conversation context and memory.
+// Spinning a new thread per call would just spam the chat list.
+export function pickThread(agentId?: string): PickResult | { error: "no-agent" } {
   const requested: AgentConfigRow | null = agentId ? getAgentConfig(agentId) : null;
   const def: AgentConfigRow | null = getDefaultAgentConfig();
   const agent: AgentConfigRow | null = requested ?? def ?? listAgentConfigs()[0] ?? null;
@@ -88,6 +90,9 @@ async function runExtensionAction(action: z.infer<typeof ExtensionAction>, input
   const run = await runAgentTurn({
     thread_id: picked.thread_id,
     queue_source: "extension",
+    context_profile_override: action === "fill"
+      ? { ...FOREGROUND_PROFILE, force_memory_context: true }
+      : undefined,
     message: prompt,
     user_category: "extension",
     assistant_category: "extension",

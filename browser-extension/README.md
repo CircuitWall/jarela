@@ -96,6 +96,21 @@ observer turn that fires immediately after the capture.
 
 Press **ESC** during the picker to cancel without sending.
 
+### Automatic preference capture (unreleased)
+
+Open the extension's **Options** page and enable **Automatic preference
+capture** to observe form submissions on HTTP and HTTPS sites. Chrome will
+ask for all-sites access; disabling the setting unregisters the observer.
+Only fields whose labels identify them as preferences are considered.
+Credential, contact, financial, health, identity, and other sensitive fields
+and sensitive-looking sites are excluded, and URL query strings are removed.
+
+Eligible values and site context are sent to the configured Jarela model
+provider for analysis. The selected agent is asked to save only a clear,
+durable, non-sensitive preference to local memory. Raw form submissions are
+not added to chat history; one-time transactions and ambiguous values should
+not be remembered. You can turn capture off at any time in Options.
+
 ## Agent-driven browser control
 
 When this extension is loaded, the agent can also drive your browser

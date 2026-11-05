@@ -4,6 +4,8 @@
 import {
   STORAGE_KEY,
   SELECTED_AGENT_STORAGE_KEY,
+  FORM_SUBMISSION_CAPTURE_KEY,
+  FORM_SUBMISSION_CAPTURE_ORIGINS,
   DEFAULT_CONFIG,
   parseConfig,
   isValidHost,
@@ -27,6 +29,8 @@ const hostEl = document.getElementById("host");
 const portEl = document.getElementById("port");
 const preferPwaEl = document.getElementById("preferPwa");
 const autoOpenEl = document.getElementById("autoOpen");
+const formSubmissionCaptureEl = document.getElementById("formSubmissionCapture");
+const formCaptureError = document.getElementById("formCaptureError");
 const saveBtn = document.getElementById("save");
 const testBtn = document.getElementById("test");
 const openBtn = document.getElementById("open");
@@ -97,6 +101,30 @@ async function ensureHostPermission(cfg) {
     return await chrome.permissions.request({ origins });
   } catch {
     return false;
+  }
+}
+
+async function setFormSubmissionCapture(enabled) {
+  formCaptureError.textContent = "";
+  formSubmissionCaptureEl.disabled = true;
+  try {
+    if (enabled) {
+      const granted = await chrome.permissions.request({ origins: FORM_SUBMISSION_CAPTURE_ORIGINS });
+      if (!granted) throw new Error("All-sites access was not granted.");
+    }
+
+    const result = await chrome.runtime.sendMessage({
+      type: "jarela-set-form-submission-capture",
+      enabled,
+    });
+    if (!result?.ok) {
+      throw new Error(result?.body?.error || "Could not update form-capture settings.");
+    }
+  } catch (err) {
+    formSubmissionCaptureEl.checked = !enabled;
+    formCaptureError.textContent = err?.message || String(err);
+  } finally {
+    formSubmissionCaptureEl.disabled = false;
   }
 }
 
@@ -197,10 +225,15 @@ async function save() {
 
 async function init() {
   const cfg = await loadStored();
+  const captureSetting = await chrome.storage.local.get(FORM_SUBMISSION_CAPTURE_KEY);
   writeForm(cfg);
+  formSubmissionCaptureEl.checked = captureSetting?.[FORM_SUBMISSION_CAPTURE_KEY] === true;
   await runTest(cfg);
 
   saveBtn.addEventListener("click", save);
+  formSubmissionCaptureEl.addEventListener("change", () => {
+    void setFormSubmissionCapture(formSubmissionCaptureEl.checked);
+  });
   testBtn.addEventListener("click", () => {
     setFormError("");
     const raw = readForm();

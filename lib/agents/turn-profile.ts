@@ -1,12 +1,11 @@
 // Per-category context profile for an agent turn.
 //
 // Different turn sources need different slices of the agent's context.
-// A user chatting wants the full hot+warm history of their thread; a
-// one-shot extension "fill this field" call wants ONLY the per-call
-// instruction + page context so prior chat doesn't bleed in; a bridge
-// message wants hot+warm because chat messages are connected; a
-// scheduled task wants neither hot nor warm because each firing is a
-// standalone event.
+// A user chatting wants the full hot+warm history of their thread; most
+// extension actions are one-shot so prior chat doesn't bleed in, while
+// focused-field fills can opt into foreground context; a bridge message
+// wants hot+warm because chat messages are connected; a scheduled task
+// wants neither hot nor warm because each firing is a standalone event.
 //
 // This module is the single source of truth. To change the policy for
 // a category, edit `TURN_PROFILES` below — every external runner
@@ -33,6 +32,8 @@ export interface TurnContextProfile {
   include_facts: boolean;
   /** Paste the embedding-based recall block into the system prompt. */
   include_recall: boolean;
+  /** Enable both memory sources even when the usage strategy normally skips them. */
+  force_memory_context?: boolean;
   /** Which durable conversation rows may enter this turn's hot/warm history. */
   history_scope?: "foreground" | "bridge" | "all" | "none";
 }

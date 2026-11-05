@@ -5,7 +5,7 @@
 // and updates the action icon + tooltip accordingly. State lives in a
 // SW-local var; if the SW is killed mid-cycle the next alarm tick simply
 // re-evaluates from a fresh fetch.
-import { STORAGE_KEY, SELECTED_AGENT_STORAGE_KEY, DEFAULT_CONFIG, parseConfig, healthUrl, captureUrl, extensionRefineUrl, extensionFillUrl, extensionTurnUrl, extensionAgentsUrl, allowedSitesUrl, allowedSiteHostUrl, browserPollUrl, browserResultUrl, browserProgressUrl, browserForegroundUrl, buildBase } from "./lib/config.mjs";
+import { STORAGE_KEY, SELECTED_AGENT_STORAGE_KEY, FORM_SUBMISSION_CAPTURE_KEY, FORM_SUBMISSION_CAPTURE_ORIGINS, DEFAULT_CONFIG, parseConfig, healthUrl, captureUrl, extensionRefineUrl, extensionFillUrl, extensionTurnUrl, extensionAgentsUrl, formSubmissionUrl, allowedSitesUrl, allowedSiteHostUrl, browserPollUrl, browserResultUrl, browserProgressUrl, browserForegroundUrl, buildBase } from "./lib/config.mjs";
 import { BRAND } from "./lib/brand.mjs";
 import { dispatchCommand } from "./lib/browser-control.mjs";
 import { gateCommand, setApproval } from "./lib/approvals.mjs";
@@ -21,6 +21,7 @@ const HEALTH_INTERVAL_MIN = 0.25; // 15s
 const HEALTH_TIMEOUT_MS = 2000;
 const KEEPALIVE_PORT_NAME = "jarela-keepalive";
 const SIDEPANEL_PORT_NAME = "jarela-sidepanel";
+const FORM_SUBMISSION_SCRIPT_ID = "jarela-form-submission-capture";
 // Open side panels. Ambient surroundings are pushed only while > 0.
 let sidePanelPorts = 0;
 const OFFSCREEN_URL = "offscreen.html";
@@ -72,6 +73,109 @@ async function loadConfig() {
     currentConfig = { ...DEFAULT_CONFIG };
   }
   return currentConfig;
+}
+
+async function unregisterFormSubmissionCapture() {
+  const registered = await chrome.scripting.getRegisteredContentScripts({
+    ids: [FORM_SUBMISSION_SCRIPT_ID],
+  });
+  if (registered.length > 0) {
+    await chrome.scripting.unregisterContentScripts({ ids: [FORM_SUBMISSION_SCRIPT_ID] });
+  }
+}
+
+async function registerFormSubmissionCapture() {
+  const granted = await chrome.permissions.contains({ origins: FORM_SUBMISSION_CAPTURE_ORIGINS });
+  if (!granted) throw new Error("All-sites host permission is required for automatic form capture.");
+
+  const registered = await chrome.scripting.getRegisteredContentScripts({
+    ids: [FORM_SUBMISSION_SCRIPT_ID],
+  });
+  if (registered.length === 0) {
+    await chrome.scripting.registerContentScripts([{
+      id: FORM_SUBMISSION_SCRIPT_ID,
+      matches: FORM_SUBMISSION_CAPTURE_ORIGINS,
+      js: ["form-submission.js"],
+      runAt: "document_start",
+      persistAcrossSessions: true,
+    }]);
+  }
+}
+
+async function injectFormSubmissionCaptureIntoOpenTabs() {
+  const tabs = await chrome.tabs.query({ url: FORM_SUBMISSION_CAPTURE_ORIGINS });
+  for (const tab of tabs) {
+    if (typeof tab.id !== "number") continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["form-submission.js"],
+      });
+    } catch (err) {
+      console.warn("[jarela] could not enable form capture in an open tab:", err);
+    }
+  }
+}
+
+async function stopFormSubmissionCaptureInOpenTabs() {
+  const granted = await chrome.permissions.contains({ origins: FORM_SUBMISSION_CAPTURE_ORIGINS });
+  if (!granted) return;
+
+  const tabs = await chrome.tabs.query({ url: FORM_SUBMISSION_CAPTURE_ORIGINS });
+  for (const tab of tabs) {
+    if (typeof tab.id !== "number") continue;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => globalThis.__jarelaFormSubmissionCaptureStop?.(),
+      });
+    } catch (err) {
+      console.warn("[jarela] could not stop form capture in an open tab:", err);
+    }
+  }
+}
+
+async function setFormSubmissionCapture(enabled) {
+  if (enabled) {
+    try {
+      await registerFormSubmissionCapture();
+      await chrome.storage.local.set({ [FORM_SUBMISSION_CAPTURE_KEY]: true });
+      await injectFormSubmissionCaptureIntoOpenTabs();
+    } catch (err) {
+      await chrome.storage.local.set({ [FORM_SUBMISSION_CAPTURE_KEY]: false })
+        .catch((cleanupError) => console.warn("[jarela] failed to clear form-capture setting:", cleanupError));
+      await stopFormSubmissionCaptureInOpenTabs()
+        .catch((cleanupError) => console.warn("[jarela] failed to stop open-tab form capture:", cleanupError));
+      await unregisterFormSubmissionCapture()
+        .catch((cleanupError) => console.warn("[jarela] failed to unregister form capture:", cleanupError));
+      throw err;
+    }
+    return { ok: true, status: 200, body: { enabled: true } };
+  }
+
+  await chrome.storage.local.set({ [FORM_SUBMISSION_CAPTURE_KEY]: false });
+  await stopFormSubmissionCaptureInOpenTabs();
+  await unregisterFormSubmissionCapture();
+  return { ok: true, status: 200, body: { enabled: false } };
+}
+
+async function restoreFormSubmissionCapture() {
+  const stored = await chrome.storage.local.get(FORM_SUBMISSION_CAPTURE_KEY);
+  if (stored?.[FORM_SUBMISSION_CAPTURE_KEY] !== true) {
+    await stopFormSubmissionCaptureInOpenTabs();
+    await unregisterFormSubmissionCapture();
+    return;
+  }
+
+  const granted = await chrome.permissions.contains({ origins: FORM_SUBMISSION_CAPTURE_ORIGINS });
+  if (!granted) {
+    await chrome.storage.local.set({ [FORM_SUBMISSION_CAPTURE_KEY]: false });
+    await stopFormSubmissionCaptureInOpenTabs();
+    await unregisterFormSubmissionCapture();
+    return;
+  }
+  await registerFormSubmissionCapture();
+  await injectFormSubmissionCaptureIntoOpenTabs();
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -348,6 +452,9 @@ chrome.runtime.onInstalled.addListener(() => {
   void ensureContextMenus();
   void ensureKeepAliveOffscreen();
   void tickHealth();
+  void restoreFormSubmissionCapture().catch((err) => {
+    console.warn("[jarela] failed to restore automatic form capture:", err);
+  });
   void seedForegroundTab(foregroundTrackerDeps);
 });
 chrome.runtime.onStartup.addListener(() => {
@@ -355,7 +462,16 @@ chrome.runtime.onStartup.addListener(() => {
   void ensureContextMenus();
   void ensureKeepAliveOffscreen();
   void tickHealth();
+  void restoreFormSubmissionCapture().catch((err) => {
+    console.warn("[jarela] failed to restore automatic form capture:", err);
+  });
   void seedForegroundTab(foregroundTrackerDeps);
+});
+
+chrome.permissions.onRemoved.addListener(() => {
+  void restoreFormSubmissionCapture().catch((err) => {
+    console.warn("[jarela] failed to reconcile form-capture permissions:", err);
+  });
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -1132,6 +1248,37 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg?.type) return false;
   (async () => {
     try {
+      if (msg.type === "jarela-set-form-submission-capture") {
+        const result = await setFormSubmissionCapture(msg.enabled === true);
+        sendResponse(result);
+        return;
+      }
+      if (msg.type === "jarela-form-submission") {
+        const senderUrl = typeof _sender?.tab?.url === "string" ? _sender.tab.url : "";
+        const submittedUrl = typeof msg.payload?.url === "string" ? msg.payload.url : "";
+        if (!senderUrl || !submittedUrl
+          || new URL(senderUrl).origin !== new URL(submittedUrl).origin
+          || new URL(submittedUrl).origin === buildBase(currentConfig)) {
+          sendResponse({ ok: false, status: 400, body: { error: "Submission URL does not match the sending tab." } });
+          return;
+        }
+        const stored = await chrome.storage.local.get(FORM_SUBMISSION_CAPTURE_KEY);
+        if (stored?.[FORM_SUBMISSION_CAPTURE_KEY] !== true) {
+          sendResponse({ ok: false, status: 409, body: { error: "Automatic form capture is disabled." } });
+          return;
+        }
+        const payload = await withSelectedAgent(msg.payload);
+        const out = await postJson(formSubmissionUrl(currentConfig), payload);
+        if (!out.ok) {
+          await notify(
+            "Form preference capture failed",
+            out.body?.error ?? `HTTP ${out.status}`,
+            false,
+          );
+        }
+        sendResponse(out);
+        return;
+      }
       if (msg.type === "jarela-start-picker") {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab?.id) {

@@ -149,6 +149,25 @@ describe("runAgentTurn", () => {
     expect(out.preview).toBe("");
   });
 
+  it("can keep transient observer output out of the transcript", async () => {
+    collectStreamMock.mockResolvedValue({
+      assistantContent: "Unexpected model output",
+      usedTools: [],
+      toolEvents: [],
+      usage: null,
+    });
+
+    await runAgentTurn({
+      thread_id: "t-transient",
+      queue_source: "extension",
+      message: "Transient observation",
+      persist_user_message: false,
+      persist_assistant_message: false,
+    });
+
+    expect(persistAssistantMessageMock).not.toHaveBeenCalled();
+  });
+
   it("suppresses NO_REPLY persistence when the model adds preamble prose", async () => {
     // Regression: the silent-mode prompts explicitly allow the model to
     // explain itself before the sentinel ("if nothing material, reply with

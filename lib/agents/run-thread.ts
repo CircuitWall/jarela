@@ -677,9 +677,14 @@ function resolveTurnModel(
   // The resolved strategy is the single source of truth for model routing and usage.
   const usageStrategy = resolveUsageStrategy(agentCfg.usage_strategy, getConfig().usageStrategy);
   const usageProfile = getUsageStrategyProfile(usageStrategy);
+  const forceMemoryContext = req.context_profile?.force_memory_context === true;
   const autoRecallEnabled = !isDelegatedRun
-    && shouldAutoRecall(usageStrategy, req.context_profile?.include_recall !== false);
-  const autoFactsEnabled = shouldAutoRecall(usageStrategy, req.context_profile?.include_facts !== false);
+    && shouldAutoRecall(usageStrategy, req.context_profile?.include_recall !== false, forceMemoryContext);
+  const autoFactsEnabled = shouldAutoRecall(
+    usageStrategy,
+    req.context_profile?.include_facts !== false,
+    forceMemoryContext,
+  );
   const useRouter = usageProfile.enableRouter ?? getConfig().modelRouterMode === "heuristic";
   const routePolicy = req._router_policy_override ?? usageProfile.routerPolicy ?? getConfig().modelRouterPolicy;
   if (!modelConfigName && useRouter) {
