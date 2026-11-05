@@ -71,6 +71,7 @@ const SELF_CONFIG_TOOLS = [
 ] as const;
 
 const CONVERSATION_GAP_HINT_MS = 3 * 60 * 60 * 1000;
+const HOT_CONTEXT_MESSAGE_LIMIT = 50;
 
 function withDefaultTools(tools: string[], defaults: readonly string[]): string[] {
   return Array.from(new Set([...tools, ...defaults, ...SELF_CONFIG_TOOLS]));
@@ -125,7 +126,7 @@ function hotTurnBoundary(
   bridgeKey?: string,
 ): number | null {
   const turnLimit = agentCfg.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT;
-  if (turnLimit <= 0 || scope === "bridge") return null;
+  if (scope === "bridge") return null;
 
   const thread = getThread(threadId);
   const windowHours = agentCfg.history_window_hours ?? 8;
@@ -133,11 +134,13 @@ function hotTurnBoundary(
   const sinceISO = sinceSeq === undefined && windowHours > 0
     ? new Date(Date.now() - windowHours * 3600_000).toISOString()
     : undefined;
+  const historyLimit = agentCfg.history_limit ?? 50;
+  const fetchLimit = historyLimit > 0
+    ? Math.max(historyLimit, turnLimit > 0 ? turnLimit * 2 : 0)
+    : turnLimit > 0 ? 0 : HOT_CONTEXT_MESSAGE_LIMIT;
   const messages = getRecentMessagesWindow(
     threadId,
-    (agentCfg.history_limit ?? 50) > 0
-      ? Math.max(agentCfg.history_limit ?? 50, turnLimit * 2)
-      : agentCfg.history_limit ?? 50,
+    fetchLimit,
     sinceISO,
     scope,
     bridgeKey,
@@ -145,9 +148,15 @@ function hotTurnBoundary(
     sinceSeq,
   );
   const userMessages = messages.filter((message) => message.role === "user");
-  if (userMessages.length <= turnLimit) return null;
-  const boundary = userMessages[userMessages.length - turnLimit];
-  return boundary?.seq ?? null;
+  const turnBoundary = turnLimit > 0 && userMessages.length > turnLimit
+    ? userMessages[userMessages.length - turnLimit]?.seq ?? null
+    : null;
+  const messageBoundary = messages.length >= HOT_CONTEXT_MESSAGE_LIMIT
+    ? messages[messages.length - HOT_CONTEXT_MESSAGE_LIMIT]?.seq ?? null
+    : null;
+  if (turnBoundary === null) return messageBoundary;
+  if (messageBoundary === null) return turnBoundary;
+  return Math.max(turnBoundary, messageBoundary);
 }
 
 // The topic-aware boundary keeps the whole active topic hot, so user turns
@@ -584,8 +593,13 @@ async function persistTurnInput(req: ThreadRunRequest, admission: TurnAdmission)
       if (!locked) {
         const boundary = hotTurnBoundary(req.thread_id, agentCfg, autoBoundaryScope);
         if (boundary !== null) {
+          const configuredTurnLimit = agentCfg.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT;
+          const cooldownTurnLimit = Math.min(
+            configuredTurnLimit > 0 ? configuredTurnLimit : Math.ceil(HOT_CONTEXT_MESSAGE_LIMIT / 2),
+            Math.ceil(HOT_CONTEXT_MESSAGE_LIMIT / 2),
+          );
           kickBoundaryCompaction(req.thread_id, boundary, {
-            autoBoundaryLockedUntilMessageCount: hotTurnCooldownUntil(latestThread?.message_count ?? 0, agentCfg.hot_turn_limit),
+            autoBoundaryLockedUntilMessageCount: hotTurnCooldownUntil(latestThread?.message_count ?? 0, cooldownTurnLimit),
           });
         }
       }

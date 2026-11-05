@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- agents: Request compaction when hot history reaches 50 message rows
+- chat: Prompt before compacting conversations idle for three hours
+
 ### Fixed
 
 - api: Make chat-steering retries idempotent and retain messages with uncertain delivery

@@ -50,11 +50,26 @@ describe("thread metadata owner", () => {
     const attach = vi.fn(async () => undefined);
     const { result } = renderHook(() => useThreadData({ threadId: "thread-a", attach }));
     await waitFor(() => expect(result.current.hotSinceSeqForRun).toBe(10));
-    await act(async () => result.current.setContextPin(20));
+    await act(async () => expect(await result.current.setContextPin(20)).toBe(true));
     expect(result.current.hotSinceSeqForRun).toBe(10);
     expect(result.current.warmSummary).toBe("warm");
     expect(result.current.compactionPending).toBe(true);
     expect(mocks.pin).toHaveBeenCalledWith("thread-a", 20);
+  });
+
+  it("reports a failed context-pin request to its caller", async () => {
+    const error = new Error("request failed");
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.get.mockResolvedValue(detail());
+    mocks.pin.mockRejectedValue(error);
+    const attach = vi.fn(async () => undefined);
+    const { result } = renderHook(() => useThreadData({ threadId: "thread-a", attach }));
+    await waitFor(() => expect(result.current.hotSinceSeqForRun).toBe(10));
+
+    await act(async () => expect(await result.current.setContextPin(20)).toBe(false));
+    expect(result.current.compactionPending).toBe(false);
+    expect(errorSpy).toHaveBeenCalledWith("setContextPin failed", error);
+    errorSpy.mockRestore();
   });
 
   it("does not apply or attach an abandoned history request", async () => {

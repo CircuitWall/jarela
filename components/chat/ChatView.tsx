@@ -12,6 +12,7 @@ import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { AuthErrorBanner } from "./AuthErrorBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
+import { IdleCompactionChoice } from "./IdleCompactionChoice";
 import { applyThreadMeta, compactionOutcomeToast, makeQueuedId, parseWarmSummaryTopics, type CompactionOutcome } from "./chat-helpers";
 import { useChatErrorReporting } from "./useChatErrorReporting";
 import { useChatQueue, type ChatQueueApi } from "./useChatQueue";
@@ -22,6 +23,7 @@ import { useThreadActivity } from "./useThreadActivity";
 import { useUserProfileAndAgent } from "./useUserProfileAndAgent";
 import { composerPlaceholder, finalizeRunFromServer } from "./chat-run-utils";
 import { useChatSubmitHandlers } from "./useChatSubmitHandlers";
+import { useIdleCompactionChoice } from "./useIdleCompactionChoice";
 import { useFirstRunChatKickoff } from "./useFirstRunChatKickoff";
 import { isMarkedFirstRunThread, useIsFirstRunThread } from "@/lib/ui/first-run-thread";
 
@@ -165,7 +167,13 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         onResetFilters={messageFilters.reset}
       />
 
-      <ChatComposerControls controlsRef={controlsRef} agentId={agentId} handleProposalResolved={handleProposalResolved} sse={sse} attachments={attachments} setAttachments={setAttachments} handleSubmit={handleSubmit} handleQueue={handleQueue} agentConfig={agentConfig} handleVoiceTranscript={handleVoiceTranscript} sessionCompacting={sessionCompacting} sessionLoading={sessionLoading} />
+      <ChatComposerControls {...{
+        controlsRef, agentId, handleProposalResolved, sse, attachments, setAttachments,
+        handleSubmit, handleQueue, agentConfig, handleVoiceTranscript, sessionCompacting, sessionLoading,
+        thread, threadId, currentThreadMessages,
+        idleChoiceEnabled: !!threadId && !hideInternalOperations && !thread.messagesLoading && !sessionLoading
+          && !sse.streaming && !sessionCompacting && !thread.compactionPending && !thread.warmSummaryPending,
+      }} />
 </div>
   );
 }
@@ -510,6 +518,7 @@ function ChatComposerControls({
   controlsRef, agentId, handleProposalResolved, sse,
   attachments, setAttachments, handleSubmit, handleQueue,
   agentConfig, handleVoiceTranscript, sessionCompacting, sessionLoading,
+  thread, threadId, currentThreadMessages, idleChoiceEnabled,
 }: {
   controlsRef: import("react").RefObject<HTMLDivElement | null>;
   agentId: string | null;
@@ -523,7 +532,13 @@ function ChatComposerControls({
   handleVoiceTranscript: (text: string) => void;
   sessionCompacting: boolean;
   sessionLoading: boolean | undefined;
+  thread: ReturnType<typeof useThreadData>;
+  threadId: string | null;
+  currentThreadMessages: import("@/api/types").Message[];
+  idleChoiceEnabled: boolean;
 }) {
+  const idleCompaction = useIdleCompactionChoice(threadId, currentThreadMessages, idleChoiceEnabled);
+
   return (<>
     <div ref={controlsRef} className="chat-controls-overlay absolute inset-x-0 bottom-0 z-30">
       <ApprovalsBanner agentId={agentId} onResolved={handleProposalResolved} />
@@ -539,7 +554,7 @@ function ChatComposerControls({
         voiceEnabled={!!agentConfig?.voice_enabled}
         agentId={agentId}
         onVoiceTranscript={handleVoiceTranscript}
-        disabled={!agentId}
+        disabled={!agentId || idleCompaction.open}
         placeholder={composerPlaceholder({
           compacting: sessionCompacting,
           sessionLoading: !!sessionLoading,
@@ -547,6 +562,20 @@ function ChatComposerControls({
         })}
       />
     </div>
-
+    <IdleCompactionChoice
+      key={idleCompaction.choiceKey}
+      open={idleCompaction.open}
+      busy={sse.streaming || sessionCompacting || thread.compactionPending || thread.warmSummaryPending}
+      onAnswer={async (answer) => {
+        if (answer === "keep") {
+          idleCompaction.resolve();
+          return true;
+        }
+        if (answer !== "compact" || idleCompaction.boundarySeq === null) return false;
+        const applied = await thread.setContextPin(idleCompaction.boundarySeq);
+        if (applied) idleCompaction.resolve();
+        return applied;
+      }}
+    />
   </>);
 }
