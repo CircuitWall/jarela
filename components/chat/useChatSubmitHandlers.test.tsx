@@ -3,7 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useChatSubmitHandlers } from "./useChatSubmitHandlers";
 import type { ChatQueueApi } from "./useChatQueue";
-import type { PendingAction } from "@/api/types";
+import type { ContentPart, PendingAction } from "@/api/types";
 
 const action: PendingAction = {
   id: "proposal-example", agent_id: "agent-example", kind: "ask_choice",
@@ -12,13 +12,13 @@ const action: PendingAction = {
 };
 const hiddenOptions = { messageMetadata: { hidden_from_chat: true } };
 
-function setup(ready: boolean) {
+function setup(ready: boolean, attachments: ContentPart[] = [{ type: "text", text: "Unrelated composer attachment" }]) {
   const queue: ChatQueueApi = {
     queue: [], queueRef: { current: [] }, drainQueueRef: { current: vi.fn() },
     isReady: () => ready, enqueue: vi.fn(), prepend: vi.fn(), removeQueued: vi.fn(), retry: vi.fn(),
   };
   const params: Parameters<typeof useChatSubmitHandlers>[0] = {
-    agentId: action.agent_id, queue, attachments: [{ type: "text", text: "Unrelated composer attachment" }],
+    agentId: action.agent_id, queue, attachments,
     setAttachments: vi.fn(), launchRun: vi.fn().mockResolvedValue(undefined),
     steerRun: vi.fn(), stopStreaming: vi.fn(), streaming: !ready,
     onCompact: vi.fn(), pendingAutoSpeakRef: { current: false }, agentConfig: null,
@@ -26,6 +26,29 @@ function setup(ready: boolean) {
   const hook = renderHook(() => useChatSubmitHandlers(params));
   return { ...hook, params, queue };
 }
+
+describe("chat steering", () => {
+  it("does not queue or abort when the active run accepts a steer", async () => {
+    const { result, params, queue } = setup(false, []);
+    vi.mocked(params.steerRun).mockResolvedValue(true);
+
+    await act(() => result.current.handleSubmit("Focus on the API."));
+
+    expect(params.steerRun).toHaveBeenCalledWith("Focus on the API.");
+    expect(queue.prepend).not.toHaveBeenCalled();
+    expect(params.stopStreaming).not.toHaveBeenCalled();
+  });
+
+  it("falls back to queue-and-stop only when there is no active run to steer", async () => {
+    const { result, params, queue } = setup(false, []);
+    vi.mocked(params.steerRun).mockResolvedValue(false);
+
+    await act(() => result.current.handleSubmit("Focus on the API."));
+
+    expect(queue.prepend).toHaveBeenCalledWith("Focus on the API.", []);
+    expect(params.stopStreaming).toHaveBeenCalledOnce();
+  });
+});
 
 describe("proposal response chat continuation", () => {
   it("starts a user turn when idle without consuming composer attachments", async () => {

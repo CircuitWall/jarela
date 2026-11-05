@@ -18,7 +18,7 @@ describe("parseWarmSummaryTopics", () => {
 // shares one value to prove ordering doesn't depend on it. `seq` is omitted
 // for optimistic/pending bubbles: the server hasn't assigned one yet.
 const SAME_TIMESTAMP = "2026-08-01T10:00:00.000Z";
-const mkMsg = (id: string, role: "user" | "assistant", content: string, seq?: number, status?: "pending" | "sent" | "steering" | "confirmed"): Message => ({
+const mkMsg = (id: string, role: "user" | "assistant", content: string, seq?: number, status?: "pending" | "sent" | "steering" | "steering_uncertain" | "confirmed"): Message => ({
   id,
   role,
   content,
@@ -43,7 +43,7 @@ describe("appendUnique — ordering", () => {
 
   // Every unconfirmed state reconciles in place. If one were missed the
   // server row would append alongside it and the bubble would appear twice.
-  it.each(["pending", "sent", "steering"] as const)(
+  it.each(["pending", "sent", "steering", "steering_uncertain"] as const)(
     "promotes a %s bubble in place rather than duplicating it",
     (status) => {
       const prev: Message[] = [

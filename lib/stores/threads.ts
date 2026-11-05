@@ -234,6 +234,17 @@ export function getMessages(thread_id: string): MessageRow[] {
     .all(thread_id) as unknown as MessageRow[];
 }
 
+export function getMessageBySteeringRequestId(thread_id: string, request_id: string): MessageRow | null {
+  const row = cachedRead(
+    getDb(),
+    MSG_COLS_SQL
+      + " WHERE thread_id=? AND role='user'"
+      + " AND CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.steering_request_id') END=?"
+      + " LIMIT 1",
+  ).get(thread_id, request_id) as MessageRow | undefined;
+  return row ?? null;
+}
+
 // Pull the latest N messages within a time window. Used to build the LLM
 // context — keeps prompt size bounded as threads grow indefinitely.
 //   limit: 0 or negative = unlimited

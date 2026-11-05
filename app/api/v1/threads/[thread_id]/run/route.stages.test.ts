@@ -15,6 +15,10 @@ const state = vi.hoisted(() => ({
   notify: vi.fn(),
   drain: vi.fn(),
   continuation: vi.fn(),
+  addMessage: vi.fn(),
+  findSteeringMessage: vi.fn(),
+  pushSteering: vi.fn(),
+  removeSteering: vi.fn(),
 }));
 
 vi.mock("@/lib/agents/run-thread", () => ({
@@ -40,6 +44,8 @@ vi.mock("@/lib/agents/run-registry", () => ({
   broadcast: state.broadcast,
   finishRun: state.finish,
   drainSteering: state.drain,
+  pushSteering: state.pushSteering,
+  removeSteering: state.removeSteering,
 }));
 vi.mock("@/lib/agents/stream-collector", () => ({ collectStream: state.collect }));
 vi.mock("@/lib/agents/agent-turn", () => ({ runAgentTurn: state.continuation }));
@@ -47,6 +53,8 @@ vi.mock("@/lib/agents/turn-profile", () => ({ resolveTurnProfile: () => ({ inclu
 vi.mock("@/lib/agents/model-router", () => ({ finalizeRouteDecision: () => null }));
 vi.mock("@/lib/stores/threads", () => ({
   getThread: () => ({ agent_id: "agent" }),
+  getMessageBySteeringRequestId: state.findSteeringMessage,
+  addMessage: state.addMessage,
   updateMessageContent: state.update,
   getThreadMessageBySeq: () => ({ transcript_status: "in_progress" }),
 }));
@@ -58,12 +66,19 @@ vi.mock("@/lib/notifications/bus", () => ({ publish: state.notify }));
 vi.mock("@/lib/env/config", () => ({ getConfig: () => ({ perfTelemetryEnabled: false }) }));
 vi.mock("@/lib/tools/support/result-refs", () => ({ parseToolResultReferenceEnvelope: () => null }));
 
-const { POST } = await import("./route");
+const { PATCH, POST } = await import("./route");
 
 function submit() {
   return POST(new NextRequest("http://localhost/api/v1/threads/thread/run", {
     method: "POST",
     body: JSON.stringify({ message: "Request" }),
+  }), { params: Promise.resolve({ thread_id: "thread" }) });
+}
+
+function steer(message: string, request_id = "00000000-0000-4000-8000-000000000001") {
+  return PATCH(new NextRequest("http://localhost/api/v1/threads/thread/run", {
+    method: "PATCH",
+    body: JSON.stringify({ message, request_id }),
   }), { params: Promise.resolve({ thread_id: "thread" }) });
 }
 
@@ -84,6 +99,55 @@ beforeEach(() => {
   });
   state.drain.mockReturnValue([]);
   state.continuation.mockResolvedValue({});
+  state.findSteeringMessage.mockReturnValue(null);
+  state.pushSteering.mockReturnValue(true);
+});
+
+it("persists an accepted steering request with its idempotency key", async () => {
+  const response = await steer("Focus on the API.");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ steered: true });
+  expect(state.pushSteering).toHaveBeenCalledWith(
+    "thread", "Focus on the API.",
+  );
+  expect(state.addMessage).toHaveBeenCalledWith(
+    "thread", "user", "Focus on the API.", undefined, null,
+    { steering_request_id: "00000000-0000-4000-8000-000000000001" },
+  );
+});
+
+it("acknowledges a retried request without enqueuing or persisting it twice", async () => {
+  state.findSteeringMessage.mockReturnValue({ content: "Focus on the API." });
+  const response = await steer("Focus on the API.");
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ steered: true, duplicate: true });
+  expect(state.pushSteering).not.toHaveBeenCalled();
+  expect(state.addMessage).not.toHaveBeenCalled();
+});
+
+it("rejects a request id reused for different content", async () => {
+  state.findSteeringMessage.mockReturnValue({ content: "Different text." });
+  const response = await steer("Focus on the API.");
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({ steered: false, reason: "request_id_conflict" });
+  expect(state.pushSteering).not.toHaveBeenCalled();
+  expect(state.addMessage).not.toHaveBeenCalled();
+});
+
+it("removes an accepted steering message from the live queue if persistence fails", async () => {
+  state.addMessage.mockImplementation(() => { throw new Error("storage unavailable"); });
+  await expect(steer("Focus on the API.")).rejects.toThrow("storage unavailable");
+  expect(state.removeSteering).toHaveBeenCalledWith(
+    "thread", "Focus on the API.",
+  );
+});
+
+it("returns the documented inactive-run conflict without persisting", async () => {
+  state.pushSteering.mockReturnValue(false);
+  const response = await steer("Focus on the API.");
+  expect(response.status).toBe(409);
+  expect(await response.json()).toEqual({ steered: false, reason: "no_active_run" });
+  expect(state.addMessage).not.toHaveBeenCalled();
 });
 
 it("admits a durable user row and draft before starting preparation, preserving pinned context", async () => {

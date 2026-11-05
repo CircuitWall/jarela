@@ -1595,10 +1595,14 @@ function MessageStatusAndDiagnostics({
         {statusReason && <span className="break-words">· {statusReason}</span>}
       </div>
     )}
-    {isUser && "status" in message && (message.status === 'pending' || message.status === 'steering') && (
+    {isUser && "status" in message && (message.status === 'pending' || message.status === 'steering' || message.status === 'steering_uncertain') && (
       <span className="flex items-center gap-1 text-xs opacity-50 px-1 self-end">
-        {message.status === 'steering' ? <CornerDownRight size={10} /> : <Clock size={10} />}
-        {message.status === 'steering' ? "Steering…" : "Sending…"}
+        {message.status === 'steering' ? <CornerDownRight size={10} />
+          : message.status === 'steering_uncertain' ? <AlertTriangle size={10} />
+            : <Clock size={10} />}
+        {message.status === 'steering' ? "Steering…"
+          : message.status === 'steering_uncertain' ? "Delivery uncertain"
+            : "Sending…"}
       </span>
     )}
     {((!isUser && !streaming && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0)

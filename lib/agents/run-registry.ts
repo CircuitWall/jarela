@@ -392,6 +392,15 @@ export function pushSteering(thread_id: string, text: string): boolean {
   return true;
 }
 
+export function removeSteering(thread_id: string, text: string): boolean {
+  const run = runs.get(thread_id);
+  if (!run) return false;
+  const index = run.steering.lastIndexOf(text.trim());
+  if (index < 0) return false;
+  run.steering.splice(index, 1);
+  return true;
+}
+
 // Take everything queued so far, in arrival order. Deliberately not merged
 // into a summary — collapsing several messages loses the user's intent.
 export function drainSteering(thread_id: string): string[] {
