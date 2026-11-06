@@ -36,6 +36,7 @@ it("keeps credential migration pending while locked and completes it after unloc
   expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([
     { id: "3.0.0-baseline" },
     { id: "3.0.0-deferred-credentials" },
+    { id: "3.0.0-deferred-crypto" },
   ]);
   expect(db.prepare("SELECT credential_id FROM model_configs WHERE name='legacy'").get())
     .toEqual({ credential_id: "model-mock" });

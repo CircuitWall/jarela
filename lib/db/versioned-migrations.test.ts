@@ -119,7 +119,7 @@ describe("versioned database migrations", () => {
     runMigrations(db);
     expect(db.prepare("SELECT id FROM jarela_migrations").all()).toHaveLength(1);
     runDeferredDataMigrations(db);
-    expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toHaveLength(2);
+    expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toHaveLength(3);
     const config = db.prepare("SELECT credential_id, params FROM model_configs WHERE name='old-model'").get();
     expect(config?.credential_id).toBe("model-test");
     expect(JSON.parse(decryptIfNeeded(String(config?.params)))).toEqual({ temperature: 0.5 });
@@ -167,7 +167,35 @@ describe("versioned database migrations", () => {
       .run("bad-model", "test", "model", "not-json", "date", "date");
     runMigrations(db);
     expect(() => runDeferredDataMigrations(db)).toThrow();
-    expect(db.prepare("SELECT id FROM jarela_migrations").all()).toEqual([{ id: "3.0.0-baseline" }]);
-    expect(db.prepare("SELECT params FROM model_configs").get()?.params).toBe("not-json");
+    expect(db.prepare("SELECT id FROM jarela_migrations").all()).toEqual([
+      { id: "3.0.0-baseline" },
+      { id: "3.0.0-deferred-crypto" },
+    ]);
+    // The crypto migration committed independently and already encrypted
+    // this row at rest, even though reshaping — which runs after it, and
+    // throws on this malformed value — never got to touch it.
+    expect(decryptIfNeeded(String(db.prepare("SELECT params FROM model_configs").get()?.params))).toBe("not-json");
+  });
+
+  it("commits encryption even when credential reshaping later fails on an unrelated row", () => {
+    getDb();
+    const db = database();
+    db.exec(releaseSchema);
+    // A malformed legacy row that makes reshaping throw.
+    db.prepare("INSERT INTO model_configs (name, provider, model_id, params, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("bad-model", "test", "model", "not-json", "date", "date");
+    // An unrelated, otherwise-valid plaintext secret the crypto migration must encrypt.
+    db.prepare("INSERT INTO mcp_servers (name, transport, spec, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+      .run("good-server", "stdio", JSON.stringify({ command: "node", args: [] }), "date", "date");
+    runMigrations(db);
+    expect(() => runDeferredDataMigrations(db)).toThrow();
+    // The crypto migration committed on its own — it is not rolled back by
+    // the later-failing credential-reshaping migration.
+    expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([
+      { id: "3.0.0-baseline" },
+      { id: "3.0.0-deferred-crypto" },
+    ]);
+    expect(String(db.prepare("SELECT spec FROM mcp_servers WHERE name='good-server'").get()?.spec))
+      .toMatch(/^enc:v1:/);
   });
 });
