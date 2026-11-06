@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveE2EServers } from "./scripts/e2e-servers.mjs";
@@ -51,7 +51,7 @@ export default defineConfig({
   webServer: external
     ? undefined
     : urls.map((url) => {
-      const dbDir = mkdtempSync(join(tmpdir(), "jarela-e2e-"));
+      const dbDir = mkdtempSync(join(realpathSync(tmpdir()), "jarela-e2e-"));
       return {
         // Run against the production build so what CI tests matches what
         // ships. `npm run build` must have run before invoking this config.
