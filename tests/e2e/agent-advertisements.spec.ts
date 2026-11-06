@@ -1,4 +1,5 @@
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { dismissOverlayBanners, seedMockAgent } from "./helpers";
 import { isBasicToolCategory } from "../../lib/tools/runtime/categories";
 
@@ -35,7 +36,7 @@ test("advertisement API returns the uncached global policy contract", async ({ r
 test.describe("runner-owned advertisement mutations", () => {
   // The PWA worker can satisfy refetches outside page.route; keep request evidence observable.
   test.use({ serviceWorkers: "block" });
-  test.skip(!!process.env.JARELA_E2E_BASE_URL, "Global advertisement policy and agent writes require the runner-owned isolated app");
+  test.skip(!!(process.env.JARELA_E2E_BASE_URL || process.env.JARELA_E2E_BASE_URLS), "Global advertisement policy and agent writes require the runner-owned isolated app");
   let agentId = "";
   let agentName = "";
   let modelName = "";
@@ -188,7 +189,7 @@ test.describe("runner-owned advertisement mutations", () => {
 });
 
 test.describe("runner-owned deterministic advertisement fixture", () => {
-  test.skip(!!process.env.JARELA_E2E_BASE_URL, "Global advertisement policy, model and agent writes require the runner-owned isolated app");
+  test.skip(!!(process.env.JARELA_E2E_BASE_URL || process.env.JARELA_E2E_BASE_URLS), "Global advertisement policy, model and agent writes require the runner-owned isolated app");
   const fixture = {
     purpose: "Review synthetic fixtures", call_when: ["A synthetic fixture needs a concise review"],
     do_not_call_for: ["Unrelated operational changes"], inputs: "Synthetic fixture text",

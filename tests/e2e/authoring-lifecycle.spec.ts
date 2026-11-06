@@ -1,4 +1,5 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { createServer } from "node:http";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -7,7 +8,7 @@ import { join } from "node:path";
 import { dismissOverlayBanners, enableFullExperienceMode, seedMockAgent } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
-test.skip(!!process.env.JARELA_E2E_BASE_URL, "Authoring writes require the runner-owned isolated app and drop-in directory");
+test.skip(!!(process.env.JARELA_E2E_BASE_URL || process.env.JARELA_E2E_BASE_URLS), "Authoring writes require the runner-owned isolated app and drop-in directory");
 let workspace: string;
 let repository: string;
 let agentId: string;

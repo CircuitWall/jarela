@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,10 +34,8 @@ test("execution controls expose full-trust warnings while loading a workflow sta
 });
 
 test("built-in skills list with frontmatter names and a Clone affordance", async ({ page, request }) => {
-  // Other spec files (and other projects running this same file in
-  // parallel) share one E2E server/DB, so a writable repo may already
-  // exist by the time this runs — assert the affordances exist, not their
-  // enabled state, which depends on that ambient repo config.
+  // Earlier specs on this worker may have configured a writable repo, so
+  // assert the affordances rather than their ambient enabled state.
   const res = await request.get("/api/v1/skills");
   expect(res.ok()).toBe(true);
   const body = await res.json();

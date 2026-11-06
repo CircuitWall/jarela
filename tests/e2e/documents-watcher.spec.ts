@@ -1,7 +1,9 @@
-import { test, expect, request as pwRequest } from "@playwright/test";
+import { request as pwRequest } from "@playwright/test";
 import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveE2EServers, serverForWorker } from "../../scripts/e2e-servers.mjs";
+import { test, expect } from "./fixtures";
 
 // E2E for the watcher → script-firing → indexer pipeline (ADR-0028 PR-D).
 // Sequence:
@@ -41,12 +43,11 @@ test.beforeAll(() => {
 });
 
 test.afterAll(async ({ }, testInfo) => {
-  // afterAll doesn't get the request fixture — build a fresh one from
-  // the configured baseURL so we can clean up the source row.
+  // afterAll needs a request context bound to this worker's server.
   if (sourceId) {
     try {
       const ctx = await pwRequest.newContext({
-        baseURL: testInfo.project.use.baseURL,
+        baseURL: serverForWorker(resolveE2EServers(process.env).urls, testInfo.parallelIndex),
       });
       await ctx.delete(`/api/v1/documents/sources/${sourceId}`);
       await ctx.dispose();

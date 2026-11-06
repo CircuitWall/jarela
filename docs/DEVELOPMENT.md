@@ -179,9 +179,7 @@ Production credential import remains opt-in via `JARELA_SEED_FROM_PROD=1`.
 
 ### Previously skipped checks
 
-The Playwright configuration starts an isolated production server and database.
-Run `npm run build` first, then `npx playwright test` for the configured desktop
-Chromium and mobile WebKit projects. Dashboard sorting uses synthetic multi-model,
+Dashboard sorting uses synthetic multi-model,
 multi-provider data; focus-boundary pointer checks run in both projects.
 
 Native document-watcher checks default to macOS because event delivery is
@@ -215,6 +213,23 @@ It requires the installed local model, forbids remote providers and downloads,
 and measures synthetic latency rather than retrieval quality. The linked-leaf
 skill-resource test remains unavailable on Windows without file-symlink creation
 privileges; directory-junction coverage is separate from that check.
+## Playwright E2E (unreleased)
+
+Run `npm run build` first, then `npm run test:e2e`. By default Playwright
+starts two production servers, each with a separate temporary database and a
+worker on ports 14312 and 14313. Spec files can run concurrently; tests within
+each file retain their existing ordering. New E2E specs must import `test` and
+`expect` from `./fixtures`, so browser and API requests use the worker's server.
+The runner probes the servers' databases for isolation before tests start.
+
+Set `JARELA_E2E_WORKERS=1` for a single server, or set
+`JARELA_E2E_PORT` to change the first port; subsequent ports are consecutive.
+Do not increase Playwright's `--workers` above the configured server count.
+For a server you manage, `JARELA_E2E_BASE_URL` retains single-worker behavior.
+Alternatively, `JARELA_E2E_BASE_URLS` accepts comma-separated HTTP(S) origins
+for independently managed servers, one per worker. Each must have its own
+database, the mock provider enabled, and any required integration packages.
+These tests write data: never point them at a real user instance.
 
 ## Git and PR conventions
 

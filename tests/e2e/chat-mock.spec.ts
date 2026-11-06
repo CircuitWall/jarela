@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { seedMockAgent, waitForAppReady } from "./helpers";
 import type { ThreadDetail, ThreadSummary } from "@/api/types";
 import { readFile } from "node:fs/promises";

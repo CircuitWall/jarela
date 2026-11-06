@@ -2,38 +2,26 @@ import { defineConfig, devices } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveE2EServers } from "./scripts/e2e-servers.mjs";
 
-// E2E runs against a fully isolated server: a non-default port (so we
-// never collide with a `jarela` instance the developer has installed as
-// a system task on the canonical 4312) plus a throwaway DB dir. Setting
-// JARELA_E2E_BASE_URL points the runner at a pre-existing server you
-// manage yourself — skipping the webServer block entirely.
-const E2E_PORT = Number(process.env.JARELA_E2E_PORT ?? 14312);
-const defaultBaseURL = `http://127.0.0.1:${E2E_PORT}`;
-const baseURL = process.env.JARELA_E2E_BASE_URL ?? defaultBaseURL;
-const reuseServer = !!process.env.JARELA_E2E_BASE_URL;
-
-// Each `playwright test` invocation gets its own tmpdir so concurrent
-// runs (and the developer's real ~/.jarela) never share state.
-const E2E_DB_DIR = reuseServer
-  ? undefined
-  : mkdtempSync(join(tmpdir(), "jarela-e2e-"));
+// Each worker slot uses its own server and database. A replacement worker
+// retains the same parallelIndex, so retries keep the same isolated server.
+const { external, urls, workers } = resolveE2EServers(process.env);
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  // All projects share the single isolated server and its SQLite database.
-  // Parallel browser workers can overwrite the active agent and lifecycle
-  // state while another test is still opening the boot screen.
+  globalSetup: "./tests/e2e/global-setup.ts",
+  // Keep each spec's tests in order; independent files may use different
+  // worker slots, each with a separate server and SQLite database.
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: 1,
+  workers,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   timeout: 30_000,
   expect: { timeout: 5_000 },
 
   use: {
-    baseURL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -60,13 +48,15 @@ export default defineConfig({
     },
   ],
 
-  webServer: reuseServer
+  webServer: external
     ? undefined
-    : {
+    : urls.map((url) => {
+      const dbDir = mkdtempSync(join(tmpdir(), "jarela-e2e-"));
+      return {
         // Run against the production build so what CI tests matches what
         // ships. `npm run build` must have run before invoking this config.
         command: "npm start",
-        url: baseURL,
+        url,
         // Hard `false` even locally — reusing whatever's on the test port
         // would silently let a stale build (or, worse, a user's installed
         // instance on a colliding port) answer the tests with old code
@@ -80,18 +70,20 @@ export default defineConfig({
           // Silence the daily npm/GitHub probe during tests.
           JARELA_DISABLE_UPDATE_CHECK: "1",
           // Throwaway DB so tests never touch the developer's ~/.jarela.
-          JARELA_DB_DIR: E2E_DB_DIR!,
+          JARELA_DB_DIR: dbDir,
           // Authoring acceptance installs drop-ins; never inherit a developer's
           // configured autoload directory from .env.local.
-          JARELA_TOOLS_DIR: join(E2E_DB_DIR!, "tools"),
+          JARELA_TOOLS_DIR: join(dbDir, "tools"),
           // Non-default port so we never collide with an installed
           // jarela on 4312.
-          JARELA_PORT: String(E2E_PORT),
+          JARELA_PORT: new URL(url).port,
+          JARELA_HOSTNAME: "127.0.0.1",
           // Speed up the scheduler tick so the watcher → reindex e2e
           // doesn't spend 30 s waiting for the next tick. 250 ms is
           // tight enough that "save → search" feels live in the test
           // but still leaves debounce + indexing room.
           JARELA_SCHEDULER_TICK_MS: "250",
         },
-      },
+      };
+    }),
 });

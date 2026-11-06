@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { dismissOverlayBanners, seedMockAgent } from "./helpers";
 
 // Per-panel rendered-element check for the Agents tab.

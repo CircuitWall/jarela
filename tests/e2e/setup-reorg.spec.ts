@@ -1,13 +1,12 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { dismissOverlayBanners, seedMockAgent, waitForAppReady } from "./helpers";
 
 // Coverage for the menu reorganization (common vs. advanced tabs +
 // new "Tools" entry), the per-agent persona in the Identity editor, and
 // the structured memory preview.
 //
-// Tests in this file run serially: they all share one webServer (and
-// therefore one JARELA_DB_DIR), so parallel writes to agent profiles
-// from one test would race against state assertions in another.
+// Tests in this file share their worker's database, so parallel writes to
+// agent profiles would race against state assertions in another test.
 test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ request, page }) => {

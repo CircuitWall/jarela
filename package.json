@@ -145,6 +145,7 @@
     "test:live:isolated": "node scripts/live-test-isolated.mjs",
     "test:live:isolated:full": "node scripts/live-test-isolated.mjs --llm",
     "test:e2e": "playwright test",
+    "test:e2e:config": "node --test tests/e2e-config.node.mjs",
     "test:e2e:ui": "playwright test --ui",
     "release:docker": "node scripts/release-docker.mjs",
     "release:docker:dry": "node scripts/release-docker.mjs --dry-run"

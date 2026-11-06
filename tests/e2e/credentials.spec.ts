@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { dismissOverlayBanners, enableFullExperienceMode, seedMockAgent, waitForAppReady } from "./helpers";
 
 // Coverage for the Credentials consolidation (Connections folded back in

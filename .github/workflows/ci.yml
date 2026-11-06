@@ -327,7 +327,7 @@ jobs:
       image: mcr.microsoft.com/playwright:v1.64.1-noble
     env:
       JARELA_DB_DIR: /tmp/jarela-e2e
-      JARELA_E2E_BASE_URL: http://127.0.0.1:4312
+      JARELA_E2E_BASE_URLS: http://127.0.0.1:4312,http://127.0.0.1:4313
       # JARELA_URL is read by test:live; point it at the same server.
       JARELA_URL: http://127.0.0.1:4312
       # The mock provider replaces real LLM calls so we don't need keys in CI.
@@ -369,30 +369,44 @@ jobs:
             "$GITHUB_WORKSPACE/packages/icloud-langchain" \
             "$GITHUB_WORKSPACE/packages/jira-align-langchain" \
             "$GITHUB_WORKSPACE/packages/ms-todo-langchain"
+          mkdir -p /tmp/jarela-e2e-2
+          cp -a "$JARELA_DB_DIR/packages" /tmp/jarela-e2e-2/
 
-      - name: Start production server
+      - name: Start isolated production servers
         run: |
           mkdir -p "$JARELA_DB_DIR"
           nohup npm start > server.log 2>&1 &
           echo $! > server.pid
+          JARELA_DB_DIR=/tmp/jarela-e2e-2 JARELA_PORT=4313 nohup npm start > server-2.log 2>&1 &
+          echo $! > server-2.pid
 
-      - name: Wait for /api/v1/health
+      - name: Wait for both servers
         run: |
-          for i in $(seq 1 60); do
-            if curl -fsS "$JARELA_E2E_BASE_URL/api/v1/health" >/dev/null; then
-              echo "server up after ${i}s"; exit 0
+          for port in 4312 4313; do
+            ready=false
+            for i in $(seq 1 60); do
+              if curl -fsS "http://127.0.0.1:${port}/api/v1/health" >/dev/null; then
+                echo "server ${port} up after ${i}s"
+                ready=true
+                break
+              fi
+              sleep 1
+            done
+            if [ "$ready" != true ]; then
+              echo "server ${port} did not become healthy in 60s"
+              tail -n 200 server.log server-2.log || true
+              exit 1
             fi
-            sleep 1
           done
-          echo "server did not become healthy in 60s"
-          tail -n 200 server.log || true
-          exit 1
 
       - name: Run live integration tests (no LLM)
         # Folded here from the former `integration` job — shares the server
         # instance already started above, saving a full redundant startup cycle.
         timeout-minutes: 5
         run: npm run test:live
+
+      - name: Test E2E server isolation configuration
+        run: npm run test:e2e:config
 
       - name: Run Playwright tests with e2e coverage gate
         timeout-minutes: 15
@@ -419,7 +433,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: server-log
-          path: server.log
+          path: |
+            server.log
+            server-2.log
           retention-days: 14
 
       - name: Stop server
@@ -427,4 +443,7 @@ jobs:
         run: |
           if [ -f server.pid ]; then
             kill $(cat server.pid) 2>/dev/null || true
+          fi
+          if [ -f server-2.pid ]; then
+            kill $(cat server-2.pid) 2>/dev/null || true
           fi
