@@ -179,14 +179,15 @@ function settleCollectedTurn(
         ? { ...req.assistant_message_metadata, memory_recall: prepared.memory_recall }
         : req.assistant_message_metadata ?? null,
       collected.terminal === "done" && !collected.aborted ? prepared.signal_delivery : undefined,
-      assistantDraft ? {
-        draftMessageId: assistantDraft.msg_id,
-        transcriptStatus,
-        statusReason: transcriptStatus === "interrupted"
+      {
+        draftMessageId: assistantDraft?.msg_id,
+        transcriptStatus: assistantDraft ? transcriptStatus : undefined,
+        statusReason: !assistantDraft ? undefined : transcriptStatus === "interrupted"
           ? "Stopped by user."
           : noResponse ? "The model completed without producing a response."
           : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null,
-      } : undefined,
+        actionCheckAccepted: collected.actionCheckAccepted,
+      },
     );
   } else if (prepared.signal_delivery?.signals.length) {
     persistAssistantMessage(req.thread_id, "", undefined, undefined, "system_signal",

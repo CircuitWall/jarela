@@ -161,8 +161,118 @@ describe("prepareThreadRun transient retry", () => {
       const collected = await collectStream(prepared.stream);
       expect(collected.assistantContent).toBe("Let me check.");
       expect(streamWithConfigMock).toHaveBeenCalledTimes(1);
+      persistAssistantMessage(thread.thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents,
+        null, null, null, null, null, null, undefined, { actionCheckAccepted: collected.actionCheckAccepted });
+      expect(getMessages(thread.thread_id).at(-1)?.content).toBe("Let me check.");
     } finally {
       classifier.mockRestore();
+    }
+  });
+
+  it("does not override a model-accepted prior action with the current-turn regex validator", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "accepted-prior-action", name: "Classifier", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null,
+      anti_hallucination_mode: "model", anti_hallucination_model_config: "default",
+    });
+    const thread = createThread("accepted-prior-action");
+    const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({ stalled: false, reason: "" });
+    try {
+      streamWithConfigMock.mockReturnValue(chunks({ type: "text_delta", data: { delta: "I updated the file earlier." } }, { type: "done", data: {} }));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id, message: "What did you do?",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      const collected = await collectStream(prepared.stream);
+      expect(streamWithConfigMock).toHaveBeenCalledTimes(1);
+      persistAssistantMessage(thread.thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents,
+        null, null, null, null, null, null, undefined, { actionCheckAccepted: collected.actionCheckAccepted });
+      expect(getMessages(thread.thread_id).at(-1)?.content).toBe("I updated the file earlier.");
+    } finally {
+      classifier.mockRestore();
+    }
+  });
+
+  it("replaces a model-flagged unsupported claim rather than appending to it", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "flagged-action-replacement", name: "Classifier", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null,
+      anti_hallucination_mode: "model", anti_hallucination_model_config: "default",
+    });
+    const thread = createThread("flagged-action-replacement");
+    const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({ stalled: true, reason: "No evidence of the update." });
+    try {
+      streamWithConfigMock
+        .mockReturnValueOnce(chunks({ type: "text_delta", data: { delta: "I updated the file." } }, { type: "done", data: {} }))
+        .mockReturnValueOnce(chunks({ type: "text_delta", data: { delta: "I cannot confirm the update." } }, { type: "done", data: {} }));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id, message: "Was the file updated?",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      const collected = await collectStream(prepared.stream);
+      expect(collected.assistantContent).toBe("I cannot confirm the update.");
+      expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
+    } finally {
+      classifier.mockRestore();
+    }
+  });
+
+  it("explains a flagged claim without retrying an attempted write", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "flagged-action-write-guard", name: "Classifier", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null,
+      anti_hallucination_mode: "model", anti_hallucination_model_config: "default",
+    });
+    const thread = createThread("flagged-action-write-guard");
+    const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({ stalled: true, reason: "Update not confirmed." });
+    try {
+      streamWithConfigMock.mockReturnValue(chunks(
+        { type: "tool_call", data: { id: "write-1", name: "file_write", arguments: { path: "example.txt" } } },
+        { type: "tool_result", data: { id: "write-1", name: "file_write", result: { ok: false } } },
+        { type: "text_delta", data: { delta: "I updated the file." } },
+        { type: "done", data: {} },
+      ));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id, message: "Update the file.",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      const collected = await collectStream(prepared.stream);
+      expect(streamWithConfigMock).toHaveBeenCalledTimes(1);
+      expect(collected.assistantContent).toContain("advisory action-evidence check flagged a possible unsupported claim");
+      expect(collected.assistantContent).toContain("avoid duplicate side effects");
+      expect(classifier.mock.calls[0][1].toolResultSummaries[0]).toContain('arguments: {"path":"example.txt"}');
+    } finally {
+      classifier.mockRestore();
+    }
+  });
+
+  it("respects an explicit action-check Off setting under strict citation mode", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "strict-action-check-off", name: "Classifier", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null,
+      citation_strictness: "strict",
+      anti_hallucination_mode: "off",
+      anti_hallucination_model_config: "default",
+    });
+    const thread = createThread("strict-action-check-off");
+    const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({ stalled: false, reason: "" });
+    const citationAudit = vi.spyOn(citationChecker, "classifyCitations").mockResolvedValue(null);
+    try {
+      streamWithConfigMock.mockReturnValue(chunks(
+        { type: "text_delta", data: { delta: "Completed the review." } },
+        { type: "done", data: {} },
+      ));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id,
+        message: "Review this response.",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      await collectStream(prepared.stream);
+      expect(classifier).not.toHaveBeenCalled();
+      expect(citationAudit).toHaveBeenCalled();
+    } finally {
+      classifier.mockRestore();
+      citationAudit.mockRestore();
     }
   });
 

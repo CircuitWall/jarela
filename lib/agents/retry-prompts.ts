@@ -5,6 +5,10 @@ export interface CitationRepairClaim {
 
 const COMPLETE_ANSWER_REPAIR = "Return a complete corrected answer to the original user request. Preserve all valid explanations, calculations, tables, and conclusions. Correct unsupported action claims: call the missing tool if the user authorized that action, or state honestly that it was not performed. Do not return only a correction or a tool confirmation. Your completed answer will replace the draft; the user must not lose the substantive answer.";
 
+export function buildActionEvidenceRetryNudge(reason: string): string {
+  return `↻ Auto-retry: the advisory action-evidence check flagged a possible unsupported read/write claim${reason ? ` — ${reason}` : ""}. Re-check that specific claim against this turn's tool calls and results, and the recent thread evidence; prior results may be stale. This heuristic is not a citation or proof of current state. If the action is already supported, do not repeat it; continue the user's request. If it is unsupported or unfinished, correct the claim and act only if the action is still needed, authorized, and safe. Otherwise, state plainly what remains uncertain or blocked. Return a complete corrected answer; preserve the valid substance of the draft, which your answer will replace.`;
+}
+
 export function buildFabricationNudge(reason: string): string {
   return `\u21bb Auto-retry: output validator flagged your reply${reason ? ` \u2014 ${reason}` : ""}. ${COMPLETE_ANSWER_REPAIR}`;
 }

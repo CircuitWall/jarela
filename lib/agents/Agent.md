@@ -508,7 +508,7 @@ try {
 ### Output & Validation
 - `output-validator/` — Validate and format agent output
 - `citation-checker.ts` — Track and validate source citations
-- `hallucination-classifier.ts` — Detect and flag unsupported claims
+- `hallucination-classifier.ts` — Compare read/write action claims with current tool outcomes and bounded recent thread evidence before retrying
 
 ### Checkpointing & Persistence
 - `sqlite-checkpoint-saver.ts` — Persist agent state to SQLite

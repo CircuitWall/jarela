@@ -73,6 +73,12 @@ describe("findCitations", () => {
 });
 
 describe("validateAssistantOutput", () => {
+  it("can skip action heuristics while retaining tool-citation validation", () => {
+    expect(validateAssistantOutput("I updated the file earlier.", [], ALLOWED, [], false).ok).toBe(true);
+    expect(validateAssistantOutput("Updated (via file_write).", [], ALLOWED, [], false)).toMatchObject({
+      ok: false, kind: "citation_uncalled_tool",
+    });
+  });
   describe("happy paths (ok)", () => {
     it("plain answer, no claims, no tools — ok", () => {
       const r = validateAssistantOutput("Sure, here is what I think.", [], ALLOWED);

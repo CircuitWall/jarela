@@ -1046,18 +1046,17 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("context_tier_proportions")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN context_tier_proportions TEXT");
   }
-  // Per-agent override of the anti-hallucination classifier (ADR-Ã¢â‚¬Â¦). NULL
+  // Per-agent override of the action-claim check. NULL
   // on either column = inherit the global JARELA_HALLUCINATION_DETECTOR_*
-  // env knob. Mode is one of "off" | "report" | "enforce"; model_config is
-  // the name of a saved model config (lib/stores/model-config) used as
-  // the classifier model.
+  // env knob. Mode is one of "off" | "regex" | "model"; model_config is
+  // the saved model config used for the advisory read/write action check.
   if (!names.has("anti_hallucination_mode")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN anti_hallucination_mode TEXT");
   }
   if (!names.has("anti_hallucination_model_config")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN anti_hallucination_model_config TEXT");
   }
-  // Independent of the stall classifier: when 1, the agent's system prompt
+  // Separate from the action-claim check: when 1, the agent's system prompt
   // gets a citation-link directive and the assistant turn is post-checked
   // for {source link present, source previously visited in this thread}.
   // Reuses `anti_hallucination_model_config` as the checker model.
@@ -1069,8 +1068,8 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   //   off           Ã¢â‚¬â€ no checker, no directive (legacy require_source_links=0)
   //   informational Ã¢â‚¬â€ checker runs; agent NOT asked to cite (UI surfaces refs)
   //   standard      Ã¢â‚¬â€ agent nudged to cite KEY claims (legacy require_source_links=1)
-  //   strict        Ã¢â‚¬â€ agent must cite EVERY factual claim AND stall classifier
-  //                   is forced to mode='model'
+  //   strict        Ã¢â‚¬â€ agent must cite EVERY factual claim; action-claim check
+  //                   uses model mode when configured, unless Off
   if (!names.has("citation_strictness")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN citation_strictness TEXT NOT NULL DEFAULT 'off'");
     // Backfill from the legacy boolean so existing agents keep their behavior.

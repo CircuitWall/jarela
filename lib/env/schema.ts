@@ -145,7 +145,7 @@ export const ENV_DEFAULTS = {
   providerRateLimits: "",
   // tool safety / policy (already in lib/env/allowlist; kept for schema completeness)
   toolSafety: "mostly_safe" as const,
-  // anti-hallucination classifier
+  // read/write action-claim check
   hallucinationDetectorMode: "regex" as const,
   hallucinationDetectorModel: "",
   modelRouterMode: "off" as const,
@@ -732,7 +732,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     name: "JARELA_HALLUCINATION_DETECTOR_MODE",
     type: "enum",
     default: ENV_DEFAULTS.hallucinationDetectorMode,
-    description: "Anti-hallucination detector. 'off' = no detection. 'regex' = pattern-based (default; fast, free, brittle). 'model' = LLM classifier (more accurate, costs one extra model call per agent turn). 'model' requires JARELA_HALLUCINATION_DETECTOR_MODEL to be set; if missing, falls back to 'regex'.",
+    description: "Action-claim check. 'off' = disabled. 'regex' = fast, free pattern check for common unfinished-action wording (default). 'model' = compare read/write claims with current tool evidence and up to two recent completed turns; adds a model call on eligible turns when a quality retry is available. This is a heuristic, not a citation audit or proof of current state. Strict citation mode upgrades the check to model when configured, unless the resolved mode is off. Missing model configuration falls back to regex.",
     category: "agent",
     tier: "B",
     requiresRestart: false,
@@ -743,7 +743,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     name: "JARELA_HALLUCINATION_DETECTOR_MODEL",
     type: "string",
     default: ENV_DEFAULTS.hallucinationDetectorModel,
-    description: "Model config name (from Models settings) to use as the anti-hallucination classifier. Pick a fast/cheap one (e.g. claude-haiku, gpt-4o-mini, gemini-flash). Empty = no classifier; the mode knob is effectively 'off'.",
+    description: "Saved model config name (from Models settings) for the action-claim check. A fast/cheap model is recommended. If the check is set to 'model' but this is empty or invalid, it falls back to regex.",
     category: "agent",
     tier: "B",
     requiresRestart: false,

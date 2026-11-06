@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   appendHistoryMessage,
   buildRetryContextSummary,
+  buildActionEvidenceRetryNudge,
   buildFabricationNudge,
   retryTextOverlapRatio,
   toolCallSignature,
@@ -100,6 +101,22 @@ describe("buildFabricationNudge", () => {
     const nudge = buildFabricationNudge("");
     expect(nudge).toContain("flagged your reply. Return a complete corrected answer");
     expect(nudge).not.toContain("reply —");
+  });
+});
+
+describe("buildActionEvidenceRetryNudge", () => {
+  it("asks the model to reconcile evidence without treating the flag as proof or repeating an action", () => {
+    const nudge = buildActionEvidenceRetryNudge("the reply claims a write completed without a matching result");
+    expect(nudge).toContain("specific claim");
+    expect(nudge).toContain("prior results may be stale");
+    expect(nudge).toContain("not a citation or proof of current state");
+    expect(nudge).toContain("If the action is already supported, do not repeat it");
+    expect(nudge).toContain("authorized, and safe");
+    expect(nudge).toContain("the reply claims a write completed");
+  });
+
+  it("does not add an empty reason clause", () => {
+    expect(buildActionEvidenceRetryNudge("")).not.toContain(" — .");
   });
 });
 

@@ -86,31 +86,30 @@ export interface AgentConfig {
    */
   context_tier_proportions: { hot: number; warm: number; facts: number } | null;
   /**
-   * Per-agent override of the anti-hallucination classifier mode.
+   * Per-agent override of the read/write action-claim check mode.
    *   null      = inherit the global JARELA_HALLUCINATION_DETECTOR_MODE
-   *   "off"     = no classifier on this agent's turns
-   *   "report"  = classifier runs alongside regex; logs disagreements +
-   *               appends a footer when classifier flags a stall regex missed
-   *   "enforce" = either regex OR classifier vote triggers retry
+   *   "off"     = no action-claim check (also respected by strict citation mode)
+   *   "regex"   = fast, free pattern check for common unfinished-action wording
+   *   "model"   = compare read/write claims with current tool evidence and up to
+   *               two recent completed assistant turns; heuristic, not proof
    */
   anti_hallucination_mode: "off" | "regex" | "model" | null;
   /**
-   * Per-agent override of the anti-hallucination classifier model.
+   * Per-agent override of the action-claim check model.
    * Stores the `name` of a saved model config (see Models settings) — pick
    * a fast/cheap one (Haiku, gpt-4o-mini, gemini-flash). NULL = inherit the
    * global JARELA_HALLUCINATION_DETECTOR_MODEL.
    */
   anti_hallucination_model_config: string | null;
   /**
-   * Citation strictness (independent of the stall detector). One of:
+   * Citation strictness (separate from the action-claim check). One of:
    *  - `off`           : no checker, no system-prompt directive
    *  - `informational` : checker runs and surfaces a references panel; the
    *                      agent is NOT asked to cite
    *  - `standard`      : agent nudged to cite KEY (load-bearing) claims
    *                      with `[N]` markers
-   *  - `strict`        : agent must cite EVERY factual claim AND the stall
-   *                      classifier is forced to mode='model' for this
-   *                      agent's turns
+   *  - `strict`        : agent must cite EVERY factual claim; the action-claim
+   *                      check uses model mode when configured, unless Off
    * The checker reuses `anti_hallucination_model_config` as the LLM judge.
    */
   citation_strictness: CitationStrictness;

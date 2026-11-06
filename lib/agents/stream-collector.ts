@@ -38,6 +38,7 @@ export interface CollectedRun {
   // a usage event arrived (or the provider didn't report one).
   usage?: AssistantUsageSnapshot;
   routeDecision?: RouteDecisionMetadata | null;
+  actionCheckAccepted?: boolean;
 }
 
 export interface CollectStreamOptions {
@@ -134,6 +135,7 @@ export async function collectStream(
             model_id?: string;
             model_config_name?: string | null;
             route_decision?: RouteDecisionMetadata | null;
+            action_check_accepted?: boolean;
           };
           if (d?.usage && d.provider && d.model_id && d.usage.source === "provider") {
             result.usage = {
@@ -148,6 +150,7 @@ export async function collectStream(
             };
           }
           result.routeDecision = d.route_decision ?? null;
+          result.actionCheckAccepted = d.action_check_accepted === true;
           finalizeUsedTools();
           return result;
         }

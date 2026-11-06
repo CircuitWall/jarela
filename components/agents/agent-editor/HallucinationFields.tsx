@@ -6,27 +6,27 @@ export function AntiHallucinationFields({ form, models }: { form: AgentEditorFor
   return (
     <>
       <label className="block">
-        <span className="text-xs text-fg-subtle mb-1 block">Anti-hallucination detector</span>
+        <span className="text-xs text-fg-subtle mb-1 block">Action-claim check</span>
         <Select
           value={form.antiHallucMode}
           onChange={(e) => form.setAntiHallucMode(e.target.value as typeof form.antiHallucMode)}
         >
           <option value="">Inherit global default</option>
-          <option value="off">Off — no detection</option>
-          <option value="regex">Regex — fast, free, brittle</option>
-          <option value="model">Model — LLM classifier (more accurate, +1 call/turn)</option>
+          <option value="off">Off — no action-claim check</option>
+          <option value="regex">Regex — fast, free; catches common unfinished-action wording</option>
+          <option value="model">Model — compares read/write claims with tool evidence (extra call)</option>
         </Select>
       </label>
-      {form.antiHallucMode === "model" && (
+      {(form.antiHallucMode === "model" || form.citationStrictness !== "off") && (
         <label className="block">
           <span className="text-xs text-fg-subtle mb-1 block">
-            Classifier model
+            Action-check / citation model
             {form.antiHallucModel === "" && (
               <span className="ml-1 text-fg-faint">(inherits global)</span>
             )}
           </span>
           <Select value={form.antiHallucModel} onChange={(e) => form.setAntiHallucModel(e.target.value)}>
-            <option value="">Inherit global JARELA_HALLUCINATION_DETECTOR_MODEL</option>
+            <option value="">Inherit global for action check only</option>
             {models.map((m) => (
               <option key={m.name} value={m.name}>
                 {m.name} — {m.provider}/{m.model_id}
@@ -36,7 +36,7 @@ export function AntiHallucinationFields({ form, models }: { form: AgentEditorFor
         </label>
       )}
       <p className="text-[11px] text-fg-faint">
-        When set to <em>model</em>, every assistant turn for this agent runs through an LLM classifier that judges whether the agent stalled (narrated future work without invoking a write tool). Pick a fast/cheap config (e.g. Haiku, gpt-4o-mini, gemini-flash). If no model is configured here or globally, falls back to <em>regex</em>.
+        Model mode sends bounded excerpts of the answer, tool arguments and results, and up to two recent completed turns in this thread to the configured model provider. These excerpts may contain sensitive data. Evidence can be incomplete or stale; this is a heuristic, not a citation audit or proof of current state. It adds a model call; use a fast/cheap one. If unavailable, it falls back to regex. Strict citation mode upgrades this check to Model when a model is configured, unless the resolved action-check mode is Off. Automatic retries are suppressed after a possibly state-changing tool call. Separate output and citation validators may still run when this check is Off.
       </p>
     </>
   );
@@ -54,15 +54,15 @@ export function CitationStrictnessField({ form }: { form: AgentEditorForm }) {
           <option value="off">Off — no checker, no nudge to cite</option>
           <option value="informational">Informational — checker surfaces references; agent NOT asked to cite</option>
           <option value="standard">Standard — nudge agent to cite KEY (load-bearing) claims</option>
-          <option value="strict">Strict — cite EVERY claim; force model-based stall detector</option>
+          <option value="strict">Strict — require citations for every claim</option>
         </Select>
         <span className="text-[11px] text-fg-faint mt-1">
-          The audit (a second-pass LLM that ranks each factual claim by impact) runs whenever strictness is not <em>off</em>. References may be tool-visited files/URLs, memory items, or prior assistant turns. The chat UI renders each <code>[N]</code> marker as a clickable link/anchor.
+          Citation auditing is separate from the action-claim check and may make its own model call when a model is configured for this agent. References may be tool-visited files/URLs, memory items, or prior assistant turns. The chat UI renders each <code>[N]</code> marker as a clickable link/anchor.
         </span>
       </label>
       {form.citationStrictness !== "off" && form.antiHallucModel.trim() === "" && (
         <p className="text-[11px] text-warn">
-          Pick a classifier model above (or set <em>Anti-hallucination detector</em> to <em>model</em>) so the citation audit has somewhere to run. Without it, the system-prompt directive is added but no verification happens.
+          Select an action-check / citation model above to run the citation audit for this agent. The citation audit does not use the inherited global action-check model.
         </p>
       )}
     </>
