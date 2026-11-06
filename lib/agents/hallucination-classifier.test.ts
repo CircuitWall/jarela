@@ -118,6 +118,33 @@ describe("classifyStall", () => {
     }
   });
 
+  it("verifies a claim cited via an inline Markdown link, not just a bracket marker", async () => {
+    upsertModelConfig("inline-link-checker", "openai", "gpt-4o-mini", { api_key: "sk-test" }, false);
+    invokeMock.mockResolvedValue({ text: JSON.stringify({
+      stalled: false, reason: "", claims: [
+        { text: "Supported claim", marker: 1, impact: "high", reason: "matched via inline link" },
+      ],
+    }) });
+    getProviderMock.mockReturnValue({ invoke: invokeMock });
+    try {
+      // PRIMARY citation format per the drafting prompt: no literal "[1]"
+      // bracket anywhere in the text, only an inline Markdown link to the
+      // source's URL.
+      const verdict = await classifyStall("Supported claim [see here](https://example.com/path).", {
+        toolNames: [], successfulToolNames: [], toolResultSummaries: [],
+      }, "inline-link-checker", undefined, [
+        { n: 1, label: "Example", href: "https://example.com/path" },
+      ]);
+      expect(verdict?.citations?.claims).toMatchObject([
+        { marker: 1, verified: true, link: "https://example.com/path" },
+      ]);
+    } finally {
+      deleteModelConfig("inline-link-checker");
+      invokeMock.mockReset();
+      getProviderMock.mockReset();
+    }
+  });
+
   it("reports an unavailable audit if the citation result is malformed", async () => {
     upsertModelConfig("combined-malformed", "openai", "gpt-4o-mini", { api_key: "sk-test" }, false);
     invokeMock.mockResolvedValue({ text: '{"stalled":false,"reason":"ok"}' });
