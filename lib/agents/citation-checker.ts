@@ -124,6 +124,26 @@ export function extractCitedMarkers(text: string): number[] {
 }
 
 /**
+ * Pull every inline Markdown link destination (`[label](href)`) out of the
+ * assistant text, normalized the same way manifest hrefs are. The drafting
+ * prompt's PRIMARY citation format is an inline link, not a `[n]` bracket
+ * marker — a claim backed by one never contains literal bracket text, so
+ * checking "is this source's href one the reply actually links to" is the
+ * citation-format-agnostic counterpart to `extractCitedMarkers`.
+ */
+export function extractInlineLinkHrefs(text: string): Set<string> {
+  const out = new Set<string>();
+  if (!text) return out;
+  const re = /\]\(([^)\s]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const normalized = normalizeSource(m[1]);
+    if (normalized) out.add(normalized);
+  }
+  return out;
+}
+
+/**
  * Build the numbered source manifest the agent will see in its system
  * prompt. Takes the visited-sources set (insertion-ordered ≈ chronological
  * because both Set and the events that filled it preserve order) and
