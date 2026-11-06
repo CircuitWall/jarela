@@ -62,10 +62,9 @@ export interface AgentConfigRow {
   //   informational - checker runs and surfaces references; agent NOT nudged
   //                   to cite
   //   standard      - agent nudged to cite KEY (load-bearing) claims with [N]
-  //     strict        - agent must cite EVERY factual claim; the action-claim
-  //                     check uses model mode when configured, unless Off.
-  // The citation audit is separate and reuses the agent's selected checker
-  // model; strict mode does not override an explicit action-check Off setting.
+  //   strict        - agent must cite EVERY factual claim
+  // The citation audit shares the action check's model call and runs only
+  // when the resolved action-check mode is model.
   citation_strictness: string;
   // Per-agent override of which credential each tool uses when more than one
   // is configured for the tool's integration. JSON-encoded

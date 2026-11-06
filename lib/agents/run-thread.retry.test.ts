@@ -32,7 +32,6 @@ const { spillFileBuffer } = await import("@/lib/attachments/spill");
 const { transientRetryStream } = await import("./run-retry");
 const retryModule = await import("./run-retry");
 const stallClassifier = await import("./hallucination-classifier");
-const citationChecker = await import("./citation-checker");
 const embeddings = await import("@/lib/embeddings");
 
 afterAll(() => {
@@ -60,7 +59,7 @@ describe("prepareThreadRun transient retry", () => {
       anti_hallucination_model_config: "checker",
     });
     const thread = createThread("delegated-no-citation-inference");
-    const checkerSpy = vi.spyOn(citationChecker, "classifyCitations").mockResolvedValue(null);
+    const checkerSpy = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue(null);
 
     try {
       persistAssistantMessage(
@@ -200,7 +199,9 @@ describe("prepareThreadRun transient retry", () => {
       anti_hallucination_mode: "model", anti_hallucination_model_config: "default",
     });
     const thread = createThread("flagged-action-replacement");
-    const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({ stalled: true, reason: "No evidence of the update." });
+    const classifier = vi.spyOn(stallClassifier, "classifyStall")
+      .mockResolvedValueOnce({ stalled: true, reason: "No evidence of the update." })
+      .mockResolvedValueOnce({ stalled: false, reason: "" });
     try {
       streamWithConfigMock
         .mockReturnValueOnce(chunks({ type: "text_delta", data: { delta: "I updated the file." } }, { type: "done", data: {} }))
@@ -256,7 +257,6 @@ describe("prepareThreadRun transient retry", () => {
     });
     const thread = createThread("strict-action-check-off");
     const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({ stalled: false, reason: "" });
-    const citationAudit = vi.spyOn(citationChecker, "classifyCitations").mockResolvedValue(null);
     try {
       streamWithConfigMock.mockReturnValue(chunks(
         { type: "text_delta", data: { delta: "Completed the review." } },
@@ -269,10 +269,90 @@ describe("prepareThreadRun transient retry", () => {
       });
       await collectStream(prepared.stream);
       expect(classifier).not.toHaveBeenCalled();
-      expect(citationAudit).toHaveBeenCalled();
     } finally {
       classifier.mockRestore();
-      citationAudit.mockRestore();
+    }
+  });
+
+  it("does not upgrade Regex to a citation model audit in strict mode", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "strict-regex-no-audit", name: "Audit", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null,
+      anti_hallucination_mode: "regex", anti_hallucination_model_config: "default", citation_strictness: "strict",
+    });
+    const thread = createThread("strict-regex-no-audit");
+    const classifier = vi.spyOn(stallClassifier, "classifyStall");
+    try {
+      streamWithConfigMock.mockReturnValue(chunks({ type: "text_delta", data: { delta: "Example answer." } }, { type: "done", data: {} }));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id, message: "Give an example.",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      await collectStream(prepared.stream);
+      expect(classifier).not.toHaveBeenCalled();
+    } finally {
+      classifier.mockRestore();
+    }
+  });
+
+  it("persists citation findings from the combined model check", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "combined-audit-persist", name: "Audit", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null,
+      anti_hallucination_mode: "model", anti_hallucination_model_config: "default", citation_strictness: "informational",
+    });
+    const thread = createThread("combined-audit-persist");
+    const citations = { checker_model: "default", claims: [
+      { text: "Example claim", marker: null, link: null, verified: false, reason: "No marker", impact: "high" as const },
+    ], unverified_links: [] };
+    const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({ stalled: false, reason: "", citations });
+    try {
+      streamWithConfigMock.mockReturnValue(chunks({ type: "text_delta", data: { delta: "Example claim." } }, { type: "done", data: {} }));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id, message: "Give an example.",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      const collected = await collectStream(prepared.stream);
+      expect(classifier).toHaveBeenCalledTimes(1);
+      persistAssistantMessage(thread.thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents,
+        null, null, null, null, null, null, undefined, { actionCheckAccepted: collected.actionCheckAccepted, citationAudit: collected.citationAudit });
+      const metadata = JSON.parse(getMessages(thread.thread_id).at(-1)?.metadata ?? "{}");
+      expect(metadata.citations).toMatchObject({ ...citations, sources: [] });
+    } finally {
+      classifier.mockRestore();
+    }
+  });
+
+  it("uses combined strict citation findings to replace an unsupported answer", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "combined-strict-retry", name: "Audit", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null,
+      anti_hallucination_mode: "model", anti_hallucination_model_config: "default", citation_strictness: "strict",
+    });
+    const thread = createThread("combined-strict-retry");
+    const classifier = vi.spyOn(stallClassifier, "classifyStall")
+      .mockResolvedValueOnce({ stalled: false, reason: "", citations: {
+        checker_model: "default", claims: [
+          { text: "Example claim", marker: null, link: null, verified: false, reason: "No marker", impact: "high" },
+        ], unverified_links: [],
+      } })
+      .mockResolvedValueOnce({ stalled: false, reason: "", citations: {
+        checker_model: "default", claims: [], unverified_links: [],
+      } });
+    try {
+      streamWithConfigMock
+        .mockReturnValueOnce(chunks({ type: "text_delta", data: { delta: "Example claim." } }, { type: "done", data: {} }))
+        .mockReturnValueOnce(chunks({ type: "text_delta", data: { delta: "The source is unavailable." } }, { type: "done", data: {} }));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id, message: "Give an example.",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      const collected = await collectStream(prepared.stream);
+      expect(collected.assistantContent).toBe("The source is unavailable.");
+      expect(classifier).toHaveBeenCalledTimes(2);
+      expect(collected.citationAudit?.verdict.claims).toEqual([]);
+    } finally {
+      classifier.mockRestore();
     }
   });
 
@@ -1334,6 +1414,35 @@ describe("prepareThreadRun transient retry", () => {
       expect(lastUserText(1)).toContain("Run tests");
       expect(collected.assistantContent).toContain("Turn 1.");
       expect(collected.assistantContent).toContain("Verified.");
+    });
+
+    it("does not attribute a continuation-only citation audit to the combined answer", async () => {
+      streamWithConfigMock
+        .mockImplementationOnce(() => rejectedTurn(1))
+        .mockImplementationOnce(() => chunks(
+          { type: "tool_call", data: { id: "wf-2", name: "workflow_progress", arguments: { workflow_id: "release_check", items: [step("done", "tests passed")] } } },
+          { type: "tool_result", data: { id: "wf-2", name: "workflow_progress", result: JSON.stringify({ ok: true, workflow_id: "release_check", state: { phase: null, summary: "", error: null, checklist: [step("done", "tests passed")] } }) } },
+          { type: "text_delta", data: { delta: "Verified." } },
+          done("done-wf-2"),
+        ));
+      const prepared = await setup("workflow-unified-audit");
+      upsertAgentConfig({
+        id: "workflow-unified-audit", name: "Workflow Agent", identity: "helper", instructions: "Be helpful.", tools: ["workflow_progress"], model_config_name: null,
+        anti_hallucination_mode: "model", anti_hallucination_model_config: "default", citation_strictness: "informational",
+      });
+      const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({
+        stalled: false, reason: "", citations: { checker_model: "default", claims: [], unverified_links: [] },
+      });
+      try {
+        const collected = await collectStream(prepared.stream);
+        expect(classifier).toHaveBeenCalledTimes(2);
+        expect(collected.assistantContent).toContain("Turn 1.");
+        expect(collected.assistantContent).toContain("Verified.");
+        expect(collected.citationAudit).toBeUndefined();
+        expect(collected.actionCheckAccepted).toBe(false);
+      } finally {
+        classifier.mockRestore();
+      }
     });
 
     it("gives up after three attempts and tells the user the step still fails", async () => {

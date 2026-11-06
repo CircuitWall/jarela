@@ -9,7 +9,6 @@
  * Adding a prompt without registering it fails the coverage test, so the
  * inventory cannot silently go stale.
  */
-import { SYSTEM_PROMPT as CITATION_CHECKER_PROMPT } from "@/lib/agents/citation-checker";
 import { SYSTEM_PROMPT as HALLUCINATION_CLASSIFIER_PROMPT } from "@/lib/agents/hallucination-classifier";
 import { SYSTEM_PROMPT as PRICING_EXTRACT_PROMPT } from "@/lib/pricing/llm-extract";
 import { MODEL_UPDATES_PROMPT } from "@/lib/pricing/model-updates";
@@ -231,15 +230,9 @@ function listAgentPrompts(): StaticPrompt[] {
     },
     ...listConversationPrompts(),
     {
-      id: "audit.citation-checker",
-      source: "lib/agents/citation-checker.ts",
-      purpose: "Extracts factual claims from an assistant turn for citation auditing.",
-      text: CITATION_CHECKER_PROMPT,
-    },
-    {
       id: "audit.hallucination-classifier",
       source: "lib/agents/hallucination-classifier.ts",
-      purpose: "Checks read/write action claims against current tool outcomes and bounded recent thread evidence before a retry.",
+      purpose: "Checks action evidence and citation markers in a single advisory model call.",
       text: HALLUCINATION_CLASSIFIER_PROMPT,
     },
     {

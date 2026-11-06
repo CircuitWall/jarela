@@ -3,14 +3,14 @@ import { getConfig } from "@/lib/env/config";
 import { setTimeout as delay } from "node:timers/promises";
 import type { StreamChunk } from "@/lib/agents/base";
 import { registeredCapability } from "@/lib/tools/runtime/registry";
-import { getMessagesPage, getThread } from "@/lib/stores/threads";
+import { getMessagesPage, getThread, capToolEventPayload, type PersistedToolEvent } from "@/lib/stores/threads";
 import { getAgentConfig, parseCitationStrictness } from "@/lib/stores/agent-configs";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { buildWorkflowStepRetryNudge, collectWorkflowContractFailures, planWorkflowStepRetries, WORKFLOW_TURN_AUTO_RETRY_LIMIT, workflowProgressArgs, type WorkflowProgressObservation } from "@/lib/agents/workflow-step-retry";
 import { type ThreadRunRequest } from "@/lib/agents/prepare";
 import { classifyStall, resolveDetector, summarizeRecentActionHistory, type StallVerdict } from "@/lib/agents/hallucination-classifier";
 import { nextPolicyForRetry } from "@/lib/agents/model-router";
-import { buildCombinedManifest, classifyCitations } from "@/lib/agents/citation-checker";
+import { buildCombinedManifest, extractDeclaredReferences, mergeDeclaredReferences, type CitationVerdict, type SourceManifestEntry } from "@/lib/agents/citation-checker";
 import type { PreparedThreadRun } from "@/lib/agents/run-thread";
 import { ToolOutcomes, unwrapInvokedToolName } from "./tool-outcomes";
 import { buildActionEvidenceRetryNudge, buildFabricationNudge, buildCitationRetryNudge } from "./retry-prompts";
@@ -19,6 +19,14 @@ export { buildActionEvidenceRetryNudge } from "./retry-prompts";
 export { unwrapInvokedToolName } from "./tool-outcomes";
 
 type PrepareRetry = (request: ThreadRunRequest) => Promise<Pick<PreparedThreadRun, "stream">>;
+
+function withoutPartialAudit(chunk: StreamChunk): StreamChunk {
+  if (chunk.type !== "done") return chunk;
+  const data = { ...chunk.data };
+  delete data.action_check_accepted;
+  delete data.citation_audit;
+  return { ...chunk, data };
+}
 
 
 export function transientRetryDelayMs(attempt: number): number {
@@ -143,6 +151,7 @@ interface RetryObservation {
   textBuf: string;
   toolNames: string[];
   toolResultSummaries: string[];
+  toolEvents: PersistedToolEvent[];
   toolOutcomes: ToolOutcomes;
   workflowObservations: WorkflowProgressObservation[];
   loopedToolName: string | null;
@@ -158,6 +167,7 @@ interface RetryAssessment {
   zeroToolStall: boolean;
   classifierStalled: boolean;
   classifierAccepted: boolean;
+  citationAudit?: { verdict: CitationVerdict; sources: SourceManifestEntry[] };
   classifierReason: string;
   uncitedHighClaims: ReadonlyArray<{ text: string; reason: string; marker: number | null }>;
 }
@@ -170,6 +180,7 @@ async function* observeRetryAttempt(
   let textBuf = "";
   const toolNames: string[] = [];
   const toolResultSummaries: string[] = [];
+  const toolEvents: PersistedToolEvent[] = [];
   const toolCalls = new Map<string, { name: string; args: string }>();
   // Track (name, args) signatures within the turn so we can detect a
   // ReAct loop where the model spins on the same tool call. Counts
@@ -191,6 +202,9 @@ async function* observeRetryAttempt(
       yield chunk;
     } else if (chunk.type === "tool_call") {
       const data = chunk.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
+      if (typeof data?.id === "string" && typeof data.name === "string") {
+        toolEvents.push(capToolEventPayload({ id: data.id, phase: "call", name: data.name, payload: data.arguments }));
+      }
       const rawName = typeof data?.name === "string" ? data.name : "";
       const args = data?.arguments && typeof data.arguments === "object"
         ? (data.arguments as Record<string, unknown>)
@@ -225,6 +239,9 @@ async function* observeRetryAttempt(
       yield chunk;
     } else if (chunk.type === "tool_result") {
       const data = chunk.data as { id?: unknown; name?: unknown; result?: unknown; status?: unknown } | undefined;
+      if (typeof data?.id === "string" && typeof data.name === "string") {
+        toolEvents.push(capToolEventPayload({ id: data.id, phase: "result", name: data.name, payload: data.result }));
+      }
       const name = typeof data?.name === "string" ? data.name : "tool";
       if (typeof data?.id === "string" && pendingWorkflowArgs.has(data.id)) {
         workflowObservations.push({ args: pendingWorkflowArgs.get(data.id), result: data.result });
@@ -250,7 +267,7 @@ async function* observeRetryAttempt(
       yield chunk;
     }
   }
-  return { textBuf, toolNames, toolResultSummaries, toolOutcomes, workflowObservations, loopedToolName, doneChunk };
+  return { textBuf, toolNames, toolResultSummaries, toolEvents, toolOutcomes, workflowObservations, loopedToolName, doneChunk };
 }
 
 async function assessRetryAttempt(
@@ -259,7 +276,7 @@ async function assessRetryAttempt(
   allowedTools: readonly string[],
   retriesLeft: number,
 ): Promise<RetryAssessment> {
-  const { textBuf, toolNames, toolResultSummaries, toolOutcomes, loopedToolName } = observation;
+  const { textBuf, toolNames, toolResultSummaries, toolEvents, toolOutcomes, loopedToolName } = observation;
   const succeededToolNames = toolOutcomes.successfulNames();
 
   const trimmedText = textBuf.trim();
@@ -285,14 +302,15 @@ async function assessRetryAttempt(
   // based on the resolved per-agent (or global env) settings.
   const agentCfg = getAgentConfig(originalReq.thread_id ? (getThread(originalReq.thread_id)?.agent_id ?? "") : "");
   const detector = resolveDetector(agentCfg);
-  // Strict citation mode upgrades the action check to model-based when a
-  // classifier is configured, unless the resolved action-check mode is Off.
   const strictness = agentCfg ? parseCitationStrictness(agentCfg.citation_strictness) : null;
-  if (strictness === "strict" && detector.mode !== "off" && detector.modelConfigName) {
-    detector.mode = "model";
-  }
+  const citationEnabled = strictness != null && strictness !== "off";
+  const manifest = citationEnabled
+    ? mergeDeclaredReferences(buildCombinedManifest(toolEvents, originalReq.thread_id, {
+        tools: getConfig().citationManifestMax, delegates: 10,
+      }), extractDeclaredReferences(textBuf).refs)
+    : undefined;
   let classifierVerdict: StallVerdict | null = null;
-  if (retriesLeft > 0 && !looped && detector.mode === "model") {
+  if (!looped && detector.mode === "model" && trimmedText) {
     classifierVerdict = await (async () => {
       const recentMessages = getMessagesPage(originalReq.thread_id, 16).messages;
       return classifyStall(textBuf, {
@@ -300,7 +318,7 @@ async function assessRetryAttempt(
         successfulToolNames: succeededToolNames,
         toolResultSummaries,
         recentRunEvidence: summarizeRecentActionHistory(recentMessages),
-      }, detector.modelConfigName, originalReq.signal);
+      }, detector.modelConfigName, originalReq.signal, manifest);
     })().catch(() => null);
     if (!classifierVerdict) {
       // Classifier unavailable / errored / aborted — fall back to regex
@@ -332,44 +350,14 @@ async function assessRetryAttempt(
     ? validateAssistantOutput(textBuf, toolNames, allowedTools, succeededToolNames.filter(isWriteLikeToolName), !classifierAccepted)
     : ({ ok: true } as const);
 
-  // Strict-mode citation audit. Runs ONLY at `citation_strictness === 'strict'`
-  // when no earlier gate already claimed the turn — that's when we want to
-  // catch hallucinated/uncited high-impact claims and force a correction
-  // round. Standard / informational defer to the post-persist fire-and-
-  // forget checker (no nudge, just surfacing). The audit is synchronous so
-  // it adds one checker round-trip to strict turns; the cost is the price
-  // of the stronger guarantee.
-  let uncitedHighClaims: ReadonlyArray<{ text: string; reason: string; marker: number | null }> = [];
-  if (
-    !stalled && !looped && fabrication.ok
-    && agentCfg
-    && parseCitationStrictness(agentCfg.citation_strictness) === "strict"
-    && retriesLeft > 0
-    && textBuf.trim().length > 0
-  ) {
-    const checkerModel = (agentCfg.anti_hallucination_model_config ?? "").trim();
-    if (checkerModel) {
-      // The audit grades against THIS turn's sources. We don't accumulate
-      // tool-result payloads in this scope (only names + signatures for
-      // loop detection), so the audit can only see what landed in the
-      // text — pass an empty events array and let `classifyCitations`
-      // judge purely on the markers/links in the prose. The post-persist
-      // checker (which runs against the persisted manifest) catches
-      // anything this scope misses.
-      const auditManifest = buildCombinedManifest([], originalReq.thread_id, {
-        tools: Math.max(0, getConfig().citationManifestMax - 10),
-        delegates: 10,
-      });
-      try {
-        const verdict = await classifyCitations(textBuf, auditManifest, checkerModel, originalReq.signal);
-        if (verdict) {
-          uncitedHighClaims = verdict.claims
-            .filter((c) => c.impact === "high" && !c.verified)
-            .map((c) => ({ text: c.text, reason: c.reason, marker: c.marker }));
-        }
-      } catch { /* audit failed — fall through, no retry */ }
-    }
-  }
+  // Only strict citation findings trigger a correction; other modes surface
+  // the same combined audit in message metadata without an extra model call.
+  const uncitedHighClaims = strictness === "strict"
+    ? (classifierVerdict?.citations?.claims ?? []).filter((c) => c.impact === "high" && !c.verified)
+    : [];
+  const citationAudit = classifierVerdict?.citations && manifest
+    ? { verdict: classifierVerdict.citations, sources: manifest }
+    : undefined;
   const citationFail = uncitedHighClaims.length > 0;
   return {
     stalled,
@@ -380,6 +368,7 @@ async function assessRetryAttempt(
     zeroToolStall,
     classifierStalled,
     classifierAccepted,
+    citationAudit,
     classifierReason,
     uncitedHighClaims,
   };
@@ -397,15 +386,16 @@ export async function* stallRetryStream(
   if (!observation) return;
   const { textBuf, toolNames, toolResultSummaries, toolOutcomes, workflowObservations, loopedToolName, doneChunk } = observation;
   const { stalled, looped, fabrication, citationFail, promisedWriteStall, zeroToolStall,
-    classifierStalled, classifierAccepted, classifierReason, uncitedHighClaims } = await assessRetryAttempt(observation, originalReq, allowedTools, retriesLeft);
+    classifierStalled, classifierAccepted, citationAudit, classifierReason, uncitedHighClaims } = await assessRetryAttempt(observation, originalReq, allowedTools, retriesLeft);
+  const auditedDoneChunk = doneChunk && (classifierAccepted || citationAudit)
+    ? { ...doneChunk, data: { ...doneChunk.data, action_check_accepted: classifierAccepted, citation_audit: citationAudit } }
+    : doneChunk;
   if (!stalled && !looped && fabrication.ok && !citationFail) {
     if (workflowObservations.length > 0) {
-      yield* workflowStepRetryStream(workflowObservations, originalReq, retriesLeft, attemptAbort, doneChunk, textBuf, toolNames, toolResultSummaries, prepareRetry);
+      yield* workflowStepRetryStream(workflowObservations, originalReq, retriesLeft, attemptAbort, auditedDoneChunk, textBuf, toolNames, toolResultSummaries, prepareRetry);
       return;
     }
-    if (doneChunk) yield classifierAccepted
-      ? { ...doneChunk, data: { ...doneChunk.data, action_check_accepted: true } }
-      : doneChunk;
+    if (auditedDoneChunk) yield auditedDoneChunk;
     return;
   }
 
@@ -415,10 +405,10 @@ export async function* stallRetryStream(
       type: "text_delta",
       data: {
         delta:
-          `\n\n*⚠️ ${classifierStalled ? "An advisory action-evidence check flagged a possible unsupported claim. " : ""}Retry guard skipped automatic retry because state-changing tools were attempted this turn: ${writeLikeTools.slice(0, 6).join(", ")}. Their effects may be incomplete or unverified. Review the result before continuing to avoid duplicate side effects.*`,
+          `\n\n*⚠️ ${classifierStalled ? "An advisory action-evidence check flagged a possible unsupported claim. " : ""}${citationFail ? "The citation audit flagged an uncited high-impact claim. " : ""}Retry guard skipped automatic retry because state-changing tools were attempted this turn: ${writeLikeTools.slice(0, 6).join(", ")}. Their effects may be incomplete or unverified. Review the result before continuing to avoid duplicate side effects.*`,
       },
     };
-    if (doneChunk) yield doneChunk;
+    if (auditedDoneChunk) yield auditedDoneChunk;
     return;
   }
 
@@ -429,7 +419,7 @@ export async function* stallRetryStream(
         delta: "\n\n*⚠️ Automatic quality retry is disabled for this usage strategy. Review the result before continuing.*",
       },
     };
-    if (doneChunk) yield doneChunk;
+    if (auditedDoneChunk) yield auditedDoneChunk;
     return;
   }
 
@@ -458,6 +448,7 @@ export async function* stallRetryStream(
     nudge = `↻ Auto-retry: you called \`${loopedToolName}\` ${TOOL_LOOP_THRESHOLD}+ times in this turn with the same arguments without making progress. Either invoke a DIFFERENT tool to advance the task (for example, if you intend to write a file, call \`file_write\` now), or stop and explain what's blocking. Do NOT call \`${loopedToolName}\` again with the same arguments.`;
   } else if (stalled && classifierStalled) {
     nudge = buildActionEvidenceRetryNudge(classifierReason);
+    if (citationFail) nudge += `\n\n${buildCitationRetryNudge(uncitedHighClaims)}`;
   } else if (stalled && promisedWriteStall) {
     nudge = `↻ Auto-retry: your reply ended with a 'writing/saving/creating ... now' style statement but you only called read-only tools (${[...new Set(toolNames)].slice(0, 6).join(", ")}) — no write-like tool was invoked. Don't narrate the next step; CALL the actual write tool now (e.g. file_write, file_edit, memory_write). If you cannot, stop and explain why.`;
   } else if (stalled && zeroToolStall) {
@@ -501,7 +492,7 @@ export async function* stallRetryStream(
     _history_append_message: nudgeWithContext,
   });
   if (!isReplaceRetry) {
-    yield* retry.stream;
+    for await (const chunk of retry.stream) yield withoutPartialAudit(chunk);
     return;
   }
   let retryTextBuf = "";
@@ -591,7 +582,7 @@ export async function* workflowStepRetryStream(
     _skip_persist_message: true,
     _history_append_message: nudgeWithContext,
   });
-  for await (const chunk of next.stream) yield chunk;
+  for await (const chunk of next.stream) yield withoutPartialAudit(chunk);
 }
 
 

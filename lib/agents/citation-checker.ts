@@ -1,44 +1,10 @@
-// Citation checker — second-pass LLM that decides whether the assistant
-// turn's factual claims are backed by sources the agent actually visited
-// in this thread.
-//
-// Pipeline:
-//   1. extractVisitedSources(threadId)  walks every persisted tool event +
-//      the just-produced events to build the {url|path} provenance set.
-//   2. buildSourceManifest / buildCombinedManifest number the most-recent N
-//      sources (tool-visited files/URLs, memory items, prior assistant
-//      turns) so the model can cite by writing an inline `[N]` marker
-//      instead of typing the full path/URL in every claim.
-//   3. extractCitedMarkers(text)         pulls every `[N]` marker out of
-//      the assistant text so the checker can skip turns that carry no
-//      citations at all.
-//   4. classifyCitations(text, manifest, modelConfigName) asks the checker
-//      LLM to emit a strict-JSON verdict listing each factual claim, the
-//      marker the agent attached (if any), and whether that marker is in
-//      the manifest.
-//
-// Failure modes (timeout, parse error, missing model config, provider
-// throw) all return null. The caller writes metadata only on a non-null
-// verdict and the chat UI degrades to "no badge" when metadata is absent.
-//
-// Design choices:
-//   - Provenance scope is the whole thread, not a rolling window. Matches
-//     how focused chat threads work in practice and avoids false flags
-//     when the agent legitimately re-cites a file it read five turns ago.
-//   - The manifest is built BEFORE the LLM turn (in run-thread) and shown
-//     to the model in the system prompt. The model only has to write a
-//     small marker `[3]` instead of a full URL — long-form LLM output is
-//     much more reliable at emitting short stable tokens than at typing
-//     exact paths in the middle of prose.
-//   - Reuses anti_hallucination_model_config as the checker model so the
-//     user only configures one cheap classifier model per agent.
+// Citation source-manifest and verdict parsing helpers. The unified
+// action-evidence classifier owns the model call and resolves markers
+// against the same manifest that is persisted with the result.
 
 import type { PersistedToolEvent } from "@/lib/stores/threads";
 import { listMemory } from "@/lib/stores/memory";
 import { isSensitiveMemoryNamespace } from "@/lib/crypto/sensitive";
-import { getProvider } from "@/lib/providers";
-import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
-import { getConfig } from "@/lib/env/config";
 import os from "node:os";
 
 export interface CitationClaim {
@@ -338,105 +304,6 @@ export function mergeDeclaredReferences(
     merged.push({ n: 0, label: d.label, href: d.href });
   }
   return merged.map((e, i) => ({ ...e, n: i + 1 }));
-}
-
-export const SYSTEM_PROMPT = `You audit an assistant turn and list its FACTUAL CLAIMS, sorted by impact (most load-bearing first).
-
-You will receive:
-- A numbered list of SOURCES the agent had available in this thread. Sources may be any of: a tool-visited file/URL, a memory item, or an earlier assistant turn in this thread.
-- The assistant text (or its trailing portion).
-
-The agent cites a source by writing an inline marker like [3] right after the claim, where the number matches a row in the SOURCES list. A marker MAY appear mid-sentence or at the end of a sentence.
-
-For each FACTUAL claim — a quoted number, file contents, API behavior, named fact (date, version, person), paraphrased finding, or a recap of a prior turn — emit one entry. IGNORE pure opinion, plans ("I'll do X"), conversational filler, and trivial syntactic glue.
-
-Rank impact:
-- "high": load-bearing. The rest of the answer depends on this being right.
-- "med":  meaningful but not load-bearing. Wrong would be misleading but not fatal.
-- "low":  incidental. Wrong would be a minor blemish.
-
-Sort by impact (high → med → low) within the array. Cap at 15 claims total; if more would qualify, keep the highest-impact 15 and drop the rest.
-
-For each claim, report:
-- "text":    short paraphrase of the claim (max 120 chars).
-- "marker":  the integer the agent attached (e.g. 3 for [3]), or null if no marker.
-- "impact":  one of "high" | "med" | "low".
-- "verified": true if marker is non-null AND that number is in the SOURCES list, else false.
-- "reason":  one short sentence (max 120 chars) explaining the verdict.
-
-Reply with EXACTLY one JSON object on one line, no surrounding prose, no markdown fence:
-
-{"claims":[{"text":"...","marker":<integer-or-null>,"impact":"high|med|low","verified":true|false,"reason":"..."}]}
-
-If the turn has no factual claims (pure chitchat or plans), return {"claims":[]}.`;
-
-export async function classifyCitations(
-  assistantText: string,
-  manifest: ReadonlyArray<SourceManifestEntry>,
-  modelConfigName: string,
-  signal?: AbortSignal,
-): Promise<CitationVerdict | null> {
-  const cfgName = modelConfigName.trim();
-  if (!cfgName) return null;
-  const cfg = getModelConfig(cfgName);
-  if (!cfg) return null;
-  const params = getModelParams(cfg);
-
-  let provider;
-  try { provider = getProvider(cfg.provider); } catch { return null; }
-  if (!provider.invoke) return null;
-
-  // Tail the text so a 60KB turn doesn't blow the checker budget. Citations
-  // are usually inline so any sub-window catches representative claims.
-  // JARELA_CITATION_CHECKER_TAIL_CHARS=0 disables truncation entirely (use
-  // when claims often appear early in long answers — costs more tokens).
-  const tailBudget = getConfig().citationCheckerTailChars;
-  const sent = tailBudget > 0 ? assistantText.slice(-tailBudget) : assistantText;
-  const portionLabel = tailBudget > 0 && assistantText.length > tailBudget
-    ? `trailing ${sent.length} chars of ${assistantText.length}`
-    : `full ${sent.length} chars`;
-  const sourcesList = manifest.map((e) => {
-    const trailer = e.label === e.href ? "" : ` — ${e.href}`;
-    return `[${e.n}] ${e.label}${trailer}`;
-  }).join("\n");
-  const userMsg = `Sources (${manifest.length}):
-${sourcesList || "(none)"}
-
-Assistant text (${portionLabel}):
-${sent}`;
-
-  if (signal?.aborted) return null;
-  let result;
-  try {
-    result = await provider.invoke(
-      cfg.model_id,
-      [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userMsg },
-      ],
-      params,
-      [],
-    );
-  } catch { return null; }
-
-  const parsed = parseCitationVerdict(result?.text ?? "");
-  if (!parsed) return null;
-  // Resolve marker → manifest entry ourselves rather than trusting the LLM
-  // for the membership decision — the LLM is good at extracting claims but
-  // not at exact-integer set membership.
-  const byN = new Map(manifest.map((e) => [e.n, e]));
-  const claims = parsed.map((c) => {
-    const marker = c.marker ?? null;
-    const entry = marker !== null ? byN.get(marker) : undefined;
-    const link = entry?.href ?? null;
-    const verified = entry !== undefined;
-    return { ...c, marker, link, verified };
-  });
-  // Stable sort by impact (high → med → low) so callers can slice the
-  // top-N for the informational-strictness UI without re-sorting.
-  const impactRank: Record<CitationClaim["impact"], number> = { high: 0, med: 1, low: 2 };
-  claims.sort((a, b) => impactRank[a.impact] - impactRank[b.impact]);
-  return { checker_model: cfgName, claims, unverified_links: [] };
 }
 
 /**

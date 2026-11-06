@@ -88,6 +88,51 @@ describe("parseVerdict", () => {
 });
 
 describe("classifyStall", () => {
+  it("returns action and citation findings from one invocation and resolves markers in code", async () => {
+    upsertModelConfig("combined-checker", "openai", "gpt-4o-mini", { api_key: "sk-test" }, false);
+    invokeMock.mockResolvedValue({ text: JSON.stringify({
+      stalled: false, reason: "", claims: [
+        { text: "Supported claim", marker: 1, impact: "high", reason: "matched" },
+        { text: "Unknown source", marker: 99, impact: "med", reason: "unknown" },
+        { text: "Invented marker", marker: 2, impact: "low", reason: "matched" },
+      ],
+    }) });
+    getProviderMock.mockReturnValue({ invoke: invokeMock });
+    try {
+      const verdict = await classifyStall("Supported claim [1]. Unknown source [99].", {
+        toolNames: [], successfulToolNames: [], toolResultSummaries: [],
+      }, "combined-checker", undefined, [
+        { n: 1, label: "Example", href: "https://example.com" },
+        { n: 2, label: "Other", href: "https://example.org" },
+      ]);
+      expect(invokeMock).toHaveBeenCalledTimes(1);
+      expect(verdict?.citations?.claims).toMatchObject([
+        { marker: 1, verified: true, link: "https://example.com" },
+        { marker: 99, verified: false, link: null },
+        { marker: 2, verified: false, link: null },
+      ]);
+    } finally {
+      deleteModelConfig("combined-checker");
+      invokeMock.mockReset();
+      getProviderMock.mockReset();
+    }
+  });
+
+  it("reports an unavailable audit if the citation result is malformed", async () => {
+    upsertModelConfig("combined-malformed", "openai", "gpt-4o-mini", { api_key: "sk-test" }, false);
+    invokeMock.mockResolvedValue({ text: '{"stalled":false,"reason":"ok"}' });
+    getProviderMock.mockReturnValue({ invoke: invokeMock });
+    try {
+      await expect(classifyStall("Answer", {
+        toolNames: [], successfulToolNames: [], toolResultSummaries: [],
+      }, "combined-malformed", undefined, [])).resolves.toBeNull();
+    } finally {
+      deleteModelConfig("combined-malformed");
+      invokeMock.mockReset();
+      getProviderMock.mockReset();
+    }
+  });
+
   it("sends successful reads and writes with their result evidence to the model", async () => {
     upsertModelConfig("action-checker", "openai", "gpt-4o-mini", { api_key: "sk-test" }, false);
     invokeMock.mockResolvedValue({ text: '{"stalled":false,"reason":"result supports the update"}' });
@@ -104,7 +149,7 @@ describe("classifyStall", () => {
       });
 
       const messages = invokeMock.mock.calls[0][1] as Array<{ role: string; content: string }>;
-      expect(messages[0].content).toContain("NOT a citation audit or proof");
+      expect(messages[0].content).toContain("not proof of an action or factual accuracy");
       expect(messages[1].content).toContain('"file_read","file_edit"');
       expect(messages[1].content).toContain("file_edit: updated 1 file");
       expect(messages[1].content).toContain("Recent completed turns in this thread");
@@ -125,7 +170,7 @@ describe("classifyStall", () => {
     expect(message).toContain("outlook_search: []");
     expect(SYSTEM_PROMPT).toContain("A tool name alone is not evidence");
     expect(SYSTEM_PROMPT).toContain("If evidence is inconclusive, do not flag the turn.");
-    expect(SYSTEM_PROMPT).toContain("Do not audit general factual claims or require citations.");
+    expect(SYSTEM_PROMPT).toContain("when citation auditing is enabled");
   });
 
   it("keeps the tool and recent-run evidence section bounded", () => {

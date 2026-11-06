@@ -509,7 +509,7 @@ function persistSubmittedResult(
     routeDecision,
     prepared.memory_recall ? { memory_recall: prepared.memory_recall } : null,
     collected.terminal === "done" && !collected.aborted ? prepared.signal_delivery : undefined,
-    { draftMessageId: draft?.msg_id, transcriptStatus: draft ? transcriptStatus : undefined, statusReason: draft ? statusReason : undefined, actionCheckAccepted: collected.actionCheckAccepted },
+    { draftMessageId: draft?.msg_id, transcriptStatus: draft ? transcriptStatus : undefined, statusReason: draft ? statusReason : undefined, actionCheckAccepted: collected.actionCheckAccepted, citationAudit: collected.citationAudit },
   );
   if (
     collected.terminal === "error"

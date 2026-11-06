@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - api: Make chat-steering retries idempotent and retain messages with uncertain delivery
 - agents: Check read/write claims against tool results and recent thread evidence before model-backed retries
-- ui: Clarify that action-claim checks are heuristic and separate from citation audits
+- agents: Combine model-backed action and citation audits in one call per answer; regex and off modes no longer run a separate citation model
+- ui: Clarify audit limitations, settings and provider data sharing
 
 ## [3.4.0] - 2026-11-05
 
