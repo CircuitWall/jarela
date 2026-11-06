@@ -117,6 +117,8 @@ Before every commit or PR title, verify all of the following:
   when they are in the touched workflow or block the hook.
 - The PR title is exactly the subject you would want to see in the release
   notes, and every commit on the branch is one you want on `main`.
+- Every Copilot review finding on the PR is fixed or dismissed with a reason
+  before merge (see [Pull-request process](#pull-request-process)).
 
 These rules are executable, not advisory: `.githooks/pre-commit` checks the
 topic branch, `.githooks/commit-msg` checks the commit message, and CI checks
@@ -150,11 +152,16 @@ git push -u origin <type>/<slug>
    - typecheck (`tsc --noEmit`)
    - build (`next build`)
    - integration tests (`npm run test:live` against a built server)
-5. **Rebase and merge.** Squash and merge commits are both disabled on this
+5. **Address the Copilot code review.** GitHub's automated Copilot review runs
+   on every PR against `main`. Before merge, every finding it posts must be
+   either fixed (verify the claim against the actual code first — Copilot can
+   be wrong) or explicitly dismissed with a one-line reason in a reply on that
+   finding's thread. Do not merge while a Copilot finding sits unaddressed.
+6. **Rebase and merge.** Squash and merge commits are both disabled on this
    repository; rebase is the only permitted method and keeps `main` linear.
    Every commit on the branch lands separately, so clean the history up before
    merging rather than relying on a squash to hide it.
-6. **Delete the branch.** GitHub offers a button; use it.
+7. **Delete the branch.** GitHub offers a button; use it.
 
 ### Open PRs and chained PRs
 
@@ -548,7 +555,11 @@ git push -u origin HEAD
 # 2. open a PR using the commit subject as title and body
 gh pr create --fill --base main
 
-# 3. queue auto-merge: GitHub waits for CI green, then rebase-merges and
+# 3. wait for Copilot's review, then fix/dismiss every finding before
+#    queuing auto-merge — auto-merge only waits on CI, not on this.
+gh pr view --comments
+
+# 4. queue auto-merge: GitHub waits for CI green, then rebase-merges and
 #    deletes the branch. You can close the laptop now.
 gh pr merge --auto --rebase --delete-branch
 ```
