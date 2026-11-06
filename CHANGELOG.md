@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - agents: Request compaction when hot history reaches 50 message rows
 - chat: Prompt before compacting conversations idle for three hours
 
+### Changed
+
+- db: Record applied migrations and bound direct upgrade support to 3.0 and newer; older databases must first be opened and unlocked in 3.0.
+
 ### Fixed
 
 - api: Make chat-steering retries idempotent and retain messages with uncertain delivery

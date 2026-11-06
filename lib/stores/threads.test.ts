@@ -42,12 +42,12 @@ const {
 } = await import("./threads");
 
 describe("thread statement reuse", () => {
-  it("invalidates cached statements before rerunning migrations", () => {
+  it("keeps cached statements when no migrations need to run", () => {
     const db = getDb();
     const sql = "SELECT * FROM threads WHERE thread_id=?";
     const before = cachedRead(db, sql);
     runMigrations(db);
-    expect(cachedRead(db, sql)).not.toBe(before);
+    expect(cachedRead(db, sql)).toBe(before);
   });
 
   it("reuses read statements without caching rows or mixing thread bindings", () => {
@@ -192,28 +192,6 @@ describe("thread context pin (ADR-0042)", () => {
 
     expect(getThread(t.thread_id)?.hot_since_seq).toBe(second.seq);
     expect(hot.map((message) => message.content)).toEqual(["pinned tied row"]);
-  });
-
-  it("clears legacy timestamp-only pins instead of selecting an ambiguous source row", () => {
-    const t = createThread("developer");
-    const first = addMessage(t.thread_id, "user", "first tied row");
-    addMessage(t.thread_id, "assistant", "second tied row");
-    const tiedAt = "2026-06-01T10:00:00.000Z";
-    getDb().prepare("UPDATE messages SET created_at=? WHERE thread_id=?").run(tiedAt, t.thread_id);
-    getDb().prepare(
-      "UPDATE threads SET hot_since=?, hot_since_seq=NULL, warm_summary_before=?, warm_summary_before_seq=NULL WHERE thread_id=?",
-    ).run(tiedAt, tiedAt, t.thread_id);
-    commitThreadChannelSummary(t.thread_id, "watcher", { summary: "legacy recap", summaryBefore: tiedAt, summaryBeforeSeq: first.seq });
-    getDb().prepare("UPDATE thread_channel_summaries SET summary_before_seq=NULL WHERE thread_id=?").run(t.thread_id);
-
-    runMigrations(getDb());
-
-    expect(getThread(t.thread_id)).toBeTruthy();
-    expect((getDb().prepare("PRAGMA table_info(threads)").all() as Array<{ name: string }>).some((column) => column.name === "hot_since_seq")).toBe(true);
-    expect(getThread(t.thread_id)?.hot_since).toBeNull();
-    expect(getThread(t.thread_id)?.hot_since_seq).toBeNull();
-    expect(getThread(t.thread_id)?.warm_summary_before_seq).toBeNull();
-    expect(getThreadChannelSummary(t.thread_id, "watcher")?.summary_before_seq).toBeNull();
   });
 
   it("setThreadWarmSummary stores text + boundary + a computed_at stamp", () => {
