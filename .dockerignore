@@ -15,7 +15,8 @@ npm-debug.log*
 .env.*
 !.env.example
 docs/journal
-browser-extension
+browser-extension/*
+!browser-extension/lib
 scripts/install-startup.ps1
 scripts/install-to-system.ps1
 scripts/install-to-system.sh
