@@ -188,6 +188,7 @@ test("chat uses the available width and contains long tool content", async ({ pa
   const toolName = `workspace_${"long_tool_name_".repeat(12)}`;
   const longKey = `argument_${"key".repeat(80)}`;
   const longValue = "value".repeat(120);
+  const createdAt = new Date().toISOString();
   await page.route((url) => url.pathname === `/api/v1/threads/${thread.thread_id}`, async (route) => {
     if (route.request().method() !== "GET") return route.continue();
     const response = await route.fetch();
@@ -200,12 +201,12 @@ test("chat uses the available width and contains long tool content", async ({ pa
         messages: [
           {
             id: "layout-user", seq: 1, role: "user", content: "Layout check",
-            created_at: "2026-10-18T08:00:00.000Z",
+            created_at: createdAt,
           },
           {
             id: "layout-assistant", seq: 2, role: "assistant",
             content: "A detailed answer uses the available conversation width. ".repeat(12),
-            created_at: "2026-10-18T08:00:01.000Z",
+            created_at: createdAt,
             tool_events: [
               { id: "layout-done", phase: "call", name: toolName, payload: { [longKey]: { [longKey]: longValue } } },
               { id: "layout-done", phase: "result", name: toolName, payload: { ok: true } },
