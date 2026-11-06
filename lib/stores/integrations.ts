@@ -7,7 +7,7 @@
 //
 // Pre-migration history: integrations used to live under namespace
 // `integrations` in memory_store. The boot-time migration
-// `migrateIntegrationsToCredentials` (see lib/db/migrations.ts) lifted
+// `migrateIntegrationsToCredentials` (see lib/db/legacy-credentials-v3.ts) lifted
 // every legacy row into the credentials table. This module now writes
 // only through the credentials table and proactively deletes any
 // leftover legacy memory_store rows on save/delete to prevent drift.

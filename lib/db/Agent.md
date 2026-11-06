@@ -43,11 +43,13 @@ Disk File ($JARELA_DB_DIR/jarela.db + WAL/SHM)
    - Synchronous = OFF (app crashes won't corrupt DB, SQLite is crash-safe)
    - Foreign keys enforced (maintain referential integrity)
 
-2. **Migrations are Immutable**
-   - New schemas added to runMigrations()
-   - Old migrations never deleted or changed
-   - Idempotent (`IF NOT EXISTS` patterns)
-   - Each app version can run old migrations
+2. **Migrations are Versioned and Bounded**
+   - Record completion atomically in `jarela_migrations`.
+   - Skip completed migrations; never silently accept an unknown newer marker.
+   - Retain direct upgrade support for the current and previous major release,
+     with 3.0 as the initial minimum, and squash obsolete steps at major releases.
+   - Validate unmarked databases before accepting the 3.0 baseline.
+   - Defer key-dependent data migrations until unlock and record them separately.
 
 3. **Prepared Statements Only**
    - No string interpolation or concatenation
@@ -76,60 +78,17 @@ Disk File ($JARELA_DB_DIR/jarela.db + WAL/SHM)
 
 ### Pattern 1: Schema Definition & Migration
 
-Add new tables in `runMigrations()`:
+Open an ADR before changing the schema. Add a uniquely identified migration
+to the versioned runner, applying its schema/data changes and completion marker
+in the same SQLite transaction. A completed step must not run again. Do not
+perform filesystem operations in that transaction as if SQLite could roll them
+back. Key-dependent steps need their own completion marker after unlock.
 
-```typescript
-// lib/db/migrations.ts
-export function runMigrations(db: DatabaseSync): void {
-  clearStatementCache(db);
-
-  // 1. Define the schema (idempotent)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS threads (
-      thread_id     TEXT PRIMARY KEY,
-      agent_id      TEXT NOT NULL,
-      title         TEXT,
-      created_at    TEXT NOT NULL,
-      updated_at    TEXT NOT NULL,
-      message_count INTEGER NOT NULL DEFAULT 0
-    );
-
-    -- Define indexes for common query patterns
-    CREATE INDEX IF NOT EXISTS idx_threads_agent_id 
-      ON threads(agent_id, updated_at DESC);
-    
-    CREATE INDEX IF NOT EXISTS idx_threads_updated 
-      ON threads(updated_at DESC);
-
-    CREATE TABLE IF NOT EXISTS messages (
-      msg_id     TEXT PRIMARY KEY,
-      thread_id  TEXT NOT NULL REFERENCES threads(thread_id),
-      role       TEXT NOT NULL,
-      content    TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    -- Index for the dominant filter (thread_id + time)
-    CREATE INDEX IF NOT EXISTS idx_messages_thread_time 
-      ON messages(thread_id, created_at DESC);
-  `);
-
-  // 2. Alter table for schema evolution
-  const columns = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
-  if (!columns.some(c => c.name === "status")) {
-    db.exec("ALTER TABLE messages ADD COLUMN status TEXT DEFAULT 'active'");
-  }
-
-  // 3. Data migrations (if needed)
-  if (needsDataMigration()) {
-    db.exec(`
-      UPDATE messages 
-      SET status = 'completed' 
-      WHERE status IS NULL
-    `);
-  }
-}
-```
+The frozen 3.0 baseline initializes fresh databases and validates unmarked
+3.0-compatible databases. Do not edit that historical snapshot in place for a
+new migration: retain the supported upgrade path and test fresh installs,
+each supported source version, repeat opens, rollback, and unknown newer
+versions. Squash obsolete paths when the supported major-version window moves.
 
 **When to use:** New tables, new columns, adding indexes, altering schemas
 
@@ -581,7 +540,7 @@ describe("migrations", () => {
       SELECT name FROM sqlite_master WHERE type='index'
     `).all() as Array<{ name: string }>;
 
-    expect(indexes.map(i => i.name)).toContain("idx_messages_thread_time");
+    expect(indexes.map(i => i.name)).toContain("idx_messages_thread_seq");
   });
 });
 ```
@@ -821,7 +780,7 @@ A: Platform-specific: `~/.jarela/` on Linux/macOS, `%LOCALAPPDATA%\Jarela\` on W
 
 **Q: How do I add a new table?**
 
-A: Add the `CREATE TABLE IF NOT EXISTS` statement to `runMigrations()` in `lib/db/migrations.ts`. It's idempotent, so existing databases won't error. Create indexes for common query columns at the same time.
+A: Open an ADR, then add a versioned, transactional migration with indexes and a durable completion marker. Test fresh installs, supported upgrades, rollback and repeat starts.
 
 ---
 
@@ -846,4 +805,3 @@ A: Copy `$JARELA_DB_DIR/jarela.db*` (includes `.db-wal` and `.db-shm`). All thre
 **Q: What happens if the database gets corrupted?**
 
 A: SQLite has built-in recovery via the WAL. If `jarela.db` is corrupted, try: `sqlite3 ~/.jarela/jarela.db "PRAGMA integrity_check;"` to see issues. SQLite can usually recover automatically on next open. Worst case, restore from backup.
-

@@ -20,9 +20,8 @@ export interface ModelConfigRow {
   // ADR-0102: 0 hides the config from model selection, routing, and the
   // default fallback without deleting it. Optional for rows built in tests.
   enabled?: number;
-  // ADR forthcoming ??? first-class credentials. NULL until the row is
-  // explicitly bound (or until the auto-migration in lib/db/migrations.ts
-  // lifts an inline api_key into a credential row).
+  // NULL until the row is explicitly bound or the one-time 3.0 credential
+  // migration lifts a legacy inline api_key into a credential row.
   credential_id?: string | null;
   created_at: string; updated_at: string;
 }

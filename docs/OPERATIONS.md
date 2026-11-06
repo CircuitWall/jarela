@@ -588,6 +588,18 @@ large database may take longer on its first startup while those indexes build.
 No manual migration, database relocation, or durability-setting changes are
 needed.
 
+**Unreleased — bounded database upgrades:** Direct upgrades start at Jarela
+3.0. Back up your data before upgrading; if an older or incomplete unmarked
+database is rejected, run Jarela 3.0 with that database, unlock it, and then
+upgrade. Unmarked databases are checked for the 3.0 tables, columns, indexes,
+and sequence allocator; these checks do not prove which app version last used
+the database. Applied steps are recorded in the local `jarela_migrations`
+table and are skipped on subsequent starts. Key-dependent credential migration
+is recorded separately after unlock. Unknown newer markers are rejected.
+Future major releases retain direct upgrade paths from the current and previous
+major releases, with obsolete steps squashed at major releases. See
+[ADR-0117](adr/0117-bounded-database-migrations.md).
+
 Lease recovery also has dedicated deadline indexes. The embedding queue finds
 its next wakeup using indexed minima instead of scanning every pending or
 processing job. Existing agent uniqueness and checkpoint primary-key indexes

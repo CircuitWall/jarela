@@ -1,13 +1,12 @@
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
-import { runMigrations } from "./migrations";
+import { runDeferredDataMigrations, runMigrations } from "./migrations";
 import { getDataDir } from "./data-dir";
 import {
   initMasterKey,
   isMasterKeyLocked,
   onMasterKeyUnlocked,
 } from "@/lib/crypto/master-key";
-import { runCryptoMigration } from "@/lib/crypto/migrate";
 import { applyProxyConfigFromDb } from "@/lib/proxy/dispatcher"; // env-var dispatcher applied at module load; DB layer applied below
 import { runEnvSyncOnce } from "@/lib/env/sync";
 import { clearStatementCache } from "./statement-cache";
@@ -29,22 +28,22 @@ export function getDb(): DatabaseSync {
       );
     }
     const db = new DatabaseSync(DB_PATH);
-    db.exec("PRAGMA journal_mode = WAL");
-    db.exec("PRAGMA foreign_keys = ON");
-    runMigrations(db);
-    // One-time encryption migration: rewrites legacy plaintext rows in
-    // the four secret-bearing surfaces with enc:v1: envelopes. Idempotent.
-    // Defer when the master key is PIN-locked (ADR-0063) — the sweep
-    // would throw MasterKeyLockedError on first envelope.encrypt(). It
-    // re-runs as soon as the user unlocks via /api/v1/security/unlock.
-    if (isMasterKeyLocked()) {
-      onMasterKeyUnlocked(() => {
-        try { runCryptoMigration(db); } catch (err) {
-          console.warn("[jarela] deferred runCryptoMigration failed:", err);
-        }
-      });
-    } else {
-      runCryptoMigration(db);
+    try {
+      db.exec("PRAGMA journal_mode = WAL");
+      db.exec("PRAGMA foreign_keys = ON");
+      runMigrations(db);
+      if (isMasterKeyLocked()) {
+        onMasterKeyUnlocked(() => {
+          try { runDeferredDataMigrations(db); } catch (err) {
+            console.warn("[jarela] deferred data migration failed:", err);
+          }
+        });
+      } else {
+        runDeferredDataMigrations(db);
+      }
+    } catch (error) {
+      db.close();
+      throw error;
     }
     _db = db; // only assign after migrations succeed
     // Layer DB-backed proxy config on top of the env-var dispatcher
