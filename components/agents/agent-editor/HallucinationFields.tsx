@@ -14,7 +14,7 @@ export function AntiHallucinationFields({ form, models }: { form: AgentEditorFor
           <option value="">Inherit global default</option>
           <option value="off">Off — no action-claim check</option>
           <option value="regex">Regex — fast, free; catches common unfinished-action wording</option>
-          <option value="model">Model — compares read/write claims with tool evidence (extra call)</option>
+          <option value="model">Model — checks action claims and citations in one call</option>
         </Select>
       </label>
       {(form.antiHallucMode === "model" || form.citationStrictness !== "off") && (
@@ -26,7 +26,7 @@ export function AntiHallucinationFields({ form, models }: { form: AgentEditorFor
             )}
           </span>
           <Select value={form.antiHallucModel} onChange={(e) => form.setAntiHallucModel(e.target.value)}>
-            <option value="">Inherit global for action check only</option>
+            <option value="">Inherit global model</option>
             {models.map((m) => (
               <option key={m.name} value={m.name}>
                 {m.name} — {m.provider}/{m.model_id}
@@ -36,7 +36,7 @@ export function AntiHallucinationFields({ form, models }: { form: AgentEditorFor
         </label>
       )}
       <p className="text-[11px] text-fg-faint">
-        Model mode sends bounded excerpts of the answer, tool arguments and results, and up to two recent completed turns in this thread to the configured model provider. These excerpts may contain sensitive data. Evidence can be incomplete or stale; this is a heuristic, not a citation audit or proof of current state. It adds a model call; use a fast/cheap one. If unavailable, it falls back to regex. Strict citation mode upgrades this check to Model when a model is configured, unless the resolved action-check mode is Off. Automatic retries are suppressed after a possibly state-changing tool call. Separate output and citation validators may still run when this check is Off.
+        Model mode sends bounded excerpts of the answer, tool arguments and results, recent turns and citation sources to the configured provider in one audit call per answer; a correction can add another call. These may contain sensitive data. Findings are heuristic, not proof of an action or factual accuracy. Use a fast/cheap model. If unavailable, the action check falls back to regex and the citation audit is unavailable. Automatic retries are suppressed after a possibly state-changing tool call. Separate deterministic output validation may still run when this check is Off.
       </p>
     </>
   );
@@ -57,12 +57,12 @@ export function CitationStrictnessField({ form }: { form: AgentEditorForm }) {
           <option value="strict">Strict — require citations for every claim</option>
         </Select>
         <span className="text-[11px] text-fg-faint mt-1">
-          Citation auditing is separate from the action-claim check and may make its own model call when a model is configured for this agent. References may be tool-visited files/URLs, memory items, or prior assistant turns. The chat UI renders each <code>[N]</code> marker as a clickable link/anchor.
+          Citation auditing shares the Model action-check call. Regex and Off modes do not run a model citation audit. Findings may be unavailable if a retry joins multiple answers. References can still appear in the chat UI; a matching marker is not proof that a source supports a claim.
         </span>
       </label>
-      {form.citationStrictness !== "off" && form.antiHallucModel.trim() === "" && (
+      {form.citationStrictness !== "off" && form.antiHallucMode !== "model" && (
         <p className="text-[11px] text-warn">
-          Select an action-check / citation model above to run the citation audit for this agent. The citation audit does not use the inherited global action-check model.
+          Citation auditing requires Model action-check mode and a configured model. If inheriting, the global mode must be Model.
         </p>
       )}
     </>

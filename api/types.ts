@@ -91,7 +91,8 @@ export interface AgentConfig {
    *   "off"     = no action-claim check (also respected by strict citation mode)
    *   "regex"   = fast, free pattern check for common unfinished-action wording
    *   "model"   = compare read/write claims with current tool evidence and up to
-   *               two recent completed assistant turns; heuristic, not proof
+   *               two recent completed assistant turns and, when enabled,
+   *               citation markers in one model call; heuristic, not proof
    */
   anti_hallucination_mode: "off" | "regex" | "model" | null;
   /**
@@ -102,15 +103,15 @@ export interface AgentConfig {
    */
   anti_hallucination_model_config: string | null;
   /**
-   * Citation strictness (separate from the action-claim check). One of:
+   * Citation strictness. Model-based auditing uses the action check's model call;
+   * Regex and Off modes do not run a citation model audit. One of:
    *  - `off`           : no checker, no system-prompt directive
    *  - `informational` : checker runs and surfaces a references panel; the
    *                      agent is NOT asked to cite
    *  - `standard`      : agent nudged to cite KEY (load-bearing) claims
    *                      with `[N]` markers
-   *  - `strict`        : agent must cite EVERY factual claim; the action-claim
-   *                      check uses model mode when configured, unless Off
-   * The checker reuses `anti_hallucination_model_config` as the LLM judge.
+   *  - `strict`        : agent must cite EVERY factual claim; uncited high-impact
+   *                      claims can trigger a correction in model mode
    */
   citation_strictness: CitationStrictness;
   /**

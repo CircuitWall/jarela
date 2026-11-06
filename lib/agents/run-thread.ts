@@ -43,7 +43,7 @@ import {
 import { getKnownContextLength, getKnownMaxOutputTokens } from "@/lib/providers/known-context-windows";
 import { modelThinksByDefault, thinkingReductionParams } from "@/lib/providers/capabilities";
 import { routeTurnModel, type RouteDecisionMetadata } from "@/lib/agents/model-router";
-import { buildCombinedManifest, classifyCitations, extractCitedMarkers, extractDeclaredReferences, mergeDeclaredReferences, type SourceManifestEntry } from "@/lib/agents/citation-checker";
+import { buildCombinedManifest, extractDeclaredReferences, mergeDeclaredReferences, type CitationVerdict, type SourceManifestEntry } from "@/lib/agents/citation-checker";
 import { getEffectiveProviderToolLimit } from "@/lib/providers/tool-limit";
 import { withDbTransaction } from "@/lib/db/transaction";
 import { allowedToolNamesFromPermissionMap, applyAgentPermissionsToCatalog, applyProviderToolLimitToCatalog, applyToolBindBudget, getAllToolCatalogAsync, getDefaultAgentToolNames, isHotLoadTool, markProxyOnlyTools, type ToolCatalogEntry } from "@/lib/tools";
@@ -1274,6 +1274,7 @@ export function persistAssistantMessage(
     transcriptStatus?: MessageTranscriptStatus;
     statusReason?: string | null;
     actionCheckAccepted?: boolean;
+    citationAudit?: { verdict: CitationVerdict; sources: SourceManifestEntry[] };
   },
 ): void {
   const trimmed = content.trim();
@@ -1404,7 +1405,7 @@ export function persistAssistantMessage(
     if (routeDecision) {
       mergeMessageMetadata(row.msg_id, { routing: routeDecision });
     }
-    persistTurnCitations(thread_id, row.msg_id, persisted, sanitizedEvents, declaredRefs, category);
+    persistTurnCitations(thread_id, row.msg_id, sanitizedEvents, declaredRefs, finalization?.citationAudit);
     persistUsageSnapshot(thread_id, row.msg_id, usage, contextSnapshot);
   }
 }
@@ -1412,10 +1413,9 @@ export function persistAssistantMessage(
 function persistTurnCitations(
   thread_id: string,
   messageId: string,
-  persisted: string,
   sanitizedEvents: PersistedToolEvent[] | null,
   declaredRefs: ReturnType<typeof extractDeclaredReferences>["refs"],
-  category: string | null,
+  audit?: { verdict: CitationVerdict; sources: SourceManifestEntry[] },
 ): void {
   // Sources are limited to this turn, never earlier replies or memory.
   let manifest: SourceManifestEntry[] = [];
@@ -1440,7 +1440,9 @@ function persistTurnCitations(
       manifest = mergeDeclaredReferences(manifest, declaredRefs);
     }
   }
-  if (manifest.length > 0) {
+  if (audit) {
+    mergeMessageMetadata(messageId, { citations: { ...audit.verdict, sources: audit.sources } });
+  } else if (manifest.length > 0) {
     // Merge so a redaction_summary written above survives.
     mergeMessageMetadata(messageId, {
       citations: {
@@ -1450,11 +1452,6 @@ function persistTurnCitations(
         sources: manifest.map((e) => ({ n: e.n, label: e.label, href: e.href })),
       },
     });
-  }
-  // The optional asynchronous audit must not bypass delegated inference budgets.
-  // The checker owns strictness, marker, model and failure gates.
-  if (category !== "delegation" && persisted && manifest.length > 0) {
-    void runCitationCheckerForRow(thread_id, messageId, persisted, manifest);
   }
 }
 
@@ -1569,48 +1566,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 function parseToolEventPayload(value: unknown): unknown {
   if (typeof value !== "string") return value;
   try { return JSON.parse(value) as unknown; } catch { return value; }
-}
-
-/**
- * Fire-and-forget citation checker. Gated by the agent's
- * `citation_strictness` and the existence of a checker model. The checker
- * is intentionally permissive about failure — anything that goes wrong
- * (no model, provider throw, parse failure, timeout) leaves the manifest-
- * only metadata in place so the chat UI still renders `[N]` markers as
- * links.
- */
-async function runCitationCheckerForRow(
-  thread_id: string,
-  msg_id: string,
-  persistedText: string,
-  sourceManifest: readonly SourceManifestEntry[],
-): Promise<void> {
-  try {
-    const thread = getThread(thread_id);
-    const agent = thread?.agent_id ? getAgentConfig(thread.agent_id) : null;
-    if (!agent) return;
-    const strictness = parseCitationStrictness(agent.citation_strictness) ?? "off";
-    if (strictness === "off") return;
-    const checkerModel = (agent.anti_hallucination_model_config ?? "").trim();
-    if (!checkerModel) return;
-    // Strict mode runs the checker even when the agent emitted no markers
-    // (it should have cited every claim — the audit will flag the
-    // missing ones). Standard / informational skip the LLM round-trip
-    // when there's literally nothing to verify, as a cost guard.
-    if (strictness !== "strict" && extractCitedMarkers(persistedText).length === 0) return;
-    const verdict = await classifyCitations(persistedText, sourceManifest, checkerModel);
-    if (!verdict) return;
-    // Use merge so we don't clobber redaction_summary written by the
-    // run loop earlier (ADR-0064 transparency).
-    mergeMessageMetadata(msg_id, {
-      citations: {
-        ...verdict,
-        sources: sourceManifest.map((e) => ({ n: e.n, label: e.label, href: e.href })),
-      },
-    });
-  } catch (err) {
-    console.error("[citation-checker] failed", err);
-  }
 }
 
 // Removes `autoplay=1` from /api/v1/files/*.{wav,mp3,...} URLs that appear in

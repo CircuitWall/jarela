@@ -187,6 +187,7 @@ function settleCollectedTurn(
           : noResponse ? "The model completed without producing a response."
           : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null,
         actionCheckAccepted: collected.actionCheckAccepted,
+        citationAudit: collected.citationAudit,
       },
     );
   } else if (prepared.signal_delivery?.signals.length) {

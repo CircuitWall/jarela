@@ -15,6 +15,7 @@ import type { PersistedToolEvent } from "@/lib/stores/threads";
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
 import { ToolOutcomes } from "./tool-outcomes";
 import { errorMessage } from "@/lib/utils/error";
+import type { CitationVerdict, SourceManifestEntry } from "@/lib/agents/citation-checker";
 
 export interface CollectedRun {
   assistantContent: string;
@@ -39,6 +40,7 @@ export interface CollectedRun {
   usage?: AssistantUsageSnapshot;
   routeDecision?: RouteDecisionMetadata | null;
   actionCheckAccepted?: boolean;
+  citationAudit?: { verdict: CitationVerdict; sources: SourceManifestEntry[] };
 }
 
 export interface CollectStreamOptions {
@@ -136,6 +138,7 @@ export async function collectStream(
             model_config_name?: string | null;
             route_decision?: RouteDecisionMetadata | null;
             action_check_accepted?: boolean;
+            citation_audit?: CollectedRun["citationAudit"];
           };
           if (d?.usage && d.provider && d.model_id && d.usage.source === "provider") {
             result.usage = {
@@ -151,6 +154,7 @@ export async function collectStream(
           }
           result.routeDecision = d.route_decision ?? null;
           result.actionCheckAccepted = d.action_check_accepted === true;
+          result.citationAudit = d.citation_audit;
           finalizeUsedTools();
           return result;
         }

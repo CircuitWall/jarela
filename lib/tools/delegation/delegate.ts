@@ -273,7 +273,7 @@ async function runDelegatedTurn(
           routeDecision,
           prepared.memory_recall ? { memory_recall: prepared.memory_recall } : null,
           prepared.signal_delivery,
-          { actionCheckAccepted: collected.actionCheckAccepted },
+          { actionCheckAccepted: collected.actionCheckAccepted, citationAudit: collected.citationAudit },
         );
         return {
           collected: { ...collected, assistantContent: result },
