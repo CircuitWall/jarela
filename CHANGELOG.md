@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-11-06
+
+### Added
+
+- chat: Wire idle and hot-history compaction
+- extension: Add form preference capture for agent memory
+- agents: Merge action and citation audits
+
+### Fixed
+
+- chat: Prevent duplicate steering retries
+- agents: Check action claims against tool evidence
+- tests: Keep chat layout fixture recent
+- e2e: Run isolated browser workers in parallel
+- e2e: Use canonical worker database paths
+
 ### Added
 
 - agents: Request compaction when hot history reaches 50 message rows
