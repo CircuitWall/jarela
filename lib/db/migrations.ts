@@ -8,6 +8,7 @@ import {
 } from "./legacy-credentials-v3";
 
 const BASELINE = "3.0.0-baseline";
+const DEFERRED_CRYPTO = "3.0.0-deferred-crypto";
 const DEFERRED_DATA = "3.0.0-deferred-credentials";
 
 interface Migration {
@@ -16,10 +17,18 @@ interface Migration {
 }
 
 const SCHEMA_MIGRATIONS: readonly Migration[] = [];
+// Encryption commits as its own migration, separate from credential
+// reshaping below. Reshaping reads already-encrypted `memory_store` rows
+// (see SENSITIVE_MEMORY_NAMESPACES) — a malformed legacy row must not make
+// a transaction rollback undo the encryption of other, unrelated secrets.
 const DEFERRED_MIGRATIONS: readonly Migration[] = [{
-  id: DEFERRED_DATA,
+  id: DEFERRED_CRYPTO,
   apply(db) {
     runCryptoMigration(db);
+  },
+}, {
+  id: DEFERRED_DATA,
+  apply(db) {
     migrateInlineApiKeysToCredentials(db);
     migrateIntegrationsToCredentials(db);
   },
