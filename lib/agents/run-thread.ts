@@ -48,7 +48,8 @@ import { getEffectiveProviderToolLimit } from "@/lib/providers/tool-limit";
 import { withDbTransaction } from "@/lib/db/transaction";
 import { allowedToolNamesFromPermissionMap, applyAgentPermissionsToCatalog, applyProviderToolLimitToCatalog, applyToolBindBudget, getAllToolCatalogAsync, getDefaultAgentToolNames, isHotLoadTool, markProxyOnlyTools, type ToolCatalogEntry } from "@/lib/tools";
 import { transientRetryStream, stallRetryStream, isWriteLikeToolName, unwrapInvokedToolName, looksLikeStall } from "@/lib/agents/run-retry";
-export { transientRetryDelayMs, MAX_RATE_LIMIT_RETRY_AFTER_MS, rateLimitRetryDelayMs, shouldRetryTransientError, isWriteLikeToolName, unwrapInvokedToolName, toolCallSignature, buildRetryContextSummary, buildFabricationNudge, retryTextOverlapRatio, looksLikeStall } from "@/lib/agents/run-retry";
+import { resolveDetector } from "@/lib/agents/hallucination-classifier";
+export { transientRetryDelayMs, MAX_RATE_LIMIT_RETRY_AFTER_MS, rateLimitRetryDelayMs, shouldRetryTransientError, isWriteLikeToolName, unwrapInvokedToolName, toolCallSignature, buildRetryContextSummary, buildActionEvidenceRetryNudge, buildFabricationNudge, retryTextOverlapRatio, looksLikeStall } from "@/lib/agents/run-retry";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
@@ -1272,6 +1273,7 @@ export function persistAssistantMessage(
     draftMessageId?: string | null;
     transcriptStatus?: MessageTranscriptStatus;
     statusReason?: string | null;
+    actionCheckAccepted?: boolean;
   },
 ): void {
   const trimmed = content.trim();
@@ -1292,7 +1294,8 @@ export function persistAssistantMessage(
   const isStallProse = !!trimmed && !wasInterrupted && looksLikeStall(trimmed);
   const noTool = toolList.length === 0;
   const noWriteTool = toolList.length > 0 && !toolList.some(isWriteLikeToolName);
-  if (isStallProse && (noTool || noWriteTool)) {
+  const detector = resolveDetector(getAgentConfig(getThread(thread_id)?.agent_id ?? ""));
+  if (detector.mode !== "off" && !finalization?.actionCheckAccepted && isStallProse && (noTool || noWriteTool)) {
     final = `${trimmed}\n\n*⚠️ Agent stalled — promised a next step but did not invoke a write tool. Reply "continue" to retry.*`;
   }
   // Fabrication footer (ADR-0037): runs after the retry budget is exhausted
@@ -1300,7 +1303,7 @@ export function persistAssistantMessage(
   // the agent config so callers don't have to thread it through.
   if (trimmed && !wasInterrupted && !final.includes("*⚠️ Agent stalled")) {
     const allowedTools = lookupAllowedToolsForThread(thread_id);
-    const v = validateAssistantOutput(trimmed, toolList, allowedTools, toolList.filter(isWriteLikeToolName));
+    const v = validateAssistantOutput(trimmed, toolList, allowedTools, toolList.filter(isWriteLikeToolName), !finalization?.actionCheckAccepted);
     if (!v.ok) {
       final = `${final}\n\n*⚠️ Output validator flagged: ${v.reason}*`;
     }

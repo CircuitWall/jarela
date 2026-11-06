@@ -52,7 +52,7 @@ export interface AgentConfigRow {
   // backend divides by sum so the UI can ship raw weights and never has to
   // reconcile to 100. NULL = inherit the model config's value.
   context_tier_proportions: string | null;
-  // Per-agent override of the anti-hallucination classifier mode/model.
+  // Per-agent override of the read/write action-claim check mode/model.
   // NULL on either column = inherit the global JARELA_HALLUCINATION_DETECTOR_*
   // env knob.
   anti_hallucination_mode: string | null;          // "off" | "regex" | "model"
@@ -62,11 +62,10 @@ export interface AgentConfigRow {
   //   informational - checker runs and surfaces references; agent NOT nudged
   //                   to cite
   //   standard      - agent nudged to cite KEY (load-bearing) claims with [N]
-  //   strict        - agent must cite EVERY factual claim AND the stall
-  //                   classifier is forced to mode='model' on this agent's
-  //                   turns
-  // Independent of `anti_hallucination_mode` for the stall axis; strict
-  // mode does override the resolved stall classifier to 'model'.
+  //     strict        - agent must cite EVERY factual claim; the action-claim
+  //                     check uses model mode when configured, unless Off.
+  // The citation audit is separate and reuses the agent's selected checker
+  // model; strict mode does not override an explicit action-check Off setting.
   citation_strictness: string;
   // Per-agent override of which credential each tool uses when more than one
   // is configured for the tool's integration. JSON-encoded
@@ -175,8 +174,8 @@ export interface UpsertAgentInput {
   // ADR-0043. Pass `null` to clear the override and inherit from the model.
   // Pass `undefined` to keep whatever's already on the row (PATCH semantics).
   context_tier_proportions?: AgentTierProportions | null;
-  // Per-agent anti-hallucination classifier override. `null` = clear the
-  // override (inherit env). `undefined` = keep existing.
+  // Per-agent action-claim check override. `null` = clear the override
+  // (inherit env). `undefined` = keep existing.
   anti_hallucination_mode?: "off" | "regex" | "model" | null;
   anti_hallucination_model_config?: string | null;
   // Citation strictness ('off' | 'informational' | 'standard' | 'strict').

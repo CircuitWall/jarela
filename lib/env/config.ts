@@ -89,7 +89,7 @@ export interface JarelaConfig {
   readonly enableMockProvider: boolean;
   readonly providerRateLimits: string;
 
-  // anti-hallucination detector
+  // read/write action-claim check
   readonly hallucinationDetectorMode: "off" | "regex" | "model";
   readonly hallucinationDetectorModel: string;
   readonly terminalMaxSessions: number;
@@ -256,7 +256,7 @@ export function getConfig(): JarelaConfig {
     enableMockProvider: parseBool(env.JARELA_ENABLE_MOCK_PROVIDER, ENV_DEFAULTS.enableMockProvider),
     providerRateLimits: (env.JARELA_PROVIDER_RATE_LIMITS ?? ENV_DEFAULTS.providerRateLimits).trim(),
 
-    // anti-hallucination classifier
+    // read/write action-claim check
     hallucinationDetectorMode: parseHallucinationMode(
       env.JARELA_HALLUCINATION_DETECTOR_MODE,
       ENV_DEFAULTS.hallucinationDetectorMode,

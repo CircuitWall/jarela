@@ -212,7 +212,7 @@ describe("delegate_to_agent tool", () => {
     expect(persistAssistantMessageMock).toHaveBeenCalledWith(
       "child-thread", "child reply", ["web_search"], [], "delegation",
       expect.anything(), { context_window_tokens: 4_096 }, null,
-      expect.anything(), null, undefined,
+      expect.anything(), null, undefined, { actionCheckAccepted: undefined },
     );
   });
 

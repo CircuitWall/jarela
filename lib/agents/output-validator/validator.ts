@@ -26,6 +26,7 @@ export function validateAssistantOutput(
   toolCalls: readonly string[],
   allowedTools: readonly string[],
   writeTools?: readonly string[],
+  checkActions = true,
 ): ValidationResult {
   const calledSet = new Set(toolCalls);
   const allowedSet = new Set(allowedTools);
@@ -52,6 +53,8 @@ export function validateAssistantOutput(
       };
     }
   }
+
+  if (!checkActions) return { ok: true };
 
   const claims = findActionClaims(text);
   // Read-only tools prove that information was inspected, not that state was

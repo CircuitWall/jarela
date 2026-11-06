@@ -1,12 +1,25 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const { getProviderMock, invokeMock } = vi.hoisted(() => ({
+  getProviderMock: vi.fn(),
+  invokeMock: vi.fn(),
+}));
+vi.mock("@/lib/providers", () => ({ getProvider: getProviderMock }));
+
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-anti-halluc-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { classifyStall, parseVerdict, resolveDetector } = await import("./hallucination-classifier");
+const {
+  buildClassifierUserMessage,
+  classifyStall,
+  parseVerdict,
+  resolveDetector,
+  summarizeRecentActionHistory,
+  SYSTEM_PROMPT,
+} = await import("./hallucination-classifier");
 const { upsertModelConfig, deleteModelConfig } = await import("@/lib/stores/model-config");
 const { resetConfigCache } = await import("@/lib/env/config");
 
@@ -75,20 +88,128 @@ describe("parseVerdict", () => {
 });
 
 describe("classifyStall", () => {
-  it("does not mark file_edit progress as a stall", async () => {
-    await expect(classifyStall(
-      "Created the requested file by editing the existing workspace file.",
-      ["file_edit"],
-      "missing-classifier-model",
-    )).resolves.toEqual({ stalled: false, reason: "write-class tool called" });
+  it("sends successful reads and writes with their result evidence to the model", async () => {
+    upsertModelConfig("action-checker", "openai", "gpt-4o-mini", { api_key: "sk-test" }, false);
+    invokeMock.mockResolvedValue({ text: '{"stalled":false,"reason":"result supports the update"}' });
+    getProviderMock.mockReturnValue({ invoke: invokeMock });
+    try {
+      await expect(classifyStall("I read the file and updated it.", {
+        toolNames: ["file_read", "file_edit"],
+        successfulToolNames: ["file_read", "file_edit"],
+        toolResultSummaries: ["file_read: found requested section", "file_edit: updated 1 file"],
+        recentRunEvidence: "Assistant: I checked the earlier version. Tool results: file_read: found draft",
+      }, "action-checker")).resolves.toEqual({
+        stalled: false,
+        reason: "result supports the update",
+      });
+
+      const messages = invokeMock.mock.calls[0][1] as Array<{ role: string; content: string }>;
+      expect(messages[0].content).toContain("NOT a citation audit or proof");
+      expect(messages[1].content).toContain('"file_read","file_edit"');
+      expect(messages[1].content).toContain("file_edit: updated 1 file");
+      expect(messages[1].content).toContain("Recent completed turns in this thread");
+    } finally {
+      deleteModelConfig("action-checker");
+      invokeMock.mockReset();
+      getProviderMock.mockReset();
+    }
   });
 
-  it("does not mark file_multi_edit progress as a stall", async () => {
-    await expect(classifyStall(
-      "Creating the updated version now.",
-      ["file_multi_edit"],
-      "missing-classifier-model",
-    )).resolves.toEqual({ stalled: false, reason: "write-class tool called" });
+  it("constructs an advisory evidence message without treating successful tool names as proof", () => {
+    const message = buildClassifierUserMessage("I marked the message read.", {
+      toolNames: ["outlook_search"],
+      successfulToolNames: ["outlook_search"],
+      toolResultSummaries: ["outlook_search: []"],
+    });
+    expect(message).toContain("Current-turn successful tools");
+    expect(message).toContain("outlook_search: []");
+    expect(SYSTEM_PROMPT).toContain("A tool name alone is not evidence");
+    expect(SYSTEM_PROMPT).toContain("If evidence is inconclusive, do not flag the turn.");
+    expect(SYSTEM_PROMPT).toContain("Do not audit general factual claims or require citations.");
+  });
+
+  it("keeps the tool and recent-run evidence section bounded", () => {
+    const message = buildClassifierUserMessage("I checked the result.", {
+      toolNames: Array.from({ length: 20 }, (_, index) => `tool_${index}`),
+      successfulToolNames: Array.from({ length: 20 }, (_, index) => `tool_${index}`),
+      toolResultSummaries: Array.from({ length: 20 }, () => "r".repeat(240)),
+      recentRunEvidence: "h".repeat(5_000),
+    });
+    const evidence = message.split("\n\nAssistant text")[0];
+    expect(evidence.length).toBeLessThanOrEqual(1400);
+    expect(evidence).toContain("Recent completed turns in this thread");
+    expect(evidence).toContain("h".repeat(100));
+  });
+
+  it("clips very long assistant replies while preserving their start and ending", () => {
+    const text = `${"a".repeat(4_000)}MIDDLE${"z".repeat(4_000)}`;
+    const message = buildClassifierUserMessage(text, {
+      toolNames: [],
+      successfulToolNames: [],
+      toolResultSummaries: [],
+    });
+    expect(message).toContain("[...middle omitted...]");
+    expect(message).toContain("middle clipped");
+    expect(message).toContain("a".repeat(20));
+    expect(message).toContain("z".repeat(20));
+  });
+
+  it("includes only recent completed assistant turns and their bounded tool results", () => {
+    const summary = summarizeRecentActionHistory([
+      {
+        seq: 1,
+        msg_id: "older",
+        thread_id: "thread",
+        role: "assistant",
+        content: "Oldest action.",
+        created_at: "2025-12-31",
+        transcript_status: "completed",
+        status_reason: null,
+        tool_events: null,
+      },
+      {
+        seq: 2,
+        msg_id: "old",
+        thread_id: "thread",
+        role: "assistant",
+        content: "Old action.",
+        created_at: "2026-01-01",
+        transcript_status: "completed",
+        status_reason: null,
+        tool_events: null,
+      },
+      {
+        seq: 3,
+        msg_id: "live",
+        thread_id: "thread",
+        role: "assistant",
+        content: "Still working.",
+        created_at: "2026-01-02",
+        transcript_status: "in_progress",
+        status_reason: null,
+        tool_events: null,
+      },
+      {
+        seq: 4,
+        msg_id: "recent",
+        thread_id: "thread",
+        role: "assistant",
+        content: "I read the document and found the requested section.",
+        created_at: "2026-01-03",
+        transcript_status: "completed",
+        status_reason: null,
+        tool_events: JSON.stringify([
+          { id: "read-1", phase: "call", name: "file_read", payload: { path: "doc.md" } },
+          { id: "read-1", phase: "result", name: "file_read", payload: { text: "requested section" } },
+        ]),
+      },
+    ]);
+
+    expect(summary).toContain("I read the document");
+    expect(summary).toContain('file_read arguments: {"path":"doc.md"}; result: {"text":"requested section"}');
+    expect(summary).toContain("Old action.");
+    expect(summary).not.toContain("Oldest action.");
+    expect(summary).not.toContain("Still working.");
   });
 });
 

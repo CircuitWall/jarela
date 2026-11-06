@@ -21,7 +21,7 @@ import { SYSTEM_SIGNAL_WAKE_PROMPT } from "@/lib/lifecycle/system-signals";
 import { buildConversationSummaryMessages, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
 import { buildTopicGroupingMessages, buildTopicRecapMessages } from "@/lib/agents/compaction-pipeline";
 import type { ProviderMessage } from "@/lib/providers/types";
-import { buildFabricationNudge, buildCitationRetryNudge } from "./retry-prompts";
+import { buildActionEvidenceRetryNudge, buildFabricationNudge, buildCitationRetryNudge } from "./retry-prompts";
 import { buildFirstRunAgentInstructions, buildFirstRunKickoff } from "./first-run-onboarding";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -193,6 +193,12 @@ function listAgentPrompts(): StaticPrompt[] {
       text: buildCitationRetryNudge([{ text: "Example claim", reason: "No verified source" }]),
     },
     {
+      id: "agent.retry-action-evidence",
+      source: "lib/agents/retry-prompts.ts",
+      purpose: "Reconciles a possible unsupported read/write claim without treating the heuristic as proof or repeating an action.",
+      text: buildActionEvidenceRetryNudge("Example unsupported action claim"),
+    },
+    {
       id: "agent.first-run-onboarding",
       source: "lib/agents/first-run-onboarding.ts",
       purpose: "Guides a new user through a short, consent-based assistant-personalization conversation.",
@@ -233,7 +239,7 @@ function listAgentPrompts(): StaticPrompt[] {
     {
       id: "audit.hallucination-classifier",
       source: "lib/agents/hallucination-classifier.ts",
-      purpose: "Judges whether an agent turn stalled instead of doing the work.",
+      purpose: "Checks read/write action claims against current tool outcomes and bounded recent thread evidence before a retry.",
       text: HALLUCINATION_CLASSIFIER_PROMPT,
     },
     {
