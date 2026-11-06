@@ -3,6 +3,7 @@ import type { StreamOptions } from "@/lib/agents/base";
 import type { TurnContextProfile } from "@/lib/agents/turn-profile";
 import type { SystemSignalBatch } from "@/lib/stores/system-signals";
 import type { DelegationBudget } from "@/lib/agents/delegation-budget";
+import type { PersistedToolEvent } from "@/lib/stores/threads";
 
 /**
  * Provenance of the inbound turn. When a non-user runner (bridge,
@@ -134,6 +135,17 @@ export interface ThreadRunRequest {
    * visible to the model for this attempt but must not be persisted.
    */
   _history_append_message?: string | ContentPart[];
+
+  /**
+   * Internal — public callers leave undefined. Tool call/result events
+   * observed on prior attempts this turn (stall/loop/fabrication retries),
+   * carried forward so a replacement retry's citation manifest covers the
+   * whole turn's evidence, not just the tools the latest attempt itself
+   * called. A replacement retry commonly revises prose without rereading
+   * any source, so without this a corrected answer that still cites the
+   * original attempt's sources would audit against an near-empty manifest.
+   */
+  _accumulated_tool_events?: readonly PersistedToolEvent[];
 
   /** Internal — public callers leave undefined. Set by `delegate_to_agent`
    *  when one agent hands a subtask to another; gates depth + cycles. */

@@ -3,7 +3,8 @@ import { getConfig } from "@/lib/env/config";
 import { setTimeout as delay } from "node:timers/promises";
 import type { StreamChunk } from "@/lib/agents/base";
 import { registeredCapability } from "@/lib/tools/runtime/registry";
-import { getMessagesPage, getThread, capToolEventPayload, type PersistedToolEvent } from "@/lib/stores/threads";
+import { getRecentMessagesWindow, getThread, capToolEventPayload, type PersistedToolEvent } from "@/lib/stores/threads";
+import { AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, parseCitationStrictness } from "@/lib/stores/agent-configs";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { buildWorkflowStepRetryNudge, collectWorkflowContractFailures, planWorkflowStepRetries, WORKFLOW_TURN_AUTO_RETRY_LIMIT, workflowProgressArgs, type WorkflowProgressObservation } from "@/lib/agents/workflow-step-retry";
@@ -304,15 +305,32 @@ async function assessRetryAttempt(
   const detector = resolveDetector(agentCfg);
   const strictness = agentCfg ? parseCitationStrictness(agentCfg.citation_strictness) : null;
   const citationEnabled = strictness != null && strictness !== "off";
+  // Include tool evidence carried forward from prior attempts this turn
+  // (ADR-0037 replacement retries) — a revised answer can still cite a
+  // source only an earlier attempt actually read.
+  const turnToolEvents = [...(originalReq._accumulated_tool_events ?? []), ...toolEvents];
   const manifest = citationEnabled
-    ? mergeDeclaredReferences(buildCombinedManifest(toolEvents, originalReq.thread_id, {
+    ? mergeDeclaredReferences(buildCombinedManifest(turnToolEvents, originalReq.thread_id, {
         tools: getConfig().citationManifestMax, delegates: 10,
       }), extractDeclaredReferences(textBuf).refs)
     : undefined;
   let classifierVerdict: StallVerdict | null = null;
   if (!looped && detector.mode === "model" && trimmedText) {
     classifierVerdict = await (async () => {
-      const recentMessages = getMessagesPage(originalReq.thread_id, 16).messages;
+      // Mirror the main call's history scoping (ADR-0044 / bridge isolation)
+      // so action-evidence history can't pull in another bridge
+      // conversation's or channel's messages, or cross the user's context
+      // boundary, just because they share this thread_id.
+      const orderedAutomationChannels = AUTOMATION_CHANNEL_ORDER.filter((c) => originalReq.channels?.includes(c));
+      const recentMessages = orderedAutomationChannels.length > 0
+        ? getRecentMessagesWindow(
+            originalReq.thread_id, 16, undefined, "channels",
+            originalReq.history_bridge_key ?? undefined, originalReq.channels, originalReq.hot_since_seq ?? undefined,
+          )
+        : getRecentMessagesWindow(
+            originalReq.thread_id, 16, undefined, originalReq.context_profile?.history_scope ?? "all",
+            originalReq.history_bridge_key ?? undefined, undefined, originalReq.hot_since_seq ?? undefined,
+          );
       return classifyStall(textBuf, {
         toolNames,
         successfulToolNames: succeededToolNames,
@@ -374,6 +392,19 @@ async function assessRetryAttempt(
   };
 }
 
+// A transient-failure retry recurses through `prepareRetry` (= the caller of
+// `stallRetryStream`, `prepareThreadRun`), which wraps that attempt in its
+// OWN `stallRetryStream` before forwarding its chunks here. A `done` chunk
+// that already carries a quality-gate verdict was produced — and already
+// fully resolved (stalled/fabrication/workflow retries included) — by that
+// nested call. Re-running the classifier on the identical final text would
+// both duplicate the provider call and risk clobbering the already-accepted
+// verdict with a second, separately sampled one.
+function isAlreadyAudited(doneChunk: StreamChunk | null): boolean {
+  const data = doneChunk?.data as { action_check_accepted?: unknown; citation_audit?: unknown } | undefined;
+  return data?.action_check_accepted !== undefined || data?.citation_audit !== undefined;
+}
+
 export async function* stallRetryStream(
   inner: AsyncIterable<StreamChunk>,
   originalReq: ThreadRunRequest,
@@ -384,7 +415,12 @@ export async function* stallRetryStream(
 ): AsyncGenerator<StreamChunk> {
   const observation = yield* observeRetryAttempt(inner, originalReq, retriesLeft);
   if (!observation) return;
-  const { textBuf, toolNames, toolResultSummaries, toolOutcomes, workflowObservations, loopedToolName, doneChunk } = observation;
+  const { textBuf, toolNames, toolResultSummaries, toolOutcomes, toolEvents, workflowObservations, loopedToolName, doneChunk } = observation;
+  if (doneChunk && isAlreadyAudited(doneChunk)) {
+    yield doneChunk;
+    return;
+  }
+
   const { stalled, looped, fabrication, citationFail, promisedWriteStall, zeroToolStall,
     classifierStalled, classifierAccepted, citationAudit, classifierReason, uncitedHighClaims } = await assessRetryAttempt(observation, originalReq, allowedTools, retriesLeft);
   const auditedDoneChunk = doneChunk && (classifierAccepted || citationAudit)
@@ -490,6 +526,10 @@ export async function* stallRetryStream(
     // LLM mistakes for user input on every future turn.
     _skip_persist_message: true,
     _history_append_message: nudgeWithContext,
+    // Carry this attempt's tool evidence forward so a replacement retry's
+    // citation manifest still covers sources this attempt read even if the
+    // retry itself calls no tools.
+    _accumulated_tool_events: [...(originalReq._accumulated_tool_events ?? []), ...toolEvents],
   });
   if (!isReplaceRetry) {
     for await (const chunk of retry.stream) yield withoutPartialAudit(chunk);

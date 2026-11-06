@@ -218,6 +218,41 @@ describe("prepareThreadRun transient retry", () => {
     }
   });
 
+  it("audits a transient-failure retry's answer only once, not once per wrapper layer", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "transient-then-accepted", name: "Classifier", identity: "helper", instructions: "Be helpful.", tools: [], model_config_name: null,
+      anti_hallucination_mode: "model", anti_hallucination_model_config: "default",
+    });
+    const thread = createThread("transient-then-accepted");
+    const classifier = vi.spyOn(stallClassifier, "classifyStall").mockResolvedValue({ stalled: false, reason: "" });
+    try {
+      streamWithConfigMock
+        .mockImplementationOnce(() => chunks(
+          { type: "error", data: { code: "stream_error", message: "stream connection reset by peer" } },
+        ))
+        .mockImplementationOnce(() => chunks(
+          { type: "text_delta", data: { delta: "All good now." } },
+          { type: "done", data: {} },
+        ));
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id, message: "Ping",
+        context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+      });
+      const collected = await collectStream(prepared.stream);
+      expect(collected.assistantContent).toBe("All good now.");
+      expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
+      // The nested prepareThreadRun call triggered by the transient retry
+      // already runs its own full stallRetryStream pass; the outer wrapper
+      // around the whole transient-retry chain must defer to that verdict
+      // instead of re-invoking the classifier on the identical final text.
+      expect(classifier).toHaveBeenCalledTimes(1);
+      expect(collected.actionCheckAccepted).toBe(true);
+    } finally {
+      classifier.mockRestore();
+    }
+  });
+
   it("explains a flagged claim without retrying an attempted write", async () => {
     upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
     upsertAgentConfig({
