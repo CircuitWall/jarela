@@ -1,4 +1,5 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,7 +23,7 @@ async function supported(request: APIRequestContext) {
   const body = await response.json();
   test.skip(!body.execution_available, body.ownership?.reason ?? "No process-owner backend");
 }
-test.beforeAll(async ({ request }) => {
+test.beforeAll(async ({ workerRequest: request }) => {
   workspace = realpathSync(mkdtempSync(join(tmpdir(), "jarela-checked-acceptance-")));
   const response = await request.post("/api/v1/agents", { data: {
     name: "Synthetic checked execution", tools: ["run_skill", "run_workflow", "advance_workflow", "inspect_workflow", "cancel_workflow", "reconcile_workflow", "file_read", "file_write"],
@@ -33,7 +34,7 @@ test.beforeAll(async ({ request }) => {
 test.beforeEach(async ({ request }) => {
   expect((await request.put("/api/v1/security/skill-execution", { data: defaults })).status()).toBe(200);
 });
-test.afterAll(async ({ request }) => {
+test.afterAll(async ({ workerRequest: request }) => {
   if (agentId) await request.delete(`/api/v1/agents/${agentId}`);
   await request.put("/api/v1/security/skill-execution", { data: defaults });
   if (workspace) rmSync(workspace, { recursive: true, force: true });

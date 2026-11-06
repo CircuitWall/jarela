@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { enableFullExperienceMode, seedMockAgent } from "./helpers";
 import type { DashboardMetrics } from "../../api/types";
 

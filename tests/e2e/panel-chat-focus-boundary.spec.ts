@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { seedMockAgent } from "./helpers";
 
 type ThreadSummary = { thread_id: string; agent_id: string; updated_at: string; message_count: number };

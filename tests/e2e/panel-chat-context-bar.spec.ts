@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { seedMockAgent } from "./helpers";
 
 // Regression coverage for the per-turn context-usage bar (PR #111) plus

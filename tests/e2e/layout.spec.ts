@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { dismissOverlayBanners, seedMockAgent, waitForAppReady } from "./helpers";
 
 // These tests pin down layout regressions on iOS PWA where position:absolute

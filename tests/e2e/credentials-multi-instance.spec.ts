@@ -1,4 +1,5 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { dismissOverlayBanners, seedMockAgent, waitForAppReady } from "./helpers";
 
 // Coverage for the multi-instance, named-and-typed credentials feature:
@@ -9,8 +10,8 @@ import { dismissOverlayBanners, seedMockAgent, waitForAppReady } from "./helpers
 //   - the panel UI renders only configured credentials, grouped per
 //     provider, with "default" badge + "Add another" button
 //
-// All tests run serially because they share the dev server's
-// JARELA_DB_DIR. Each test cleans up its own credentials in afterEach.
+// All tests in this file share their worker's JARELA_DB_DIR and run serially.
+// Each test cleans up its own credentials in afterEach.
 test.describe.configure({ mode: "serial" });
 
 // A synthetic "model" provider that won't collide with anything a
