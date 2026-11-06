@@ -85,7 +85,15 @@ describe("embedBestEffort", () => {
     expect(r.vectors).toEqual([[1], [2]]);
     expect(r.failed).toBe(0);
     expect(r.terminal).toEqual([false, false]);
-    expect(embedSpy).toHaveBeenCalledTimes(3);
+    // runAllTimersAsync() drains every timer pending in the worker, not just
+    // this call's retry backoff. On a dev machine the first DB open syncs
+    // integrations from the shell rc, and the background re-embed pass then
+    // embeds those rows through the same spy, so assert on this batch's
+    // calls instead of the global count, which depends on ambient state.
+    const batchCalls = embedSpy.mock.calls.filter(
+      ([, texts]) => Array.isArray(texts) && texts.length === 2 && texts[0] === "x" && texts[1] === "y",
+    );
+    expect(batchCalls).toHaveLength(3);
   });
 
   it("does not retry on non-transient errors, and marks the failure terminal", async () => {
@@ -428,13 +436,15 @@ describe("searchMemory", () => {
 
   it("embeds every message with searchable text, including short and automation rows", async () => {
     const { reembedStaleVectors } = await import("./index");
-    const { runMigrations } = await import("@/lib/db/migrations");
+    const { enqueueMessageEmbeddingJob } = await import("@/lib/stores/message-embedding-jobs");
     const t = new Date().toISOString();
     const insert = getDb().prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,metadata) VALUES (?,?,?,?,?,?)");
     insert.run("m-long", "thread-1", "user", "what did we decide about billing retries", t, null);
     insert.run("m-short", "thread-1", "user", "ok", t, null);
     insert.run("m-auto", "thread-1", "assistant", "scheduled run output that is long enough", t, JSON.stringify({ automation_activity: true }));
-    runMigrations(getDb());
+    enqueueMessageEmbeddingJob("m-long", "what did we decide about billing retries");
+    enqueueMessageEmbeddingJob("m-short", "ok");
+    enqueueMessageEmbeddingJob("m-auto", "scheduled run output that is long enough");
     setLocalEmbeddingsEnabled(true);
     localEmbedSpy.mockImplementation(async (texts: string[]) => texts.map(() => [0.5, 0.5, 0.5]));
 
