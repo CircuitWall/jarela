@@ -269,12 +269,16 @@ export async function findTopicBoundary(threadId: string, boundarySeq: number): 
     const candidate = validateTopicSegments(topics, rows, previewRows, {
       boundarySeq,
       crossesBoundary: true,
+      allowBoundaryStart: true,
     })
       .sort((a, b) => (b.start_seq ?? 0) - (a.start_seq ?? 0))[0];
     if (!candidate) return null;
 
     const candidateIndex = rows.findIndex((row) => row.seq === candidate.start_seq);
-    if (candidateIndex < 0 || candidateIndex >= boundaryIndex) return null;
+    // The requested row itself can begin the latest topic. In that case its
+    // start is the right hot boundary; rejecting equality turns a valid
+    // choice into a successful no-op with no boundary commit.
+    if (candidateIndex < 0 || candidateIndex > boundaryIndex) return null;
     return { created_at: rows[candidateIndex].created_at, seq: rows[candidateIndex].seq };
   } catch {
     return null;

@@ -192,6 +192,7 @@ export interface SummarySourceMessage {
 export interface TopicSegmentValidationOptions {
   boundarySeq: number;
   crossesBoundary?: boolean;
+  allowBoundaryStart?: boolean;
   allowPartialStart?: boolean;
 }
 
@@ -235,7 +236,9 @@ export function validateTopicSegments(
     const overlapsSource = sourceRows.some((row) => row.seq >= normalizedStartSeq && row.seq <= endSeq!);
     if (!overlapsSource) continue;
 
-    const crossesBoundary = normalizedStartSeq < options.boundarySeq && endSeq! >= options.boundarySeq;
+    const startsAtBoundary = options.allowBoundaryStart === true && normalizedStartSeq === options.boundarySeq;
+    const crossesBoundary = (normalizedStartSeq < options.boundarySeq || startsAtBoundary)
+      && endSeq! >= options.boundarySeq;
     if (options.crossesBoundary ? !crossesBoundary : endSeq! >= options.boundarySeq) continue;
 
     valid.push({
