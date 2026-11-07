@@ -17,6 +17,35 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.5.1
+
+From 3.5.0 · 2026-11-07
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+- `static.audit.hallucination-classifier` — changed (`lib/agents/hallucination-classifier.ts`)
+
+    ```diff
+    + Separately, when citation auditing is enabled, list up to 15 factual claims ranked by impact (high, med, low). For each, report its short text, impact, a short reason, and the number of the matching source from the supplied list if the claim is cited — whether by a [n] bracket marker or by an inlin…
+    - Separately, when citation auditing is enabled, list up to 15 factual claims ranked by impact (high, med, low). For each, report its short text, its inline numeric citation marker or null, impact, and a short reason. Ignore opinion, plans and conversational filler. The supplied numbered sources show…
+    ```
+
+### Commits
+
+- build(deps): bump zensical from 0.0.73 to 0.0.74 in the docs group
+- build(deps): bump the npm group with 21 updates
+- fix(docker): keep browser-extension/lib in the build context
+- fix(agents): fix retry-audit data leaks across bridges and retries
+- fix(agents): verify claims cited via inline markdown links
+- fix(db): split the deferred migration into crypto and reshaping
+- test(embeddings): fix retry assertion against ambient background work
+- refactor(db): split migrations into a versioned baseline runner
+- docs(contributing): require addressing copilot review before merge
+
 ## 3.5.0
 
 From 3.4.0 · 2026-11-06

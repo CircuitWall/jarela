@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-11-07
+
+### Fixed
+
+- db: Split the deferred migration into crypto and reshaping
+- agents: Verify claims cited via inline markdown links
+- agents: Fix retry-audit data leaks across bridges and retries
+- docker: Keep browser-extension/lib in the build context
+
+### Changed
+
+- contributing: Require addressing copilot review before merge
+- db: Split migrations into a versioned baseline runner
+- embeddings: Fix retry assertion against ambient background work
+- deps: Bump the npm group with 21 updates
+- deps: Bump zensical from 0.0.73 to 0.0.74 in the docs group
+
 ## [3.5.0] - 2026-11-06
 
 ### Added
