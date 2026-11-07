@@ -173,7 +173,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       <ChatComposerControls {...{
         controlsRef, agentId, handleProposalResolved, sse, attachments, setAttachments,
         handleSubmit, handleQueue, agentConfig, handleVoiceTranscript, sessionCompacting, sessionLoading,
-        thread, threadId, currentThreadMessages,
+        thread, threadId, currentThreadIdRef, currentThreadMessages,
         idleChoiceEnabled: !!threadId && !hideInternalOperations && !thread.messagesLoading && !sessionLoading
           && !sse.streaming && !sessionCompacting && !thread.compactionPending && !thread.warmSummaryPending,
       }} />
@@ -521,7 +521,7 @@ function ChatComposerControls({
   controlsRef, agentId, handleProposalResolved, sse,
   attachments, setAttachments, handleSubmit, handleQueue,
   agentConfig, handleVoiceTranscript, sessionCompacting, sessionLoading,
-  thread, threadId, currentThreadMessages, idleChoiceEnabled,
+  thread, threadId, currentThreadIdRef, currentThreadMessages, idleChoiceEnabled,
 }: {
   controlsRef: import("react").RefObject<HTMLDivElement | null>;
   agentId: string | null;
@@ -537,6 +537,7 @@ function ChatComposerControls({
   sessionLoading: boolean | undefined;
   thread: ReturnType<typeof useThreadData>;
   threadId: string | null;
+  currentThreadIdRef: import("react").RefObject<string | null>;
   currentThreadMessages: import("@/api/types").Message[];
   idleChoiceEnabled: boolean;
 }) {
