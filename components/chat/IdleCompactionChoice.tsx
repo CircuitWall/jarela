@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { ChoiceProposal } from "@/lib/proposals/choice";
-import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { ChoiceFields, type ChoiceResponse } from "@/components/proposals/ChoiceFields";
 
@@ -29,14 +28,14 @@ export function IdleCompactionChoice({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit() {
-    const [value] = response.selected_values;
+  async function applyChoice(value: string) {
     if (!value || submitting || busy) return;
     setSubmitting(true);
     setError(null);
     try {
       if (!await onAnswer(value)) {
         setError("Could not apply your choice. The current context was kept; please try again.");
+        setResponse({ selected_values: [] });
       }
     } finally {
       setSubmitting(false);
@@ -51,16 +50,6 @@ export function IdleCompactionChoice({
       dismissOnBackdrop={false}
       dismissOnEscape={false}
       showClose={false}
-      footer={(
-        <div className="flex justify-end px-4 pb-3">
-          <Button
-            disabled={busy || submitting || response.selected_values.length !== 1}
-            onClick={() => void submit()}
-          >
-            {submitting ? "Applying…" : "Submit answer"}
-          </Button>
-        </div>
-      )}
     >
       <p className="text-sm text-fg-muted">
         Choosing Yes moves older messages into the bounded warm summary and keeps the latest topic available verbatim.
@@ -71,6 +60,8 @@ export function IdleCompactionChoice({
         onChange={(next) => {
           setResponse(next);
           setError(null);
+          const [value] = next.selected_values;
+          if (value) void applyChoice(value);
         }}
         disabled={busy || submitting}
       />
