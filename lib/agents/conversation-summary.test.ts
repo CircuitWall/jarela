@@ -80,6 +80,20 @@ describe("topic compaction validation", () => {
     expect(valid.map((segment) => [segment.start_seq, segment.end_seq])).toEqual([[1, 3]]);
   });
 
+  it("accepts a topic that starts exactly at the requested hot boundary when asked", () => {
+    const atBoundary = topic(3, 4);
+
+    expect(validateTopicSegments([atBoundary], rows, rows, {
+      boundarySeq: 3,
+      crossesBoundary: true,
+    })).toEqual([]);
+    expect(validateTopicSegments([atBoundary], rows, rows, {
+      boundarySeq: 3,
+      crossesBoundary: true,
+      allowBoundaryStart: true,
+    }).map((segment) => [segment.start_seq, segment.end_seq])).toEqual([[3, 4]]);
+  });
+
   it("uses seq membership as truth while treating timestamps as display labels", () => {
     const labelMismatch = { ...topic(1, 2), end_at: "2026-10-10T10:09:00.000Z" };
     const valid = validateTopicSegments([labelMismatch], rows, rows, { boundarySeq: 4 });
