@@ -17,6 +17,29 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.5.2
+
+From 3.5.1 · 2026-11-08
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- test(chat): keep idle prompt edge cases covered
+- fix(chat): keep prompt closed when boundary is current
+- fix(agents): keep compaction when topic alignment fails
+- fix(chat): keep idle prompt from repeating after compaction
+- fix(agents): keep topics starting at the hot boundary
+- fix(chat): keep idle choices one click
+- fix(chat): wire thread ref into idle choice
+- fix(chat): keep idle compaction pending until commit
+
 ## 3.5.1
 
 From 3.5.0 · 2026-11-07

@@ -5200,6 +5200,24 @@
         }
       ],
       "tools": []
+    },
+    {
+      "version": "3.5.2",
+      "previous_version": "3.5.1",
+      "date": "2026-11-08",
+      "hints": [],
+      "commits": [
+        "test(chat): keep idle prompt edge cases covered",
+        "fix(chat): keep prompt closed when boundary is current",
+        "fix(agents): keep compaction when topic alignment fails",
+        "fix(chat): keep idle prompt from repeating after compaction",
+        "fix(agents): keep topics starting at the hot boundary",
+        "fix(chat): keep idle choices one click",
+        "fix(chat): wire thread ref into idle choice",
+        "fix(chat): keep idle compaction pending until commit"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }
