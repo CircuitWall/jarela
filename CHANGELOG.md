@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.2] - 2026-11-08
+
+### Fixed
+
+- chat: Keep idle compaction pending until commit
+- chat: Wire thread ref into idle choice
+- chat: Keep idle choices one click
+- agents: Keep topics starting at the hot boundary
+- chat: Keep idle prompt from repeating after compaction
+- agents: Keep compaction when topic alignment fails
+- chat: Keep prompt closed when boundary is current
+
+### Changed
+
+- chat: Keep idle prompt edge cases covered
+
 ## [3.5.1] - 2026-11-07
 
 ### Fixed
