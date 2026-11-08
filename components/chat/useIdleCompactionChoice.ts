@@ -11,6 +11,12 @@ interface IdleCandidate {
   boundarySeq: number;
 }
 
+interface IdleCompactionState {
+  hotSinceSeq?: number | null;
+  warmSummaryBeforeSeq?: number | null;
+  warmSummaryComputedAt?: string | null;
+}
+
 function findIdleCandidate(messages: Message[]): IdleCandidate | null {
   const foreground = messages.filter((message) =>
     message.category == null
@@ -38,12 +44,21 @@ export function useIdleCompactionChoice(
   threadId: string | null,
   messages: Message[],
   enabled: boolean,
+  compactionState: IdleCompactionState = {},
 ) {
   const candidate = useMemo(() => findIdleCandidate(messages), [messages]);
   const [readyKey, setReadyKey] = useState<string | null>(null);
   const [resolvedKeys, setResolvedKeys] = useState<ReadonlySet<string>>(() => new Set());
   const choiceKey = threadId && candidate ? `${threadId}:${candidate.key}` : null;
   const lastActivityAt = candidate?.lastActivityAt;
+  const summaryComputedAt = Date.parse(compactionState.warmSummaryComputedAt ?? "");
+  const alreadyCompactedAfterActivity = Boolean(
+    candidate
+    && compactionState.hotSinceSeq != null
+    && compactionState.warmSummaryBeforeSeq === compactionState.hotSinceSeq
+    && Number.isFinite(summaryComputedAt)
+    && summaryComputedAt >= candidate.lastActivityAt,
+  );
 
   useEffect(() => {
     setReadyKey(null);
@@ -68,7 +83,7 @@ export function useIdleCompactionChoice(
   }, [choiceKey]);
 
   return {
-    open: Boolean(choiceKey && readyKey === choiceKey && !resolvedKeys.has(choiceKey)),
+    open: Boolean(choiceKey && readyKey === choiceKey && !resolvedKeys.has(choiceKey) && !alreadyCompactedAfterActivity),
     choiceKey,
     boundarySeq: candidate?.boundarySeq ?? null,
     resolve,
