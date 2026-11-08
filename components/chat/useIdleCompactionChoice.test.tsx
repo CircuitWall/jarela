@@ -103,6 +103,108 @@ describe("useIdleCompactionChoice", () => {
     expect(result.current.open).toBe(false);
   });
 
+  it.each([
+    {
+      name: "boundary equals the latest user message",
+      hotOffset: 0,
+      summaryFresh: true,
+      computedAtOffset: -60_000,
+      shouldOpen: false,
+    },
+    {
+      name: "boundary is at the latest assistant message",
+      hotOffset: 1,
+      summaryFresh: true,
+      computedAtOffset: -60_000,
+      shouldOpen: false,
+    },
+    {
+      name: "boundary is earlier and summary was computed at the activity time",
+      hotOffset: -1,
+      summaryFresh: true,
+      computedAtOffset: 0,
+      shouldOpen: false,
+    },
+    {
+      name: "boundary is earlier and summary predates the activity",
+      hotOffset: -1,
+      summaryFresh: true,
+      computedAtOffset: -1,
+      shouldOpen: true,
+    },
+    {
+      name: "summary is stale even though its pin covers the candidate",
+      hotOffset: 1,
+      summaryFresh: false,
+      computedAtOffset: 60_000,
+      shouldOpen: true,
+    },
+    {
+      name: "summary timestamp is invalid and boundary is earlier",
+      hotOffset: -1,
+      summaryFresh: true,
+      computedAtOffset: Number.NaN,
+      shouldOpen: true,
+    },
+    {
+      name: "there is no persisted hot boundary",
+      hotOffset: null,
+      summaryFresh: false,
+      computedAtOffset: 60_000,
+      shouldOpen: true,
+    },
+  ])("handles $name", async ({ hotOffset, summaryFresh, computedAtOffset, shouldOpen }) => {
+    const activityAt = Date.now() - IDLE_COMPACTION_DELAY_MS - 60_000;
+    const activityIso = new Date(activityAt).toISOString();
+    const oldUser = message({ id: "old-user", seq: 8, role: "user", created_at: activityIso });
+    const oldAssistant = message({ id: "old-answer", seq: 9, created_at: activityIso });
+    const hotSinceSeq = hotOffset === null ? null : oldUser.seq! + hotOffset;
+    const { result } = renderHook(() => useIdleCompactionChoice("thread-a", [oldUser, oldAssistant], true, {
+      hotSinceSeq,
+      warmSummaryBeforeSeq: summaryFresh ? hotSinceSeq : (hotSinceSeq == null ? null : hotSinceSeq - 1),
+      warmSummaryComputedAt: Number.isNaN(computedAtOffset)
+        ? "not-a-date"
+        : new Date(activityAt + computedAtOffset).toISOString(),
+    }));
+
+    await tick(0);
+    expect(result.current.open).toBe(shouldOpen);
+  });
+
+  it("reopens for a newer message after the compacted boundary when that message reaches three hours", async () => {
+    const previousActivityAt = Date.now() - IDLE_COMPACTION_DELAY_MS - 60_000;
+    const previousActivityIso = new Date(previousActivityAt).toISOString();
+    const oldUser = message({ id: "old-user", seq: 8, role: "user", created_at: previousActivityIso });
+    const oldAssistant = message({ id: "old-answer", seq: 9, created_at: previousActivityIso });
+    const compactionState = {
+      hotSinceSeq: 9,
+      warmSummaryBeforeSeq: 9,
+      warmSummaryComputedAt: new Date(previousActivityAt + 1).toISOString(),
+    };
+    const { result, rerender } = renderHook(
+      ({ messages }) => useIdleCompactionChoice("thread-a", messages, true, compactionState),
+      { initialProps: { messages: [oldUser, oldAssistant] } },
+    );
+
+    await tick(0);
+    expect(result.current.open).toBe(false);
+
+    const nextUser = message({
+      id: "next-user",
+      seq: 10,
+      role: "user",
+      created_at: new Date(Date.now()).toISOString(),
+    });
+    rerender({ messages: [oldUser, oldAssistant, nextUser] });
+    await tick(0);
+    expect(result.current.open).toBe(false);
+    await tick(IDLE_COMPACTION_DELAY_MS - 1);
+    expect(result.current.open).toBe(false);
+    await tick(1);
+    expect(result.current.open).toBe(true);
+    expect(result.current.boundarySeq).toBe(10);
+  });
+
   it("resets the deadline on new foreground activity and resolves per message", async () => {
     const old = message();
     const { result, rerender } = renderHook(
