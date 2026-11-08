@@ -52,12 +52,18 @@ export function useIdleCompactionChoice(
   const choiceKey = threadId && candidate ? `${threadId}:${candidate.key}` : null;
   const lastActivityAt = candidate?.lastActivityAt;
   const summaryComputedAt = Date.parse(compactionState.warmSummaryComputedAt ?? "");
-  const alreadyCompactedAfterActivity = Boolean(
-    candidate
+  const freshWarmSummary = compactionState.hotSinceSeq != null
+    && compactionState.warmSummaryBeforeSeq === compactionState.hotSinceSeq;
+  const boundaryCoversCandidate = candidate !== null
     && compactionState.hotSinceSeq != null
-    && compactionState.warmSummaryBeforeSeq === compactionState.hotSinceSeq
-    && Number.isFinite(summaryComputedAt)
-    && summaryComputedAt >= candidate.lastActivityAt,
+    && compactionState.hotSinceSeq >= candidate.boundarySeq;
+  const alreadyCompacted = Boolean(
+    candidate
+    && freshWarmSummary
+    && (
+      boundaryCoversCandidate
+      || (Number.isFinite(summaryComputedAt) && summaryComputedAt >= candidate.lastActivityAt)
+    ),
   );
 
   useEffect(() => {
@@ -83,7 +89,7 @@ export function useIdleCompactionChoice(
   }, [choiceKey]);
 
   return {
-    open: Boolean(choiceKey && readyKey === choiceKey && !resolvedKeys.has(choiceKey) && !alreadyCompactedAfterActivity),
+    open: Boolean(choiceKey && readyKey === choiceKey && !resolvedKeys.has(choiceKey) && !alreadyCompacted),
     choiceKey,
     boundarySeq: candidate?.boundarySeq ?? null,
     resolve,
