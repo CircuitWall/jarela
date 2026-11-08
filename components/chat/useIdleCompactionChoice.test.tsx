@@ -77,6 +77,19 @@ describe("useIdleCompactionChoice", () => {
     expect(result.current.open).toBe(true);
   });
 
+  it("does not ask again when a fresh summary was computed after the latest message", async () => {
+    const oldUser = message({ id: "old-user", seq: 8, role: "user", created_at: new Date(Date.now() - IDLE_COMPACTION_DELAY_MS - 60_000).toISOString() });
+    const oldAssistant = message({ id: "old-answer", seq: 9, created_at: oldUser.created_at });
+    const { result } = renderHook(() => useIdleCompactionChoice("thread-a", [oldUser, oldAssistant], true, {
+      hotSinceSeq: 8,
+      warmSummaryBeforeSeq: 8,
+      warmSummaryComputedAt: new Date(Date.now() + 1).toISOString(),
+    }));
+
+    await tick(0);
+    expect(result.current.open).toBe(false);
+  });
+
   it("resets the deadline on new foreground activity and resolves per message", async () => {
     const old = message();
     const { result, rerender } = renderHook(

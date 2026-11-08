@@ -541,7 +541,11 @@ function ChatComposerControls({
   currentThreadMessages: import("@/api/types").Message[];
   idleChoiceEnabled: boolean;
 }) {
-  const idleCompaction = useIdleCompactionChoice(threadId, currentThreadMessages, idleChoiceEnabled);
+  const idleCompaction = useIdleCompactionChoice(threadId, currentThreadMessages, idleChoiceEnabled, {
+    hotSinceSeq: thread.hotSinceSeq,
+    warmSummaryBeforeSeq: thread.warmSummaryBeforeSeq,
+    warmSummaryComputedAt: thread.warmSummaryComputedAt,
+  });
 
   return (<>
     <div ref={controlsRef} className="chat-controls-overlay absolute inset-x-0 bottom-0 z-30">
