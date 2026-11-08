@@ -28,7 +28,7 @@ C4Container
       Container(proxy, "Proxy Dispatcher", "lib/proxy", "undici GlobalDispatcher; reads HTTP_PROXY env vars + encrypted proxy_config row; gates all outbound HTTP (ADR-0009)")
       Container(envsync, "Env Sync", "lib/env", "Caches user shell env for exec, terminal, delegation and MCP children; checked skill runners deliberately do not inherit it")
       Container(workflows, "Checked Execution and Workflows", "lib/skills + lib/workflows", "Exact-code consent, encrypted durable CAS state, typed choices and observed reconciliation (Unreleased)")
-      ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite + native sqlite", "Checkpoints, memory, settings, schedules, proposals, bridges — at ~/.jarela")
+      ContainerDb(db, "SQLite", "node:sqlite writer + @appthreat/sqlite3 worker readers", "Local checkpoints, memory, settings, schedules, proposals, bridges; selected heavy reads use WAL reader workers")
       ContainerDb(filestore, "File Store", "lib/files + ~/.jarela/files/", "Content-addressed image/file refs plus generated binary artifacts; served by /api/v1/files/[name]")
       ContainerDb(extdir, "Extension dirs", "filesystem (~/.jarela/{providers,tools}/)", "Drop-in .cjs files for external providers + tools, hot-loaded per request (ADR-0013)")
     }

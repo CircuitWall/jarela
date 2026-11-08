@@ -28,12 +28,12 @@ SQLite is Jarela's single source of truth for persistent state:
 
 ```
 Application Layer (lib/agents/, lib/stores/, etc.)
-  ↓ (SQL queries)
-Query Layer (prepared statements, statement cache)
-  ↓ (DatabaseSync from node:sqlite)
-SQLite3 Engine
-  ↓ (WAL mode)
-Disk File ($JARELA_DB_DIR/jarela.db + WAL/SHM)
+  ↓ (typed store methods)
+Store Layer (sync writes + ordinary reads; selected async reads)
+  ↓                              ↘
+node:sqlite DatabaseSync         @appthreat/sqlite3 read workers
+  ↘                              ↓
+       SQLite file (WAL: $JARELA_DB_DIR/jarela.db + WAL/SHM)
 ```
 
 ### Key Principles
@@ -71,6 +71,15 @@ Disk File ($JARELA_DB_DIR/jarela.db + WAL/SHM)
    - Common filter columns have indexes
    - Query performance budgeted during schema design
    - N+1 query patterns actively prevented
+
+7. **Read scheduling is explicit at the store boundary**
+   - Keep `DatabaseSync` for writes and ordinary small reads.
+   - Add a specifically named `...Async` store method for measured, potentially
+     large reads; run it through `lib/db/read-pool.ts` on read-only workers.
+   - Do not infer sync/async behavior from SQL keywords or return a value-or-
+     Promise union from one API.
+   - Async readers see committed WAL snapshots. Do not use them to read a
+     transaction's uncommitted writes; keep read-after-write work on the writer.
 
 ---
 

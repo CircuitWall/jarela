@@ -172,6 +172,13 @@ async function runShutdown(): Promise<void> {
   // 5. Close the DB. WAL is checkpointed so the next boot is fast and we
   //    leave no stale -shm/-wal sidecars on disk.
   try {
+    const { closeReadPool } = await import("@/lib/db/read-pool");
+    await closeReadPool();
+  } catch (err) {
+    console.error("[jarela] closing async read pool failed:", err);
+  }
+
+  try {
     const { closeDb } = await import("@/lib/db");
     closeDb();
   } catch (err) {
