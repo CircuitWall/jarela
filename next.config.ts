@@ -64,6 +64,7 @@ const nextConfig: NextConfig = {
     "bufferutil",
     "utf-8-validate",
     "@napi-rs/keyring",
+    "@appthreat/sqlite3",
     "@whiskeysockets/baileys",
     "baileys",
     // libsignal is a transitive baileys dep that does `require('crypto')`
@@ -101,6 +102,7 @@ const nextConfig: NextConfig = {
       "./lib/skills/process-owner-*.ps1",
       "./lib/skills/process-owner-*.cjs",
       "./node_modules/@napi-rs/keyring/**/*",
+      "./node_modules/@appthreat/sqlite3/**/*",
       // Transformers.js uses onnxruntime-node in Node; onnxruntime-web is the
       // browser backend and is never loaded. scripts/postbuild.mjs prunes
       // foreign-platform ONNX binaries the tracer still pulls in.

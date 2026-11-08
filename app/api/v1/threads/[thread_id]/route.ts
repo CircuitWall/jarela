@@ -10,8 +10,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
   deleteThread,
-  getMessagesAfter,
-  getMessagesPage,
+  getMessagesAfterAsync,
+  getMessagesPageAsync,
   getThread,
   type MessageRow,
 } from "@/lib/stores/threads";
@@ -84,10 +84,10 @@ export async function GET(req: NextRequest, { params }: Params) {
   let messages: MessageRow[];
   let has_more: boolean;
   if (after !== undefined) {
-    messages = getMessagesAfter(thread_id, after, limit);
+    messages = await getMessagesAfterAsync(thread_id, after, limit);
     has_more = false;
   } else {
-    const page = getMessagesPage(thread_id, limit, before);
+    const page = await getMessagesPageAsync(thread_id, limit, before);
     messages = page.messages;
     has_more = page.has_more;
   }

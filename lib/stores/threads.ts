@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { getDb } from "@/lib/db";
+import { DB_PATH, getDb } from "@/lib/db";
+import { readRowsAsync } from "@/lib/db/read-pool";
 import { cachedRead } from "@/lib/db/statement-cache";
 import { withDbTransaction } from "@/lib/db/transaction";
 import { stripDeclaredReferencesFence } from "@/api/message-content";
@@ -250,11 +251,13 @@ export function getMessageBySteeringRequestId(thread_id: string, request_id: str
 //   limit: 0 or negative = unlimited
 //   sinceISO: undefined = no time bound
 // Returns chronological order (oldest first) so it can be appended to the prompt directly.
-export function getRecentMessagesWindow(
+type RecentMessagesWindowScope = "foreground" | "bridge" | "all" | "none" | "channels";
+
+function buildRecentMessagesWindowQuery(
   thread_id: string,
   limit: number,
   sinceISO?: string,
-  scope: "foreground" | "bridge" | "all" | "none" | "channels" = "all",
+  scope: RecentMessagesWindowScope = "all",
   bridgeKey?: string,
   // ADR-0044 — active channel set for scope="channels". "chat" means
   // category IS NULL (the pseudo-channel); any other entry must be one of
@@ -262,9 +265,8 @@ export function getRecentMessagesWindow(
   // "no rows" rather than silently falling back to "all".
   channels?: readonly string[],
   sinceSeq?: number,
-): MessageRow[] {
-  if (scope === "none") return [];
-  const db = getDb();
+): { sql: string; params: (string | number)[] } | null {
+  if (scope === "none") return null;
   const params: (string | number)[] = [thread_id];
   // Exclude `run_error` marker rows from the LLM history window — they're
   // UI-only artefacts of failed turns and would poison the model's view
@@ -278,7 +280,7 @@ export function getRecentMessagesWindow(
     sql += " AND " + foregroundCategoryGuardSql();
     params.push(...FOREGROUND_EXCLUDED_CATEGORIES);
   } else if (scope === "bridge") {
-    if (!bridgeKey) return [];
+    if (!bridgeKey) return null;
     sql += " AND category='bridge' AND json_extract(metadata, '$.bridge_conversation.key')=?";
     params.push(bridgeKey);
   } else if (scope === "channels") {
@@ -288,7 +290,7 @@ export function getRecentMessagesWindow(
     const clauses: string[] = [];
     if (includesChat) clauses.push("category IS NULL");
     if (extra.length > 0) clauses.push(`category IN (${extra.map(() => "?").join(",")})`);
-    if (clauses.length === 0) return []; // no active channel — nothing qualifies
+    if (clauses.length === 0) return null; // no active channel — nothing qualifies
     sql += " AND (" + clauses.join(" OR ") + ")";
     params.push(...extra);
   }
@@ -304,7 +306,38 @@ export function getRecentMessagesWindow(
     sql += " LIMIT ?";
     params.push(limit);
   }
-  const rows = cachedRead(db, sql).all(...params) as unknown as MessageRow[];
+  return { sql, params };
+}
+
+export function getRecentMessagesWindow(
+  thread_id: string,
+  limit: number,
+  sinceISO?: string,
+  scope: RecentMessagesWindowScope = "all",
+  bridgeKey?: string,
+  channels?: readonly string[],
+  sinceSeq?: number,
+): MessageRow[] {
+  const query = buildRecentMessagesWindowQuery(thread_id, limit, sinceISO, scope, bridgeKey, channels, sinceSeq);
+  if (!query) return [];
+  const rows = cachedRead(getDb(), query.sql).all(...query.params) as unknown as MessageRow[];
+  return rows.reverse();
+}
+
+/** Worker-backed variant for the model's potentially large history read. */
+export async function getRecentMessagesWindowAsync(
+  thread_id: string,
+  limit: number,
+  sinceISO?: string,
+  scope: RecentMessagesWindowScope = "all",
+  bridgeKey?: string,
+  channels?: readonly string[],
+  sinceSeq?: number,
+): Promise<MessageRow[]> {
+  const query = buildRecentMessagesWindowQuery(thread_id, limit, sinceISO, scope, bridgeKey, channels, sinceSeq);
+  if (!query) return [];
+  getDb(); // Finish schema initialization before worker readers open the file.
+  const rows = await readRowsAsync<MessageRow>(DB_PATH, query.sql, query.params);
   return rows.reverse();
 }
 
@@ -350,6 +383,20 @@ export function getMessagesAfter(
     .all(thread_id, afterSeq, limit) as unknown as MessageRow[];
 }
 
+/** Worker-backed forward fetch for chat refreshes. */
+export async function getMessagesAfterAsync(
+  thread_id: string,
+  afterSeq: number,
+  limit = 50,
+): Promise<MessageRow[]> {
+  getDb(); // Finish schema initialization before worker readers open the file.
+  return readRowsAsync<MessageRow>(
+    DB_PATH,
+    MSG_COLS_SQL + " WHERE thread_id=? AND rowid > ? ORDER BY rowid ASC LIMIT ?",
+    [thread_id, afterSeq, limit],
+  );
+}
+
 // Pagination for the chat UI. Returns the latest N messages strictly older
 // than `beforeSeq` (cursor). Caller passes the oldest already-loaded
 // message's `seq` as the cursor; first page omits beforeSeq.
@@ -368,6 +415,26 @@ export function getMessagesPage(
   sql += " ORDER BY rowid DESC LIMIT ?";
   params.push(limit + 1); // fetch one extra to detect if there's more
   const rows = cachedRead(db, sql).all(...params) as unknown as MessageRow[];
+  const has_more = rows.length > limit;
+  return { messages: rows.slice(0, limit).reverse(), has_more };
+}
+
+/** Worker-backed page read for the chat transcript endpoint. */
+export async function getMessagesPageAsync(
+  thread_id: string,
+  limit: number,
+  beforeSeq?: number,
+): Promise<{ messages: MessageRow[]; has_more: boolean }> {
+  const params: (string | number)[] = [thread_id];
+  let sql = MSG_COLS_SQL + " WHERE thread_id=?";
+  if (beforeSeq !== undefined) {
+    sql += " AND rowid < ?";
+    params.push(beforeSeq);
+  }
+  sql += " ORDER BY rowid DESC LIMIT ?";
+  params.push(limit + 1);
+  getDb(); // Finish schema initialization before worker readers open the file.
+  const rows = await readRowsAsync<MessageRow>(DB_PATH, sql, params);
   const has_more = rows.length > limit;
   return { messages: rows.slice(0, limit).reverse(), has_more };
 }

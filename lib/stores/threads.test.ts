@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cachedRead, clearStatementCache } from "@/lib/db/statement-cache";
+import { closeReadPool } from "@/lib/db/read-pool";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-threads-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -33,6 +34,9 @@ const {
   deleteThread,
   listThreads,
   getRecentMessagesWindow,
+  getRecentMessagesWindowAsync,
+  getMessagesPageAsync,
+  getMessagesAfterAsync,
   getRecentlyUsedToolNames,
   FOREGROUND_EXCLUDED_CATEGORIES,
   getMessagesByAutomationCategory,
@@ -95,7 +99,8 @@ describe("steering request lookup", () => {
   });
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await closeReadPool();
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
@@ -638,6 +643,42 @@ describe("pagination cursors are seq-based, not timestamp-based", () => {
       expect(after.map((m) => m.content)).toEqual(["m3", "m4", "m5"]);
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("worker-backed thread reads", () => {
+  it("matches sync page and forward-fetch semantics across cursors", async () => {
+    const thread = createThread("worker-backed-pages");
+    const first = addMessage(thread.thread_id, "user", "first");
+    addMessage(thread.thread_id, "assistant", "second");
+    const third = addMessage(thread.thread_id, "user", "third");
+
+    expect(await getMessagesPageAsync(thread.thread_id, 2)).toEqual(getMessagesPage(thread.thread_id, 2));
+    expect(await getMessagesPageAsync(thread.thread_id, 2, third.seq)).toEqual(getMessagesPage(thread.thread_id, 2, third.seq));
+    expect(await getMessagesPageAsync(thread.thread_id, 1)).toEqual(getMessagesPage(thread.thread_id, 1));
+    expect(await getMessagesAfterAsync(thread.thread_id, first.seq, 1)).toEqual(getMessagesAfter(thread.thread_id, first.seq, 1));
+    expect(await getMessagesAfterAsync(thread.thread_id, third.seq)).toEqual([]);
+  });
+
+  it("matches sync history filtering, channel scopes, boundaries, and empty scopes", async () => {
+    const thread = createThread("worker-backed-history");
+    const old = addMessage(thread.thread_id, "user", "old chat");
+    addMessage(thread.thread_id, "assistant", "automation", undefined, "watcher");
+    addMessage(thread.thread_id, "assistant", "failure marker", undefined, "run_error");
+    addMessage(thread.thread_id, "assistant", "unfinished", undefined, null, undefined, "in_progress");
+    const newest = addMessage(thread.thread_id, "assistant", "new chat");
+
+    for (const [limit, scope, channels, sinceSeq] of [
+      [0, "all", undefined, undefined],
+      [2, "foreground", undefined, undefined],
+      [0, "channels", ["chat", "watcher"], undefined],
+      [0, "channels", [], undefined],
+      [0, "all", undefined, newest.seq],
+      [0, "all", undefined, old.seq + 1],
+    ] as const) {
+      expect(await getRecentMessagesWindowAsync(thread.thread_id, limit, undefined, scope, undefined, channels, sinceSeq))
+        .toEqual(getRecentMessagesWindow(thread.thread_id, limit, undefined, scope, undefined, channels, sinceSeq));
     }
   });
 });
