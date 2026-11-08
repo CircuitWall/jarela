@@ -348,7 +348,9 @@ export async function compactThreadWarmContext(
   const baseThread = getThread(threadId);
   if (!baseThread) return null;
   const topicBoundary = options.alignTopicBoundary ? await findTopicBoundary(threadId, requestedBoundarySeq) : null;
-  if (options.alignTopicBoundary && !topicBoundary) return null;
+  // Topic alignment is best-effort. If the detector can't identify a topic,
+  // the caller's requested cursor is still a valid, deterministic cutoff;
+  // failure to refine that cutoff must not cancel the compaction.
   if (
     topicBoundary
     && baseThread.hot_since_seq === topicBoundary.seq

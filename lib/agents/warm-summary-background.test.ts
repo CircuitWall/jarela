@@ -120,6 +120,30 @@ describe("trackManualCompaction", () => {
 });
 
 describe("compactThreadWarmContext — seq-exact boundary (ADR-0088)", () => {
+  it("falls back to the requested cursor when optional topic alignment finds no boundary", async () => {
+    state.thread = {
+      thread_id: "thread-1",
+      hot_since: null,
+      hot_since_seq: null,
+      warm_summary: null,
+      warm_summary_before: null,
+      warm_summary_before_seq: null,
+      message_count: 2,
+    };
+    state.commits = [];
+    state.rows = DEFAULT_ROWS;
+    state.topicSegments = [];
+
+    const context = await compactThreadWarmContext("thread-1", 11, {
+      alignTopicBoundary: true,
+      allowEmptySummary: true,
+    });
+
+    expect(context).toMatchObject({ boundarySeq: 11 });
+    expect(state.thread.hot_since_seq).toBe(11);
+    expect(state.commits).toHaveLength(1);
+  });
+
   it("excludes only rows at-or-after the boundary seq from the warm summary, even when their created_at ties the boundary (a same-millisecond tie is now possible since addMessage no longer bumps colliding timestamps)", async () => {
     // Two rows share one created_at. The boundary row is seq=11 (kept, not
     // summarized); seq=10 is the one thread-compaction.ts's pruneThreadMessages
@@ -303,7 +327,7 @@ describe("kickBoundaryCompaction", () => {
     expect(state.thread.hot_since).toBe("2026-09-25T10:00:00.000Z");
   });
 
-  it("does not move the boundary when the model returns an unverifiable topic range", async () => {
+  it("falls back to the requested boundary when the model returns an unverifiable topic range", async () => {
     state.thread = {
       thread_id: "thread-1",
       hot_since: null,
@@ -326,10 +350,10 @@ describe("kickBoundaryCompaction", () => {
     }];
 
     kickBoundaryCompaction("thread-1", 11);
-    await vi.waitFor(() => expect(pendingCompactionBoundarySeq("thread-1")).toBeNull());
+    await vi.waitFor(() => expect(state.commits).toHaveLength(1));
 
-    expect(state.commits).toHaveLength(0);
-    expect(state.thread.hot_since_seq).toBeNull();
+    expect(state.thread.hot_since_seq).toBe(11);
+    expect(state.commits[0].hotSince).toBe("2026-09-25T10:00:01.000Z");
   });
 
   // A second boundary request arriving while the first is still in flight
