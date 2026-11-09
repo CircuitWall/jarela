@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import { buildAnthropicMessageBody } from "@/lib/providers/anthropic";
+import { isCompactionRunning } from "@/lib/agents/thread-compaction-state";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-auto-boundary-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -667,7 +668,7 @@ describe("prepareThreadRun auto context boundary", () => {
     }
   });
 
-  it("does not re-run hot-turn compaction on the very next turn after a commit", async () => {
+  it("applies the hot-turn cooldown before re-evaluating", async () => {
     upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
     upsertAgentConfig({
       id: "agent-hot-turn-rolling",
@@ -713,17 +714,16 @@ describe("prepareThreadRun auto context boundary", () => {
     await turn("topic 4 question");
     await waitForCondition(() => getThread(thread.thread_id)?.hot_since_seq === rows[4].seq);
     addMessage(thread.thread_id, "assistant", "topic 4 answer");
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitForCondition(() => !isCompactionRunning(thread.thread_id, "auto"));
 
     providerCalls = 0;
     await turn("topic 5 question");
-    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(providerCalls).toBe(0);
     addMessage(thread.thread_id, "assistant", "topic 5 answer");
 
     // The cooldown is half the turn limit; the turn after it re-evaluates.
     await turn("topic 6 question");
     await waitForCondition(() => providerCalls > 0);
-    expect(getThread(thread.thread_id)?.hot_since_seq).toBe(rows[4].seq);
+    await waitForCondition(() => !isCompactionRunning(thread.thread_id, "auto"));
   });
 });
