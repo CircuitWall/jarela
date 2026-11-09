@@ -2,14 +2,19 @@
 // time bound, computes the context budget, summarises overflow into a warm
 // recap, and pulls fact-memory hits relevant to the current turn.
 //
-// The message history is read by the targeted async store API; the remaining
-// store work is synchronous, followed by one optional LLM call for the warm
-// summary. The LLM call is best-effort: if the provider errors, we return an
-// empty warm context rather than blocking the turn.
+// All work is synchronous SQLite + one optional LLM call (for the warm
+// summary). The LLM call is best-effort: if the provider errors, we return
+// an empty warm context rather than blocking the turn.
+//
+// getRecentMessagesWindowAsync exists (ADR-0118) but is deliberately not
+// wired in here yet: it raced the fire-and-forget hot-turn boundary
+// compaction in lib/agents/run-thread.ts and landed the wrong, unaligned
+// boundary (see run-thread.auto-boundary.test.ts's cooldown-reevaluation
+// case). Revisit once that interaction is understood.
 //
 // See ADR-0039 for the decomposition rationale.
 
-import { countMessagesBetweenSeq, getRecentMessagesWindowAsync, getThread, getThreadChannelSummary } from "@/lib/stores/threads";
+import { countMessagesBetweenSeq, getRecentMessagesWindow, getThread, getThreadChannelSummary } from "@/lib/stores/threads";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
@@ -208,8 +213,8 @@ export async function buildHistoryWindow(
   const orderedAutomationChannels = AUTOMATION_CHANNEL_ORDER.filter((c) => options.channels?.includes(c));
   const multiChannel = orderedAutomationChannels.length > 0;
   const storedWindowMessages = multiChannel
-    ? await getRecentMessagesWindowAsync(thread_id, limit, sinceISO, "channels", options.bridgeKey, options.channels, hotSinceCursor)
-    : await getRecentMessagesWindowAsync(thread_id, limit, sinceISO, scope, options.bridgeKey, undefined, hotSinceCursor);
+    ? getRecentMessagesWindow(thread_id, limit, sinceISO, "channels", options.bridgeKey, options.channels, hotSinceCursor)
+    : getRecentMessagesWindow(thread_id, limit, sinceISO, scope, options.bridgeKey, undefined, hotSinceCursor);
   const allWindowMessages = storedWindowMessages.map((message) => {
     if (message.role !== "assistant" || !message.metadata) return message;
     try {

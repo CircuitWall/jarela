@@ -29,10 +29,17 @@ the writer connection; worker readers cannot see that transaction's
 uncommitted changes. Writes remain synchronous by design and can still block
 for their own execution or lock wait.
 
-The initial candidate paths are chat message pagination and the bounded
-message-history window used to prepare a model turn. Keep existing synchronous
-store methods for other callers. Add further async variants only when query
-timings show a useful target.
+The initial candidate path is chat message pagination (`getMessagesPageAsync`,
+`getMessagesAfterAsync`). `getRecentMessagesWindowAsync` — the bounded
+message-history window used to prepare a model turn — is implemented and
+unit-tested for row-level equivalence with its sync counterpart, but is not
+yet wired into `buildHistoryWindow`: routing that read through the worker
+pool raced the fire-and-forget hot-turn boundary compaction in
+`lib/agents/run-thread.ts` and committed an unaligned boundary in one
+integration test. Keep `buildHistoryWindow` on the synchronous read until
+that interaction is root-caused. Keep existing synchronous store methods for
+other callers. Add further async variants only when query timings show a
+useful target.
 
 Do not route methods by SQL keyword. A method's type and name must have one
 stable contract; SQL syntax is not a safe way to decide whether the caller
