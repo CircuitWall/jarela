@@ -1,6 +1,6 @@
-import sqlite3 from "@appthreat/sqlite3";
+import type sqlite3Type from "@appthreat/sqlite3";
 
-type SqliteReadPool = Awaited<ReturnType<typeof sqlite3.pool>>;
+type SqliteReadPool = Awaited<ReturnType<typeof sqlite3Type.pool>>;
 
 let poolPromise: Promise<SqliteReadPool> | null = null;
 
@@ -20,7 +20,11 @@ export async function readRowsAsync<T extends object = Record<string, unknown>>(
 
 async function getReadPool(filename: string): Promise<SqliteReadPool> {
   if (!poolPromise) {
-    poolPromise = sqlite3.pool(filename, { readers: 4, walMode: true })
+    // Deferred so merely importing this module (every threads.ts caller,
+    // sync or async) doesn't pay for loading the native addon — only the
+    // first actual async read does.
+    poolPromise = import("@appthreat/sqlite3")
+      .then(({ default: sqlite3 }) => sqlite3.pool(filename, { readers: 4, walMode: true }))
       .catch((error: unknown) => {
         poolPromise = null;
         throw error;
