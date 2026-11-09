@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
-  getThread: vi.fn(), getMessagesPage: vi.fn(), getMessagesAfter: vi.fn(),
+  getThread: vi.fn(), getMessagesPageAsync: vi.fn(), getMessagesAfterAsync: vi.fn(),
   getMessageUsageByIds: vi.fn(), getAgentConfig: vi.fn(),
 }));
 vi.mock("@/lib/stores/threads", () => ({ ...mocks, deleteThread: vi.fn() }));
@@ -27,8 +27,8 @@ describe("thread metadata view", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getThread.mockReturnValue({ thread_id: "t1", agent_id: "a1", hot_since_seq: 4 });
-    mocks.getMessagesPage.mockReturnValue({ messages: [], has_more: true });
-    mocks.getMessagesAfter.mockReturnValue([]);
+    mocks.getMessagesPageAsync.mockResolvedValue({ messages: [], has_more: true });
+    mocks.getMessagesAfterAsync.mockResolvedValue([]);
     mocks.getMessageUsageByIds.mockReturnValue(new Map());
     mocks.getAgentConfig.mockReturnValue(null);
   });
@@ -43,26 +43,26 @@ describe("thread metadata view", () => {
     expect(data).not.toHaveProperty("messages");
     expect(data).not.toHaveProperty("has_more");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(mocks.getMessagesPage).not.toHaveBeenCalled();
-    expect(mocks.getMessagesAfter).not.toHaveBeenCalled();
+    expect(mocks.getMessagesPageAsync).not.toHaveBeenCalled();
+    expect(mocks.getMessagesAfterAsync).not.toHaveBeenCalled();
     expect(mocks.getMessageUsageByIds).not.toHaveBeenCalled();
   });
 
   it("preserves the default paged response and before cursor", async () => {
     const response = await get("?before=42&limit=10");
     expect(await response.json()).toMatchObject({ messages: [], has_more: true });
-    expect(mocks.getMessagesPage).toHaveBeenCalledWith("t1", 10, 42);
+    expect(mocks.getMessagesPageAsync).toHaveBeenCalledWith("t1", 10, 42);
     expect(mocks.getMessageUsageByIds).toHaveBeenCalledWith([]);
   });
 
   it("preserves forward message reads", async () => {
     expect(await (await get("?after=42&limit=10")).json()).toMatchObject({ messages: [], has_more: false });
-    expect(mocks.getMessagesAfter).toHaveBeenCalledWith("t1", 42, 10);
+    expect(mocks.getMessagesAfterAsync).toHaveBeenCalledWith("t1", 42, 10);
   });
 
   it("rejects unknown views", async () => {
     expect((await get("?view=unknown")).status).toBe(400);
-    expect(mocks.getMessagesPage).not.toHaveBeenCalled();
+    expect(mocks.getMessagesPageAsync).not.toHaveBeenCalled();
   });
 
   it("preserves missing-thread responses", async () => {
