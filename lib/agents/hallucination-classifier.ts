@@ -221,8 +221,11 @@ export async function classifyStall(
   if (signal?.aborted) return null;
 
   let result;
+  let cleanupInvokeAbort = () => {};
   try {
-    result = await provider.invoke(
+    const timeoutSignal = AbortSignal.timeout(45_000);
+    const invokeSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+    const invokePromise = provider.invoke(
       cfg.model_id,
       [
         { role: "system", content: SYSTEM_PROMPT },
@@ -230,9 +233,33 @@ export async function classifyStall(
       ],
       params,
       [],
+      invokeSignal,
     );
-  } catch {
+    result = await Promise.race([
+      invokePromise,
+      new Promise<never>((_, reject) => {
+        const rejectOnAbort = () => reject(invokeSignal.reason instanceof Error
+          ? invokeSignal.reason
+          : new DOMException("Citation audit aborted", "AbortError"));
+        if (invokeSignal.aborted) rejectOnAbort();
+        else {
+          invokeSignal.addEventListener("abort", rejectOnAbort, { once: true });
+          cleanupInvokeAbort = () => invokeSignal.removeEventListener("abort", rejectOnAbort);
+        }
+      }),
+    ]);
+  } catch (error) {
+    const reason = signal?.aborted
+      ? "caller aborted"
+      : error instanceof Error && error.name === "TimeoutError"
+        ? "45s timeout"
+        : error instanceof Error
+          ? error.name
+          : "provider error";
+    console.warn(`[citation-audit] check unavailable; skipping audit and falling back to regex (model=${cfgName}, reason=${reason})`);
     return null;
+  } finally {
+    cleanupInvokeAbort();
   }
 
   const text = result?.text ?? "";
@@ -240,7 +267,10 @@ export async function classifyStall(
   if (!action) return null;
   if (!citationManifest) return action;
   const parsed = parseCitationVerdict(text);
-  if (!parsed) return null;
+  if (!parsed) {
+    console.warn(`[citation-audit] invalid verdict; skipping audit (model=${cfgName})`);
+    return action;
+  }
   const sourcesByMarker = new Map(citationManifest.map((entry) => [entry.n, entry]));
   // The drafting prompt's PRIMARY citation format is an inline Markdown
   // link, not a `[n]` bracket marker, so a claim can be genuinely grounded

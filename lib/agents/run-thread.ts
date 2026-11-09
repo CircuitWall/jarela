@@ -32,16 +32,13 @@ import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores
 import { getPricingTables, modelRatesFor, estimateProviderCostUsd } from "@/lib/stores/pricing";
 import { computeContextBudget, DEFAULT_CONTEXT_WINDOW_TOKENS, estimateTokens } from "@/lib/agents/context-budget";
 import {
-  DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
   applyTokenBudgetRatio,
   getUsageStrategyProfile,
-  resolveAdaptiveOutputTokenCap,
-  resolveOutputTokenCap,
   resolveUsageStrategy,
   shouldAutoRecall,
 } from "@/lib/agents/usage-strategy";
 import { getKnownContextLength, getKnownMaxOutputTokens } from "@/lib/providers/known-context-windows";
-import { modelThinksByDefault, thinkingReductionParams } from "@/lib/providers/capabilities";
+import { thinkingReductionParams } from "@/lib/providers/capabilities";
 import { routeTurnModel, type RouteDecisionMetadata } from "@/lib/agents/model-router";
 import { buildCombinedManifest, extractDeclaredReferences, mergeDeclaredReferences, type CitationVerdict, type SourceManifestEntry } from "@/lib/agents/citation-checker";
 import { getEffectiveProviderToolLimit } from "@/lib/providers/tool-limit";
@@ -477,7 +474,7 @@ interface ConfiguredTurnModel {
   allowedTools: string[];
   providerParams: ProviderParams;
   runContextWindow: number;
-  adaptiveOutputTokenCap: number;
+  outputTokenCap: number;
   thinkingReduction: ReturnType<typeof thinkingReductionParams> | null;
 }
 
@@ -808,14 +805,6 @@ function configureTurnModel(
     && baseProviderParams.reasoning_effort === undefined
     ? thinkingReductionParams(modelCfg.provider, modelCfg.model_id)
     : null;
-  const modelThinks = baseProviderParams.thinking?.type === "enabled"
-    || (!!modelCfg && modelThinksByDefault(modelCfg.provider, modelCfg.model_id)
-      && !thinkingReduction?.off);
-  const strategyOutputTokenCap = resolveOutputTokenCap(
-    usageProfile.outputTokenCap ?? DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
-    modelThinks,
-    usageStrategy,
-  );
   // Strategy percentages must use the model's real window, not the 8k fallback.
   const explicitContextWindow = typeof tierProviderParams.context_window_tokens === "number"
     && tierProviderParams.context_window_tokens > 0
@@ -829,32 +818,38 @@ function configureTurnModel(
   const runContextWindow = req.attachments?.length
     ? configuredContextWindow
     : applyTokenBudgetRatio(configuredContextWindow, usageProfile.contextWindowRatio);
-  // The current user-turn size is a deterministic proxy for expected output;
-  // the adaptive resolver applies headroom and the model/context hard limits.
+  // The latest user message and prompt overhead reduce the real context that
+  // remains available for generation. For models without known output metadata,
+  // retain the context planner's default 20% output reserve as a fallback.
   const inputTokenEstimate = estimateTokens(contentText(input.content));
-  const { overheadTokens: outputBudgetOverhead } = computeContextBudget({ context_window_tokens: runContextWindow, max_tokens: 256 });
-  const contextOutputCeiling = Math.max(1, runContextWindow - inputTokenEstimate - outputBudgetOverhead);
+  const { overheadTokens: outputBudgetOverhead } = computeContextBudget({ context_window_tokens: configuredContextWindow, max_tokens: 256 });
+  const contextOutputCeiling = Math.max(1, configuredContextWindow - inputTokenEstimate - outputBudgetOverhead);
+  const fallbackOutputReserve = computeContextBudget({ context_window_tokens: configuredContextWindow }).outputReserveTokens;
   const explicitOutputCeiling = typeof tierProviderParams.max_tokens === "number"
     && Number.isFinite(tierProviderParams.max_tokens) && tierProviderParams.max_tokens > 0
     ? tierProviderParams.max_tokens
     : null;
   // The static catalog is a fallback, not an authority over explicit configuration.
-  const modelOutputLimit = explicitOutputCeiling
-    ?? (modelCfg ? getKnownMaxOutputTokens(modelCfg.provider, modelCfg.model_id) : null)
-    ?? contextOutputCeiling;
-  const strategyOutputCeiling = applyTokenBudgetRatio(modelOutputLimit, usageProfile.outputTokenRatio);
-  const adaptiveOutputTokenCap = resolveAdaptiveOutputTokenCap(
-    inputTokenEstimate,
-    strategyOutputTokenCap ?? DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP,
-    Math.min(contextOutputCeiling, strategyOutputCeiling),
-    baseProviderParams.thinking?.budget_tokens ?? 0,
-  );
+  const knownModelOutputCeiling = modelCfg
+    ? getKnownMaxOutputTokens(modelCfg.provider, modelCfg.model_id)
+    : null;
+  // Usage strategies shape context size and response style. They must not
+  // silently impose a smaller generation cap than the model supports.
+  const modelOutputCeiling = knownModelOutputCeiling
+    ?? Math.min(contextOutputCeiling, fallbackOutputReserve);
+  // A configured max_tokens is the user's requested cap, still bounded by the
+  // provider's known maximum and the actual context remaining for this turn.
+  const outputTokenCap = Math.max(1, Math.floor(Math.min(
+    contextOutputCeiling,
+    modelOutputCeiling,
+    explicitOutputCeiling ?? Number.POSITIVE_INFINITY,
+  )));
   if (baseProviderParams.thinking?.type === "enabled"
-    && baseProviderParams.thinking.budget_tokens >= adaptiveOutputTokenCap) {
+    && baseProviderParams.thinking.budget_tokens >= outputTokenCap) {
     throw new RunThreadError(
       400,
       `The configured thinking budget (${baseProviderParams.thinking.budget_tokens}) must be lower than `
-        + `the effective output-token limit (${adaptiveOutputTokenCap}). Reduce the thinking budget `
+        + `the effective output-token limit (${outputTokenCap}). Reduce the thinking budget `
         + "or increase the model output/context limits.",
       "invalid_thinking_budget",
     );
@@ -862,14 +857,14 @@ function configureTurnModel(
   const providerParams = {
     ...tierProviderParams,
     context_window_tokens: runContextWindow,
-    max_tokens: adaptiveOutputTokenCap,
+    max_tokens: outputTokenCap,
   };
   return {
     toolPermissionMap,
     allowedTools,
     providerParams,
     runContextWindow,
-    adaptiveOutputTokenCap,
+    outputTokenCap,
     thinkingReduction,
   };
 }
@@ -1195,7 +1190,7 @@ function buildTurnStreamOptions(
       route_decision: model.routeDecision,
       output_reserve_tokens: historyWindow.budget.outputReserveTokens,
       context_window_tokens: configured.runContextWindow,
-      max_output_tokens: configured.adaptiveOutputTokenCap,
+      max_output_tokens: configured.outputTokenCap,
       thinking_params: configured.thinkingReduction?.params,
       tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
       delegation: delegationDepth > 0 || delegationAncestors.length > 0

@@ -23,6 +23,8 @@ export function safeTranscriptFailureReason(code?: string): string {
     case "invalid_api_key": return "The model provider could not authenticate this request.";
     case "rate_limited": return "The model provider rate-limited this request.";
     case "invalid_boundary": return "The selected context boundary is no longer available.";
+    case "run_idle_timeout": return "The run timed out after the provider stopped making progress.";
+    case "run_max_timeout": return "The run exceeded its allowed runtime and was stopped automatically.";
     case "run_prepare_error": return "The response could not be prepared.";
     case "stream_error": return "The response stream ended unexpectedly.";
     default: return "The response could not be completed.";

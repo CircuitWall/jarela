@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MessageList } from "./MessageList";
 import type { AgentConfig, Message } from "@/api/types";
 
@@ -59,6 +59,12 @@ function setRect(el: Element, top: number, height = 24) {
       left: 0,
       toJSON: () => ({}),
     }),
+  });
+}
+
+async function flushScrollFrame() {
+  await act(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
   });
 }
 
@@ -286,7 +292,7 @@ describe("MessageList conversation focus", () => {
     expect(screen.getByText("persisted partial")).toBeTruthy();
   });
 
-  it("shows a fast scroll-to-latest button when scrolled away from bottom", () => {
+  it("shows a fast scroll-to-latest button when scrolled away from bottom", async () => {
     const messages = [
       mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
       mkMessage("m2", "assistant", "latest", "2026-08-09T10:00:01.000Z"),
@@ -298,6 +304,7 @@ describe("MessageList conversation focus", () => {
     Object.defineProperty(scroller, "scrollTop", { configurable: true, writable: true, value: 120 });
 
     fireEvent.scroll(scroller);
+    await flushScrollFrame();
 
     const button = screen.getByRole("button", { name: "Resume auto-scroll to latest message" });
     expect(button).toBeTruthy();
@@ -307,7 +314,7 @@ describe("MessageList conversation focus", () => {
     expect(screen.queryByRole("button", { name: "Resume auto-scroll to latest message" })).toBeNull();
   });
 
-  it("pauses following while scrolled up and resumes after jumping to latest", () => {
+  it("pauses following while scrolled up and resumes after jumping to latest", async () => {
     const messages = [
       mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
       mkMessage("m2", "assistant", "latest", "2026-08-09T10:00:01.000Z"),
@@ -318,6 +325,7 @@ describe("MessageList conversation focus", () => {
     Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 300 });
     Object.defineProperty(scroller, "scrollTop", { configurable: true, writable: true, value: 120 });
     fireEvent.scroll(scroller);
+    await flushScrollFrame();
 
     Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 1200 });
     rerender(<MessageList threadId="thread-1" messages={[...messages, mkMessage("m3", "assistant", "new reply", "2026-08-09T10:00:02.000Z")]} />);
@@ -655,7 +663,7 @@ describe("MessageList conversation focus", () => {
     expect(order).toEqual(["m1", "m2", "boundary", "opt-x"]);
   });
 
-  it("keeps the anchor message on screen when hot_since relocates the boundary line", () => {
+  it("keeps the anchor message on screen when hot_since relocates the boundary line", async () => {
     const messages = [
       mkMessage("m1", "user", "one", "2026-08-09T10:00:00.000Z"),
       mkMessage("m2", "assistant", "two", "2026-08-09T10:00:01.000Z"),
@@ -679,6 +687,7 @@ describe("MessageList conversation focus", () => {
     // Scrolled away from the bottom with m3 the topmost visible message —
     // captures it as the anchor.
     fireEvent.scroll(scroller);
+    await flushScrollFrame();
     expect(scroller.scrollTop).toBe(300);
 
     // Boundary relocates: in a real browser this shifts m3 (and

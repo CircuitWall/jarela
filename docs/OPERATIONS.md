@@ -176,11 +176,14 @@ Chat voice controls refresh after saving without a page reload. The additions
 use the existing desktop breakpoints and sidebar widths; the mobile header and
 small-screen menu drawer are unchanged.
 
-Usage strategies (Unreleased) scale context and output budgets against the
-selected model's configured or known limits: Economical uses 60%, Fast 50%,
-Balanced 80%, and High reasoning 100%. Explicit model limits and remaining
-context still apply; turns with attachments retain the model's full context
-window.
+Usage strategies (Unreleased) scale context budgets against the selected
+model's configured or known context window: Economical uses 60%, Fast 50%,
+Balanced 80%, and High reasoning 100%. Output uses the selected model's real
+known output limit, or the remaining real context when that limit is unknown.
+When the model has no known output limit, the default is 20% of its real
+context window, capped by the remaining context.
+An explicit model `max_tokens` overrides that default, subject to physical
+model and context limits.
 
 ![Wide-screen studio layout with the agent sidebar, workspace, and selected-agent controls](assets/operations-agents.png)
 
@@ -327,35 +330,35 @@ remain pending under [ADR-0112](adr/0112-checked-javascript-skill-execution.md).
 
 ## Review usage
 
-### Adaptive output budgets (Unreleased)
+### Model output limits (Unreleased)
 
 For turns without attachments, each usage strategy scales the selected model's
-configured or known context window and output limit: Economical uses 60%, Fast
-50%, Balanced 80%, and High reasoning 100%. Attachment turns retain the model's
-full context window. Explicit model limits and remaining context remain hard
-ceilings on the resulting output budget.
+configured or known context window: Economical uses 60%, Fast 50%, Balanced
+80%, and High reasoning 100%. Attachment turns retain the model's full context
+window. The output ceiling uses the real model context and known model output
+limit; usage strategies do not shrink it.
 
-New turns use a text-size heuristic for output allocation: estimate the current
-user text at roughly four characters per token, multiply that estimate by four
-for headroom, and keep at least the strategy baseline (2,048 tokens for Fast
-and Cost-saving; 8,192 for Balanced and High reasoning). Thinking models retain
-a 32,768-token baseline outside Cost-saving, subject to hard limits. Explicit
-thinking budgets also reserve room for output.
+New turns use the model's known maximum output as the default `max_tokens` cap.
+When that limit is unavailable, the default is 20% of the full model context
+window, capped by the remaining context after estimated input and overhead. A model config's explicit `max_tokens`
+replaces the default, but cannot exceed the model's known output or context
+ceiling. Usage strategies still control context allocation, response style,
+thinking reduction, and retry policy; they do not silently reduce output
+tokens. Explicit thinking budgets remain inside the effective output limit.
 
-An explicit model `max_tokens` setting remains a ceiling, not a minimum.
-Static known model output limits apply as a fallback when no explicit
-`max_tokens` is configured; the run's context allocation remains a ceiling.
-The selected amount is reserved before assembling conversation history.
+An explicit model `max_tokens` setting is the requested output ceiling.
+Static known model output limits apply when it is not configured, and the
+physical model/context limits always remain hard ceilings. The selected amount
+is reserved before assembling conversation history.
 An enabled thinking budget must remain strictly below the effective output
 limit. Incompatible settings fail preparation with `invalid_thinking_budget`
 before the provider request, rather than silently reducing the thinking budget.
-Fast and Cost-saving output baselines can now grow for larger user turns;
-these strategies are not hard spending limits.
+This cap describes the maximum response length, not a spending guarantee.
 
-This is an estimate based on text size, not a prediction of the requested
-document length. Short requests can require long output; binary attachments,
-earlier conversation, and later tool results do not increase the estimate.
-The cap is selected once per turn, not recalculated for each tool step.
+The fallback context estimate subtracts the current user text and fixed
+overhead; earlier conversation is already bounded by the context planner, and
+later tool results do not trigger a per-step cap recalculation. The cap is
+selected once per turn, not recalculated for each tool step.
 If the provider reports output-token truncation while generating tool calls,
 the model step fails before those calls execute. Jarela reports an actionable
 error instead of attempting a partial write; earlier completed tool steps are

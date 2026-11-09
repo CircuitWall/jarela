@@ -145,16 +145,34 @@ describe("classifyStall", () => {
     }
   });
 
-  it("reports an unavailable audit if the citation result is malformed", async () => {
+  it("skips a malformed citation audit while keeping the action verdict", async () => {
     upsertModelConfig("combined-malformed", "openai", "gpt-4o-mini", { api_key: "sk-test" }, false);
     invokeMock.mockResolvedValue({ text: '{"stalled":false,"reason":"ok"}' });
     getProviderMock.mockReturnValue({ invoke: invokeMock });
     try {
       await expect(classifyStall("Answer", {
         toolNames: [], successfulToolNames: [], toolResultSummaries: [],
-      }, "combined-malformed", undefined, [])).resolves.toBeNull();
+      }, "combined-malformed", undefined, [])).resolves.toEqual({ stalled: false, reason: "ok" });
     } finally {
       deleteModelConfig("combined-malformed");
+      invokeMock.mockReset();
+      getProviderMock.mockReset();
+    }
+  });
+
+  it("logs a failed checker call and skips the unavailable audit", async () => {
+    upsertModelConfig("combined-failed", "openai", "gpt-4o-mini", { api_key: "sk-test" }, false);
+    invokeMock.mockRejectedValue(new Error("provider unavailable"));
+    getProviderMock.mockReturnValue({ invoke: invokeMock });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(classifyStall("Answer", {
+        toolNames: [], successfulToolNames: [], toolResultSummaries: [],
+      }, "combined-failed", undefined, [])).resolves.toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("[citation-audit] check unavailable; skipping audit"));
+    } finally {
+      warn.mockRestore();
+      deleteModelConfig("combined-failed");
       invokeMock.mockReset();
       getProviderMock.mockReset();
     }

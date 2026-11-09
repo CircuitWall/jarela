@@ -53,6 +53,19 @@ describe("collectStream", () => {
     expect(out.errorMessage).toBe("Run interrupted by user.");
   });
 
+  it.each([
+    ["idle", "run_idle_timeout"],
+    ["wall-clock", "run_max_timeout"],
+  ])("keeps %s watchdog termination distinct from user interruption", async (_kind, code) => {
+    const out = await collectStream(fromArray([
+      { type: "text_delta", data: { delta: "partial" } },
+      { type: "error", data: { message: "Run timed out.", code } },
+    ]));
+    expect(out.terminal).toBe("error");
+    expect(out.errorCode).toBe(code);
+    expect(out.aborted).toBeUndefined();
+  });
+
   it("leaves aborted unset on generic stream errors", async () => {
     const out = await collectStream(fromArray([
       { type: "text_delta", data: { delta: "partial" } },

@@ -130,6 +130,26 @@ describe("JarelaChatModel — empty stream handling", () => {
     expect(seen.flatMap((chunk) => chunk.tool_calls ?? [])).toEqual([]);
   });
 
+  it("emits progress-only chunks while buffering tool arguments without exposing partial calls", async () => {
+    const provider = makeProvider([
+      { type: "tool_call_chunk", index: 0, id: "t1", name: "write_skill", args_delta: '{"id":"example",' },
+      { type: "tool_call_chunk", index: 0, args_delta: '"content":"complete"}' },
+      { type: "stop", reason: "tool_use" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {} });
+    const chunks = await collectChunks(model);
+    const messages = chunks.map((chunk) => chunk.message as AIMessageChunk);
+
+    expect(messages.slice(0, -1).every((message) => (message.tool_call_chunks ?? []).length === 0)).toBe(true);
+    expect(messages.slice(0, -1).some((message) => message.content === "")).toBe(true);
+    expect(messages.at(-1)?.tool_calls).toEqual([{
+      id: "t1",
+      name: "write_skill",
+      args: { id: "example", content: "complete" },
+      type: "tool_call",
+    }]);
+  });
+
   it("validates every parallel call before releasing any of them", async () => {
     const provider = makeProvider([
       { type: "tool_call_chunk", index: 0, id: "t1", name: "tool_1", args_delta: '{"value":"complete"}' },
