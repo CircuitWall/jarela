@@ -14,7 +14,7 @@ Users need one global control for choosing a cost, balanced, or reasoning-orient
 * Keep balanced mode behavior compatible with current defaults.
 * Let per-agent strategy settings inherit the global strategy unless explicitly overridden.
 * Preserve pinned models and explicit per-agent routing choices.
-* Bound cost-saving context and output allocation without claiming a hard dollar ceiling.
+* Bound cost-saving context allocation without claiming a hard dollar ceiling.
 * Keep provider failures retryable while avoiding additional quality-retry turns in cost-saving mode.
 
 ## Considered Options
@@ -29,7 +29,7 @@ Chosen option: "Add a global strategy and a nullable per-agent strategy, resolve
 
 ### Profiles
 
-* `cost_saving` uses cheap routing unless an explicit per-agent router setting says otherwise, caps context at 65,536 tokens (applied to the model's real window, not the 8k fallback) and output at 4,096 tokens, asks thinking models to reason less where the provider supports it (DeepSeek V4 thinking off; OpenAI gpt-5 and o-series reasoning effort lowered; an explicit `thinking` or `reasoning_effort` on the model config wins), keeps a 32,768-token output floor for thinking models that still reason, adds concise-response guidance, disables quality-retry turns, and permits at most one transient provider-failure retry.
+* `cost_saving` uses cheap routing unless an explicit per-agent router setting says otherwise, reduces context allocation, asks thinking models to reason less where the provider supports it (DeepSeek V4 thinking off; OpenAI gpt-5 and o-series reasoning effort lowered; an explicit `thinking` or `reasoning_effort` on the model config wins), adds concise-response guidance, disables quality-retry turns, and permits at most one transient provider-failure retry. It does not impose an output-token ceiling below the selected model's real limit.
 * `balanced` inherits the existing global router mode and policy and adds no new limits or prompt guidance.
 * `high_reasoning` favors quality routing and adds guidance to compare evidence and alternatives. It does not set provider-specific reasoning parameters because their contracts differ.
 
@@ -39,30 +39,28 @@ An explicit agent model remains pinned. An explicit per-agent router enable or p
 
 * Good, because users can change the default once and inspect or link to every agent override.
 * Good, because cost-saving still performs local stall/fabrication checks and reports issues without starting an extra quality-retry turn.
-* Bad, because context and output caps reduce available room for unusually large tasks in cost-saving mode.
+* Bad, because the context allocation can reduce available history for unusually large tasks in cost-saving mode.
 * Bad, because usage-reported pricing may be incomplete; these profiles are not spend guarantees.
 
 ## More Information
 
 The global setting is `JARELA_USAGE_STRATEGY`. Per-agent overrides are stored in `agent_configs.usage_strategy`; NULL inherits the global setting. Existing harnesses remain unchanged and receive the strategy instruction as dynamic prompt content.
 
-### Unreleased amendment: adaptive output allocation
+### Unreleased amendment: output follows model limits
 
-The fixed output allocations above are superseded by a per-turn text-size
-estimate with 4x headroom, strategy baselines, and explicit model/context
-ceilings. Thinking models retain reasoning headroom outside Cost-saving;
-explicit thinking budgets are added before applying ceilings. See the
-[current operating guide](../OPERATIONS.md#adaptive-output-budgets-unreleased)
-for the formula and its limitations. Routing, prompt guidance, and retry
-policy remain unchanged.
+The earlier adaptive, strategy-scaled output allocation is superseded. Output
+defaults to the model's known maximum output, or 20% of its real context when
+that limit is unknown, capped by remaining context. A configured `max_tokens`
+replaces the default, while physical model and context limits remain hard
+ceilings. Usage strategies no longer reduce the output ceiling. See the
+[current operating guide](../OPERATIONS.md#model-output-limits-unreleased).
 
-### Unreleased amendment: model-relative budget ceilings
+### Unreleased amendment: model-relative context allocation
 
-The fixed Cost-saving context cap and fixed output ceilings are superseded by
-selected-model-relative ceilings: 60% for Cost-saving, 50% for Fast, 80% for
-Balanced, and 100% for High reasoning. The configured/known model limits and
-remaining turn context still bound the effective budgets. Attachment turns use
-the full configured context window; output scaling and adaptive allocation
-still apply. This further limits the adaptive output allocation described
-above without changing its text-size estimate, strategy baselines, or thinking
-budget handling. See the [current operating guide](../OPERATIONS.md#adaptive-output-budgets-unreleased).
+The fixed Cost-saving context cap is superseded by selected-model-relative
+context allocation: 60% for Cost-saving, 50% for Fast, 80% for Balanced, and
+100% for High reasoning. Attachment turns use the full configured context
+window. Output defaults to the selected model's known maximum output tokens,
+or 20% of its real context if unknown, capped by remaining context; a user-set
+`max_tokens` overrides that default, subject to physical model and context
+limits. See the [current operating guide](../OPERATIONS.md#model-output-limits-unreleased).

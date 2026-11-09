@@ -222,6 +222,13 @@ export class JarelaChatModel extends BaseChatModel {
         // LangChain repairs incomplete JSON by dropping unfinished fields.
         // Hold every call until the complete model step passes strict parsing.
         pendingToolCalls = pendingToolCalls ? pendingToolCalls.concat(toolChunk) : toolChunk;
+        // Tool arguments can take a long time to stream (large JSON payloads
+        // in particular). Keep the run idle watchdog informed without sending
+        // partial calls into LangGraph, where they could be repaired or run.
+        yield new ChatGenerationChunk({
+          message: new AIMessageChunk({ content: "" }),
+          text: "",
+        });
       } else if (event.type === "stop") {
         stopReason = event.reason;
       } else if (event.type === "usage") {

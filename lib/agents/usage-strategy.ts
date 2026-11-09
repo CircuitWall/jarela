@@ -6,8 +6,6 @@ export interface UsageStrategyProfile {
   routerPolicy: UsageRouterPolicy | null;
   enableRouter: boolean | null;
   contextWindowRatio: number;
-  outputTokenRatio: number;
-  outputTokenCap: number | null;
   /** Ask thinking models to reason less (or not at all) when the provider supports it. */
   reduceThinking: boolean;
   stallRetries: number | null;
@@ -20,8 +18,6 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
     routerPolicy: "cheap",
     enableRouter: true,
     contextWindowRatio: 0.6,
-    outputTokenRatio: 0.6,
-    outputTokenCap: 2_048,
     reduceThinking: true,
     stallRetries: 0,
     providerFailureRetries: 1,
@@ -36,8 +32,6 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
     routerPolicy: "fast",
     enableRouter: true,
     contextWindowRatio: 0.5,
-    outputTokenRatio: 0.5,
-    outputTokenCap: 2_048,
     reduceThinking: true,
     stallRetries: 0,
     providerFailureRetries: 1,
@@ -49,8 +43,6 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
     routerPolicy: null,
     enableRouter: null,
     contextWindowRatio: 0.8,
-    outputTokenRatio: 0.8,
-    outputTokenCap: null,
     reduceThinking: false,
     stallRetries: null,
     providerFailureRetries: null,
@@ -60,8 +52,6 @@ const PROFILES: Readonly<Record<UsageStrategy, UsageStrategyProfile>> = {
     routerPolicy: "quality",
     enableRouter: true,
     contextWindowRatio: 1,
-    outputTokenRatio: 1,
-    outputTokenCap: null,
     reduceThinking: false,
     stallRetries: null,
     providerFailureRetries: null,
@@ -99,41 +89,4 @@ export function applyTokenBudgetRatio(modelLimit: number, ratio: number): number
     throw new RangeError("Token budget ratio requires a positive model limit and a ratio in (0, 1]");
   }
   return Math.max(1, Math.floor(modelLimit * ratio));
-}
-
-// Reasoning tokens share the output budget; below this a thinking model can
-// spend the whole cap on its chain of thought and return nothing.
-export const THINKING_OUTPUT_FLOOR_TOKENS = 32_768;
-// Turn text length is only a size proxy, not a semantic output prediction.
-export const OUTPUT_TOKEN_HEADROOM_MULTIPLIER = 4;
-export const DEFAULT_ADAPTIVE_OUTPUT_TOKEN_CAP = 8_192;
-
-export function resolveOutputTokenCap(
-  profileCap: number | null,
-  modelThinks: boolean,
-  strategy: UsageStrategy,
-): number | null {
-  if (profileCap === null) return null;
-  if (modelThinks && strategy !== "cost_saving") {
-    return Math.max(profileCap, THINKING_OUTPUT_FLOOR_TOKENS);
-  }
-  return profileCap;
-}
-
-export function resolveAdaptiveOutputTokenCap(
-  inputTokenEstimate: number,
-  baselineCap: number,
-  hardCap: number,
-  thinkingBudgetTokens = 0,
-): number {
-  if (!Number.isFinite(inputTokenEstimate) || inputTokenEstimate < 0
-    || !Number.isFinite(baselineCap) || baselineCap < 1
-    || !Number.isFinite(hardCap) || hardCap < 1
-    || !Number.isFinite(thinkingBudgetTokens) || thinkingBudgetTokens < 0) {
-    throw new RangeError("Adaptive output budget requires a nonnegative estimate and positive finite caps");
-  }
-  const estimatedOutputCap = Math.ceil(inputTokenEstimate * OUTPUT_TOKEN_HEADROOM_MULTIPLIER);
-  const baseline = Math.max(1, Math.floor(baselineCap));
-  const ceiling = Math.max(1, Math.floor(hardCap));
-  return Math.min(Math.max(baseline, estimatedOutputCap) + Math.ceil(thinkingBudgetTokens), ceiling);
 }

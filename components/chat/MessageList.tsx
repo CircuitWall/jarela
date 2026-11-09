@@ -1052,12 +1052,23 @@ function useScrollTracking({ displayMessages, streamingContent }: {
     if (atBottomRef.current) { boundaryAnchorRef.current = null; return; }
     const containerTop = el.getBoundingClientRect().top;
     const nodes = el.querySelectorAll<HTMLElement>("[data-message-id]");
-    for (const node of nodes) {
-      const top = node.getBoundingClientRect().top - containerTop;
-      if (top >= -4) {
-        boundaryAnchorRef.current = { id: node.dataset.messageId ?? "", top };
-        return;
-      }
+    // Rows are in transcript order, so find the first row whose top is in or
+    // below the viewport. A linear scan forced a layout read for every older
+    // row on each scroll event, which became expensive after loading history.
+    let low = 0;
+    let high = nodes.length;
+    while (low < high) {
+      const mid = low + Math.floor((high - low) / 2);
+      if (nodes[mid].getBoundingClientRect().top - containerTop >= -4) high = mid;
+      else low = mid + 1;
+    }
+    const node = nodes[low];
+    if (node) {
+      boundaryAnchorRef.current = {
+        id: node.dataset.messageId ?? "",
+        top: node.getBoundingClientRect().top - containerTop,
+      };
+      return;
     }
     boundaryAnchorRef.current = null;
   }, []);
@@ -1123,6 +1134,11 @@ function useScrollAnchors({
   // instead of remaining pinned to scrollTop=0 (which makes the viewport
   // "jump" to the very oldest message).
   const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
+  const pendingScrollTargetRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -1180,15 +1196,23 @@ function useScrollAnchors({
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
-    if (hasMore && !loadingMore && onLoadMore && el.scrollTop < 60) {
-      // Snapshot BEFORE asking the parent to fetch so we can compensate the
-      // scroll position once the new (older) messages arrive in props.
-      prependAnchorRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop };
-      onLoadMore();
-    }
-    syncScrollButton(el);
-    updateBoundaryMask();
-    captureBoundaryAnchor(el);
+    pendingScrollTargetRef.current = el;
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const target = pendingScrollTargetRef.current;
+      pendingScrollTargetRef.current = null;
+      if (!target) return;
+      if (hasMore && !loadingMore && onLoadMore && target.scrollTop < 60) {
+        // Snapshot BEFORE asking the parent to fetch so we can compensate the
+        // scroll position once the new (older) messages arrive in props.
+        prependAnchorRef.current = { scrollHeight: target.scrollHeight, scrollTop: target.scrollTop };
+        onLoadMore();
+      }
+      syncScrollButton(target);
+      updateBoundaryMask();
+      captureBoundaryAnchor(target);
+    });
   }
 
   // Correct for the boundary line relocating when `hotSince` changes

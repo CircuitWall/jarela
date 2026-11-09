@@ -686,7 +686,25 @@ function* inferenceFailure(
     ? `${baseMsg} (cause: ${causeChain.join(" → ")})`
     : baseMsg;
 
-  // Abort still emits done so queued UI messages can drain normally.
+  // The registry watchdog aborts the provider after publishing its own typed
+  // timeout event. Preserve that reason here so persistence does not mislabel
+  // an automatic timeout as a user pressing Stop.
+  const abortReason = signal?.reason;
+  const watchdogCode = abortReason === "run_idle_timeout"
+    ? "run_idle_timeout"
+    : abortReason === "run_watchdog_timeout"
+      ? "run_max_timeout"
+      : null;
+  if (watchdogCode) {
+    const message = watchdogCode === "run_idle_timeout"
+      ? "Run timed out after the provider stream stopped making progress."
+      : "Run timed out after reaching the wall-clock limit.";
+    yield { type: "error", data: { message, code: watchdogCode } };
+    yield projection.done(threadId, cfg, runCfg, false);
+    return;
+  }
+
+  // User abort still emits done so queued UI messages can drain normally.
   if (signal?.aborted || name === "AbortError" || /aborted/i.test(rawMsg)) {
     yield { type: "error", data: { message: "Run interrupted by user.", code: "aborted" } };
     yield projection.done(threadId, cfg, runCfg, true);

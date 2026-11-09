@@ -702,7 +702,7 @@ describe("prepareThreadRun transient retry", () => {
     expect(secondOpts.agent_run_config?.route_decision?.policy).toBe("balanced");
   });
 
-  it("applies cost-saving routing and budget caps while retaining one provider retry", async () => {
+  it("applies cost-saving routing while honoring explicit output limits and retaining one provider retry", async () => {
     upsertModelConfig("default", "openai", "gpt-4o-mini", {
       api_key: "sk-test",
       context_window_tokens: 131_072,
@@ -758,8 +758,8 @@ describe("prepareThreadRun transient retry", () => {
       };
     };
     expect(firstOptions.agent_run_config.route_decision).toMatchObject({ source: "heuristic", policy: "cheap" });
-    expect(firstOptions.agent_run_config.max_output_tokens).toBe(2_048);
-    expect(firstOptions.agent_run_config.output_reserve_tokens).toBe(2_048);
+    expect(firstOptions.agent_run_config.max_output_tokens).toBe(8_192);
+    expect(firstOptions.agent_run_config.output_reserve_tokens).toBe(8_192);
     expect(firstOptions.agent_run_config.system_prompt).toContain("Economical response style");
   });
 
@@ -789,10 +789,10 @@ describe("prepareThreadRun transient retry", () => {
       agent_run_config: { max_output_tokens?: number; thinking_params?: unknown };
     };
     expect(options.agent_run_config.thinking_params).toEqual({ thinking: { type: "disabled" } });
-    expect(options.agent_run_config.max_output_tokens).toBe(2_048);
+    expect(options.agent_run_config.max_output_tokens).toBe(393_216);
   });
 
-  it("leaves output headroom when the model config explicitly keeps thinking on", async () => {
+  it("uses the known model output limit when the model config keeps thinking on", async () => {
     upsertModelConfig("ds-think", "deepseek", "deepseek-flash", {
       api_key: "sk-test",
       thinking: { type: "enabled" },
@@ -820,10 +820,10 @@ describe("prepareThreadRun transient retry", () => {
       agent_run_config: { max_output_tokens?: number; thinking_params?: unknown };
     };
     expect(options.agent_run_config.thinking_params).toBeUndefined();
-    expect(options.agent_run_config.max_output_tokens).toBe(2_048);
+    expect(options.agent_run_config.max_output_tokens).toBe(393_216);
   });
 
-  it("lifts the cost-saving context cap for attachment turns without changing other strategy settings", async () => {
+  it("lifts the cost-saving context cap for attachment turns and honors explicit output limits", async () => {
     upsertModelConfig("default", "openai", "gpt-4o-mini", {
       api_key: "sk-test",
       context_window_tokens: 131_072,
@@ -864,7 +864,7 @@ describe("prepareThreadRun transient retry", () => {
       };
     };
     expect(options.agent_run_config.route_decision.policy).toBe("cheap");
-    expect(options.agent_run_config.max_output_tokens).toBe(2_048);
+    expect(options.agent_run_config.max_output_tokens).toBe(8_192);
     expect(options.agent_run_config.system_prompt).toContain("Economical response style");
   });
 
