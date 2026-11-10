@@ -5200,6 +5200,32 @@
         }
       ],
       "tools": []
+    },
+    {
+      "version": "3.5.2",
+      "previous_version": "3.5.1",
+      "date": "2026-11-10",
+      "hints": [],
+      "commits": [
+        "fix(release): remove stale, unpublished release-bump commits",
+        "chore(release): bump to 3.6.0",
+        "fix(agents): use model limits and report run failures",
+        "chore(release): bump to 3.5.2",
+        "test(agents): fix hot boundary cooldown race",
+        "fix(db): lazy-load the native sqlite3 read-pool addon",
+        "fix(db): fix stale test mock and defer async history-window read",
+        "feat(db): move selected reads to workers",
+        "test(chat): keep idle prompt edge cases covered",
+        "fix(chat): keep prompt closed when boundary is current",
+        "fix(agents): keep compaction when topic alignment fails",
+        "fix(chat): keep idle prompt from repeating after compaction",
+        "fix(agents): keep topics starting at the hot boundary",
+        "fix(chat): keep idle choices one click",
+        "fix(chat): wire thread ref into idle choice",
+        "fix(chat): keep idle compaction pending until commit"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }

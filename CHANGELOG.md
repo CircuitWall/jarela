@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.2] - 2026-11-10
+
+### Added
+
+- db: Move selected reads to workers
+
+### Fixed
+
+- chat: Keep idle compaction pending until commit
+- chat: Wire thread ref into idle choice
+- chat: Keep idle choices one click
+- agents: Keep topics starting at the hot boundary
+- chat: Keep idle prompt from repeating after compaction
+- agents: Keep compaction when topic alignment fails
+- chat: Keep prompt closed when boundary is current
+- db: Fix stale test mock and defer async history-window read
+- db: Lazy-load the native sqlite3 read-pool addon
+- agents: Use model limits and report run failures
+- release: Remove stale, unpublished release-bump commits
+
+### Changed
+
+- chat: Keep idle prompt edge cases covered
+- agents: Fix hot boundary cooldown race
+- release: Bump to 3.5.2
+- release: Bump to 3.6.0
+
 ## [3.5.1] - 2026-11-07
 
 ### Fixed
