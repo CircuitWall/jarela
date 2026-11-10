@@ -17,6 +17,37 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.5.2
+
+From 3.5.1 · 2026-11-10
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- fix(release): remove stale, unpublished release-bump commits
+- chore(release): bump to 3.6.0
+- fix(agents): use model limits and report run failures
+- chore(release): bump to 3.5.2
+- test(agents): fix hot boundary cooldown race
+- fix(db): lazy-load the native sqlite3 read-pool addon
+- fix(db): fix stale test mock and defer async history-window read
+- feat(db): move selected reads to workers
+- test(chat): keep idle prompt edge cases covered
+- fix(chat): keep prompt closed when boundary is current
+- fix(agents): keep compaction when topic alignment fails
+- fix(chat): keep idle prompt from repeating after compaction
+- fix(agents): keep topics starting at the hot boundary
+- fix(chat): keep idle choices one click
+- fix(chat): wire thread ref into idle choice
+- fix(chat): keep idle compaction pending until commit
+
 ## 3.5.1
 
 From 3.5.0 · 2026-11-07
