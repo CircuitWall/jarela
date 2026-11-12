@@ -71,7 +71,7 @@ export function DashboardPanel() {
           onSetupPricingTask={onSetupPricingTask}
         />
 
-        {!loading && !error && data ? (
+        {data ? (
           <SummaryStrip
             data={data}
             currencyInfo={currencyInfo}
@@ -90,19 +90,9 @@ export function DashboardPanel() {
           currencyInfo={currencyInfo}
         />
 
-        {loading && (
-          <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 text-sm text-[var(--text-secondary)] shadow-sm">
-            Loading dashboard metrics...
-          </div>
-        )}
+        <DashboardMetricsStatus loading={loading} error={error} hasData={Boolean(data)} days={days} />
 
-        {!loading && error && (
-          <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 p-4 text-sm text-rose-200">
-            Failed to load dashboard metrics: {error}
-          </div>
-        )}
-
-        {!loading && !error && data && (
+        {data && (
           <>
             <MetricCardsGrid
               effectiveSummary={effectiveSummary}
@@ -158,5 +148,32 @@ export function DashboardPanel() {
         )}
       </div>
     </div>
+  );
+}
+
+function DashboardMetricsStatus({ loading, error, hasData, days }: {
+  loading: boolean;
+  error: string | null;
+  hasData: boolean;
+  days: number;
+}) {
+  return (
+    <>
+      {loading && !hasData && (
+        <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 text-sm text-[var(--text-secondary)] shadow-sm">
+          Loading dashboard metrics...
+        </div>
+      )}
+      {loading && hasData && (
+        <div role="status" className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-3 text-sm text-[var(--text-secondary)] shadow-sm">
+          Updating to the last {days} days. Showing the previous results until the refresh finishes.
+        </div>
+      )}
+      {error && (
+        <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 p-4 text-sm text-rose-200">
+          {hasData ? `Could not refresh dashboard metrics: ${error}. Showing the previous results.` : `Failed to load dashboard metrics: ${error}`}
+        </div>
+      )}
+    </>
   );
 }

@@ -38,6 +38,20 @@ describe("dashboard metrics cache", () => {
     expect(await getDashboardMetrics(7)).not.toBe(first);
   });
 
+  it("reports whether the metrics read used the in-memory cache", async () => {
+    const coldTimings: { cacheHit?: boolean; queryMs?: number; aggregateMs?: number; toolStatsMs?: number } = {};
+    await getDashboardMetrics(30, coldTimings);
+    expect(coldTimings.cacheHit).toBeUndefined();
+    expect(coldTimings.queryMs).toBeGreaterThanOrEqual(0);
+    expect(coldTimings.aggregateMs).toBeGreaterThanOrEqual(0);
+    expect(coldTimings.toolStatsMs).toBeGreaterThanOrEqual(0);
+
+    const warmTimings: { cacheHit?: boolean; queryMs?: number; aggregateMs?: number; toolStatsMs?: number } = {};
+    await getDashboardMetrics(30, warmTimings);
+    expect(warmTimings.cacheHit).toBe(true);
+    expect(warmTimings.queryMs).toBeUndefined();
+  });
+
   it("invalidates immediately after local writes", async () => {
     const first = await getDashboardMetrics();
     getDb().prepare("UPDATE messages SET content=? WHERE msg_id=?").run("a".repeat(100), "m1");

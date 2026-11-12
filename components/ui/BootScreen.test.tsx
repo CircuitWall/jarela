@@ -8,13 +8,14 @@ const reads = vi.hoisted(() => ({
   agent: vi.fn(),
   thread: vi.fn(),
   messages: vi.fn(),
+  metadata: vi.fn(),
   recentReplies: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("@/api/client", () => ({
   api: {
     profile: { get: reads.profile },
     agents: { get: reads.agent, getThread: reads.thread, recentReplies: reads.recentReplies },
-    threads: { get: reads.messages },
+    threads: { get: reads.messages, metadata: reads.metadata },
   },
 }));
 vi.mock("@/components/ui/Logo", () => ({ Logo: () => null }));
@@ -53,6 +54,7 @@ it("shows one pulsing current-action line while agents load", () => {
 });
 
 it("pulses one startup label at a time and advances as requests settle", async () => {
+  vi.useFakeTimers();
   let finishProfile!: (value: {}) => void;
   let finishAgent!: (value: {}) => void;
   let finishThread!: (value: { thread_id: string }) => void;
@@ -84,6 +86,12 @@ it("pulses one startup label at a time and advances as requests settle", async (
   await act(async () => finishThread({ thread_id: "thread-1" }));
   expect(document.querySelector(".animate-pulse")?.textContent).toBe("Loading recent messages");
   expect(document.querySelectorAll(".animate-pulse")).toHaveLength(1);
+  expect(reads.messages).toHaveBeenCalledWith("thread-1", { startup: true });
+  await act(async () => { await vi.advanceTimersByTimeAsync(750); });
+  expect(screen.queryByTestId("boot-screen")).toBeNull();
+  // The startup handoff is complete while the transcript fetch is still
+  // pending; ChatView shows its own message loader during this time.
+  expect(reads.messages).toHaveBeenCalledOnce();
   await act(async () => finishMessages({}));
 });
 

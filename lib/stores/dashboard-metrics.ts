@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { performance } from "node:perf_hooks";
 import type { DashboardCostBreakdown } from "@/api/types";
 import { listToolStats, toStats } from "@/lib/stores/tool-stats";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
@@ -287,7 +288,17 @@ export function recalculateSnapshotCost(input: SnapshotCostInput, tables: Pricin
   return totalCostBreakdown(recalculateSnapshotCostBreakdown(input, tables));
 }
 
-export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<DashboardMetrics> {
+export interface DashboardMetricsTimings {
+  cacheHit?: boolean;
+  queryMs?: number;
+  aggregateMs?: number;
+  toolStatsMs?: number;
+}
+
+export async function getDashboardMetrics(
+  days = DEFAULT_WINDOW_DAYS,
+  timings?: DashboardMetricsTimings,
+): Promise<DashboardMetrics> {
   const now = new Date();
   const boundedDays = Number.isFinite(days) ? Math.min(120, Math.max(7, Math.floor(days))) : DEFAULT_WINDOW_DAYS;
   const since = new Date(now.getTime() - (boundedDays * 24 * 60 * 60 * 1000)).toISOString();
@@ -302,13 +313,21 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     && metricsCache.metrics.generated_at.slice(0, 10) === now.toISOString().slice(0, 10)
     && now.getTime() - metricsCache.createdAt >= 0
     && now.getTime() - metricsCache.createdAt < METRICS_CACHE_MS) {
+    if (timings) timings.cacheHit = true;
     return metricsCache.metrics;
   }
 
+  const queryStarted = performance.now();
   const rows = readDashboardUsage(db, since);
+  if (timings) timings.queryMs = performance.now() - queryStarted;
+  const aggregateStarted = performance.now();
   const dayMap = seedDayBuckets(now, boundedDays);
   const { totals, attribution, days: dayBreakdowns } = aggregateDashboardUsage(rows, tables, dayMap);
   const series = buildDashboardSeries(dayMap);
+  if (timings) timings.aggregateMs = performance.now() - aggregateStarted;
+  const toolStatsStarted = performance.now();
+  const topTools = dashboardTopTools();
+  if (timings) timings.toolStatsMs = performance.now() - toolStatsStarted;
   const metrics: DashboardMetrics = {
     generated_at: now.toISOString(),
     days: boundedDays,
@@ -329,7 +348,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       data_quality: computeDataQuality(totals.measured, totals.estimated),
     },
     series,
-    top_tools: dashboardTopTools(),
+    top_tools: topTools,
     top_agents: rankDashboardBuckets(attribution.agents, (row) => row.agent_name).slice(0, 8),
     by_provider: rankDashboardBuckets(attribution.providers, (row) => row.provider),
     by_model: rankDashboardBuckets(attribution.models, (row) => row.model_config_name),

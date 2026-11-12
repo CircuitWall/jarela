@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import {
   deleteThread,
@@ -26,6 +27,7 @@ import { getThreadActivity } from "@/lib/agents/thread-activity";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
 import { errorMessage } from "@/lib/utils/error";
 import { errorResponse, noStoreJson } from "@/lib/api/responses";
+import { withServerTiming } from "@/lib/api/server-timing";
 import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ thread_id: string }> };
@@ -40,9 +42,12 @@ function parseSeqParam(raw: string | null): number | undefined {
 }
 
 export async function GET(req: NextRequest, { params }: Params) {
+  const requestStarted = performance.now();
   const { thread_id } = await params;
+  const lookupStarted = performance.now();
   const thread = getThread(thread_id);
   if (!thread) return errorResponse(NOT_FOUND_ERRORS.THREAD, 404);
+  const lookupMs = performance.now() - lookupStarted;
 
   const url = new URL(req.url);
   const view = z.enum(["messages", "metadata"]).default("messages")
@@ -58,6 +63,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   // Resolve the agent's effective context-window size once for the whole
   // thread. The bar scales against this cap so the visual matches the
   // budget the agent applies at run time.
+  const metadataStarted = performance.now();
   const agentCfg = getAgentConfig(thread.agent_id);
   const modelCfg = agentCfg?.model_config_name ? getModelConfig(agentCfg.model_config_name) : null;
   const modelParams = modelCfg ? getModelParams(modelCfg) : null;
@@ -77,12 +83,21 @@ export async function GET(req: NextRequest, { params }: Params) {
     manual_compaction_pending: isManualCompactionRunning(thread_id),
     activity: getThreadActivity(thread_id),
   };
-  if (view.data === "metadata") return noStoreJson(metadata);
+  const metadataMs = performance.now() - metadataStarted;
+  if (view.data === "metadata") {
+    const response = noStoreJson(metadata);
+    return withServerTiming(response, [
+      { name: "thread", durationMs: lookupMs },
+      { name: "metadata", durationMs: metadataMs },
+      { name: "total", durationMs: performance.now() - requestStarted },
+    ]);
+  }
 
   // `after` is a forward-fetch shortcut: caller already has the recent
   // messages and just wants the freshly persisted ones.
   let messages: MessageRow[];
   let has_more: boolean;
+  const messagesStarted = performance.now();
   if (after !== undefined) {
     messages = await getMessagesAfterAsync(thread_id, after, limit);
     has_more = false;
@@ -91,10 +106,14 @@ export async function GET(req: NextRequest, { params }: Params) {
     messages = page.messages;
     has_more = page.has_more;
   }
+  const messagesMs = performance.now() - messagesStarted;
   const assistantIds = messages.filter((m) => m.role === "assistant").map((m) => m.msg_id);
+  const usageStarted = performance.now();
   const usageById = getMessageUsageByIds(assistantIds);
+  const usageMs = performance.now() - usageStarted;
 
-  return noStoreJson({
+  const responseStarted = performance.now();
+  const response = noStoreJson({
     ...metadata,
     // No server-side filtering: clients receive every message with its
     // `category` tag and apply the chat-panel filter toolbar on the
@@ -103,6 +122,15 @@ export async function GET(req: NextRequest, { params }: Params) {
     messages: messages.map((m) => messageToResponse(m, usageById)),
     has_more,
   });
+  const responseMs = performance.now() - responseStarted;
+  return withServerTiming(response, [
+    { name: "thread", durationMs: lookupMs },
+    { name: "metadata", durationMs: metadataMs },
+    { name: "messages", durationMs: messagesMs, description: "includes read pool startup" },
+    { name: "usage", durationMs: usageMs },
+    { name: "response", durationMs: responseMs, description: "mapping and JSON" },
+    { name: "total", durationMs: performance.now() - requestStarted },
+  ]);
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {

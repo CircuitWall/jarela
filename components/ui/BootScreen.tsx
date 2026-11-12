@@ -217,10 +217,9 @@ function useBootWarmup({ activeAgentId, pickedId, agentsLoaded, done, setDismiss
   dismissTimerRef: import("react").RefObject<NodeJS.Timeout | null>;
   setDone: import("react").Dispatch<import("react").SetStateAction<boolean>>;
 }) {
-  // Prefetch agent profile, config, thread, and recent messages BEFORE
-  // we let the chat view take over. The user stays on the boot screen
-  // and sees each step tick off, which is far better than landing on a
-  // half-rendered chat that has to fetch the same data anyway.
+  // Warm the profile, config, and thread before handing over to chat. Start
+  // the recent-message read as soon as the thread is known, but let ChatView's
+  // loading state cover that read instead of keeping the full-screen boot UI.
   useEffect(() => {
     const id = activeAgentId ?? pickedId;
     if (!id || !agentsLoaded || done) return;
@@ -252,20 +251,23 @@ function useBootWarmup({ activeAgentId, pickedId, agentsLoaded, done, setDismiss
             if (!cancelled) markStep("agent", "done");
           }),
         (async () => {
+          let threadId: string | null = null;
           try {
             if (preferredThreadId) {
               try {
-                const preferred = await api.threads.get(preferredThreadId, { startup: true });
-                if (preferred.agent_id === id) return;
+                const preferred = await api.threads.metadata(preferredThreadId);
+                if (preferred.agent_id === id) threadId = preferredThreadId;
               } catch (error) {
                 console.error("startup selected conversation warmup failed", error);
               }
             }
-            const t = await api.agents.getThread(id, { startup: true });
-            if (cancelled) return;
+            if (!threadId) {
+              const t = await api.agents.getThread(id, { startup: true });
+              threadId = t.thread_id;
+            }
+            if (cancelled || !threadId) return;
             markStep("thread", "done");
             markStep("messages", "active");
-            await api.threads.get(t.thread_id, { startup: true });
           } catch (error) {
             console.error("startup conversation warmup failed", error);
             // Errors here are non-fatal for boot — ChatView will surface
@@ -274,14 +276,18 @@ function useBootWarmup({ activeAgentId, pickedId, agentsLoaded, done, setDismiss
           } finally {
             if (!cancelled) {
               markStep("thread", "done");
-              markStep("messages", "done");
             }
+          }
+          if (!cancelled && threadId) {
+            void api.threads.get(threadId, { startup: true })
+              .catch((error: unknown) => console.error("startup messages warmup failed", error))
+              .finally(() => { if (!cancelled) markStep("messages", "done"); });
           }
         })(),
       ]);
       if (cancelled) return;
-      // Short grace period so the user actually sees the final "all
-      // done" state before the screen fades.
+      // Brief grace period so the user sees the ready state before the screen
+      // fades. Recent messages can continue loading behind ChatView's loader.
       const settleTimer = setTimeout(() => {
         if (cancelled) return;
         setDismissing(true);
