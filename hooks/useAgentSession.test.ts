@@ -5,13 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAgentSession } from "@/hooks/useAgentSession";
 
 const threadGetMock = vi.fn();
+const threadMetadataMock = vi.fn();
 const agentGetThreadMock = vi.fn();
 
 vi.mock("@/api/client", () => ({
   api: {
     threads: {
       get: (...args: unknown[]) => threadGetMock(...args),
-      metadata: (...args: unknown[]) => threadGetMock(...args),
+      metadata: (...args: unknown[]) => threadMetadataMock(...args),
     },
     agents: {
       getThread: (...args: unknown[]) => agentGetThreadMock(...args),
@@ -25,7 +26,7 @@ describe("useAgentSession contract", () => {
   });
 
   it("returns unified and compatibility fields and prefers explicit thread", async () => {
-    threadGetMock.mockResolvedValue({ agent_id: "agent-1" });
+    threadMetadataMock.mockResolvedValue({ agent_id: "agent-1" });
     agentGetThreadMock.mockResolvedValue({ thread_id: "fallback-thread" });
 
     const { result } = renderHook(() => useAgentSession("agent-1", "preferred-thread"));
@@ -36,7 +37,8 @@ describe("useAgentSession contract", () => {
     expect(result.current.loading).toBe(result.current.state.loading);
     expect(result.current.refresh).toBe(result.current.commands.refresh);
     expect(agentGetThreadMock).not.toHaveBeenCalled();
-    expect(threadGetMock).toHaveBeenCalledWith("preferred-thread", { startup: true });
+    expect(threadMetadataMock).toHaveBeenCalledWith("preferred-thread");
+    expect(threadGetMock).not.toHaveBeenCalled();
   });
 
   it("uses the startup handoff initially but keeps explicit refreshes fresh", async () => {

@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { performance } from "node:perf_hooks";
 import { z } from "zod";
 import {
   listAgentConfigs,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/stores/agent-configs";
 import { agentToResponse } from "@/lib/api/serializers";
 import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
+import { withServerTiming } from "@/lib/api/server-timing";
 import type { AgentConfigIn } from "@/api/types";
 import { toCreateAgentInput, WarmSummaryLimitSchema, UsageProfileSchema } from "./payload";
 
@@ -27,7 +29,18 @@ const CreateBody = z.looseObject({
 });
 
 export function GET() {
-  return cachedJson(listAgentConfigs().map(agentToResponse), 15, 60);
+  const requestStarted = performance.now();
+  const queryStarted = performance.now();
+  const configs = listAgentConfigs();
+  const queryMs = performance.now() - queryStarted;
+  const serializationStarted = performance.now();
+  const response = cachedJson(configs.map(agentToResponse), 15, 60);
+  const responseMs = performance.now() - serializationStarted;
+  return withServerTiming(response, [
+    { name: "sql", durationMs: queryMs, description: "agent list query" },
+    { name: "response", durationMs: responseMs, description: "mapping and JSON" },
+    { name: "total", durationMs: performance.now() - requestStarted },
+  ]);
 }
 
 export async function POST(req: NextRequest) {

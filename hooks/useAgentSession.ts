@@ -32,9 +32,10 @@ export function useAgentSession(
       // prefer it as long as it still belongs to this agent.
       if (preferredThreadId) {
         try {
-          const d = opts?.startup
-            ? await api.threads.get(preferredThreadId, { startup: true })
-            : await api.threads.metadata(preferredThreadId);
+          // Validate ownership with the lightweight metadata view. The full
+          // transcript is fetched by useThreadData and must not delay opening
+          // the selected conversation.
+          const d = await api.threads.metadata(preferredThreadId);
           if (mySeq !== requestSeqRef.current) return;
           if (d.agent_id === agentId) {
             setThreadId(preferredThreadId);
