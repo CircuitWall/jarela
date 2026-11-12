@@ -314,7 +314,7 @@ function resolveAgentConfigValues(input: UpsertAgentInput, existing: AgentConfig
         : null;
   const citationStrictness =
     input.citation_strictness === undefined
-      ? (parseCitationStrictness(existing?.citation_strictness) ?? "off")
+      ? (parseCitationStrictness(existing?.citation_strictness) ?? "standard")
       : (parseCitationStrictness(input.citation_strictness) ?? "off");
   const toolCredentials = serialiseToolCredentials(input.tool_credentials, existing?.tool_credentials ?? null);
   const routerPolicy = resolveEnumOverride(
