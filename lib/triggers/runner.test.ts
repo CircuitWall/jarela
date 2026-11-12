@@ -65,4 +65,62 @@ describe("runTriggerAgent", () => {
       { disposition: "failed", error: "Provider connection failed" },
     );
   });
+
+  it("marks an automatic stop as a system cancellation, not a user one", async () => {
+    runAgentTurnMock.mockResolvedValue({
+      assistantContent: "",
+      preview: "",
+      skippedAssistant: false,
+      usage: null,
+      aborted: true,
+      cancelActor: "system",
+      cancelDetail: "the app shut down or restarted while the run was in flight",
+    });
+
+    const outcome = await runTriggerAgent({
+      id: "task-2",
+      kind: "scheduled_task",
+      mode: "prompt",
+      agentId: "agent-1",
+      prompt: "Check status",
+    });
+
+    expect(outcome).toMatchObject({
+      status: "cancelled",
+      cancelActor: "system",
+      cancelDetail: "the app shut down or restarted while the run was in flight",
+    });
+    expect(finalizeAutomationActivityMock).toHaveBeenCalledWith("activity-1", {
+      disposition: "cancelled",
+      preview: undefined,
+      cancel_actor: "system",
+      cancel_reason: "the app shut down or restarted while the run was in flight",
+    });
+  });
+
+  it("keeps a user stop attributed to the user", async () => {
+    runAgentTurnMock.mockResolvedValue({
+      assistantContent: "",
+      preview: "",
+      skippedAssistant: false,
+      usage: null,
+      aborted: true,
+      cancelActor: "user",
+    });
+
+    const outcome = await runTriggerAgent({
+      id: "task-3",
+      kind: "watcher",
+      mode: "prompt",
+      agentId: "agent-1",
+      prompt: "Check status",
+    });
+
+    expect(outcome).toMatchObject({ status: "cancelled", cancelActor: "user" });
+    expect(finalizeAutomationActivityMock).toHaveBeenCalledWith("activity-1", {
+      disposition: "cancelled",
+      preview: undefined,
+      cancel_actor: "user",
+    });
+  });
 });

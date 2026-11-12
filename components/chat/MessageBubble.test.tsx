@@ -336,6 +336,43 @@ describe("MessageBubble automation activity", () => {
     expect(screen.getByText("The temperature changed from 18 to 22.")).toBeTruthy();
   });
 
+  it("distinguishes a system cancellation from a user stop", () => {
+    const message: Message = {
+      id: "activity-system-cancel",
+      role: "assistant",
+      content: "Inbox watcher: cancelled by the system",
+      created_at: "2026-08-16T12:34:00.000Z",
+      status: "confirmed",
+      metadata: {
+        automation_activity: {
+          version: 1,
+          source_kind: "watcher",
+          source_id: "watcher-2",
+          label: "Inbox watcher",
+          state: "complete",
+          disposition: "cancelled",
+          cancel_actor: "system",
+          cancel_reason: "the app shut down or restarted while the run was in flight",
+          occurrence_count: 1,
+          first_at: "2026-08-16T12:00:00.000Z",
+          last_at: "2026-08-16T12:34:00.000Z",
+        },
+      },
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble message={message} />
+      </AppProvider>,
+    );
+
+    const row = screen.getByRole("status");
+    expect(row.textContent).toContain("Cancelled by system");
+    expect(row.textContent).not.toContain("Stopped by user");
+    fireEvent.click(screen.getByLabelText("Show automation activity details"));
+    expect(screen.getByText("the app shut down or restarted while the run was in flight")).toBeTruthy();
+  });
+
   it("renders a centered activity row and expands available details", () => {
     const lastAt = "2026-08-16T12:34:00.000Z";
     const message: Message = {

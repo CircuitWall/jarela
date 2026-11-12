@@ -69,6 +69,14 @@ export interface TriggerOutcome {
   threadId: string;
   /** Error message when status === "error". */
   error?: string;
+  /**
+   * Present when status === "cancelled": who stopped the run. A system
+   * cancellation (app restart/shutdown, watchdog, soft reset) is not a user
+   * action and must not be reported as one.
+   */
+  cancelActor?: "user" | "system";
+  /** Human phrase for the cancellation cause, e.g. why the app restarted. */
+  cancelDetail?: string;
 }
 
 export interface TriggerHandler {

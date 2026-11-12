@@ -270,6 +270,7 @@ const AUTOMATION_ACTIVITY_STATUS = {
   needs_approval: { copy: "Needs approval", cls: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300" },
   failed: { copy: "Failed", cls: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300" },
   cancelled: { copy: "Cancelled", cls: "border-slate-500/30 bg-slate-500/10 text-slate-600 dark:text-slate-300" },
+  system_cancelled: { copy: "Cancelled by system", cls: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300" },
   expired: { copy: "Expired", cls: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300" },
   complete: { copy: "Complete", cls: "border-border/50 bg-surface-2/60 text-fg-muted" },
 } as const;
@@ -278,6 +279,11 @@ function activityStatus(activity: AutomationActivityMetadata) {
   const statusKey = activity.state === "complete"
     ? (activity.disposition ?? "complete")
     : activity.state;
+  // A cancelled run that the system stopped (restart, shutdown, soft reset)
+  // is not the user dismissing the check — keep the two visually distinct.
+  if (statusKey === "cancelled" && activity.cancel_actor === "system") {
+    return AUTOMATION_ACTIVITY_STATUS.system_cancelled;
+  }
   return AUTOMATION_ACTIVITY_STATUS[statusKey];
 }
 
@@ -288,6 +294,7 @@ function AutomationActivityRow({ activity }: { activity: AutomationActivityMetad
   const details = [
     activity.detail ? { label: "Detail", value: activity.detail } : null,
     activity.preview ? { label: "Preview", value: activity.preview } : null,
+    activity.cancel_reason ? { label: "Cancelled by", value: activity.cancel_reason } : null,
     activity.error ? { label: "Error", value: activity.error } : null,
   ].filter((item): item is { label: string; value: string } => item !== null);
   const time = new Date(activity.last_at);

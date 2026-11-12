@@ -387,6 +387,10 @@ export interface AutomationActivityMetadata {
   detail?: string;
   preview?: string;
   error?: string;
+  /** Present on a cancelled run: who stopped it (user Stop vs automatic). */
+  cancel_actor?: "user" | "system";
+  /** Human phrase for a system cancellation, e.g. why the app restarted. */
+  cancel_reason?: string;
 }
 
 export interface MessageUsage {

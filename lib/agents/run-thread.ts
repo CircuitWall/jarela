@@ -1,4 +1,5 @@
 import { streamWithConfig } from "@/lib/agents/llm";
+import type { AbortActor } from "@/lib/agents/abort-reason";
 import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 import { getConfig } from "@/lib/env/config";
 import { settleWithinBudget } from "@/lib/utils/promise";
@@ -1238,18 +1239,40 @@ export interface AssistantUsageSnapshot {
   model_config_name: string | null;
 }
 
-// Footer appended to an assistant message that was cut off by the user
-// (Stop button or steer-while-streaming). Both human readers and the LLM
-// see this on the next turn — the agent treats it as "the previous reply
-// was abandoned; the user's next message is the new direction".
+// Footer appended to an assistant message that was cut off. Both human
+// readers and the LLM see this on the next turn — the agent treats it as
+// "the previous reply was abandoned; the user's next message is the new
+// direction". The actor comes from the abort reason (see abort-reason.ts) so
+// an automatic stop (app restart, watchdog, soft reset) is not reported as
+// the user pressing Stop.
 export const INTERRUPT_MARKER = "*⏸ Interrupted by user.*";
 
-/** Append the interrupt footer to a (possibly empty) partial reply. */
-export function withInterruptMarker(partial: string): string {
+const SYSTEM_CANCEL_MARKER_PREFIX = "*⏸ Cancelled by the system";
+
+/** True when `line` is one of the cancel footers this module appends. */
+export function isCancelMarker(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed === INTERRUPT_MARKER
+    || (trimmed.startsWith(SYSTEM_CANCEL_MARKER_PREFIX) && trimmed.endsWith(".*"));
+}
+
+/** Footer text for a cancelled reply, worded for the actor that stopped it. */
+export function cancelMarker(actor: AbortActor = "user", detail?: string): string {
+  if (actor !== "system") return INTERRUPT_MARKER;
+  return `${SYSTEM_CANCEL_MARKER_PREFIX} — ${detail ?? "the run was stopped automatically"}.*`;
+}
+
+/** Append the cancel footer to a (possibly empty) partial reply. */
+export function withInterruptMarker(
+  partial: string,
+  actor: AbortActor = "user",
+  detail?: string,
+): string {
   const trimmed = partial.trim();
-  if (!trimmed) return INTERRUPT_MARKER;
-  if (trimmed.endsWith(INTERRUPT_MARKER)) return trimmed;
-  return `${trimmed}\n\n${INTERRUPT_MARKER}`;
+  if (!trimmed) return cancelMarker(actor, detail);
+  // Idempotent: never stack a second footer, whatever the actor.
+  if (isCancelMarker(trimmed.slice(trimmed.lastIndexOf("\n") + 1))) return trimmed;
+  return `${trimmed}\n\n${cancelMarker(actor, detail)}`;
 }
 
 export function persistAssistantMessage(
@@ -1275,11 +1298,12 @@ export function persistAssistantMessage(
   const trimmed = content.trim();
   let final = trimmed;
   const toolList = usedTools ? Array.from(new Set(usedTools.filter(Boolean))) : [];
-  // Skip stall + fabrication footers when the user explicitly interrupted
-  // the run — the message wasn't a model stall, it was a deliberate stop,
-  // and the interrupt marker already explains the cut to both reader and
-  // the next agent turn.
-  const wasInterrupted = trimmed.endsWith(INTERRUPT_MARKER);
+  // Skip stall + fabrication footers when the run was cancelled — the
+  // message wasn't a model stall, it was a deliberate or automatic stop, and
+  // the cancel marker already explains the cut to both reader and the next
+  // agent turn.
+  const lastLine = trimmed.slice(trimmed.lastIndexOf("\n") + 1);
+  const wasInterrupted = isCancelMarker(lastLine);
   // Stall detector: model ended its turn with a promise-shaped tail but
   // either invoked no tool, OR called only read-only tools while
   // narrating a write. Both shapes look identical to the user — a chat

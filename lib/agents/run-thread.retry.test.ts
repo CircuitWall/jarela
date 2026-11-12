@@ -143,6 +143,53 @@ describe("prepareThreadRun transient retry", () => {
     }
   });
 
+  it("keeps the watchdog's typed timeout when the backoff itself is aborted", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const prepareRetry = vi.fn(async () => ({ stream: chunks({ type: "done", data: {} }) }));
+    try {
+      const collected = collectStream(transientRetryStream(
+        chunks({ type: "error", data: { code: "rate_limited", message: "429", retry_after_ms: 60_000 } }),
+        { thread_id: "backoff-watchdog", message: "hello", signal: controller.signal },
+        1,
+        prepareRetry,
+      ));
+      await vi.advanceTimersByTimeAsync(0);
+      controller.abort("run_idle_timeout");
+      const out = await collected;
+      expect(out.errorCode).toBe("run_idle_timeout");
+      expect(out.aborted).toBeUndefined();
+      expect(prepareRetry).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("carries the abort actor when a system abort interrupts the backoff", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const prepareRetry = vi.fn(async () => ({ stream: chunks({ type: "done", data: {} }) }));
+    try {
+      const collected = collectStream(transientRetryStream(
+        chunks({ type: "error", data: { code: "rate_limited", message: "429", retry_after_ms: 60_000 } }),
+        { thread_id: "backoff-shutdown", message: "hello", signal: controller.signal },
+        1,
+        prepareRetry,
+      ));
+      await vi.advanceTimersByTimeAsync(0);
+      controller.abort("server_shutdown");
+      expect(await collected).toMatchObject({
+        terminal: "error",
+        aborted: true,
+        abortActor: "system",
+        abortReason: "server_shutdown",
+      });
+      expect(prepareRetry).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("honors a negative model verdict with no explanation instead of falling back to regex", async () => {
     upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
     upsertAgentConfig({

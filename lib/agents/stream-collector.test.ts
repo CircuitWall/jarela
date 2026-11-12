@@ -45,12 +45,23 @@ describe("collectStream", () => {
   it("flags aborted=true when error chunk carries code=aborted", async () => {
     const out = await collectStream(fromArray([
       { type: "text_delta", data: { delta: "I was about to" } },
-      { type: "error", data: { message: "Run interrupted by user.", code: "aborted" } },
+      { type: "error", data: { message: "Run interrupted by user.", code: "aborted", abort_actor: "user", abort_reason: "user_interrupted" } },
     ]));
     expect(out.terminal).toBe("error");
     expect(out.aborted).toBe(true);
     expect(out.assistantContent).toBe("I was about to");
     expect(out.errorMessage).toBe("Run interrupted by user.");
+    expect(out.abortActor).toBe("user");
+    expect(out.abortReason).toBe("user_interrupted");
+  });
+
+  it("carries a system abort actor so callers do not blame the user", async () => {
+    const out = await collectStream(fromArray([
+      { type: "error", data: { message: "Run cancelled by the system — the app restarted.", code: "aborted", abort_actor: "system", abort_reason: "server_shutdown" } },
+    ]));
+    expect(out.aborted).toBe(true);
+    expect(out.abortActor).toBe("system");
+    expect(out.abortReason).toBe("server_shutdown");
   });
 
   it.each([

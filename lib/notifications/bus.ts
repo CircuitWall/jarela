@@ -31,6 +31,10 @@ export type NotificationEvent =
       preview: string;
       error?: string;
       silent?: boolean;
+      // Set when status === "cancelled" so the UI can say whether the user
+      // stopped the run or the system did (restart, shutdown, soft reset).
+      cancel_actor?: "user" | "system";
+      cancel_reason?: string;
       ts: number;
     }
   | {

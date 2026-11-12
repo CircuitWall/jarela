@@ -104,6 +104,12 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
       status: result.aborted ? "cancelled" : result.skippedAssistant ? "skipped" : "done",
       preview: result.preview,
       threadId: thread.thread_id,
+      ...(result.aborted
+        ? {
+            cancelActor: result.cancelActor ?? "system",
+            ...(result.cancelDetail ? { cancelDetail: result.cancelDetail } : {}),
+          }
+        : {}),
     };
     finalizeAutomationActivity(activity.msg_id, {
       disposition: outcome.status === "cancelled"
@@ -112,6 +118,12 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
           ? "no_action"
           : "action",
       preview: outcome.preview || undefined,
+      ...(outcome.status === "cancelled"
+        ? {
+            cancel_actor: outcome.cancelActor ?? "system",
+            ...(outcome.cancelDetail ? { cancel_reason: outcome.cancelDetail } : {}),
+          }
+        : {}),
     });
     return outcome;
   } catch (err) {

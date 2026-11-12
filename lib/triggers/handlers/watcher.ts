@@ -321,6 +321,9 @@ export const watcherHandler: TriggerHandler = {
         preview: outcome.preview,
         error: outcome.error,
         silent,
+        ...(outcome.status === "cancelled"
+          ? { cancel_actor: outcome.cancelActor ?? "system", cancel_reason: outcome.cancelDetail }
+          : {}),
         ts: Date.now(),
       });
       return;

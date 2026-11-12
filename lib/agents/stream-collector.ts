@@ -10,6 +10,7 @@
 // `done`/`error`, and surface the terminal state. This helper unifies that.
 
 import type { StreamChunk } from "@/lib/agents/base";
+import type { AbortActor } from "@/lib/agents/abort-reason";
 import type { RouteDecisionMetadata } from "@/api/types";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
@@ -29,11 +30,16 @@ export interface CollectedRun {
   errorCode?: string;
   errorCredentialId?: string;
   errorProvider?: string;
-  // True when the run ended because the user hit Stop or steered. Distinct
+  // True when the run ended because it was cancelled (user Stop, or an
+  // automatic stop such as a restart, soft reset, or watchdog). Distinct
   // from a generic stream error so persistence can mark the partial turn
-  // with an interrupt footer instead of an error one — the next agent turn
+  // with a cancel footer instead of an error one — the next agent turn
   // reads the marker and knows the previous reply was cut, not stalled.
   aborted?: boolean;
+  // Who stopped an aborted run. Carried from the terminal error chunk's
+  // abort_actor/abort_reason fields so callers do not have to guess.
+  abortActor?: AbortActor;
+  abortReason?: string;
   // ADR-0041: provider-reported token usage + model/provider snapshot from
   // the terminal `done` chunk. Undefined when the stream errored out before
   // a usage event arrived (or the provider didn't report one).
@@ -113,13 +119,21 @@ export async function collectStream(
             code?: unknown;
             credential_id?: unknown;
             provider?: unknown;
+            abort_actor?: unknown;
+            abort_reason?: unknown;
           };
           const msg = data?.message;
           if (typeof msg === "string") result.errorMessage = msg;
           if (typeof data?.code === "string") result.errorCode = data.code;
           if (typeof data?.credential_id === "string") result.errorCredentialId = data.credential_id;
           if (typeof data?.provider === "string") result.errorProvider = data.provider;
-          if (data?.code === "aborted") result.aborted = true;
+          if (data?.code === "aborted") {
+            result.aborted = true;
+            if (data.abort_actor === "user" || data.abort_actor === "system") {
+              result.abortActor = data.abort_actor;
+            }
+            if (typeof data.abort_reason === "string") result.abortReason = data.abort_reason;
+          }
           finalizeUsedTools();
           return result;
         }
