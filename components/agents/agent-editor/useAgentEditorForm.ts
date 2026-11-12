@@ -55,7 +55,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [harnessId, setHarnessId] = useState<string>(agent?.harness_id ?? "");
   const [antiHallucMode, setAntiHallucMode] = useState<AntiHallucMode>(agent?.anti_hallucination_mode ?? "");
   const [antiHallucModel, setAntiHallucModel] = useState<string>(agent?.anti_hallucination_model_config ?? "");
-  const [citationStrictness, setCitationStrictness] = useState<CitationStrictness>(agent?.citation_strictness ?? "off");
+  const [citationStrictness, setCitationStrictness] = useState<CitationStrictness>(agent?.citation_strictness ?? "standard");
   // ADR-0043. `null` = inherit from the model; only flips to non-null when
   // the user drags a handle, so saving an unmodified agent keeps inherit.
   const [tierOverride, setTierOverride] = useState<TierOverride>(agent?.context_tier_proportions ?? null);

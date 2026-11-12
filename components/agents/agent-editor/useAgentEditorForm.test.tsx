@@ -57,6 +57,11 @@ function IconEditor() {
 }
 
 describe("agent usage profile defaults", () => {
+  it("defaults new agents to standard citation auditing", () => {
+    const { result } = renderHook(() => useAgentEditorForm(undefined));
+    expect(result.current.buildPayload().citation_strictness).toBe("standard");
+  });
+
   it("shows one persona editor with direct accessible sliders and no MBTI picker", () => {
     function Editor() {
       const form = useAgentEditorForm(undefined);

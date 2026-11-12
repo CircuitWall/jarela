@@ -3,23 +3,23 @@
 //
 // Two detection methods, picked by mode (one or the other, never both):
 //   "off"   — no detection.
-//   "regex" — fast pattern match in lib/agents/run-thread.ts (default).
-//   "model" — LLM classifier via this module. Requires a saved model
-//             config name; falls back to "regex" if missing.
+//   "regex" — fast pattern match in lib/agents/run-thread.ts (fallback).
+//   "model" — LLM classifier via this module. Uses the workspace Default
+//             model when unnamed; falls back to "regex" if none is available.
 //
 // Per-agent (lib/stores/agent-configs.ts):
 //   anti_hallucination_mode + anti_hallucination_model_config
 //   NULL on either column → inherit the env defaults below.
 //
 // Global (lib/env/schema.ts):
-//   JARELA_HALLUCINATION_DETECTOR_MODE  = off | regex | model  (default: regex)
-//   JARELA_HALLUCINATION_DETECTOR_MODEL = saved model config name
+//   JARELA_HALLUCINATION_DETECTOR_MODE  = off | regex | model  (default: model)
+//   JARELA_HALLUCINATION_DETECTOR_MODEL = optional saved model config name
 //
 // Any invocation error / parse failure / abort returns null so the call
 // site can fall back; the classifier never blocks the turn.
 
 import { getProvider } from "@/lib/providers";
-import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
+import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getConfig } from "@/lib/env/config";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { MessageRow, PersistedToolEvent } from "@/lib/stores/threads";
@@ -48,7 +48,10 @@ export function resolveDetector(agent: Pick<AgentConfigRow, "anti_hallucination_
   const env = getConfig();
   const rawMode = (agent?.anti_hallucination_mode as DetectorMode | null | undefined)
     ?? env.hallucinationDetectorMode;
-  const modelName = (agent?.anti_hallucination_model_config?.trim() || env.hallucinationDetectorModel.trim());
+  let modelName = agent?.anti_hallucination_model_config?.trim() || env.hallucinationDetectorModel.trim();
+  if (rawMode === "model" && !modelName) {
+    modelName = getDefaultModelConfig()?.name ?? "";
+  }
   if (rawMode === "model" && (!modelName || !getModelConfig(modelName))) {
     // Asked for model classifier but it's not actually configured — fall
     // back to regex so the agent still has SOME guard.

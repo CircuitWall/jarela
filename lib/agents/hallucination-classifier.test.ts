@@ -322,6 +322,17 @@ describe("resolveDetector", () => {
     expect(resolveDetector(null)).toEqual({ mode: "regex", modelConfigName: "" });
   });
 
+  it("uses the workspace Default model when model mode is inherited without a named model", () => {
+    upsertModelConfig("workspace-default-checker", "anthropic", "claude-haiku", { api_key: "sk-default" }, true);
+    try {
+      setEnv("JARELA_HALLUCINATION_DETECTOR_MODE", undefined);
+      setEnv("JARELA_HALLUCINATION_DETECTOR_MODEL", "");
+      expect(resolveDetector(null)).toEqual({ mode: "model", modelConfigName: "workspace-default-checker" });
+    } finally {
+      deleteModelConfig("workspace-default-checker");
+    }
+  });
+
   it("agent override 'off' wins over env default", () => {
     setEnv("JARELA_HALLUCINATION_DETECTOR_MODE", "regex");
     const out = resolveDetector({ anti_hallucination_mode: "off", anti_hallucination_model_config: null });

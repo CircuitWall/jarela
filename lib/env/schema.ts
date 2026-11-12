@@ -146,7 +146,7 @@ export const ENV_DEFAULTS = {
   // tool safety / policy (already in lib/env/allowlist; kept for schema completeness)
   toolSafety: "mostly_safe" as const,
   // read/write action-claim check
-  hallucinationDetectorMode: "regex" as const,
+  hallucinationDetectorMode: "model" as const,
   hallucinationDetectorModel: "",
   modelRouterMode: "off" as const,
   modelRouterPolicy: "balanced" as const,
@@ -732,7 +732,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     name: "JARELA_HALLUCINATION_DETECTOR_MODE",
     type: "enum",
     default: ENV_DEFAULTS.hallucinationDetectorMode,
-    description: "Action-claim check. 'off' = disabled. 'regex' = fast, free pattern check (default). 'model' = compare read/write claims with bounded tool and recent-turn evidence and audit citations when enabled in the same model call. These are heuristics, not proof. Regex and off do not run a model citation audit. Missing model configuration falls back to regex.",
+    description: "Action-claim check. 'off' = disabled. 'regex' = fast, free pattern check. 'model' = compare read/write claims with bounded tool and recent-turn evidence and audit citations when enabled in the same model call (default). These are heuristics, not proof. Regex and off do not run a model citation audit. Uses the enabled workspace Default model when no model name is configured; falls back to regex if none is available.",
     category: "agent",
     tier: "B",
     requiresRestart: false,
@@ -743,7 +743,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     name: "JARELA_HALLUCINATION_DETECTOR_MODEL",
     type: "string",
     default: ENV_DEFAULTS.hallucinationDetectorModel,
-    description: "Saved model config name (from Models settings) for the action-claim check. A fast/cheap model is recommended. If the check is set to 'model' but this is empty or invalid, it falls back to regex.",
+    description: "Optional saved model config name (from Models settings) for the action-claim check. A fast/cheap model is recommended. If empty, uses the enabled workspace Default model. If the check is set to 'model' but no valid model is available, it falls back to regex.",
     category: "agent",
     tier: "B",
     requiresRestart: false,

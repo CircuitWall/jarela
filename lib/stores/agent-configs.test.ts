@@ -44,6 +44,10 @@ const seedAgent = (id: string) =>
   });
 
 describe("configuration lifecycle edge cases", () => {
+  it("defaults new agents to standard citation auditing", () => {
+    expect(seedAgent("standard-citation-default").citation_strictness).toBe("standard");
+  });
+
   it("applies explicit overrides, clears inheritance and retains omitted values", () => {
     const base = { id: "synthetic-overrides", name: "Synthetic", identity: "", instructions: "", tools: [] };
     const configured = upsertAgentConfig({
