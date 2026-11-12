@@ -20,9 +20,12 @@ vi.mock("@/lib/agents/run-thread", () => ({
   prepareThreadRun: (...args: unknown[]) => prepareThreadRunMock(...args),
   persistAssistantMessage: (...args: unknown[]) => persistAssistantMessageMock(...args),
   snapshotThreadModelConfigName: (...args: unknown[]) => snapshotThreadModelConfigNameMock(...args),
-  withInterruptMarker: (partial: string) => {
+  withInterruptMarker: (partial: string, actor: "user" | "system" = "user", detail?: string) => {
     const t = partial.trim();
-    return t ? `${t}\n\n*⏸ Interrupted by user.*` : "*⏸ Interrupted by user.*";
+    const marker = actor === "system"
+      ? `*⏸ Cancelled by the system — ${detail ?? "the run was stopped automatically"}.*`
+      : "*⏸ Interrupted by user.*";
+    return t ? `${t}\n\n${marker}` : marker;
   },
 }));
 
@@ -276,6 +279,8 @@ describe("runAgentTurn", () => {
       usage: null,
       terminal: "error",
       aborted: true,
+      abortActor: "user",
+      abortReason: "user_interrupted",
     });
 
     await runAgentTurn({
@@ -331,6 +336,8 @@ describe("runAgentTurn", () => {
       usage: null,
       terminal: "error",
       aborted: true,
+      abortActor: "user",
+      abortReason: "user_interrupted",
     });
 
     await runAgentTurn({
@@ -352,6 +359,8 @@ describe("runAgentTurn", () => {
       usage: null,
       terminal: "error",
       aborted: true,
+      abortActor: "user",
+      abortReason: "user_interrupted",
     });
 
     const out = await runAgentTurn({
@@ -363,5 +372,35 @@ describe("runAgentTurn", () => {
 
     expect(persistAssistantMessageMock).toHaveBeenCalledTimes(1);
     expect(out.skippedAssistant).toBe(false);
+  });
+
+  it("records an automatic cancellation as a system stop, not a user interrupt", async () => {
+    collectStreamMock.mockResolvedValue({
+      assistantContent: "Checking the inbox",
+      usedTools: [],
+      toolEvents: [],
+      usage: null,
+      terminal: "error",
+      aborted: true,
+      abortActor: "system",
+      abortReason: "server_shutdown",
+    });
+
+    const out = await runAgentTurn({
+      thread_id: "t-system",
+      queue_source: "trigger",
+      message: "Check the inbox",
+    });
+
+    expect(out.aborted).toBe(true);
+    expect(out.cancelActor).toBe("system");
+    const persistedContent = persistAssistantMessageMock.mock.calls[0][1] as string;
+    expect(persistedContent).toContain("Checking the inbox");
+    expect(persistedContent).toContain("Cancelled by the system");
+    expect(persistedContent).not.toContain("Interrupted by user");
+    expect(persistAssistantMessageMock.mock.calls[0][11]).toMatchObject({
+      transcriptStatus: "interrupted",
+      statusReason: "Cancelled by the system — the app shut down or restarted while the run was in flight.",
+    });
   });
 });

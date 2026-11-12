@@ -22,6 +22,7 @@ import {
 } from "@/lib/agents/run-thread";
 import { broadcast, finishRun, startRun, subscribe, abortRun, pushSteering, removeSteering, drainSteering, getRun, waitForRun } from "@/lib/agents/run-registry";
 import { runAgentTurn } from "@/lib/agents/agent-turn";
+import { resolveAbortClassification } from "@/lib/agents/abort-reason";
 import { enqueueThreadRun, QueueFullError, getQueueDepth } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread, getThreadMessageBySeq, getMessageBySteeringRequestId, isValidThreadContextCursor, addMessage, updateMessageContent } from "@/lib/stores/threads";
@@ -358,7 +359,14 @@ async function collectSubmittedTurn(
       });
     }
     try {
-      persistSubmittedResult(thread_id, prepared, collected, assistantDraftState, routeDecision);
+      persistSubmittedResult(
+        thread_id,
+        prepared,
+        collected,
+        assistantDraftState,
+        routeDecision,
+        collected.aborted ? resolveAbortClassification(collected, active.abort.signal) : null,
+      );
     } catch (persistErr) {
       terminal = "error";
       const draft = assistantDraftState.current;
@@ -480,9 +488,10 @@ function persistSubmittedResult(
   collected: Awaited<ReturnType<typeof collectStream>>,
   assistantDraftState: DraftState,
   routeDecision: RouteDecisionMetadata | null,
+  cancel: ReturnType<typeof resolveAbortClassification> | null,
 ): void {
   const contentToPersist = collected.aborted
-    ? withInterruptMarker(collected.assistantContent)
+    ? withInterruptMarker(collected.assistantContent, cancel?.actor ?? "user", cancel?.detail)
     : collected.assistantContent;
   const noResponse = collected.terminal === "done"
     && !collected.aborted
@@ -493,7 +502,9 @@ function persistSubmittedResult(
     ? "interrupted"
     : collected.terminal === "done" && !noResponse ? "completed" : "failed";
   const statusReason = transcriptStatus === "interrupted"
-    ? "Stopped by user."
+    ? cancel?.actor === "system"
+      ? `Cancelled by the system — ${cancel.detail}.`
+      : "Stopped by user."
     : noResponse ? "The model completed without producing a response."
     : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null;
   const draft = assistantDraftState.current;

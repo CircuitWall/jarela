@@ -23,6 +23,8 @@ interface TaskCompleted {
   preview: string;
   error?: string;
   silent?: boolean;
+  cancel_actor?: "user" | "system";
+  cancel_reason?: string;
   ts: number;
 }
 
@@ -413,11 +415,19 @@ function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
       };
     }
     if (ev.status === "cancelled") {
-      return {
-        title: `${name} — background task cancelled`,
-        body: "The active check was stopped.",
-        kind: "info", source: "task", sourceLabel: "Scheduled task",
-      };
+      return ev.cancel_actor === "system"
+        ? {
+          title: `${name} — background task cancelled by the system`,
+          body: ev.cancel_reason
+            ? `Stopped automatically: ${ev.cancel_reason}.`
+            : "Stopped automatically before it finished.",
+          kind: "info", source: "task", sourceLabel: "Scheduled task",
+        }
+        : {
+          title: `${name} — background task cancelled`,
+          body: "The active check was stopped.",
+          kind: "info", source: "task", sourceLabel: "Scheduled task",
+        };
     }
     if (ev.status === "error") {
       return {

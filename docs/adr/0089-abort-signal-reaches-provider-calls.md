@@ -118,3 +118,36 @@ the memory-compaction fixes in ADR-0088's follow-up work. See
 fires"), and `lib/agents/run-thread.retry.test.ts` ("aborts the stalled
 attempt's own signal before starting the tool-loop retry") for the
 regression coverage this ADR's fix is backed by.
+
+## Follow-up (2026-11-12): keep the abort reason attached to the outcome
+
+Threading the signal into provider calls made automatic stops reach the same
+error path as Stop, but every abort was still reported as "Interrupted by
+user": the terminal `error` chunk hardcoded that message, transcript rows
+recorded `Stopped by user.`, and scheduled-task/watcher/bridge activity rows
+showed `Cancelled`. Evidence from a live install: the run-registry idle
+watchdog (`JARELA_RUN_IDLE_MS`, default 120s) force-finished dozens of
+automation runs at 120-135s with zero output tokens, and each was persisted
+as a user interruption. The retry wrapper compounded it — it retried the
+`run_idle_timeout` chunk, then died in backoff because the watchdog leaves
+the signal permanently aborted, replacing the typed timeout with a generic
+`aborted`.
+
+Rules now enforced:
+
+- `lib/agents/abort-reason.ts` classifies `AbortController.reason` into a
+  user abort (`user_interrupted`, `user_reset`, or a free-form reason that
+  starts with "user") versus a system abort (watchdogs, `server_shutdown`,
+  soft reset, or no reason at all). An unexplained abort is never attributed
+  to the user.
+- `inferenceFailure` and the retry wrappers emit `abort_actor` /
+  `abort_reason` on the terminal `aborted` chunk, and re-materialize the
+  watchdog's typed `run_idle_timeout` / `run_max_timeout` chunk instead of
+  degrading it to `aborted`.
+- Watchdog codes are not retried: the signal cannot recover, so the retry
+  could only overwrite the real cause.
+- Persistence mirrors the actor: the transcript footer reads
+  `Cancelled by the system — …` with a matching `status_reason`, automation
+  activity rows carry `cancel_actor` / `cancel_reason`, and the toast says
+  "cancelled by the system" instead of implying the user stopped the check.
+

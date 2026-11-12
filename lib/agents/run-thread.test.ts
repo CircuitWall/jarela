@@ -301,6 +301,14 @@ describe("withInterruptMarker", () => {
     const twice = withInterruptMarker(once);
     expect(twice).toBe(once);
   });
+
+  it("names the automatic cause when the system cancelled the run", () => {
+    const detail = "the app shut down or restarted while the run was in flight";
+    const out = withInterruptMarker("partial", "system", detail);
+    expect(out).toContain(`Cancelled by the system — ${detail}.`);
+    expect(out).not.toContain(INTERRUPT_MARKER);
+    expect(withInterruptMarker(out, "system", detail)).toBe(out);
+  });
 });
 
 describe("shouldRetryTransientError", () => {
@@ -314,6 +322,11 @@ describe("shouldRetryTransientError", () => {
     expect(shouldRetryTransientError("auth_failed", "bad key")).toBe(false);
     expect(shouldRetryTransientError("context_length_exceeded", "too long")).toBe(false);
     expect(shouldRetryTransientError("aborted", "user stopped")).toBe(false);
+  });
+
+  it("does not retry watchdog terminations, whose signal stays aborted", () => {
+    expect(shouldRetryTransientError("run_idle_timeout", "Run timed out after the provider stream stopped making progress.")).toBe(false);
+    expect(shouldRetryTransientError("run_max_timeout", "Run timed out after reaching the wall-clock limit.")).toBe(false);
   });
 
   it("falls back to message matching for unknown codes", () => {

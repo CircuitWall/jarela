@@ -127,6 +127,38 @@ describe("useEventNotifications contract", () => {
     window.removeEventListener("jarela:thread-updated", updated);
   });
 
+  it("reports a system cancellation instead of implying the user stopped the task", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource as unknown as typeof EventSource);
+    renderHook(() =>
+      useEventNotifications({
+        shouldNotify: () => true,
+        resolveAgentName: () => "Agent",
+      }),
+    );
+    const source = eventSources[0]!;
+
+    act(() => {
+      source.onmessage?.(new MessageEvent("message", {
+        data: JSON.stringify({
+          type: "task_completed",
+          task_id: "task-2",
+          thread_id: "t1",
+          agent_id: "a1",
+          status: "cancelled",
+          cancel_actor: "system",
+          cancel_reason: "the app shut down or restarted while the run was in flight",
+          preview: "",
+          ts: Date.now(),
+        }),
+      }));
+    });
+
+    await waitFor(() => expect(pushToastMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Agent — background task cancelled by the system",
+      body: "Stopped automatically: the app shut down or restarted while the run was in flight.",
+    })));
+  });
+
 });
 
 describe("useEventNotifications routing", () => {

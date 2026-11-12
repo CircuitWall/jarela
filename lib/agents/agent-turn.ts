@@ -5,6 +5,7 @@ import { createAssistantTranscriptDraft, persistAssistantDraftChunk, type Assist
 import { safeTranscriptFailureReason } from "@/api/message-content";
 import { finalizeRouteDecision } from "@/lib/agents/model-router";
 import { collectStream } from "@/lib/agents/stream-collector";
+import { resolveAbortClassification, type AbortClassification, type AbortActor } from "@/lib/agents/abort-reason";
 import { enqueueThreadRun, type QueueLane } from "@/lib/agents/run-queue";
 import { startRun, finishRun, broadcast } from "@/lib/agents/run-registry";
 import { getThread, updateMessageContent } from "@/lib/stores/threads";
@@ -100,6 +101,10 @@ export interface RunAgentTurnResult {
   skippedAssistant: boolean;
   usage: AssistantUsageSnapshot | null;
   aborted: boolean;
+  /** Who stopped the run when `aborted` is true; undefined otherwise. */
+  cancelActor?: AbortActor;
+  /** Human phrase for the automatic cause; undefined for user stops. */
+  cancelDetail?: string;
 }
 
 export class AgentTurnStreamError extends Error {
@@ -133,6 +138,7 @@ function settleCollectedTurn(
   collected: Awaited<ReturnType<typeof collectStream>>,
   assistantDraft: AssistantTranscriptDraft | null,
   startedAt: number,
+  cancel: AbortClassification | null,
 ): boolean {
   const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
     durationMs: Date.now() - startedAt,
@@ -155,7 +161,7 @@ function settleCollectedTurn(
     && (trimmed.length === 0 || NO_REPLY_RE.test(trimmed));
   if (!skipSilent && req.persist_assistant_message !== false) {
     const contentToPersist = collected.aborted
-      ? withInterruptMarker(collected.assistantContent)
+      ? withInterruptMarker(collected.assistantContent, cancel?.actor ?? "user", cancel?.detail)
       : collected.assistantContent;
     const noResponse = collected.terminal === "done"
       && !collected.aborted
@@ -165,6 +171,9 @@ function settleCollectedTurn(
     const transcriptStatus = collected.aborted
       ? "interrupted"
       : collected.terminal === "done" && !noResponse ? "completed" : "failed";
+    const cancelReason = cancel?.actor === "system"
+      ? `Cancelled by the system — ${cancel.detail}.`
+      : "Stopped by user.";
     persistAssistantMessage(
       req.thread_id,
       contentToPersist,
@@ -183,7 +192,7 @@ function settleCollectedTurn(
         draftMessageId: assistantDraft?.msg_id,
         transcriptStatus: assistantDraft ? transcriptStatus : undefined,
         statusReason: !assistantDraft ? undefined : transcriptStatus === "interrupted"
-          ? "Stopped by user."
+          ? cancelReason
           : noResponse ? "The model completed without producing a response."
           : transcriptStatus === "failed" ? safeTranscriptFailureReason(collected.errorCode) : null,
         actionCheckAccepted: collected.actionCheckAccepted,
@@ -250,7 +259,10 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
           broadcast(active, chunk);
         },
       });
-      const skipSilent = settleCollectedTurn(req, prepared, collected, assistantDraft, startedAt);
+      const cancel = collected.aborted
+        ? resolveAbortClassification(collected, active.abort.signal)
+        : null;
+      const skipSilent = settleCollectedTurn(req, prepared, collected, assistantDraft, startedAt, cancel);
       transcriptFinalized = !skipSilent || !!prepared.signal_delivery?.signals.length;
 
       terminal = collected.terminal === "error" ? "error" : "done";
@@ -259,6 +271,12 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         skippedAssistant: skipSilent,
         usage: collected.usage ?? null,
         aborted: collected.aborted === true,
+        ...(cancel
+          ? {
+              cancelActor: cancel.actor,
+              ...(cancel.actor === "system" ? { cancelDetail: cancel.detail } : {}),
+            }
+          : {}),
       };
     } catch (err) {
       terminal = "error";
@@ -305,5 +323,11 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
     preview: done.skippedAssistant
       ? ""
       : done.assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
+    ...(done.cancelActor
+      ? {
+          cancelActor: done.cancelActor,
+          ...(done.cancelDetail ? { cancelDetail: done.cancelDetail } : {}),
+        }
+      : {}),
   };
 }

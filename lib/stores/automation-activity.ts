@@ -22,6 +22,8 @@ export interface UpdateAutomationActivityInput {
   preview?: string;
   error?: string;
   detail?: string;
+  cancel_actor?: "user" | "system";
+  cancel_reason?: string;
 }
 
 export function listRecentMaterialAutomationActivities(
@@ -63,7 +65,9 @@ function activityContent(activity: AutomationActivityMetadata): string {
     case "no_action": return `${activity.label}: no action needed`;
     case "needs_approval": return `${activity.label}: needs approval`;
     case "failed": return `${activity.label}: failed`;
-    case "cancelled": return `${activity.label}: cancelled`;
+    case "cancelled": return activity.cancel_actor === "system"
+      ? `${activity.label}: cancelled by the system`
+      : `${activity.label}: cancelled`;
     case "expired": return `${activity.label}: expired`;
     default: return `${activity.label}: complete`;
   }

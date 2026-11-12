@@ -10,6 +10,7 @@ import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { buildWorkflowStepRetryNudge, collectWorkflowContractFailures, planWorkflowStepRetries, WORKFLOW_TURN_AUTO_RETRY_LIMIT, workflowProgressArgs, type WorkflowProgressObservation } from "@/lib/agents/workflow-step-retry";
 import { type ThreadRunRequest } from "@/lib/agents/prepare";
 import { classifyStall, resolveDetector, summarizeRecentActionHistory, type StallVerdict } from "@/lib/agents/hallucination-classifier";
+import { classifyAbortReason, watchdogTermination } from "@/lib/agents/abort-reason";
 import { nextPolicyForRetry } from "@/lib/agents/model-router";
 import { buildCombinedManifest, extractDeclaredReferences, mergeDeclaredReferences, type CitationVerdict, type SourceManifestEntry } from "@/lib/agents/citation-checker";
 import type { PreparedThreadRun } from "@/lib/agents/run-thread";
@@ -20,6 +21,23 @@ export { buildActionEvidenceRetryNudge } from "./retry-prompts";
 export { unwrapInvokedToolName } from "./tool-outcomes";
 
 type PrepareRetry = (request: ThreadRunRequest) => Promise<Pick<PreparedThreadRun, "stream">>;
+
+// Terminal chunk for a run that was aborted mid-retry. The registry watchdog
+// (idle / wall-clock) aborts through this path too, so keep its typed timeout
+// code instead of degrading every stop to a generic "aborted" — that is what
+// made automatic timeouts look like the user pressing Stop. Any other abort
+// carries its actor so transcript and activity rows can say who stopped it.
+function abortedRetryChunk(message: string, reason: unknown): StreamChunk {
+  const watchdog = watchdogTermination(reason);
+  if (watchdog) {
+    return { type: "error", data: { message: watchdog.message, code: watchdog.code } };
+  }
+  const cancel = classifyAbortReason(reason);
+  return {
+    type: "error",
+    data: { message, code: "aborted", abort_actor: cancel.actor, abort_reason: cancel.code },
+  };
+}
 
 function withoutPartialAudit(chunk: StreamChunk): StreamChunk {
   if (chunk.type !== "done") return chunk;
@@ -49,7 +67,10 @@ export function shouldRetryTransientError(code: string | null | undefined, messa
   if (normalized === "rate_limited" || normalized === "empty_response" || normalized === "stream_error" || normalized === "agent_error") {
     return true;
   }
-  if (normalized === "aborted" || normalized === "auth_failed" || normalized === "context_length_exceeded" || normalized === "recursion_limit" || normalized === "no_model") {
+  // Watchdog kills leave the run's AbortSignal permanently aborted, so a
+  // retry can only die in backoff — and doing so replaces the typed timeout
+  // with a generic "aborted", which reads as a user interruption.
+  if (normalized === "aborted" || normalized === "run_idle_timeout" || normalized === "run_max_timeout" || normalized === "auth_failed" || normalized === "context_length_exceeded" || normalized === "recursion_limit" || normalized === "no_model") {
     return false;
   }
   const text = (message ?? "").toLowerCase();
@@ -120,7 +141,7 @@ export async function* transientRetryStream(
     originalReq.signal?.throwIfAborted();
   } catch (error) {
     if (!originalReq.signal?.aborted) throw error;
-    yield { type: "error", data: { code: "aborted", message: "Run stopped during retry backoff." } };
+    yield abortedRetryChunk("Run stopped during retry backoff.", originalReq.signal.reason);
     return;
   }
 
@@ -506,7 +527,7 @@ export async function* stallRetryStream(
   // running a tool call in the background while the retry starts a second,
   // unrelated one.
   if (originalReq.signal?.aborted) {
-    yield { type: "error", data: { code: "aborted", message: "Run stopped before automatic correction." } };
+    yield abortedRetryChunk("Run stopped before automatic correction.", originalReq.signal.reason);
     return;
   }
   attemptAbort.abort("stall_retry");
@@ -608,7 +629,7 @@ export async function* workflowStepRetryStream(
   for (const failure of retry) nextSpent[failure.key] = (nextSpent[failure.key] ?? 0) + 1;
 
   if (originalReq.signal?.aborted) {
-    yield { type: "error", data: { code: "aborted", message: "Run stopped before workflow retry." } };
+    yield abortedRetryChunk("Run stopped before workflow retry.", originalReq.signal.reason);
     return;
   }
   attemptAbort.abort("workflow_step_retry");
