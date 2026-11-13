@@ -17,6 +17,24 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.5.3
+
+From 3.5.2 · 2026-11-13
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- feat(agents): enable the model action-claim check by default
+- fix(agents): route automatic cancellations to a system actor
+- perf(database): keep loading responsive and report timings
+
 ## 3.5.2
 
 From 3.5.1 · 2026-11-10
