@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.3] - 2026-11-13
+
+### Added
+
+- agents: Enable the model action-claim check by default
+
+### Fixed
+
+- database: Keep loading responsive and report timings
+- agents: Route automatic cancellations to a system actor
+
 ## [3.5.2] - 2026-11-10
 
 ### Added
