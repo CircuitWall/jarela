@@ -19,6 +19,9 @@ const {
   reportToolTelemetryIssueTool,
 } = await import("./tool-telemetry-issue");
 const { getFingerprint } = await import("@/lib/stores/change-tracker");
+const { setPackageAuthResolver, _clearPackageAuthResolvers } = await import(
+  "@/lib/tools/runtime/auth-registry"
+);
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -129,6 +132,19 @@ describe("report_tool_telemetry_issue", () => {
     const result = await maybeAutoFileToolTelemetryIssue(new Date("2026-08-30T00:00:00.000Z"));
 
     expect(result).toEqual({ skipped: true, reason: "github_token_missing" });
+  });
+
+  it("uses the stored GitHub credential when no token is in the environment", async () => {
+    setPackageAuthResolver("github", () => ({ token: "ghp_from_store" }));
+    try {
+      const result = await maybeAutoFileToolTelemetryIssue(new Date("2026-08-30T00:00:00.000Z"));
+
+      // Past the token gate: no telemetry recorded, so the threshold is not met.
+      expect(result.reason).not.toBe("github_token_missing");
+      expect(result.reason).toBe("threshold_not_met");
+    } finally {
+      _clearPackageAuthResolvers();
+    }
   });
 
   it("auto-files once per new telemetry fingerprint", async () => {
