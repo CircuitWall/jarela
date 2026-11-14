@@ -102,6 +102,16 @@ Built-in scripts shipped in v1:
   the watcher's label and a short preview of the diff. Optional args:
   `{ title?: string, level?: "info" | "warning" }`. Title defaults to
   the watcher label.
+* **`reaction.telemetry_issue`** — run the tool-telemetry threshold
+  check (`maybeAutoFileToolTelemetryIssue`) and file a GitHub issue in
+  CircuitWall/jarela when the recorded failure-pattern count crosses the
+  threshold bucket. Deterministic, no LLM round-trip, so it is the safe
+  backing for the daily telemetry check scheduled task. Optional args:
+  `{ failure_threshold?: number, min_failure_count?: number }`
+  (defaults 500 / 2). GitHub auth follows the ADR-0015 contract —
+  `GITHUB_TOKEN`/`GH_TOKEN` env first, then the credential saved in
+  Settings → Credentials; when neither is present it reports
+  `github_token_missing` in its preview.
 
 More reaction scripts (`reaction.append_log`,
 `reaction.write_memory`, `reaction.webhook`) are intentionally
