@@ -5239,6 +5239,18 @@
       ],
       "prompts": [],
       "tools": []
+    },
+    {
+      "version": "3.5.4",
+      "previous_version": "3.5.3",
+      "date": "2026-11-14",
+      "hints": [],
+      "commits": [
+        "build(deps): bump the npm group with 19 updates",
+        "build(deps): bump the docs group with 4 updates"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }

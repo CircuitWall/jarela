@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.4] - 2026-11-14
+
+### Changed
+
+- deps: Bump the docs group with 4 updates
+- deps: Bump the npm group with 19 updates
+
 ## [3.5.3] - 2026-11-13
 
 ### Added
