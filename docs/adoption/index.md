@@ -17,6 +17,23 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.5.4
+
+From 3.5.3 · 2026-11-14
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- build(deps): bump the npm group with 19 updates
+- build(deps): bump the docs group with 4 updates
+
 ## 3.5.3
 
 From 3.5.2 · 2026-11-13
