@@ -12,6 +12,7 @@ import {
 import { isCategoryEnabled } from "@/lib/stores/builtin-tools";
 import { getMemory, putMemory } from "@/lib/stores/memory";
 import { getFingerprint, recordSeen } from "@/lib/stores/change-tracker";
+import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import { errorMessage } from "@/lib/utils/error";
 import { truncateText } from "@/lib/utils/text";
 
@@ -86,7 +87,7 @@ export async function createToolTelemetryGitHubIssue(input: {
   body: string;
   labels?: string[];
 }) {
-  const token = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim();
+  const token = resolveGithubToken();
   if (!token) {
     return {
       ok: false,
@@ -381,7 +382,24 @@ function fingerprintIssue(title: string, body: string, tools: readonly string[])
 }
 
 function githubTokenConfigured(): boolean {
-  return Boolean(process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim());
+  return Boolean(resolveGithubToken());
+}
+
+/**
+ * ADR-0015 auth contract: `GITHUB_TOKEN`/`GH_TOKEN` env first, then the
+ * credential saved in Settings → Credentials. Reading env alone made the
+ * filer skip with `github_token_missing` on installs that authenticate
+ * GitHub through the stored credential only.
+ */
+function resolveGithubToken(): string | undefined {
+  const fromEnv = process.env.GITHUB_TOKEN?.trim() || process.env.GH_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+  const auth = resolvePackageAuth<{ token?: string }>("github");
+  if (auth && typeof auth === "object" && "token" in auth) {
+    const token = (auth as { token?: string }).token;
+    if (typeof token === "string" && token.trim()) return token.trim();
+  }
+  return undefined;
 }
 
 function parseJsonSafe(text: string): Record<string, unknown> {
