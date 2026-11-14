@@ -15,6 +15,7 @@ import { documentFastSweepHandler } from "./handlers/document-fast-sweep";
 // Side-effect imports: ensure built-in reaction scripts (ADR-0031) are
 // in the registry before the first watcher firing dispatches.
 import "./reactions/notify";
+import "./reactions/telemetry-issue";
 import type { TriggerFiring } from "./types";
 import { errorMessage } from "@/lib/utils/error";
 
