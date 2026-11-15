@@ -17,6 +17,23 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.5.5
+
+From 3.5.4 · 2026-11-15
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- feat(triggers): add a telemetry issue reaction script
+- fix(telemetry): use the stored github credential when filing
+
 ## 3.5.4
 
 From 3.5.3 · 2026-11-14

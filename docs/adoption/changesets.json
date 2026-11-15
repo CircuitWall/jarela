@@ -5251,6 +5251,18 @@
       ],
       "prompts": [],
       "tools": []
+    },
+    {
+      "version": "3.5.5",
+      "previous_version": "3.5.4",
+      "date": "2026-11-15",
+      "hints": [],
+      "commits": [
+        "feat(triggers): add a telemetry issue reaction script",
+        "fix(telemetry): use the stored github credential when filing"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }
