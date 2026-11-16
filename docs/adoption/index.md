@@ -17,6 +17,22 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.5.6
+
+From 3.5.5 · 2026-11-16
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- build(deps-dev): bump jsdom from 30.1.3 to 31.0.0
+
 ## 3.5.5
 
 From 3.5.4 · 2026-11-15
