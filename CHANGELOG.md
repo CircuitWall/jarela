@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.6] - 2026-11-16
+
+### Changed
+
+- deps-dev: Bump jsdom from 30.1.3 to 31.0.0
+
 ## [3.5.5] - 2026-11-15
 
 ### Added
