@@ -34,7 +34,10 @@ export function deleteAdvertisement(agentId: string): void {
 }
 export function invalidateAdvertisement(agentId: string): void {
   const prior = getAdvertisement(agentId);
-  if (prior) putAdvertisement({ ...prior, status: prior.enabled ? "stale" : "disabled", advertisement: null, updated_at: new Date().toISOString() });
+  if (prior) putAdvertisement({
+    ...prior, status: prior.enabled ? "stale" : "disabled", advertisement: null,
+    attempts: 0, next_retry_at: null, updated_at: new Date().toISOString(),
+  });
 }
 export function notifyAdvertisementSourceChanged(agentId: string): void {
   try {
@@ -43,9 +46,14 @@ export function notifyAdvertisementSourceChanged(agentId: string): void {
     console.warn("[advertisements] config saved but metadata invalidation failed");
   }
 }
-export function reserveAdvertisementCall(timestamp: number, limit: number): boolean {
+/**
+ * Rolling-hour call budget, per agent. A shared ledger let one agent's
+ * generation consume the budget that another agent needed after a roster-wide
+ * source change, so each agent now has its own key.
+ */
+export function reserveAdvertisementCall(agentId: string, timestamp: number, limit: number): boolean {
   return withDbTransaction(() => {
-    const key = "agent-advertisement-usage";
+    const key = `agent-advertisement-usage:${agentId}`;
     const row = getDb().prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
       .get("app-settings", key) as { value: string } | undefined;
     const prior: unknown = row ? JSON.parse(row.value) : [];

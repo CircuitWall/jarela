@@ -3,7 +3,7 @@ import { z } from "zod";
 export const ADVERTISEMENT_CONTRACT_VERSION = 2;
 export function isAdvertisementMemory(namespace: string, key: string): boolean {
   return namespace === "agent-advertisements" || (namespace === "app-settings"
-    && (key === "agent-advertisement-policy" || key === "agent-advertisement-usage"));
+    && (key === "agent-advertisement-policy" || key.startsWith("agent-advertisement-usage")));
 }
 const text = (max: number) => z.string().trim().min(1).max(max)
   .refine((value) => !/[\u0000-\u001f\u007f<>]/.test(value), "Description must be plain single-line text");
@@ -41,5 +41,9 @@ export const AdvertisementStateSchema = z.strictObject({
   updated_at: z.string(),
   error: z.string().nullable(),
   advertisement: AdvertisementSchema.nullable(),
+  // Bounded retry bookkeeping for transient generation failures. Optional so
+  // receipts written before the retry policy still parse.
+  attempts: z.number().int().min(0).max(10).optional(),
+  next_retry_at: z.string().nullable().optional(),
 });
 export type AdvertisementState = z.infer<typeof AdvertisementStateSchema>;

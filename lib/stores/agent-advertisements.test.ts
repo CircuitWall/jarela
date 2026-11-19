@@ -70,9 +70,15 @@ describe("advertisement persistence and all shared config writes", () => {
     expect(refreshAll).not.toHaveBeenCalled();
   });
   it("persists hourly reservations across reads and expires them deterministically", () => {
-    expect(reserveAdvertisementCall(10000000, 2)).toBe(true);
-    expect(reserveAdvertisementCall(10000001, 2)).toBe(true);
-    expect(reserveAdvertisementCall(10000002, 2)).toBe(false);
-    expect(reserveAdvertisementCall(13600002, 2)).toBe(true);
+    expect(reserveAdvertisementCall("specialist", 10000000, 2)).toBe(true);
+    expect(reserveAdvertisementCall("specialist", 10000001, 2)).toBe(true);
+    expect(reserveAdvertisementCall("specialist", 10000002, 2)).toBe(false);
+    expect(reserveAdvertisementCall("specialist", 13600002, 2)).toBe(true);
+  });
+  it("budgets each agent separately so one roster-wide change cannot starve the tail", () => {
+    expect(reserveAdvertisementCall("specialist", 10000000, 1)).toBe(true);
+    expect(reserveAdvertisementCall("specialist", 10000001, 1)).toBe(false);
+    expect(reserveAdvertisementCall("colleague", 10000001, 1)).toBe(true);
+    expect(reserveAdvertisementCall("colleague", 10000002, 1)).toBe(false);
   });
 });

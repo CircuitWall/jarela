@@ -15,6 +15,25 @@ import {
 import { buildAdvertisementMessages } from "./advertisement-prompt";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+// Only genuine transient faults are retried. Refusals (output_*, source_*) and
+// policy/configuration errors repeat identically, so retrying them would just
+// spend the budget; hourly_call_limit is a guard the user tripped, not a fault.
+const RETRYABLE_ERRORS = new Set([
+  "generation_failed", "generation_timeout_or_cancelled", "generation_interrupted",
+]);
+const MAX_GENERATION_ATTEMPTS = 3;
+const RETRY_BACKOFF_MS = [60_000, 5 * 60_000, 30 * 60_000];
+function retryAt(attempts: number, now = Date.now()): string | null {
+  const delay = RETRY_BACKOFF_MS[attempts - 1];
+  return delay === undefined ? null : new Date(now + delay).toISOString();
+}
+/** A failed receipt that owns budget for another automatic attempt, and is due. */
+function retryDue(state: AdvertisementState, now = Date.now()): boolean {
+  if (state.status !== "failed" || !state.error || !RETRYABLE_ERRORS.has(state.error)) return false;
+  if ((state.attempts ?? 0) >= MAX_GENERATION_ATTEMPTS) return false;
+  const due = state.next_retry_at;
+  return typeof due === "string" && Date.parse(due) <= now;
+}
 function policyFingerprint(policy: AdvertisementPolicy): string {
   const model = policy.model_config_name ? getModelConfig(policy.model_config_name) : null;
   return hash({ policy, model: model ? { provider: model.provider, model_id: model.model_id, enabled: model.enabled } : null });
@@ -100,8 +119,11 @@ export class AdvertisementService {
   async inspect(agentId: string): Promise<AdvertisementState | null> {
     if (!getAgentConfig(agentId)) return null;
     const prior = getAdvertisement(agentId);
-    if (prior || getAdvertisementPolicy().enabled) return prior;
-    return this.refresh(agentId);
+    if (!prior) return getAdvertisementPolicy().enabled ? prior : this.refresh(agentId);
+    // Reads are where a due retry happens: there is no timer, and the panel
+    // already polls while a generation is pending.
+    if (retryDue(prior)) return this.refresh(agentId);
+    return prior;
   }
   async refresh(agentId: string, force = false, suppliedCatalog?: readonly ToolCatalogEntry[]): Promise<AdvertisementState | null> {
     let agent = getAgentConfig(agentId);
@@ -114,6 +136,7 @@ export class AdvertisementService {
         version: 1, generation_id: randomUUID(), agent_id: agentId, enabled: prior?.enabled ?? true,
         status: "disabled", source_fingerprint: "", policy_fingerprint: fingerprint,
         advertisement: null, error: null, updated_at: new Date().toISOString(),
+        attempts: 0, next_retry_at: null,
       };
       this.dropQueued(agentId);
       if (prior?.status !== "disabled" || prior.policy_fingerprint !== fingerprint) putAdvertisement(disabled);
@@ -129,15 +152,22 @@ export class AdvertisementService {
     const current = snapshot(agent, catalog);
     if (!force && prior?.status === "pending" && prior.source_fingerprint === current.fingerprint
       && prior.policy_fingerprint === fingerprint && !this.claimed.has(prior.generation_id)) {
-      putAdvertisement({ ...prior, status: "failed", error: "generation_interrupted", advertisement: null });
+      const attempts = (prior.attempts ?? 0) + 1;
+      putAdvertisement({
+        ...prior, status: "failed", error: "generation_interrupted", advertisement: null,
+        attempts, next_retry_at: retryAt(attempts), updated_at: new Date().toISOString(),
+      });
       return getAdvertisement(agentId);
     }
     if (!force && prior?.source_fingerprint === current.fingerprint
-      && prior.policy_fingerprint === fingerprint && prior.status !== "stale") {
+      && prior.policy_fingerprint === fingerprint && prior.status !== "stale" && !retryDue(prior)) {
       if (prior.status === "ready") {
         try { validateAdvertisement(prior.advertisement, current.source, current.knownTools); }
         catch {
-          putAdvertisement({ ...prior, status: "failed", advertisement: null, error: "output_revalidation_refused" });
+          putAdvertisement({
+            ...prior, status: "failed", advertisement: null, error: "output_revalidation_refused",
+            attempts: 0, next_retry_at: null, updated_at: new Date().toISOString(),
+          });
           return getAdvertisement(agentId);
         }
       }
@@ -147,6 +177,7 @@ export class AdvertisementService {
       version: 1, generation_id: randomUUID(), agent_id: agentId, enabled: true,
       status: "pending", source_fingerprint: current.fingerprint, policy_fingerprint: fingerprint,
       advertisement: null, error: null, updated_at: new Date().toISOString(),
+      attempts: prior?.attempts ?? 0, next_retry_at: null,
     };
     const serialized = JSON.stringify(current.source);
     const hasCredentials = SECRET_PATTERNS.some(({ re }) => re.test(serialized))
@@ -185,7 +216,7 @@ export class AdvertisementService {
       version: 1, generation_id: "", agent_id: agentId, enabled, status: "stale",
       source_fingerprint: "", policy_fingerprint: "", advertisement: null, error: null, updated_at: new Date().toISOString(),
     };
-    putAdvertisement({ ...base, enabled, advertisement: null, status: enabled ? "stale" : "disabled", generation_id: randomUUID() });
+    putAdvertisement({ ...base, enabled, advertisement: null, status: enabled ? "stale" : "disabled", generation_id: randomUUID(), attempts: 0, next_retry_at: null });
     return this.refresh(agentId);
   }
   private drain(): void {
@@ -223,7 +254,7 @@ export class AdvertisementService {
           } catch { console.warn("[advertisements] deadline status could not be recorded"); }
         }, job.policy.timeout_ms);
         try {
-          if (!reserveAdvertisementCall(Date.now(), job.policy.max_calls_per_hour)) throw new Error("hourly_call_limit");
+          if (!reserveAdvertisementCall(agentId, Date.now(), job.policy.max_calls_per_hour)) throw new Error("hourly_call_limit");
           const output = validateAdvertisement(await this.generator(job, controller.signal), job.snapshot.source, job.snapshot.knownTools);
           if (controller.signal.aborted || this.closed) throw new Error("generation_cancelled");
           const latestCatalog = await this.catalog();
@@ -234,12 +265,21 @@ export class AdvertisementService {
             || policyFingerprint(getAdvertisementPolicy()) !== job.policyFingerprint
             || snapshot(agent, latestCatalog).fingerprint !== job.snapshot.fingerprint) continue;
           validateAdvertisement(output, job.snapshot.source, latestCatalog.map((tool) => tool.name));
-          putAdvertisement({ ...live, status: "ready", advertisement: output, error: null, updated_at: new Date().toISOString() });
+          putAdvertisement({
+            ...live, status: "ready", advertisement: output, error: null,
+            attempts: 0, next_retry_at: null, updated_at: new Date().toISOString(),
+          });
         } catch (error) {
           const live = getAdvertisement(agentId);
           if (live?.generation_id === job.id) {
             const known = error instanceof Error && /^(?:output_[a-z_]+|source_size_refused|hourly_call_limit|model_unavailable|provider_unavailable|generation_cancelled)$/.test(error.message);
-            putAdvertisement({ ...live, status: "failed", advertisement: null, error: controller.signal.aborted ? "generation_timeout_or_cancelled" : known ? (error as Error).message : "generation_failed", updated_at: new Date().toISOString() });
+            const code = controller.signal.aborted ? "generation_timeout_or_cancelled" : known ? (error as Error).message : "generation_failed";
+            const attempts = (live.attempts ?? 0) + 1;
+            putAdvertisement({
+              ...live, status: "failed", advertisement: null, error: code, attempts,
+              next_retry_at: RETRYABLE_ERRORS.has(code) ? retryAt(attempts) : null,
+              updated_at: new Date().toISOString(),
+            });
           }
           console.warn("[advertisements] generation refused or failed");
         } finally { clearTimeout(timer); this.controller = null; this.activeId = null; }

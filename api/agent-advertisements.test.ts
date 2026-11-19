@@ -75,6 +75,7 @@ describe("trusted advertisement API integration", () => {
     ["agent-advertisements", "private-agent"],
     ["app-settings", "agent-advertisement-policy"],
     ["app-settings", "agent-advertisement-usage"],
+    ["app-settings", "agent-advertisement-usage:private-agent"],
   ])("rejects generic memory mutation of owned metadata %s/%s", async (namespace, key) => {
     const params = { params: Promise.resolve({ namespace, key }) };
     expect((await memory.POST(req("POST", { namespace, key, value: {} }))).status).toBe(403);
