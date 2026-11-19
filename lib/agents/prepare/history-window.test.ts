@@ -16,12 +16,14 @@ vi.mock("@/lib/providers", () => ({
   }),
 }));
 
-// Facts tier hits recall(); addMessage hits embedOne(). Stub both inert so
-// they don't introduce noise into the warm-tier assertions below. recall is
-// a spy so individual tests can override it (e.g. to simulate a hang).
-const recallSpy = vi.fn<(query: string, k: number) => Promise<unknown[]>>(async () => []);
+// Facts tier hits searchMemory(); addMessage hits embedOne(). Stub both inert so
+// they don't introduce noise into the warm-tier assertions below. The spy
+// records the query and options so individual tests can override it (e.g. to
+// simulate a hang) and assert the scope it was called with.
+const recallSpy = vi.fn<(query: string, opts?: unknown) => Promise<unknown[]>>(async () => []);
 vi.mock("@/lib/embeddings", () => ({
-  recall: (query: string, k: number) => recallSpy(query, k),
+  recall: (query: string, _limit: number, _policy?: unknown, scope?: unknown) => recallSpy(query, scope),
+  searchMemory: (query: string, opts?: unknown) => recallSpy(query, opts),
   embed: vi.fn(async () => null),
   embedOne: vi.fn(async () => null),
   processMessageEmbeddingJobs: vi.fn(async () => 0),
@@ -678,7 +680,7 @@ describe("buildHistoryWindow warm-summary cache", () => {
         includeWarm: false,
         includeFacts: true,
       });
-      expect(recallSpy).toHaveBeenCalledWith("deployment plan", 30);
+      expect(recallSpy).toHaveBeenCalledWith("deployment plan", { limit: 30, sources: "memory", namespace: "facts" });
     } finally {
       deleteMemory("facts", "strategy-recall");
     }

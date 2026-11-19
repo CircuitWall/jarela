@@ -36,7 +36,7 @@ describe("versioned database migrations", () => {
   it("initializes a fresh database and records the baseline", () => {
     const db = database();
     runMigrations(db);
-    expect(db.prepare("SELECT id FROM jarela_migrations").all()).toEqual([{ id: "3.0.0-baseline" }]);
+    expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([{ id: "3.0.0-baseline" }, { id: "3.5.8-message-full-text" }]);
     expect(db.prepare("SELECT last_seq FROM message_seq_allocator WHERE id=1").get()).toEqual({ last_seq: 0 });
     expect(db.prepare("SELECT * FROM agent_configs").all()).toEqual([]);
   });
@@ -48,7 +48,15 @@ describe("versioned database migrations", () => {
     release.exec(releaseSchema);
     const schema = (db: DatabaseSync) => db.prepare(
       "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name != 'jarela_migrations' ORDER BY type, name",
-    ).all();
+    ).all().map((row) => ({
+      type: row.type,
+      name: row.name,
+      tbl_name: row.tbl_name,
+      // SQLite stores DDL as text; whitespace inside a definition differs by
+      // build (line endings, indentation), structure does not. Compare the
+      // normalised statement so the assertion is about schema, not formatting.
+      sql: typeof row.sql === "string" ? row.sql.replace(/\s+/g, " ").trim() : row.sql,
+    }));
     expect(schema(fresh)).toEqual(schema(release));
   });
 
@@ -62,7 +70,7 @@ describe("versioned database migrations", () => {
     expect(prepare.mock.calls.filter(([sql]) => sql === "SELECT name FROM sqlite_schema WHERE type='index'")).toHaveLength(1);
     prepare.mockRestore();
     expect(db.prepare("SELECT thread_id, agent_id FROM threads").all()).toEqual([{ thread_id: "thread", agent_id: "agent" }]);
-    expect(db.prepare("SELECT id FROM jarela_migrations").all()).toEqual([{ id: "3.0.0-baseline" }]);
+    expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([{ id: "3.0.0-baseline" }, { id: "3.5.8-message-full-text" }]);
   });
 
   it("does not rerun an applied baseline", () => {
@@ -107,7 +115,7 @@ describe("versioned database migrations", () => {
     spy.mockRestore();
     expect(db.prepare("SELECT name FROM sqlite_schema WHERE name='threads'").get()).toBeUndefined();
     runMigrations(db);
-    expect(db.prepare("SELECT id FROM jarela_migrations").all()).toEqual([{ id: "3.0.0-baseline" }]);
+    expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([{ id: "3.0.0-baseline" }, { id: "3.5.8-message-full-text" }]);
   });
 
   it("runs deferred encrypted data migration once, after the key is available", () => {
@@ -117,9 +125,9 @@ describe("versioned database migrations", () => {
     db.prepare("INSERT INTO model_configs (name, provider, model_id, params, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run("old-model", "test", "model", JSON.stringify({ api_key: "test-key", temperature: 0.5 }), "date", "date");
     runMigrations(db);
-    expect(db.prepare("SELECT id FROM jarela_migrations").all()).toHaveLength(1);
+    expect(db.prepare("SELECT id FROM jarela_migrations").all()).toHaveLength(2);
     runDeferredDataMigrations(db);
-    expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toHaveLength(3);
+    expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toHaveLength(4);
     const config = db.prepare("SELECT credential_id, params FROM model_configs WHERE name='old-model'").get();
     expect(config?.credential_id).toBe("model-test");
     expect(JSON.parse(decryptIfNeeded(String(config?.params)))).toEqual({ temperature: 0.5 });
@@ -167,9 +175,10 @@ describe("versioned database migrations", () => {
       .run("bad-model", "test", "model", "not-json", "date", "date");
     runMigrations(db);
     expect(() => runDeferredDataMigrations(db)).toThrow();
-    expect(db.prepare("SELECT id FROM jarela_migrations").all()).toEqual([
+    expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([
       { id: "3.0.0-baseline" },
       { id: "3.0.0-deferred-crypto" },
+      { id: "3.5.8-message-full-text" },
     ]);
     // The crypto migration committed independently and already encrypted
     // this row at rest, even though reshaping — which runs after it, and
@@ -194,6 +203,7 @@ describe("versioned database migrations", () => {
     expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([
       { id: "3.0.0-baseline" },
       { id: "3.0.0-deferred-crypto" },
+      { id: "3.5.8-message-full-text" },
     ]);
     expect(String(db.prepare("SELECT spec FROM mcp_servers WHERE name='good-server'").get()?.spec))
       .toMatch(/^enc:v1:/);

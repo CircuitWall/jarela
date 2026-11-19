@@ -73,6 +73,15 @@ export const BASELINE_V3_SQL = [
   "CREATE INDEX idx_tool_failure_samples_last_seen\n      ON tool_failure_samples(last_seen_at);",
   "CREATE INDEX idx_watchers_due ON watchers(enabled, next_run_at);",
   "CREATE INDEX idx_workspace_scan_cache_scanned_at ON workspace_scan_cache(scanned_at);",
+  // ADR-0119: full-text candidate generation for targeted recall. External
+  // content, so message text is not duplicated; only the first 2000 characters
+  // of completed messages are indexed (tool_events/metadata dominate row size
+  // and add nothing lexical). Drafts are excluded so the streaming path
+  // (one UPDATE per delta) never re-tokenizes.
+  "CREATE VIRTUAL TABLE messages_fts USING fts5(content, content='messages', content_rowid='rowid');",
+  "CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages\nWHEN new.transcript_status = 'completed'\nBEGIN\n  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, substr(new.content, 1, 2000));\nEND;",
+  "CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages\nWHEN old.transcript_status = 'completed'\nBEGIN\n  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.rowid, substr(old.content, 1, 2000));\nEND;",
+  "CREATE TRIGGER messages_fts_au AFTER UPDATE OF content, transcript_status ON messages\nBEGIN\n  INSERT INTO messages_fts(messages_fts, rowid, content)\n    SELECT 'delete', old.rowid, substr(old.content, 1, 2000) WHERE old.transcript_status = 'completed';\n  INSERT INTO messages_fts(rowid, content)\n    SELECT new.rowid, substr(new.content, 1, 2000) WHERE new.transcript_status = 'completed';\nEND;",
 ].join("\n");
 
 export const BASELINE_V3_COLUMNS: Readonly<Record<string, readonly string[]>> = {

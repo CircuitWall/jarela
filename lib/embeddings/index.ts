@@ -5,6 +5,7 @@ import {
   setEmbeddingVectorsSignature, type MemoryPolicy,
 } from "@/lib/stores/app-settings";
 import { getDb } from "@/lib/db";
+import { readAppRows } from "@/lib/db/read-pool";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
 import { isAdvertisementMemory } from "@/lib/agents/advertisement-contract";
 import { CHAT_ARCHIVE_NAMESPACE, parseChatArchiveKey } from "@/lib/stores/chat-archive-key";
@@ -374,6 +375,10 @@ function loadMemEmbedCache(): Map<string, CachedMemoryEmbedding> {
   return cache;
 }
 
+// Maintenance-only: the re-embedding pass genuinely needs every stored vector
+// (signature and dimension checks). Query-path recall uses
+// loadMessageCandidates() instead so process memory does not track history
+// size (ADR-0119).
 function loadMsgEmbedCache(): Map<string, CachedMessageEmbedding> {
   if (msgEmbedCache) return msgEmbedCache;
   const rows = getDb().prepare(
@@ -387,6 +392,104 @@ function loadMsgEmbedCache(): Map<string, CachedMessageEmbedding> {
   }
   msgEmbedCache = cache;
   return cache;
+}
+
+interface CandidateMessageRow {
+  msg_id: string;
+  thread_id: string;
+  role: string;
+  content: string;
+  embedding: string;
+  created_at: string;
+}
+
+function toCachedMessage(row: CandidateMessageRow): CachedMessageEmbedding | null {
+  const vec = parseEmbedding(row.embedding);
+  if (!vec) return null;
+  return {
+    msg_id: row.msg_id, thread_id: row.thread_id, role: row.role,
+    content: row.content, embedding: vec, created_at: row.created_at,
+  };
+}
+
+/** FTS5 MATCH expression from the query's meaningful tokens; null when unusable. */
+function messageFtsExpression(query: string): string | null {
+  const tokens = query.toLowerCase().split(/[^a-z0-9_]+/i)
+    .filter((token) => token.length >= 3)
+    .slice(0, 8);
+  if (tokens.length === 0) return null;
+  return tokens.map((token) => `"${token.replace(/"/g, "")}"`).join(" OR ");
+}
+
+/**
+ * Candidate messages for a recall query, read from the pool instead of being
+ * held in process memory:
+ *   - scoped: the current thread (full history) plus every thread inside the
+ *     recency window, newest first, capped
+ *   - deep: newest rows across all history, capped
+ *   - plus full-text hits from any age, so a lexical match outside the window
+ *     is still a candidate
+ *
+ * @internal exported for recall-scope tests.
+ */
+export async function loadMessageCandidates(
+  query: string,
+  scope: RecallScope,
+): Promise<CachedMessageEmbedding[]> {
+  const byId = new Map<string, CachedMessageEmbedding>();
+  const limit = scope.deep ? DEEP_MESSAGE_CANDIDATES : AUTO_MESSAGE_CANDIDATES;
+  const params: unknown[] = [];
+  let where = "embedding IS NOT NULL AND transcript_status != 'in_progress'";
+  if (!scope.deep) {
+    const since = new Date(Date.now() - RECALL_RECENT_WINDOW_MS).toISOString();
+    if (scope.threadId) {
+      where += " AND (thread_id = ? OR created_at >= ?)";
+      params.push(scope.threadId, since);
+    } else {
+      where += " AND created_at >= ?";
+      params.push(since);
+    }
+  }
+  const rows = await readAppRows<CandidateMessageRow>(
+    `SELECT msg_id, thread_id, role, content, embedding, created_at
+     FROM messages WHERE ${where} ORDER BY created_at DESC LIMIT ?`,
+    [...params, limit],
+  );
+  for (const row of rows) {
+    const cached = toCachedMessage(row);
+    if (cached) byId.set(cached.msg_id, cached);
+  }
+
+  const expression = messageFtsExpression(query);
+  if (expression) {
+    try {
+      const ftsRows = await readAppRows<CandidateMessageRow>(
+        `SELECT m.msg_id, m.thread_id, m.role, m.content, m.embedding, m.created_at
+         FROM messages_fts f JOIN messages m ON m.rowid = f.rowid
+         WHERE messages_fts MATCH ? AND m.embedding IS NOT NULL AND m.transcript_status != 'in_progress'
+         ORDER BY m.created_at DESC LIMIT ?`,
+        [expression, FTS_CANDIDATE_LIMIT],
+      );
+      for (const row of ftsRows) {
+        if (byId.has(row.msg_id)) continue;
+        const cached = toCachedMessage(row);
+        if (cached) byId.set(cached.msg_id, cached);
+      }
+    } catch (error) {
+      // A malformed expression or a pre-migration database must not break recall.
+      console.warn("[embeddings] full-text candidate pass skipped:", errorMessage(error));
+    }
+  }
+  return [...byId.values()];
+}
+
+/** Scope predicate for the keyword/literal message fallbacks. */
+function messageScopeClause(scope: RecallScope): { sql: string; params: string[] } {
+  if (scope.deep) return { sql: "", params: [] };
+  const since = new Date(Date.now() - RECALL_RECENT_WINDOW_MS).toISOString();
+  return scope.threadId
+    ? { sql: " AND (thread_id = ? OR created_at >= ?)", params: [scope.threadId, since] }
+    : { sql: " AND created_at >= ?", params: [since] };
 }
 
 // Write-through — called right after a caller persists a fresh embedding, so
@@ -453,7 +556,30 @@ export interface MemorySearchOptions {
   minSimilarity?: number;
   /** Optional separate cosine floor for chat messages. */
   minMessageSimilarity?: number;
+  /** Candidate scope for chat history. Automatic recall scopes; memory_search goes deep. */
+  scope?: RecallScope;
 }
+
+/**
+ * Candidate scope for chat-history recall. ADR-0119: the previous shape loaded
+ * every embedded message in the process and cosine-scanned it, so recall cost
+ * grew with total history and never forgot anything.
+ */
+export interface RecallScope {
+  /**
+   * Current thread. Its full history is always a candidate, so a long
+   * conversation never loses its own earlier turns to the recency window.
+   */
+  threadId?: string;
+  /** Search all history, newest first, instead of thread + recency window. */
+  deep?: boolean;
+}
+
+/** Automatic recall covers the current thread plus this recent window. */
+const RECALL_RECENT_WINDOW_MS = 30 * 24 * 60 * 60_000;
+const AUTO_MESSAGE_CANDIDATES = 2_000;
+const DEEP_MESSAGE_CANDIDATES = 5_000;
+const FTS_CANDIDATE_LIMIT = 200;
 
 const LITERAL_SCORE = 0.9;
 const LITERAL_ROW_LIMIT = 50;
@@ -494,6 +620,7 @@ function toRecalled(r: MemoryRowLike, score: number, policy: MemoryPolicy, wantM
 // still pending embedding, and (when `literal`) exact text matches.
 export async function searchMemory(query: string, opts: MemorySearchOptions = {}): Promise<RecalledMemory[]> {
   const { limit = 5, policy = getMemoryPolicy(), sources = "all", namespace, literal = false } = opts;
+  const scope: RecallScope = opts.scope ?? { deep: true };
   const minSimilarity = Math.max(0, Math.min(1, opts.minSimilarity ?? 0.25));
   const minMessageSimilarity = Math.max(0, Math.min(1, opts.minMessageSimilarity ?? minSimilarity));
   const wantMem = sources !== "messages";
@@ -503,8 +630,8 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
   const scored: RecalledMemory[] = [];
   if (qVec) void reembedStaleVectors(qVec.length);
 
-  // Reads pre-parsed vectors from the in-memory cache instead of re-querying
-  // and re-parsing every embedded row on each call.
+  // Memory entries are small and few; messages are neither, so they come from
+  // a scoped candidate query on the read pool (ADR-0119).
   if (qVec) {
     for (const r of loadMemEmbedCache().values()) {
       if (namespace && r.namespace !== namespace) continue;
@@ -513,7 +640,7 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
       if (hit) scored.push({ ...hit, match: "semantic" });
     }
     if (wantMsg) {
-      for (const r of loadMsgEmbedCache().values()) {
+      for (const r of await loadMessageCandidates(query, scope)) {
         const score = cosine(qVec, r.embedding);
         if (score <= minMessageSimilarity) continue;
         scored.push({
@@ -542,9 +669,12 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
       if (overlap > 0) scored.push({ ...probe, score: 0.26 + overlap * 0.1, match: "keyword" });
     }
     if (wantMsg) {
+      const scopeClause = messageScopeClause(scope);
       const recentMsg = db.prepare(
-        "SELECT thread_id, role, content, created_at FROM messages WHERE embedding IS NULL AND transcript_status != 'in_progress' ORDER BY created_at DESC LIMIT 50",
-      ).all() as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
+        `SELECT thread_id, role, content, created_at FROM messages
+          WHERE embedding IS NULL AND transcript_status != 'in_progress'${scopeClause.sql}
+          ORDER BY created_at DESC LIMIT 50`,
+      ).all(...scopeClause.params) as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
       for (const r of recentMsg) {
         const overlap = keywordOverlap(tokens, r.content);
         if (overlap > 0) {
@@ -571,9 +701,12 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
       }
     }
     if (wantMsg) {
+      const scopeClause = messageScopeClause(scope);
       const rows = db.prepare(
-        "SELECT thread_id, role, content, created_at FROM messages WHERE content LIKE ? ESCAPE '\\' AND transcript_status != 'in_progress' ORDER BY created_at DESC LIMIT ?",
-      ).all(like, LITERAL_ROW_LIMIT) as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
+        `SELECT thread_id, role, content, created_at FROM messages
+          WHERE content LIKE ? ESCAPE '\\' AND transcript_status != 'in_progress'${scopeClause.sql}
+          ORDER BY created_at DESC LIMIT ?`,
+      ).all(like, ...scopeClause.params, LITERAL_ROW_LIMIT) as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
       for (const r of rows) {
         scored.push({ source: "message", thread_id: r.thread_id, role: r.role, content: r.content, score: LITERAL_SCORE, created_at: r.created_at, match: "literal" });
       }
@@ -606,9 +739,18 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
     .slice(0, limit);
 }
 
-/** Proactive recall: every store, memory-policy filtered, no literal pass. */
-export function recall(query: string, limit = 5, policy: MemoryPolicy = getMemoryPolicy()): Promise<RecalledMemory[]> {
-  return searchMemory(query, { limit, policy });
+/**
+ * Proactive recall for one turn: memory policy filtered, no literal pass.
+ * Scoped to the current thread plus the recency window so the candidate set
+ * does not grow with the whole archive (ADR-0119).
+ */
+export function recall(
+  query: string,
+  limit = 5,
+  policy: MemoryPolicy = getMemoryPolicy(),
+  scope: RecallScope = {},
+): Promise<RecalledMemory[]> {
+  return searchMemory(query, { limit, policy, scope });
 }
 
 // Stored vectors from a previous embedding model silently vanish from recall:

@@ -174,9 +174,11 @@ describe("buildSystemPrompt delivery channel", () => {
     });
 
     expect(prompt).toContain("Recall limits — treat these as unknowns, never as evidence:");
-    expect(prompt).toMatch(/only ranks records that already carry an embedding/);
+    expect(prompt).toMatch(/ranks records that already carry an embedding/);
+    expect(prompt).toMatch(/this whole conversation plus the last 30 days of other conversations/);
     expect(prompt).toMatch(/empty result means 'no confident match', not 'nothing was saved'/);
     expect(prompt).toMatch(/replies still streaming \(in progress\) are excluded/);
+    expect(prompt).toMatch(/memory_search runs a deep pass over stored history/);
     // The documents advert carries its own coverage limits whenever it renders.
     if (prompt.includes("--- Indexed documents ---")) {
       expect(prompt).toMatch(/a query scores a capped window of chunks/);
