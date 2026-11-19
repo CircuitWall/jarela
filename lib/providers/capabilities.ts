@@ -58,6 +58,10 @@ const PATTERNS: Record<string, RegExp[]> = {
   // DeepSeek V4.1 Flash is multimodal (`deepseek-v4-flash` is a legacy alias for it);
   // V4 Pro and Cohere chat SKUs are text-only.
   deepseek: [/^deepseek-(?:v4-)?flash/i],
+  // Intentionally empty: Cohere runs through the LangChain bridge
+  // (@langchain/cohere), which rejects non-text content, so no Cohere model
+  // can read images today. Populate this only once a native Cohere adapter
+  // sends image parts.
   cohere: [],
   // LangChain pass-through could be anything; treat as unknown (handled
   // separately below) rather than yes/no.
