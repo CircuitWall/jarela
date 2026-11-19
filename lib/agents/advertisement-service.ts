@@ -88,6 +88,9 @@ async function generate(job: Job, signal: AbortSignal): Promise<unknown> {
 }
 export class AdvertisementService {
   private queue = new Map<string, Job>();
+  // Generation ids this service owns: queued or between admission and settlement.
+  // A concurrent refresh() must not mistake that window for interrupted work.
+  private claimed = new Set<string>();
   private work: Promise<void> | null = null;
   private controller: AbortController | null = null;
   private activeId: string | null = null;
@@ -102,7 +105,7 @@ export class AdvertisementService {
   }
   async refresh(agentId: string, force = false, suppliedCatalog?: readonly ToolCatalogEntry[]): Promise<AdvertisementState | null> {
     let agent = getAgentConfig(agentId);
-    if (!agent) { this.queue.delete(agentId); return null; }
+    if (!agent) { this.dropQueued(agentId); return null; }
     let policy = getAdvertisementPolicy();
     let fingerprint = policyFingerprint(policy);
     let prior = getAdvertisement(agentId);
@@ -112,7 +115,7 @@ export class AdvertisementService {
         status: "disabled", source_fingerprint: "", policy_fingerprint: fingerprint,
         advertisement: null, error: null, updated_at: new Date().toISOString(),
       };
-      this.queue.delete(agentId);
+      this.dropQueued(agentId);
       if (prior?.status !== "disabled" || prior.policy_fingerprint !== fingerprint) putAdvertisement(disabled);
       return getAdvertisement(agentId);
     }
@@ -125,8 +128,7 @@ export class AdvertisementService {
     if (!policy.enabled || prior?.enabled === false) return this.refresh(agentId, false, catalog);
     const current = snapshot(agent, catalog);
     if (!force && prior?.status === "pending" && prior.source_fingerprint === current.fingerprint
-      && prior.policy_fingerprint === fingerprint && prior.generation_id !== this.activeId
-      && this.queue.get(agentId)?.id !== prior.generation_id) {
+      && prior.policy_fingerprint === fingerprint && !this.claimed.has(prior.generation_id)) {
       putAdvertisement({ ...prior, status: "failed", error: "generation_interrupted", advertisement: null });
       return getAdvertisement(agentId);
     }
@@ -154,7 +156,9 @@ export class AdvertisementService {
       return getAdvertisement(agentId);
     }
     putAdvertisement(pending);
+    this.dropQueued(agentId);
     this.queue.set(agentId, { id: pending.generation_id, snapshot: current, policy, policyFingerprint: fingerprint });
+    this.claimed.add(pending.generation_id);
     this.drain();
     return getAdvertisement(agentId);
   }
@@ -195,53 +199,63 @@ export class AdvertisementService {
     while (this.queue.size && !this.closed) {
       const [agentId, job] = this.queue.entries().next().value!;
       this.queue.delete(agentId);
-      const currentCatalog = await this.catalog();
-      if (this.closed) return;
-      const state = getAdvertisement(agentId);
-      const currentAgent = getAgentConfig(agentId);
-      if (!state || state.generation_id !== job.id || !state.enabled || !currentAgent) continue;
-      if (state.status !== "pending" || policyFingerprint(getAdvertisementPolicy()) !== job.policyFingerprint
-        || snapshot(currentAgent, currentCatalog).fingerprint !== job.snapshot.fingerprint) {
-        await this.refresh(agentId, false, currentCatalog);
-        continue;
-      }
-      this.activeId = job.id;
-      this.controller = new AbortController();
-      const controller = this.controller;
-      const timer = setTimeout(() => {
-        controller.abort();
-        try {
-          const live = getAdvertisement(agentId);
-          if (live?.generation_id === job.id) putAdvertisement({
-            ...live, error: "generation_deadline_waiting_for_settlement", updated_at: new Date().toISOString(),
-          });
-        } catch { console.warn("[advertisements] deadline status could not be recorded"); }
-      }, job.policy.timeout_ms);
       try {
-        if (!reserveAdvertisementCall(Date.now(), job.policy.max_calls_per_hour)) throw new Error("hourly_call_limit");
-        const output = validateAdvertisement(await this.generator(job, controller.signal), job.snapshot.source, job.snapshot.knownTools);
-        if (controller.signal.aborted || this.closed) throw new Error("generation_cancelled");
-        const latestCatalog = await this.catalog();
-        if (controller.signal.aborted || this.closed) throw new Error("generation_cancelled");
-        const agent = getAgentConfig(agentId);
-        const live = getAdvertisement(agentId);
-        if (!agent || !live?.enabled || live.generation_id !== job.id
-          || policyFingerprint(getAdvertisementPolicy()) !== job.policyFingerprint
-          || snapshot(agent, latestCatalog).fingerprint !== job.snapshot.fingerprint) continue;
-        validateAdvertisement(output, job.snapshot.source, latestCatalog.map((tool) => tool.name));
-        putAdvertisement({ ...live, status: "ready", advertisement: output, error: null, updated_at: new Date().toISOString() });
-      } catch (error) {
-        const live = getAdvertisement(agentId);
-        if (live?.generation_id === job.id) {
-          const known = error instanceof Error && /^(?:output_[a-z_]+|source_size_refused|hourly_call_limit|model_unavailable|provider_unavailable|generation_cancelled)$/.test(error.message);
-          putAdvertisement({ ...live, status: "failed", advertisement: null, error: controller.signal.aborted ? "generation_timeout_or_cancelled" : known ? (error as Error).message : "generation_failed", updated_at: new Date().toISOString() });
+        const currentCatalog = await this.catalog();
+        if (this.closed) return;
+        const state = getAdvertisement(agentId);
+        const currentAgent = getAgentConfig(agentId);
+        if (!state || state.generation_id !== job.id || !state.enabled || !currentAgent) continue;
+        if (state.status !== "pending" || policyFingerprint(getAdvertisementPolicy()) !== job.policyFingerprint
+          || snapshot(currentAgent, currentCatalog).fingerprint !== job.snapshot.fingerprint) {
+          await this.refresh(agentId, false, currentCatalog);
+          continue;
         }
-        console.warn("[advertisements] generation refused or failed");
-      } finally { clearTimeout(timer); this.controller = null; this.activeId = null; }
+        this.activeId = job.id;
+        this.controller = new AbortController();
+        const controller = this.controller;
+        const timer = setTimeout(() => {
+          controller.abort();
+          try {
+            const live = getAdvertisement(agentId);
+            if (live?.generation_id === job.id) putAdvertisement({
+              ...live, error: "generation_deadline_waiting_for_settlement", updated_at: new Date().toISOString(),
+            });
+          } catch { console.warn("[advertisements] deadline status could not be recorded"); }
+        }, job.policy.timeout_ms);
+        try {
+          if (!reserveAdvertisementCall(Date.now(), job.policy.max_calls_per_hour)) throw new Error("hourly_call_limit");
+          const output = validateAdvertisement(await this.generator(job, controller.signal), job.snapshot.source, job.snapshot.knownTools);
+          if (controller.signal.aborted || this.closed) throw new Error("generation_cancelled");
+          const latestCatalog = await this.catalog();
+          if (controller.signal.aborted || this.closed) throw new Error("generation_cancelled");
+          const agent = getAgentConfig(agentId);
+          const live = getAdvertisement(agentId);
+          if (!agent || !live?.enabled || live.generation_id !== job.id
+            || policyFingerprint(getAdvertisementPolicy()) !== job.policyFingerprint
+            || snapshot(agent, latestCatalog).fingerprint !== job.snapshot.fingerprint) continue;
+          validateAdvertisement(output, job.snapshot.source, latestCatalog.map((tool) => tool.name));
+          putAdvertisement({ ...live, status: "ready", advertisement: output, error: null, updated_at: new Date().toISOString() });
+        } catch (error) {
+          const live = getAdvertisement(agentId);
+          if (live?.generation_id === job.id) {
+            const known = error instanceof Error && /^(?:output_[a-z_]+|source_size_refused|hourly_call_limit|model_unavailable|provider_unavailable|generation_cancelled)$/.test(error.message);
+            putAdvertisement({ ...live, status: "failed", advertisement: null, error: controller.signal.aborted ? "generation_timeout_or_cancelled" : known ? (error as Error).message : "generation_failed", updated_at: new Date().toISOString() });
+          }
+          console.warn("[advertisements] generation refused or failed");
+        } finally { clearTimeout(timer); this.controller = null; this.activeId = null; }
+      } finally {
+        this.claimed.delete(job.id);
+      }
     }
   }
   async settle(): Promise<void> { await this.work; }
-  async close(): Promise<void> { this.closed = true; this.queue.clear(); this.controller?.abort(); await this.work; }
+  async close(): Promise<void> { this.closed = true; this.queue.clear(); this.claimed.clear(); this.controller?.abort(); await this.work; }
+  private dropQueued(agentId: string): void {
+    const queued = this.queue.get(agentId);
+    if (!queued) return;
+    this.queue.delete(agentId);
+    this.claimed.delete(queued.id);
+  }
 }
 export function advertisementService(): AdvertisementService {
   return getOrCreateGlobal("__jarela_advertisement_service", () => new AdvertisementService());

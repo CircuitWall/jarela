@@ -340,6 +340,25 @@ describe("derived advertisement lifecycle", () => {
     mocks.states.set("a", { ...prior, status: "pending" });
     expect((await service.refresh("a"))?.error).toBe("generation_interrupted");
   });
+  it("keeps an in-flight generation when a concurrent refresh lands during worker admission", async () => {
+    const admission = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let loads = 0;
+    await service.close();
+    service = new AdvertisementService(generator, async () => {
+      loads += 1;
+      if (loads === 2) { admission.resolve(); await release.promise; }
+      return catalog;
+    });
+    expect((await service.refresh("a"))?.status).toBe("pending");
+    await admission.promise;
+    const concurrent = await service.refresh("a");
+    release.resolve();
+    await service.settle();
+    expect(concurrent?.status).toBe("pending");
+    expect(mocks.states.get("a")).toMatchObject({ status: "ready", error: null });
+    expect(generator).toHaveBeenCalledTimes(1);
+  });
   it("aborts but retains an uncooperative provider until settlement and never publishes late success", async () => {
     const started = Promise.withResolvers<void>();
     const released = Promise.withResolvers<void>();
