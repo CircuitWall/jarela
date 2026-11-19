@@ -9,6 +9,7 @@ import { resolveAbortClassification, type AbortClassification, type AbortActor }
 import { enqueueThreadRun, type QueueLane } from "@/lib/agents/run-queue";
 import { startRun, finishRun, broadcast } from "@/lib/agents/run-registry";
 import { getThread, updateMessageContent } from "@/lib/stores/threads";
+import { getConfig } from "@/lib/env/config";
 import { resolveTurnProfile, type TurnContextProfile } from "@/lib/agents/turn-profile";
 import type { DeliveryChannel } from "@/lib/agents/prepare/request";
 
@@ -111,19 +112,49 @@ export class AgentTurnStreamError extends Error {
   readonly code?: string;
   readonly provider?: string;
   readonly credentialId?: string;
+  // False when the run failed before producing a single text, thinking, or
+  // tool chunk. A watchdog timeout with no output is safe to retry: nothing
+  // reached the user and no tool ran. A stall after output started is not —
+  // the retry would replay work the transcript already shows.
+  readonly producedOutput: boolean;
 
   constructor(details: {
     message?: string;
     code?: string;
     provider?: string;
     credentialId?: string;
+    producedOutput?: boolean;
   }) {
     super(details.message?.trim() || "Agent stream failed");
     this.name = "AgentTurnStreamError";
     this.code = details.code;
     this.provider = details.provider;
     this.credentialId = details.credentialId;
+    this.producedOutput = details.producedOutput ?? true;
   }
+}
+
+// A watchdog kill before any output is retried for unattended turns, so a
+// transient upstream hang does not fail a scheduled job outright.
+const IDLE_TIMEOUT_RETRY_DELAY_MS = 1_000;
+
+function idleTimeoutRetryBudget(req: RunAgentTurnRequest): number {
+  // Interactive turns belong to a person who is watching the failure and can
+  // decide; one-shot extension calls must stay single-shot; delegates are
+  // already retried by their parent's budget. Everything else (scheduler,
+  // watcher, trigger, bridge) runs unattended, so spend the documented
+  // `JARELA_MAX_STALL_RETRIES` budget on a retry instead of reporting a
+  // transient provider hang as a job failure.
+  if (req.queue_source === "user" || req.queue_source === "extension" || req.queue_source === "delegate") {
+    return 1;
+  }
+  return 1 + Math.max(0, getConfig().maxStallRetries);
+}
+
+export function isRetryableIdleTimeout(err: unknown): boolean {
+  return err instanceof AgentTurnStreamError
+    && err.code === "run_idle_timeout"
+    && err.producedOutput === false;
 }
 
 /**
@@ -153,6 +184,7 @@ function settleCollectedTurn(
       code: collected.errorCode,
       provider: collected.errorProvider,
       credentialId: collected.errorCredentialId,
+      producedOutput: collected.assistantContent.trim().length > 0 || collected.toolEvents.length > 0,
     });
   }
   // Aborted silent turns still need an interruption record for the next turn.
@@ -206,107 +238,180 @@ function settleCollectedTurn(
   return skipSilent;
 }
 
+// State that must survive a retry of the same turn.
+interface TurnAttemptState {
+  threadAgentId: string | null;
+  pinnedModelConfigName: string | null;
+  contextProfile: TurnContextProfile;
+  // Assistant draft row, carried so a retry keeps streaming into the same row
+  // instead of leaving an abandoned "failed" row behind for every attempt.
+  assistantDraft: AssistantTranscriptDraft | null;
+  // Did any attempt already commit this turn's user row? A watchdog kill can
+  // land during prepare — before `persistTurnInput` writes it — so a retry
+  // must not assume the prompt is in the transcript. Bridge turns read their
+  // history back from the DB (`include_hot: true`), where a missing row means
+  // the model never sees the inbound message.
+  userMessagePersisted: boolean;
+}
+
+/**
+ * One attempt at a turn: registry slot, prepare, collect, settle.
+ *
+ * Registers in the run-registry like the HTTP route does so the idle and
+ * wall-clock watchdogs bound this execution. Without that, a hung provider
+ * stream (bad creds, dead upstream, runaway tool loop) from any non-HTTP entry
+ * point would pin the per-thread queue head indefinitely.
+ */
+async function runTurnAttempt(
+  req: RunAgentTurnRequest,
+  state: TurnAttemptState,
+  isFinalAttempt: boolean,
+  isRetry: boolean,
+): Promise<Omit<RunAgentTurnResult, "preview">> {
+  const active = startRun(req.thread_id, state.threadAgentId);
+  // The watchdog message names this phase, so "stuck building context" and
+  // "waiting on the provider" are distinguishable after the fact.
+  active.phase = "preparing";
+  active.phase_label = "Preparing context…";
+  let terminal: "done" | "error" = "error";
+  let transcriptFinalized = false;
+  try {
+    const prepared = await prepareThreadRun({
+      _system_signal_continuation: req.system_signal_continuation,
+      thread_id: req.thread_id,
+      message: req.message,
+      attachments: req.attachments,
+      user_category: req.user_category ?? null,
+      message_metadata: req.user_message_metadata ?? null,
+      history_bridge_key: req.history_bridge_key ?? null,
+      channels: req.channels,
+      delivery_channel: req.delivery_channel ?? null,
+      context_profile: state.contextProfile,
+      disable_quality_gates: req.disable_quality_gates,
+      signal: active.abort.signal,
+      _pinned_model_config_name: state.pinnedModelConfigName,
+      _skip_persist_message: req.skip_persist_user_message
+        ? true
+        : req.persist_user_message === false
+          ? true
+          : undefined,
+      _user_message_persisted: isRetry && state.userMessagePersisted ? true : undefined,
+      _history_append_message: req.history_append_message,
+      _onTranscriptUserPersisted: () => {
+        state.userMessagePersisted = true;
+        if (!state.assistantDraft && !req.silent && req.persist_assistant_message !== false) {
+          state.assistantDraft = createAssistantTranscriptDraft(req.thread_id);
+        }
+      },
+    });
+
+    if (!req.silent && req.persist_assistant_message !== false && !state.assistantDraft) {
+      state.assistantDraft = createAssistantTranscriptDraft(req.thread_id);
+    }
+
+    const startedAt = Date.now();
+    // Context is built and the provider call is about to start: from here on,
+    // stream silence is the provider's, not ours.
+    active.phase = "thinking";
+    active.phase_label = "Waiting for the model…";
+    const collected = await collectStream(prepared.stream, {
+      onChunk: (chunk) => {
+        if (state.assistantDraft) persistAssistantDraftChunk(state.assistantDraft, chunk);
+        broadcast(active, chunk);
+      },
+    });
+    const cancel = collected.aborted
+      ? resolveAbortClassification(collected, active.abort.signal)
+      : null;
+    const skipSilent = settleCollectedTurn(req, prepared, collected, state.assistantDraft, startedAt, cancel);
+    transcriptFinalized = !skipSilent || !!prepared.signal_delivery?.signals.length;
+
+    terminal = collected.terminal === "error" ? "error" : "done";
+    return {
+      assistantContent: collected.assistantContent,
+      skippedAssistant: skipSilent,
+      usage: collected.usage ?? null,
+      aborted: collected.aborted === true,
+      ...(cancel
+        ? {
+            cancelActor: cancel.actor,
+            ...(cancel.actor === "system" ? { cancelDetail: cancel.detail } : {}),
+          }
+        : {}),
+    };
+  } catch (err) {
+    terminal = "error";
+    // A retryable watchdog kill is not a terminal outcome: leave the draft row
+    // open so the retry can keep writing into it.
+    const willRetry = !isFinalAttempt && isRetryableIdleTimeout(err);
+    if (!willRetry && !transcriptFinalized && (
+      state.assistantDraft || (!req.silent && req.persist_assistant_message !== false)
+    )) {
+      const reason = safeTranscriptFailureReason(err instanceof AgentTurnStreamError ? err.code : undefined);
+      try {
+        if (state.assistantDraft) {
+          updateMessageContent(state.assistantDraft.msg_id, state.assistantDraft.visibleContent, {
+            category: state.assistantDraft.visibleContent ? null : "run_error",
+            transcriptStatus: "failed",
+            statusReason: reason,
+          });
+        } else {
+          persistAssistantMessage(req.thread_id, "", undefined, undefined, "run_error", undefined, undefined, undefined, undefined, {
+            kind: "run_error",
+            code: err instanceof AgentTurnStreamError ? err.code : "run_crashed",
+          }, undefined, {
+            transcriptStatus: "failed",
+            statusReason: reason,
+          });
+        }
+      } catch (persistError) {
+        console.error("[agent-turn] failed to persist terminal transcript status", persistError);
+      }
+    }
+    throw err;
+  } finally {
+    finishRun(active, terminal);
+  }
+}
+
 export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTurnResult> {
-  const pinnedModelConfigName = snapshotThreadModelConfigName(req.thread_id);
-  const contextProfile = resolveTurnProfile(req.queue_source, req.context_profile_override);
-  const thread = getThread(req.thread_id);
+  const state: TurnAttemptState = {
+    threadAgentId: getThread(req.thread_id)?.agent_id ?? null,
+    pinnedModelConfigName: snapshotThreadModelConfigName(req.thread_id),
+    contextProfile: resolveTurnProfile(req.queue_source, req.context_profile_override),
+    assistantDraft: null,
+    userMessagePersisted: false,
+  };
   const enqueued = enqueueThreadRun(req.thread_id, req.queue_source, async () => {
     req.on_queue_state?.("running");
-    // Register in the run-registry like the HTTP route does so the idle
-    // and wall-clock watchdogs bound this execution. Without this, a
-    // hung provider stream (bad creds, dead upstream, runaway tool loop)
-    // from any non-HTTP entry point would pin the per-thread queue head
-    // indefinitely. Lives inside the queued callback so registry slots
-    // serialise with the queue.
-    const active = startRun(req.thread_id, thread?.agent_id ?? null);
-    let terminal: "done" | "error" = "error";
-    let assistantDraft: AssistantTranscriptDraft | null = null;
-    let transcriptFinalized = false;
-    try {
-      const prepared = await prepareThreadRun({
-        _system_signal_continuation: req.system_signal_continuation,
-        thread_id: req.thread_id,
-        message: req.message,
-        attachments: req.attachments,
-        user_category: req.user_category ?? null,
-        message_metadata: req.user_message_metadata ?? null,
-        history_bridge_key: req.history_bridge_key ?? null,
-        channels: req.channels,
-        delivery_channel: req.delivery_channel ?? null,
-        context_profile: contextProfile,
-        disable_quality_gates: req.disable_quality_gates,
-        signal: active.abort.signal,
-        _pinned_model_config_name: pinnedModelConfigName,
-        _skip_persist_message: req.skip_persist_user_message
-          ? true
-          : req.persist_user_message === false
-            ? true
-            : undefined,
-        _history_append_message: req.history_append_message,
-        _onTranscriptUserPersisted: req.silent || req.persist_assistant_message === false ? undefined : () => {
-          assistantDraft = createAssistantTranscriptDraft(req.thread_id);
-        },
-      });
-
-      if (!req.silent && req.persist_assistant_message !== false && !assistantDraft) {
-        assistantDraft = createAssistantTranscriptDraft(req.thread_id);
-      }
-
-      const startedAt = Date.now();
-      const collected = await collectStream(prepared.stream, {
-        onChunk: (chunk) => {
-          if (assistantDraft) persistAssistantDraftChunk(assistantDraft, chunk);
-          broadcast(active, chunk);
-        },
-      });
-      const cancel = collected.aborted
-        ? resolveAbortClassification(collected, active.abort.signal)
-        : null;
-      const skipSilent = settleCollectedTurn(req, prepared, collected, assistantDraft, startedAt, cancel);
-      transcriptFinalized = !skipSilent || !!prepared.signal_delivery?.signals.length;
-
-      terminal = collected.terminal === "error" ? "error" : "done";
-      return {
-        assistantContent: collected.assistantContent,
-        skippedAssistant: skipSilent,
-        usage: collected.usage ?? null,
-        aborted: collected.aborted === true,
-        ...(cancel
-          ? {
-              cancelActor: cancel.actor,
-              ...(cancel.actor === "system" ? { cancelDetail: cancel.detail } : {}),
-            }
-          : {}),
-      };
-    } catch (err) {
-      terminal = "error";
-      if (!transcriptFinalized && (
-        assistantDraft || (!req.silent && req.persist_assistant_message !== false)
-      )) {
-        const reason = safeTranscriptFailureReason(err instanceof AgentTurnStreamError ? err.code : undefined);
-        try {
-          if (assistantDraft) {
-            updateMessageContent(assistantDraft.msg_id, assistantDraft.visibleContent, {
-              category: assistantDraft.visibleContent ? null : "run_error",
-              transcriptStatus: "failed",
-              statusReason: reason,
-            });
-          } else {
-            persistAssistantMessage(req.thread_id, "", undefined, undefined, "run_error", undefined, undefined, undefined, undefined, {
-              kind: "run_error",
-              code: err instanceof AgentTurnStreamError ? err.code : "run_crashed",
-            }, undefined, {
-              transcriptStatus: "failed",
-              statusReason: reason,
-            });
-          }
-        } catch (persistError) {
-          console.error("[agent-turn] failed to persist terminal transcript status", persistError);
+    const maxAttempts = idleTimeoutRetryBudget(req);
+    for (let attempt = 1; ; attempt += 1) {
+      const isFinalAttempt = attempt >= maxAttempts;
+      try {
+        return await runTurnAttempt(req, state, isFinalAttempt, attempt > 1);
+      } catch (err) {
+        if (!isFinalAttempt && isRetryableIdleTimeout(err)) {
+          console.warn(
+            `[agent-turn] ${req.queue_source} run for thread ${req.thread_id} was killed by the idle watchdog ` +
+              `before producing any output; retrying (attempt ${attempt + 1}/${maxAttempts})`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, IDLE_TIMEOUT_RETRY_DELAY_MS));
+          continue;
         }
+        if (attempt > 1 && isRetryableIdleTimeout(err)) {
+          // Say so in the persisted failure: one hang is a blip, a repeat on a
+          // fresh provider call means the request/model itself is the problem.
+          const timeout = err as AgentTurnStreamError;
+          throw new AgentTurnStreamError({
+            message: `${timeout.message} Automatic retry (${attempt - 1} extra attempt(s)) did not help.`,
+            code: timeout.code,
+            provider: timeout.provider,
+            credentialId: timeout.credentialId,
+            producedOutput: timeout.producedOutput,
+          });
+        }
+        throw err;
       }
-      throw err;
-    } finally {
-      finishRun(active, terminal);
     }
   }, {
     lane: req.queue_lane,

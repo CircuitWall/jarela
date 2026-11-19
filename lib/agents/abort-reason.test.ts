@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { classifyAbortReason, resolveAbortClassification } from "./abort-reason";
+import {
+  classifyAbortReason,
+  encodeWatchdogReason,
+  resolveAbortClassification,
+  watchdogTermination,
+} from "./abort-reason";
 
 describe("classifyAbortReason", () => {
   it("attributes the Stop-button reason to the user", () => {
@@ -30,6 +35,63 @@ describe("classifyAbortReason", () => {
     expect(out.actor).toBe("system");
     expect(out.code).toHaveLength(80);
     expect(out.detail).toContain("stopped automatically");
+  });
+});
+
+describe("watchdogTermination", () => {
+  it("carries the watchdog's diagnostic into the persisted message", () => {
+    const reason = encodeWatchdogReason("run_idle_timeout", {
+      idleMs: 120_400,
+      idleLimitMs: 120_000,
+      phase: "starting",
+      producedOutput: false,
+      model: "deepseek/deepseek-v4-flash",
+    });
+
+    const out = watchdogTermination(reason);
+
+    expect(out?.code).toBe("run_idle_timeout");
+    expect(out?.message).toContain("120s of silence");
+    expect(out?.message).toContain("never sent its first token");
+    expect(out?.message).toContain("deepseek/deepseek-v4-flash");
+    expect(out?.message).toContain("JARELA_RUN_IDLE_MS (currently 120s)");
+    expect(out?.detail.producedOutput).toBe(false);
+  });
+
+  it("distinguishes a mid-reply stall from a first-token stall", () => {
+    const out = watchdogTermination(encodeWatchdogReason("run_idle_timeout", {
+      idleMs: 121_000,
+      producedOutput: true,
+    }));
+    expect(out?.message).toContain("121s of silence");
+    expect(out?.message).not.toContain("never sent its first token");
+  });
+
+  it("still maps a bare watchdog code", () => {
+    expect(watchdogTermination("run_idle_timeout")?.code).toBe("run_idle_timeout");
+    expect(watchdogTermination("run_watchdog_timeout")?.code).toBe("run_max_timeout");
+    expect(watchdogTermination("server_shutdown")).toBeNull();
+  });
+
+  it("merges detail the aborting layer could not know", () => {
+    const reason = encodeWatchdogReason("run_idle_timeout", { idleMs: 120_000 });
+    const out = watchdogTermination(reason, { model: "deepseek/deepseek-v4-pro" });
+    expect(out?.detail.idleMs).toBe(120_000);
+    expect(out?.message).toContain("deepseek/deepseek-v4-pro");
+  });
+
+  it("survives a malformed detail suffix", () => {
+    const out = watchdogTermination("run_idle_timeout|{not-json");
+    expect(out?.code).toBe("run_idle_timeout");
+    expect(out?.detail).toEqual({});
+  });
+
+  it("classifies an encoded watchdog reason as a system stop", () => {
+    const reason = encodeWatchdogReason("run_idle_timeout", { idleMs: 1_000 });
+    const out = classifyAbortReason(reason);
+    expect(out.actor).toBe("system");
+    expect(out.code).toBe("run_idle_timeout");
+    expect(out.detail).toContain("stopped making progress");
   });
 });
 

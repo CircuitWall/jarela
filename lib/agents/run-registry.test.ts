@@ -199,6 +199,48 @@ describe("run-registry watchdog", () => {
     }
   });
 
+  // The watchdog's diagnostic must reach the provider stream, because that is
+  // where the terminal error message is composed and persisted (scheduled
+  // task last_error, automation activity, transcript failure reason).
+  it("idle watchdog reports why it fired on the abort reason", () => {
+    const prev = process.env.JARELA_RUN_IDLE_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    try {
+      const tid = `t-idle-reason-${Date.now()}`;
+      const run = startRun(tid, null);
+      vi.advanceTimersByTime(5_000 + 10);
+
+      const reason = String(run.abort.signal.reason);
+      expect(reason.startsWith("run_idle_timeout|")).toBe(true);
+      expect(JSON.parse(reason.slice(reason.indexOf("|") + 1))).toMatchObject({
+        phase: "starting",
+        producedOutput: false,
+      });
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prev;
+    }
+  });
+
+  it("idle watchdog records that output had started when the run stalled mid-reply", () => {
+    const prev = process.env.JARELA_RUN_IDLE_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    try {
+      const tid = `t-idle-reason-output-${Date.now()}`;
+      const run = startRun(tid, null);
+      broadcast(run, delta("Half an ans"));
+      vi.advanceTimersByTime(5_000 + 10);
+
+      const reason = String(run.abort.signal.reason);
+      expect(JSON.parse(reason.slice(reason.indexOf("|") + 1))).toMatchObject({
+        producedOutput: true,
+      });
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prev;
+    }
+  });
+
   // Regression for the user-reported "hanging" symptom: model went silent
   // mid-turn, watchdog fired at 90s, but the watchdog's error never
   // reached the client because broadcast()'s status guard dropped any

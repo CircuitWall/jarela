@@ -51,44 +51,46 @@ vi.mock("@/lib/stores/threads", () => ({
 
 const { runAgentTurn } = await import("./agent-turn");
 
-describe("runAgentTurn", () => {
-  beforeEach(() => {
-    enqueueThreadRunMock.mockReset();
-    prepareThreadRunMock.mockReset();
-    collectStreamMock.mockReset();
-    persistAssistantMessageMock.mockReset();
-    snapshotThreadModelConfigNameMock.mockReset();
-    startRunMock.mockReset();
-    finishRunMock.mockReset();
-    broadcastMock.mockReset();
-    getThreadMock.mockReset();
-    addMessageMock.mockReset();
-    updateMessageContentMock.mockReset();
+function resetAgentTurnMocks(): void {
+  enqueueThreadRunMock.mockReset();
+  prepareThreadRunMock.mockReset();
+  collectStreamMock.mockReset();
+  persistAssistantMessageMock.mockReset();
+  snapshotThreadModelConfigNameMock.mockReset();
+  startRunMock.mockReset();
+  finishRunMock.mockReset();
+  broadcastMock.mockReset();
+  getThreadMock.mockReset();
+  addMessageMock.mockReset();
+  updateMessageContentMock.mockReset();
 
-    enqueueThreadRunMock.mockImplementation((thread_id: string, _source: string, runner: () => Promise<unknown>) => ({
-      position: 0,
-      result: runner(),
-      thread_id,
-    }));
+  enqueueThreadRunMock.mockImplementation((thread_id: string, _source: string, runner: () => Promise<unknown>) => ({
+    position: 0,
+    result: runner(),
+    thread_id,
+  }));
 
-    prepareThreadRunMock.mockResolvedValue({
-      stream: {},
-      context_snapshot: null,
-      source_manifest: null,
-    });
-    snapshotThreadModelConfigNameMock.mockReturnValue("Gemini Chat");
-    startRunMock.mockImplementation((thread_id: string, agent_id: string | null) => ({
-      thread_id,
-      agent_id,
-      abort: new AbortController(),
-    }));
-    getThreadMock.mockReturnValue({ thread_id: "t-1", agent_id: "agent-x" });
-    addMessageMock.mockImplementation((_threadId: string, _role: string, content: string) => ({
-      msg_id: "assistant-draft",
-      seq: 2,
-      content,
-    }));
+  prepareThreadRunMock.mockResolvedValue({
+    stream: {},
+    context_snapshot: null,
+    source_manifest: null,
   });
+  snapshotThreadModelConfigNameMock.mockReturnValue("Gemini Chat");
+  startRunMock.mockImplementation((thread_id: string, agent_id: string | null) => ({
+    thread_id,
+    agent_id,
+    abort: new AbortController(),
+  }));
+  getThreadMock.mockReturnValue({ thread_id: "t-1", agent_id: "agent-x" });
+  addMessageMock.mockImplementation((_threadId: string, _role: string, content: string) => ({
+    msg_id: "assistant-draft",
+    seq: 2,
+    content,
+  }));
+}
+
+describe("runAgentTurn", () => {
+  beforeEach(resetAgentTurnMocks);
 
   it("queues, prepares, collects, and persists by default", async () => {
     collectStreamMock.mockResolvedValue({
@@ -402,5 +404,117 @@ describe("runAgentTurn", () => {
       transcriptStatus: "interrupted",
       statusReason: "Cancelled by the system — the app shut down or restarted while the run was in flight.",
     });
+  });
+});
+
+describe("runAgentTurn idle-timeout retry", () => {
+  beforeEach(resetAgentTurnMocks);
+
+  const idleTimeout = {
+    assistantContent: "",
+    usedTools: [],
+    toolEvents: [],
+    usage: null,
+    terminal: "error",
+    errorMessage: "Run timed out after the provider stream stopped making progress.",
+    errorCode: "run_idle_timeout",
+  };
+
+  it("retries an unattended turn the watchdog killed before any output", async () => {
+    // Attempt 1 gets far enough to persist the prompt, then stalls.
+    prepareThreadRunMock.mockImplementation(async (arg: { _onTranscriptUserPersisted?: () => void }) => {
+      arg._onTranscriptUserPersisted?.();
+      return { stream: {}, context_snapshot: null, source_manifest: null };
+    });
+    collectStreamMock
+      .mockResolvedValueOnce(idleTimeout)
+      .mockResolvedValueOnce({
+        assistantContent: "Second attempt answered",
+        usedTools: [],
+        toolEvents: [],
+        usage: null,
+      });
+
+    const out = await runAgentTurn({
+      thread_id: "t-idle-retry",
+      queue_source: "trigger",
+      message: "Check the inbox",
+    });
+
+    expect(out.assistantContent).toBe("Second attempt answered");
+    expect(startRunMock).toHaveBeenCalledTimes(2);
+    expect(finishRunMock).toHaveBeenCalledTimes(2);
+    // The prompt row is already committed; the retry must not duplicate it.
+    const retryArgs = prepareThreadRunMock.mock.calls[1][0] as Record<string, unknown>;
+    expect(retryArgs._user_message_persisted).toBe(true);
+    expect(retryArgs._skip_persist_message).toBeUndefined();
+    // The abandoned attempt must not leave a "failed" transcript row behind.
+    expect(updateMessageContentMock).not.toHaveBeenCalled();
+  });
+
+  it("persists the prompt on retry when the first attempt died before doing so", async () => {
+    // The watchdog can fire during context assembly, before the user row is
+    // written. A retry that skipped the persist would leave the model without
+    // the inbound message (bridges read their history back from the DB).
+    collectStreamMock
+      .mockResolvedValueOnce(idleTimeout)
+      .mockResolvedValueOnce({
+        assistantContent: "Answered on the retry",
+        usedTools: [],
+        toolEvents: [],
+        usage: null,
+      });
+
+    await runAgentTurn({
+      thread_id: "t-idle-unpersisted",
+      queue_source: "bridge",
+      message: "Ping",
+    });
+
+    const retryArgs = prepareThreadRunMock.mock.calls[1][0] as Record<string, unknown>;
+    expect(retryArgs._user_message_persisted).toBeUndefined();
+    expect(retryArgs._skip_persist_message).toBeUndefined();
+  });
+
+  it("does not retry an interactive turn", async () => {
+    collectStreamMock.mockResolvedValue(idleTimeout);
+
+    await expect(runAgentTurn({
+      thread_id: "t-idle-user",
+      queue_source: "user",
+      message: "Summarise this",
+    })).rejects.toMatchObject({ code: "run_idle_timeout" });
+
+    expect(startRunMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry once output has started", async () => {
+    collectStreamMock.mockImplementation(async (_stream: unknown, options: { onChunk?: (chunk: unknown) => void }) => {
+      options.onChunk?.({ type: "text_delta", data: { delta: "Partial reply" } });
+      return { ...idleTimeout, assistantContent: "Partial reply" };
+    });
+
+    await expect(runAgentTurn({
+      thread_id: "t-idle-partial",
+      queue_source: "trigger",
+      message: "Check the inbox",
+    })).rejects.toMatchObject({ code: "run_idle_timeout" });
+
+    expect(startRunMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports that the automatic retry did not help", async () => {
+    collectStreamMock.mockResolvedValue(idleTimeout);
+
+    await expect(runAgentTurn({
+      thread_id: "t-idle-twice",
+      queue_source: "trigger",
+      message: "Check the inbox",
+    })).rejects.toMatchObject({
+      code: "run_idle_timeout",
+      message: expect.stringContaining("Automatic retry (1 extra attempt(s)) did not help."),
+    });
+
+    expect(startRunMock).toHaveBeenCalledTimes(2);
   });
 });
