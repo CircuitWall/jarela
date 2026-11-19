@@ -15,13 +15,9 @@ import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import type { DocumentSourceStats } from "@/api/document-sources";
 
 const SOURCE_STATS_QUERY = `
-  SELECT s.id AS source_id,
-         COUNT(DISTINCT d.id) AS document_count,
-         COUNT(c.id) AS chunk_count,
-         COUNT(c.embedding) AS embedded_chunk_count
+  SELECT s.id AS source_id, COUNT(d.id) AS document_count
   FROM document_sources s
   LEFT JOIN documents d ON d.source_id = s.id
-  LEFT JOIN document_chunks c ON c.document_id = d.id
   GROUP BY s.id`;
 
 // Counting a real corpus reads every embedding column: ~3.4s on a 244k-chunk
@@ -44,14 +40,12 @@ function snapshot(): StatsSnapshot {
 }
 
 function emptyStats(sourceId: string): DocumentSourceStats {
-  return { source_id: sourceId, document_count: 0, chunk_count: 0, embedded_chunk_count: 0 };
+  return { source_id: sourceId, document_count: 0 };
 }
 
 interface StatsRow {
   source_id: string;
   document_count: number;
-  chunk_count: number;
-  embedded_chunk_count: number;
 }
 
 /**
@@ -69,8 +63,6 @@ export function refreshDocumentSourceStats(): Promise<void> {
         next.set(row.source_id, {
           source_id: row.source_id,
           document_count: Number(row.document_count) || 0,
-          chunk_count: Number(row.chunk_count) || 0,
-          embedded_chunk_count: Number(row.embedded_chunk_count) || 0,
         });
       }
       state.by_source = next;

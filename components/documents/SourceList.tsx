@@ -86,15 +86,8 @@ function SourceRow({ source: s, busy, onReindex, onRemove, onToggle }: RowProps)
       </div>
       <div className="text-[11px] text-fg-faint flex flex-wrap gap-x-3 gap-y-0.5">
         <span>{s.stats.document_count} files</span>
-        <span>{s.stats.chunk_count} chunks</span>
-        <span>{s.stats.embedded_chunk_count} embedded</span>
         {s.last_scan_at && <span>last scan: {new Date(s.last_scan_at).toLocaleString()}</span>}
       </div>
-      {!s.last_error && s.stats.chunk_count > 0 && s.stats.embedded_chunk_count === 0 && (
-        <div className="text-[11px] text-amber-700 dark:text-amber-400 break-words">
-          Warning: this source has chunks but zero embeddings. Semantic recall is degraded; check default model/provider embedding support.
-        </div>
-      )}
       {s.last_error && (
         <div className="text-[11px] text-red-600 dark:text-red-400 break-words">
           Last error: {s.last_error}
