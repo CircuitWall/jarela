@@ -457,12 +457,12 @@ describe.each([
 });
 
 describe("agent list ordering", () => {
-  it("keeps the default first and sorts other agents by latest message time", () => {
+  it("keeps the default first and sorts other agents by latest thread activity", () => {
     const db = getDb();
     const agents = [
-      { id: "order-default", configAt: "2010-01-01T00:00:00.000Z", threadAt: "2010-01-01T00:00:00.000Z", messageAt: "2020-01-01T00:00:00.000Z", isDefault: true },
-      { id: "order-config-recent", configAt: "2099-01-01T00:00:00.000Z", threadAt: "2099-01-01T00:00:00.000Z", messageAt: "2025-01-01T00:00:00.000Z", isDefault: false },
-      { id: "order-message-recent", configAt: "2010-01-01T00:00:00.000Z", threadAt: "2010-01-01T00:00:00.000Z", messageAt: "2026-01-01T00:00:00.000Z", isDefault: false },
+      { id: "order-default", configAt: "2010-01-01T00:00:00.000Z", threadAt: "2010-01-01T00:00:00.000Z", isDefault: true },
+      { id: "order-config-recent", configAt: "2099-01-01T00:00:00.000Z", threadAt: "2015-01-01T00:00:00.000Z", isDefault: false },
+      { id: "order-thread-recent", configAt: "2010-01-01T00:00:00.000Z", threadAt: "2026-01-01T00:00:00.000Z", isDefault: false },
     ];
 
     for (const agent of agents) {
@@ -472,7 +472,7 @@ describe("agent list ordering", () => {
       const thread = createThread(agent.id);
       db.prepare("UPDATE threads SET updated_at=? WHERE thread_id=?").run(agent.threadAt, thread.thread_id);
       db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at) VALUES (?,?, 'user', ?, ?)")
-        .run(`message-${agent.id}`, thread.thread_id, agent.id, agent.messageAt);
+        .run(`message-${agent.id}`, thread.thread_id, agent.id, agent.threadAt);
     }
 
     const listed = listAgentConfigs()
@@ -481,7 +481,7 @@ describe("agent list ordering", () => {
 
     expect(listed).toEqual([
       "order-default",
-      "order-message-recent",
+      "order-thread-recent",
       "order-config-recent",
     ]);
   });
