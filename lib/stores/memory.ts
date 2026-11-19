@@ -39,8 +39,8 @@ export interface MemoryRow {
 
 export function listMemory(namespace?: string, search?: string, limit = 50): MemoryRow[] {
   if (namespace === "agent-advertisements") throw new Error("Use agent advertisement settings to inspect derived metadata");
-  let sql = MEM_COLS_SQL + " WHERE namespace<>? AND NOT(namespace=? AND key IN (?,?))";
-  const params: (string | number)[] = ["agent-advertisements", "app-settings", "agent-advertisement-policy", "agent-advertisement-usage"];
+  let sql = MEM_COLS_SQL + " WHERE namespace<>? AND NOT(namespace=? AND (key=? OR key LIKE ?))";
+  const params: (string | number)[] = ["agent-advertisements", "app-settings", "agent-advertisement-policy", "agent-advertisement-usage%"];
   if (namespace) { sql += " AND namespace=?"; params.push(namespace); }
   if (search) { sql += " AND (key LIKE ? OR value LIKE ?)"; params.push(`%${search}%`, `%${search}%`); }
   sql += " ORDER BY updated_at DESC LIMIT ?";

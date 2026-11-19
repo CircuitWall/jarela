@@ -19,6 +19,8 @@ const snapshotSchema = z.object({
     updated_at: z.string(),
     error: z.string().nullable(),
     enabled: z.boolean(),
+    next_retry_at: z.string().nullable().optional(),
+    attempts: z.number().int().optional(),
     advertisement: z.object({
       purpose: z.string(),
       call_when: z.array(z.string()),
@@ -35,7 +37,7 @@ type Snapshot = z.infer<typeof snapshotSchema>;
 type AgentOperation = "refresh" | "regenerate" | "disable" | "enable";
 const defaults = defaultAdvertisementPolicy();
 const limits = [
-  { key: "max_calls_per_hour", label: "Maximum calls per hour", min: 1, max: 100 },
+  { key: "max_calls_per_hour", label: "Maximum calls per agent per hour", min: 1, max: 100 },
   { key: "max_input_chars", label: "Maximum input characters", min: 1_000, max: 16_000 },
   { key: "max_output_tokens", label: "Maximum output tokens", min: 256, max: 2_048 },
   { key: "timeout_ms", label: "Generation timeout (ms)", min: 1_000, max: 60_000 },
@@ -323,6 +325,13 @@ function AgentAdvertisementControls({ agentId, models }: { agentId: string; mode
           {advertisement.status === "ready" && <p>Ready means generated, not verified.</p>}
           {advertisement.error && (
             <p role="alert" className="text-red-400">Generation error: {displayGenerationError(advertisement.error)}</p>
+          )}
+          {advertisement.status === "failed" && advertisement.next_retry_at && (
+            <p>
+              Automatic retry at <time dateTime={advertisement.next_retry_at}>{advertisement.next_retry_at}</time>
+              {advertisement.attempts ? ` (attempt ${advertisement.attempts})` : ""}. Transient faults retry a bounded
+              number of times; refusals wait for an explicit regenerate.
+            </p>
           )}
           <dl className="space-y-1 break-words">
             <dt>Source fingerprint</dt><dd className="break-all font-mono">{advertisement.source_fingerprint || "Not available"}</dd>

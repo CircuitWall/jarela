@@ -81,22 +81,28 @@ Identity and instructions still describe specialization. Config saves, tool
 permission changes, duplication and deletion refresh the selection; inspection
 and publication recheck freshness against the current saved agents.
 
-Defaults allow ten calls per rolling hour, 16,000 source characters, 1,024
+Defaults allow ten calls per agent per rolling hour, 16,000 source characters, 1,024
 output tokens and a 30-second deadline. Controls bound these to 1-100 calls,
 1,000-16,000 input characters, 256-2,048 output tokens and 1-60 seconds.
 These are enforced usage limits, not a quoted monetary charge. Too-large
-sources and exhausted call limits fail explicitly; there is no blind retry.
+sources, refused output and exhausted call limits fail explicitly and wait for
+an explicit regenerate. Only transient faults (a provider error, a timeout, an
+interrupted generation) retry: at most three attempts, one minute, five minutes
+and half an hour apart, on the next status read rather than on a timer, and
+each attempt is visible as `attempts`/`next_retry_at` in the local state.
 If generation reports `source_size_refused`, increase the input limit up to
 16,000 characters; if it is already at the maximum, shorten the committed
 agent name, identity, or instructions (shared tools are already omitted), save the agent,
 and refresh its advertisement.
 
 Config saves persist independently. Changed routing sources become stale
-immediately, then pending/ready or failed; cosmetic/no-op saves do not spend
-another model call. The single in-process worker coalesces rapid saves and
-rejects late/deleted/revoked results. Current tool policy and public metadata
-are checked before catalog publication; missing credentials are readiness,
-not a change in underlying authority. Restart invalidates interrupted work.
+immediately and stay stale until you regenerate, or until a policy save runs
+`refreshAll()`; there is no timer and no automatic regeneration. Cosmetic/no-op
+saves do not spend another model call. The single in-process worker coalesces
+rapid saves and rejects late/deleted/revoked results. Current tool policy and
+public metadata are checked before catalog publication; missing credentials are
+readiness, not a change in underlying authority. A restart invalidates
+interrupted work, which is then eligible for the bounded retry described above.
 Failure never rolls back a valid config save. Generic memory tools/API cannot
 read or edit advertisement state or the generation policy/usage ledger.
 

@@ -42,9 +42,12 @@ request bodies are bounded to 16 KiB. See
   performs one operator control and returns current policy/state.
 
 Policy: `{ enabled, model_config_name, max_calls_per_hour, max_input_chars,
-max_output_tokens, timeout_ms }`. Advertisement state includes agent ID,
+max_output_tokens, timeout_ms }`. `max_calls_per_hour` is a per-agent rolling
+budget. Advertisement state includes agent ID,
 generation ID, source/policy fingerprints, enabled flag, timestamp, safe error
-code, `pending|ready|failed|stale|disabled` status and nullable generated data.
+code, retry bookkeeping (`attempts`, nullable `next_retry_at` when a transient
+fault will be retried), `pending|ready|failed|stale|disabled` status and
+nullable generated data.
 Generated data: `{ purpose, call_when, do_not_call_for, inputs, output, tools }`.
 Descriptions are descriptive untrusted data, not execution authority.
 Config saves use committed sources and never accept caller-supplied fingerprints
