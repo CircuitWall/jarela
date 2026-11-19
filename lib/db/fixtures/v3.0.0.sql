@@ -512,3 +512,29 @@ CREATE INDEX idx_watchers_due ON watchers(enabled, next_run_at);
 CREATE INDEX idx_workspace_scan_cache_scanned_at ON workspace_scan_cache(scanned_at);
 
 INSERT INTO message_seq_allocator (id, last_seq) VALUES (1, 0);
+
+-- ADR-0119: full-text candidate generation for targeted recall. External
+-- content, so the message text is not duplicated; only the first 2000
+-- characters of completed messages are indexed (tool_events/metadata dominate
+-- row size and add nothing lexical).
+CREATE VIRTUAL TABLE messages_fts USING fts5(content, content='messages', content_rowid='rowid');
+
+CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages
+WHEN new.transcript_status = 'completed'
+BEGIN
+  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, substr(new.content, 1, 2000));
+END;
+
+CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages
+WHEN old.transcript_status = 'completed'
+BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.rowid, substr(old.content, 1, 2000));
+END;
+
+CREATE TRIGGER messages_fts_au AFTER UPDATE OF content, transcript_status ON messages
+BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content)
+    SELECT 'delete', old.rowid, substr(old.content, 1, 2000) WHERE old.transcript_status = 'completed';
+  INSERT INTO messages_fts(rowid, content)
+    SELECT new.rowid, substr(new.content, 1, 2000) WHERE new.transcript_status = 'completed';
+END;

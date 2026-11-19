@@ -1644,8 +1644,8 @@ async function buildRecallContext(
     // A second pass keyed on the page the user is on, so notes about a site
     // surface when they return to it without having to name it.
     [hits, ambientHits] = await Promise.all([
-      query.trim() ? recall(query, limit) : Promise.resolve([]),
-      ambient ? recall(ambient, Math.min(4, limit)) : Promise.resolve([]),
+      query.trim() ? recall(query, limit, memoryPolicy, { threadId: current_thread_id }) : Promise.resolve([]),
+      ambient ? recall(ambient, Math.min(4, limit), memoryPolicy, { threadId: current_thread_id }) : Promise.resolve([]),
     ]);
   } catch {
     return empty;

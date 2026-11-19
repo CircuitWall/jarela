@@ -33,7 +33,7 @@ import { extractTopicSegments, summarizeTranscript, transcriptText } from "@/lib
 import { renderTopicRecaps } from "@/lib/agents/warm-topics";
 import type { MessageRow } from "@/lib/stores/threads";
 import { listMemory } from "@/lib/stores/memory";
-import { recall } from "@/lib/embeddings";
+import { searchMemory } from "@/lib/embeddings";
 import { listRecentMaterialAutomationActivities } from "@/lib/stores/automation-activity";
 import { getProvider } from "@/lib/providers";
 import { getKnownContextLength } from "@/lib/providers/known-context-windows";
@@ -568,8 +568,13 @@ async function buildFactsContext(query: string, factsBudgetTokens: number): Prom
   try {
     // Bound the embedding round-trip — a hung provider must not stall the
     // turn. Timeout returns [] which falls through to the substring LIKE
-    // path below, same as a thrown error.
-    const recalled = await raceWithBudget(recall(query, 30), getConfig().recallBudgetMs, []);
+    // path below, same as a thrown error. Memory-only: this block only keeps
+    // `facts` hits, so there is no reason to load chat candidates.
+    const recalled = await raceWithBudget(
+      searchMemory(query, { limit: 30, sources: "memory", namespace: "facts" }),
+      getConfig().recallBudgetMs,
+      [],
+    );
     hits = recalled
       .filter((h) => h.source === "memory" && h.namespace === "facts" && !!h.key)
       .slice(0, 12)

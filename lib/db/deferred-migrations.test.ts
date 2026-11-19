@@ -31,12 +31,16 @@ it("keeps credential migration pending while locked and completes it after unloc
 
   const db = getDb();
   expect(isMasterKeyLocked()).toBe(true);
-  expect(db.prepare("SELECT id FROM jarela_migrations").all()).toEqual([{ id: "3.0.0-baseline" }]);
+  expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([
+    { id: "3.0.0-baseline" },
+    { id: "3.5.8-message-full-text" },
+  ]);
   unlockMasterKey("123456");
   expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([
     { id: "3.0.0-baseline" },
     { id: "3.0.0-deferred-credentials" },
     { id: "3.0.0-deferred-crypto" },
+    { id: "3.5.8-message-full-text" },
   ]);
   expect(db.prepare("SELECT credential_id FROM model_configs WHERE name='legacy'").get())
     .toEqual({ credential_id: "model-mock" });

@@ -16,7 +16,23 @@ interface Migration {
   apply(db: DatabaseSync): void;
 }
 
-const SCHEMA_MIGRATIONS: readonly Migration[] = [];
+const SCHEMA_MIGRATIONS: readonly Migration[] = [{
+  // ADR-0119. Existing databases gain the full-text index used for targeted
+  // recall candidate generation. Creating the virtual table and rebuilding the
+  // index measured ~0.4s for 11k messages; drafts are skipped by the triggers,
+  // so the streaming draft path never re-tokenizes.
+  id: "3.5.8-message-full-text",
+  apply(db) {
+    const exists = db.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='messages_fts'").get();
+    if (!exists) {
+      db.exec("CREATE VIRTUAL TABLE messages_fts USING fts5(content, content='messages', content_rowid='rowid')");
+      db.exec("INSERT INTO messages_fts(rowid, content) SELECT rowid, substr(content, 1, 2000) FROM messages WHERE transcript_status = 'completed'");
+    }
+    db.exec("CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages\nWHEN new.transcript_status = 'completed'\nBEGIN\n  INSERT INTO messages_fts(rowid, content) VALUES (new.rowid, substr(new.content, 1, 2000));\nEND;");
+    db.exec("CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages\nWHEN old.transcript_status = 'completed'\nBEGIN\n  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.rowid, substr(old.content, 1, 2000));\nEND;");
+    db.exec("CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE OF content, transcript_status ON messages\nBEGIN\n  INSERT INTO messages_fts(messages_fts, rowid, content)\n    SELECT 'delete', old.rowid, substr(old.content, 1, 2000) WHERE old.transcript_status = 'completed';\n  INSERT INTO messages_fts(rowid, content)\n    SELECT new.rowid, substr(new.content, 1, 2000) WHERE new.transcript_status = 'completed';\nEND;");
+  },
+}];
 // Encryption commits as its own migration, separate from credential
 // reshaping below. Reshaping reads already-encrypted `memory_store` rows
 // (see SENSITIVE_MEMORY_NAMESPACES) — a malformed legacy row must not make
