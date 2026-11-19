@@ -4,6 +4,7 @@
 import { randomUUID } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";
 import { getDb } from "@/lib/db";
+import { cachedDocumentSourceStats, documentSourceStatsAsync, refreshQuietly } from "@/lib/documents/source-stats-cache";
 import type { DocumentSourceKind as CreatableDocumentSourceKind, DocumentSourceStats } from "@/api/document-sources";
 export type { DocumentSourceStats } from "@/api/document-sources";
 
@@ -163,6 +164,26 @@ export function listDocumentSourcesWithStats(): Array<{ source: DocumentSourceRo
       row as SourceStatsRow;
     return { source, stats: { source_id, document_count, chunk_count, embedded_chunk_count } };
   });
+}
+
+/**
+ * The counters walk every chunk row, so on a real corpus this read belongs on
+ * the read-only worker pool — see lib/documents/source-stats-cache.ts. HTTP
+ * handlers use this; the synchronous variant above stays for tests and small
+ * databases.
+ */
+export async function listDocumentSourcesWithStatsAsync(): Promise<Array<{ source: DocumentSourceRow; stats: DocumentSourceStats }>> {
+  await refreshQuietly();
+  return listDocumentSources().map((source) => ({
+    source,
+    stats: cachedDocumentSourceStats(source.id) ?? {
+      source_id: source.id, document_count: 0, chunk_count: 0, embedded_chunk_count: 0,
+    },
+  }));
+}
+
+export async function getDocumentSourceStatsAsync(sourceId: string): Promise<DocumentSourceStats> {
+  return documentSourceStatsAsync(sourceId);
 }
 
 export function getDocumentSourceStats(sourceId: string): DocumentSourceStats {

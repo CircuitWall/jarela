@@ -6,8 +6,8 @@ import { promises as fs } from "node:fs";
 import {
   createDocumentSource,
   getDocumentSourceByPath,
-  getDocumentSourceStats,
-  listDocumentSourcesWithStats,
+  getDocumentSourceStatsAsync,
+  listDocumentSourcesWithStatsAsync,
   type DocumentSourceKind,
 } from "@/lib/stores/document-sources";
 import { notifyTriggerHandlers } from "@/lib/triggers";
@@ -32,7 +32,7 @@ function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>
 }
 
 export async function GET() {
-  const sources = listDocumentSourcesWithStats();
+  const sources = await listDocumentSourcesWithStatsAsync();
   return NextResponse.json(
     sources.map(({ source, stats }) => documentSourceToResponse(source, stats)),
   );
@@ -106,5 +106,5 @@ export async function POST(req: NextRequest) {
 
   const row = createDocumentSource(input);
   await notifyTriggerHandlers("source_changed");
-  return NextResponse.json(documentSourceToResponse(row, getDocumentSourceStats(row.id)), { status: 201 });
+  return NextResponse.json(documentSourceToResponse(row, await getDocumentSourceStatsAsync(row.id)), { status: 201 });
 }

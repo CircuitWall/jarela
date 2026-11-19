@@ -1,5 +1,6 @@
 import { LOCAL_EMBEDDING_DIMENSIONS, LOCAL_EMBEDDING_MODEL_ID } from "./constants";
 import { requireLocalModelRoot } from "./local-model";
+import { withBlockingWorkAsync } from "@/lib/diagnostics/event-loop";
 const MAX_CONTENT_TOKENS = 500;
 const TOKEN_WINDOW_OVERLAP = 32;
 const INFERENCE_BATCH_SIZE = 16;
@@ -116,11 +117,11 @@ export async function embedLocally(texts: string[], task: LocalEmbeddingTask): P
 
   for (let offset = 0; offset < windows.length; offset += INFERENCE_BATCH_SIZE) {
     const batchWindows = windows.slice(offset, offset + INFERENCE_BATCH_SIZE);
-    const vectors = (await extractor(batchWindows, {
+    const vectors = (await withBlockingWorkAsync("embeddings:local-inference", async () => extractor(batchWindows, {
       pooling: "mean",
       normalize: false,
       truncation: false,
-    })).tolist();
+    }))).tolist();
     if (vectors.length !== batchWindows.length) {
       throw new Error(`local embedding returned ${vectors.length}/${batchWindows.length} vectors`);
     }

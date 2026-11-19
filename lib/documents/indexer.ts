@@ -11,6 +11,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { getDb } from "@/lib/db";
+import { withDbTransaction } from "@/lib/db/transaction";
 import { getConfig } from "@/lib/env/config";
 import { embedBestEffort } from "@/lib/embeddings";
 import {
@@ -19,6 +20,7 @@ import {
   type DocumentSourceRow,
 } from "@/lib/stores/document-sources";
 import { chunkText } from "./chunker";
+import { refreshDocumentSourceStats } from "./source-stats-cache";
 import { isRemoteKind, runRemoteSource, type RemoteIndexStats } from "./remote";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -218,15 +220,19 @@ function persistEmbedResults(
   const markFailed = db.prepare("UPDATE document_chunks SET embed_failed_at=?, embed_error=? WHERE id=?");
   const now = new Date().toISOString();
   let embedded = 0;
-  for (let i = 0; i < chunkIds.length; i++) {
-    const v = vectors[i];
-    if (v != null) {
-      updateEmb.run(JSON.stringify(v), modelSignature ?? null, chunkIds[i]);
-      embedded++;
-    } else if (terminal[i]) {
-      markFailed.run(now, error, chunkIds[i]);
+  // One transaction per batch: node:sqlite commits synchronously, so a batch
+  // of a few thousand separate UPDATEs blocks the event loop for seconds.
+  withDbTransaction(() => {
+    for (let i = 0; i < chunkIds.length; i++) {
+      const v = vectors[i];
+      if (v != null) {
+        updateEmb.run(JSON.stringify(v), modelSignature ?? null, chunkIds[i]);
+        embedded++;
+      } else if (terminal[i]) {
+        markFailed.run(now, error, chunkIds[i]);
+      }
     }
-  }
+  });
   return embedded;
 }
 
@@ -465,6 +471,12 @@ export async function indexAllSources(opts?: { maxFilesPerSource?: number }): Pr
       markSourceScanned(s.id, msg);
       console.error("[documents] index failed for", s.path, msg);
     }
+  }
+  // The system prompt and the sources UI read cached counters; recompute them
+  // off-thread now that the corpus changed instead of making the next turn pay
+  // for a full count on the synchronous connection.
+  if (out.length > 0) {
+    await refreshDocumentSourceStats().catch(() => undefined);
   }
   return out;
 }

@@ -12,10 +12,14 @@ const mocks = vi.hoisted(() => ({
   all: vi.fn(),
   run: vi.fn(() => ({ changes: 1 })),
   prepare: vi.fn(),
+  readAppRows: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({ prepare: mocks.prepare }),
+}));
+vi.mock("@/lib/db/read-pool", () => ({
+  readAppRows: mocks.readAppRows,
 }));
 vi.mock("@/lib/embeddings", () => ({
   embedQueryOne: mocks.embedQueryOne,
@@ -50,6 +54,9 @@ describe("searchDocuments similarity threshold", () => {
     mocks.all.mockReset().mockImplementation(() => mocks.rows);
     mocks.run.mockClear();
     mocks.prepare.mockReset().mockImplementation(() => ({ all: mocks.all, run: mocks.run }));
+    mocks.readAppRows.mockReset().mockImplementation(async (sql: string) => (
+      sql.includes("> (?, ?)") ? [] : mocks.rows
+    ));
     mocks.localEmbeddingsEnabled.mockReturnValue(true);
     mocks.recallPolicy.mockReturnValue(defaultDocumentRecallPolicy());
     mocks.cosine.mockImplementation((_query, vector) => vector[0]);
@@ -150,18 +157,34 @@ describe("searchDocuments similarity threshold", () => {
     await expect(searchDocuments("needle")).rejects.toThrow("Document search blocked");
   });
 
-  it.each([undefined, "synthetic-source"])("binds the source filter and scan limit: %s", async (sourceId) => {
+  it.each([undefined, "synthetic-source"])("binds the source filter and page size: %s", async (sourceId) => {
     await searchDocuments("needle", { sourceId });
-    const sql = mocks.prepare.mock.calls[0][0] as string;
+    const sql = mocks.readAppRows.mock.calls[0][0] as string;
     expect(sql).toContain("ds.enabled = 1");
+    expect(sql).toContain("ORDER BY dc.document_id, dc.chunk_index");
     expect(sql).toContain("LIMIT ?");
+    const params = mocks.readAppRows.mock.calls[0][1] as unknown[];
     if (sourceId) {
       expect(sql).toContain("d.source_id = ?");
-      expect(mocks.all).toHaveBeenCalledWith(sourceId, 20_000);
+      expect(params).toEqual([sourceId, 2_000]);
       expect(sql).not.toContain(sourceId);
     } else {
-      expect(mocks.all).toHaveBeenCalledWith(20_000);
+      expect(params).toEqual([2_000]);
     }
+  });
+
+  it("scans past the first page so later chunks stay searchable", async () => {
+    let call = 0;
+    mocks.readAppRows.mockImplementation(async (sql: string) => {
+      call += 1;
+      if (!sql.includes("> (?, ?)")) return [row("first-page", null, "nothing relevant")];
+      if (call === 2) return [row("second-page", null, "needle in a later chunk")];
+      return [];
+    });
+    expect(await searchDocuments("needle")).toMatchObject([
+      { document_id: "doc-second-page", match: "substring" },
+    ]);
+    expect(call).toBe(3);
   });
 
   it("executes both query forms against SQLite without returning disabled or other sources", async () => {
@@ -185,7 +208,9 @@ describe("searchDocuments similarity threshold", () => {
           ('b', 'doc-b', 0, 'needle', NULL, NULL),
           ('off', 'doc-off', 0, 'needle', NULL, NULL);
       `);
-      mocks.prepare.mockImplementation((sql: string) => db.prepare(sql));
+      mocks.readAppRows.mockImplementation(async (sql: string, params: unknown[] = []) => (
+        db.prepare(sql).all(...params) as Array<Record<string, unknown>>
+      ));
       expect((await searchDocuments("needle")).map((hit) => hit.document_id).sort())
         .toEqual(["doc-a", "doc-b"]);
       expect(await searchDocuments("needle", { sourceId: "source-b" }))

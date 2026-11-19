@@ -9,8 +9,10 @@
 // eventually repaired (see queueDocumentReindex).
 
 import { getDb } from "@/lib/db";
+import { readAppRows } from "@/lib/db/read-pool";
 import { embedQueryOne, embedQueryWithSignature, cosine } from "@/lib/embeddings";
 import { getDocumentRecallPolicy, isLocalEmbeddingsEnabled } from "@/lib/stores/app-settings";
+import { withBlockingWork } from "@/lib/diagnostics/event-loop";
 import { DocumentExclusionUnavailableError } from "./recall-policy";
 
 // Track documents we've already queued for reindexing this session to avoid
@@ -53,36 +55,10 @@ export async function searchDocuments(
   opts?: { limit?: number; sourceId?: string; minSimilarity?: number; includeExcluded?: boolean },
 ): Promise<DocumentHit[]> {
   const limit = Math.min(Math.max(opts?.limit ?? 8, 1), 25);
-  const db = getDb();
   const trimmed = query.trim();
   if (trimmed.length === 0) return [];
 
-  // Hard cap on rows scanned per query — at thousands of chunks the JS
-  // cosine pass is still milliseconds, but we still want a ceiling.
-  const limitRows = 20_000;
-  const sourceFilter = opts?.sourceId
-    ? { sql: " AND d.source_id = ?", params: [opts.sourceId, limitRows] }
-    : { sql: "", params: [limitRows] };
-  const rows = db.prepare(
-    `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding, dc.embedding_model_signature,
-            d.source_id, ds.label AS source_label, d.rel_path, d.path AS abs_path
-     FROM document_chunks dc
-     JOIN documents d ON dc.document_id = d.id
-     JOIN document_sources ds ON d.source_id = ds.id
-     WHERE ds.enabled = 1${sourceFilter.sql}
-     LIMIT ?`,
-  ).all(...sourceFilter.params) as unknown as Row[];
-
-  if (rows.length === 0) return [];
-
   const policy = getDocumentRecallPolicy();
-  const candidates = rows.map((row) => ({
-    row,
-    excluded: policy.excluded_documents.some(
-      (d) => d.source_id === row.source_id && d.path === row.abs_path,
-    ),
-  })).filter(({ excluded }) => opts?.includeExcluded || !excluded);
-  if (candidates.length === 0) return [];
   const topicResult = !opts?.includeExcluded && policy.topics.length > 0
     ? await embedQueryWithSignature(policy.topics)
     : null;
@@ -97,60 +73,58 @@ export async function searchDocuments(
   const minSimilarity = Math.max(0, Math.min(1, opts?.minSimilarity ?? getDefaultDocumentMinSimilarity()));
   const mismatched = new Set<string>();
 
-  for (const { row: r, excluded } of candidates) {
-    if (topicVectors.length > 0) {
-      const vector = parseVector(r.embedding);
-      if (!vector || r.embedding_model_signature !== topicResult?.modelSignature
-        || topicVectors.some((topic) => topic.length !== vector.length)) {
-        throw new DocumentExclusionUnavailableError();
+  for await (const page of readCandidatePages(opts?.sourceId)) {
+    const candidates = page.map((row) => ({
+      row,
+      excluded: policy.excluded_documents.some(
+        (d) => d.source_id === row.source_id && d.path === row.abs_path,
+      ),
+    })).filter(({ excluded }) => opts?.includeExcluded || !excluded);
+    if (candidates.length === 0) continue;
+
+    withBlockingWork("documents:search-score", () => {
+      for (const { row: r, excluded } of candidates) {
+        if (topicVectors.length > 0) {
+          const vector = parseVector(r.embedding);
+          if (!vector || r.embedding_model_signature !== topicResult?.modelSignature
+            || topicVectors.some((topic) => topic.length !== vector.length)) {
+            throw new DocumentExclusionUnavailableError();
+          }
+          if (topicVectors.some((topic) => topic && cosine(topic, vector) >= policy.topic_similarity)) continue;
+        }
+        let score = 0;
+        let match: "semantic" | "substring" = "semantic";
+        if (qVec && r.embedding) {
+          let vec: number[] | null = null;
+          try { vec = JSON.parse(r.embedding) as number[]; } catch { vec = null; }
+          if (vec && vec.length === qVec.length) {
+            score = cosine(qVec, vec);
+            // A weak positive semantic match must not bypass the floor via text.
+            if (score > 0 && score <= minSimilarity) continue;
+          } else {
+            // Dimension mismatch: track this document for reindexing.
+            mismatched.add(r.document_id);
+          }
+        }
+        if (score <= 0) {
+          score = substringScore(r.text, lowered);
+          match = "substring";
+        }
+        if (score <= 0) continue;
+        scored.push({
+          document_id: r.document_id,
+          source_id: r.source_id,
+          source_label: r.source_label,
+          rel_path: r.rel_path,
+          abs_path: r.abs_path,
+          chunk_index: r.chunk_index,
+          text: r.text,
+          score,
+          match,
+          ...(opts?.includeExcluded ? { excluded } : {}),
+        });
       }
-      if (topicVectors.some((topic) => topic && cosine(topic, vector) >= policy.topic_similarity)) continue;
-    }
-    let score = 0;
-    let match: "semantic" | "substring" = "semantic";
-    if (qVec && r.embedding) {
-      let vec: number[] | null = null;
-      try { vec = JSON.parse(r.embedding) as number[]; } catch { vec = null; }
-      if (vec && vec.length === qVec.length) {
-        score = cosine(qVec, vec);
-        // A weak positive semantic match must not bypass the floor via text.
-        if (score > 0 && score <= minSimilarity) continue;
-      } else {
-        // Dimension mismatch: track this document for reindexing.
-        mismatched.add(r.document_id);
-      }
-    }
-    if (score <= 0) {
-      score = substringScore(r.text, lowered);
-      match = "substring";
-    }
-    if (score <= 0) continue;
-    scored.push({
-      document_id: r.document_id,
-      source_id: r.source_id,
-      source_label: r.source_label,
-      rel_path: r.rel_path,
-      abs_path: r.abs_path,
-      chunk_index: r.chunk_index,
-      text: r.text,
-      score,
-      match,
-      ...(opts?.includeExcluded ? { excluded } : {}),
     });
-  }
-
-  function validVector(value: number[] | null): value is number[] {
-    return value !== null && value.length > 0 && value.every(Number.isFinite) && value.some((n) => n !== 0);
-  }
-
-  function parseVector(value: string | null): number[] | null {
-    if (!value) return null;
-    try {
-      const parsed: unknown = JSON.parse(value);
-      return Array.isArray(parsed) && parsed.every((n) => typeof n === "number") && validVector(parsed) ? parsed : null;
-    } catch {
-      return null;
-    }
   }
 
   // Queue mismatched documents for reindexing if we haven't already in this session.
@@ -168,6 +142,70 @@ export async function searchDocuments(
 
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, limit);
+}
+
+function validVector(value: number[] | null): value is number[] {
+  return value !== null && value.length > 0 && value.every(Number.isFinite) && value.some((n) => n !== 0);
+}
+
+function parseVector(value: string | null): number[] | null {
+  if (!value) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((n) => typeof n === "number") && validVector(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+const SEARCH_PAGE_ROWS = 2_000;
+// Scoring is a JS cosine over JSON-encoded vectors, so the scan stays capped.
+// The cap is ordered deterministically instead of taking whatever rows the
+// planner returns first: the old `LIMIT 20000` without `ORDER BY` silently
+// ignored every chunk past the first 20k by rowid.
+const SEARCH_MAX_SCANNED_ROWS = 20_000;
+
+/**
+ * Pages candidate chunks from the read-only worker pool, ordered by
+ * (document_id, chunk_index) with keyset pagination. The write connection is
+ * synchronous, so reading this corpus there froze the whole process; paging
+ * also bounds peak memory to one page of embeddings at a time.
+ */
+async function* readCandidatePages(sourceId: string | undefined): AsyncGenerator<Row[]> {
+  let scanned = 0;
+  let cursor: { document_id: string; chunk_index: number } | null = null;
+  while (scanned < SEARCH_MAX_SCANNED_ROWS) {
+    const pageSize = Math.min(SEARCH_PAGE_ROWS, SEARCH_MAX_SCANNED_ROWS - scanned);
+    const params: unknown[] = [];
+    let where = "WHERE ds.enabled = 1";
+    if (sourceId) {
+      where += " AND d.source_id = ?";
+      params.push(sourceId);
+    }
+    if (cursor) {
+      where += " AND (dc.document_id, dc.chunk_index) > (?, ?)";
+      params.push(cursor.document_id, cursor.chunk_index);
+    }
+    const page = await readAppRows<Row>(
+      `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding, dc.embedding_model_signature,
+              d.source_id, ds.label AS source_label, d.rel_path, d.path AS abs_path
+       FROM document_chunks dc
+       JOIN documents d ON dc.document_id = d.id
+       JOIN document_sources ds ON d.source_id = ds.id
+       ${where}
+       ORDER BY dc.document_id, dc.chunk_index
+       LIMIT ?`,
+      [...params, pageSize],
+    );
+    if (page.length === 0) return;
+    scanned += page.length;
+    yield page;
+    const last = page[page.length - 1];
+    // Guard against a non-advancing cursor (duplicate rows from a malformed
+    // page) turning the scan into an endless loop.
+    if (cursor && last.document_id === cursor.document_id && last.chunk_index === cursor.chunk_index) return;
+    cursor = { document_id: last.document_id, chunk_index: last.chunk_index };
+  }
 }
 
 function substringScore(haystack: string, needleLower: string): number {
