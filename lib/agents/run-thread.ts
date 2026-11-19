@@ -3,6 +3,7 @@ import type { AbortActor } from "@/lib/agents/abort-reason";
 import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 import { getConfig } from "@/lib/env/config";
 import { settleWithinBudget } from "@/lib/utils/promise";
+import { errorMessage } from "@/lib/utils/error";
 import { claimSystemSignals, renewSystemSignalLease, releaseSystemSignals, commitSystemSignalTranscript, type SystemSignalBatch } from "@/lib/stores/system-signals";
 import { runtimeInstanceId } from "@/lib/lifecycle/system-signals";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
@@ -1202,23 +1203,34 @@ function buildTurnStreamOptions(
   };
 }
 
-async function* withSignalDeliveryLease(
+export const SIGNAL_LEASE_RENEW_MS = 10_000;
+
+// Renewal cannot ride on chunk flow. Long tool calls, approval waits and
+// provider stalls emit nothing for far longer than the 30-minute lease, and
+// once a lease expires it cannot be renewed — the turn then ends in
+// "persist failed: System signal delivery lease was lost before transcript
+// commit" after the user already waited through the work.
+export async function* withSignalDeliveryLease(
   stream: AsyncIterable<StreamChunk>,
   signalDelivery: SystemSignalBatch,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamChunk> {
   let succeeded = false;
-  let renewedAt = Date.now();
+  const timer = setInterval(() => {
+    try {
+      renewSystemSignalLease(signalDelivery);
+    } catch (err) {
+      console.warn("[system-signals] lease renewal failed", errorMessage(err));
+    }
+  }, SIGNAL_LEASE_RENEW_MS);
+  timer.unref?.();
   try {
     for await (const chunk of stream) {
-      if (Date.now() - renewedAt > 10_000) {
-        renewSystemSignalLease(signalDelivery);
-        renewedAt = Date.now();
-      }
       if (chunk.type === "done" && !chunk.data.aborted && !signal?.aborted) succeeded = true;
       yield chunk;
     }
   } finally {
+    clearInterval(timer);
     if (!succeeded) releaseSystemSignals(signalDelivery);
   }
 }

@@ -200,12 +200,26 @@ export function releaseSystemSignals(batch: SystemSignalBatch, failureCode = "tu
 
 export function commitSystemSignalTranscript<Result>(batch: SystemSignalBatch, persist: () => Result): Result {
   if (!batch.signals.length) return persist();
+  let acknowledged = true;
   try {
-    return withSystemSignalTransaction(() => {
-      const result = persist();
-      if (!acknowledgeSystemSignals(batch)) throw new Error("System signal delivery lease was lost before transcript commit");
-      return result;
+    const result = withSystemSignalTransaction(() => {
+      const persisted = persist();
+      acknowledged = acknowledgeSystemSignals(batch);
+      return persisted;
     });
+    // The transcript is the artifact the turn exists to produce. When the
+    // lease expired while the turn was still running (a long tool call, an
+    // approval wait, a suspended host), the deliveries are no longer ours:
+    // they go back to the outbox and are retried. Discarding a finished reply
+    // over that bookkeeping is the worse outcome, so keep the transcript,
+    // hand back whatever we still own, and leave a diagnostic trail.
+    if (!acknowledged) {
+      console.warn("[system-signals] delivery lease lost before transcript commit; transcript kept, deliveries retried", {
+        agent_id: batch.agentId, thread_id: batch.threadId, signals: batch.signals.length,
+      });
+      releaseSystemSignals(batch, "lease_lost");
+    }
+    return result;
   } catch (error) {
     try { releaseSystemSignals(batch, "transcript_commit_failed"); }
     catch { console.error("[system-signals] lease release failed after transcript error"); }
