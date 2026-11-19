@@ -149,36 +149,29 @@ interface SourceStatsRow extends DocumentSourceRow, DocumentSourceStats {
 
 const SOURCE_STATS_QUERY = `
   SELECT s.*, s.id AS source_id,
-         COUNT(DISTINCT d.id) AS document_count,
-         COUNT(c.id) AS chunk_count,
-         COUNT(c.embedding) AS embedded_chunk_count
+         COUNT(d.id) AS document_count
   FROM document_sources s
-  LEFT JOIN documents d ON d.source_id = s.id
-  LEFT JOIN document_chunks c ON c.document_id = d.id`;
+  LEFT JOIN documents d ON d.source_id = s.id`;
 
 export function listDocumentSourcesWithStats(): Array<{ source: DocumentSourceRow; stats: DocumentSourceStats }> {
   const rows = getDb().prepare(`${SOURCE_STATS_QUERY} GROUP BY s.id ORDER BY s.created_at ASC`)
     .all();
   return rows.map((row) => {
-    const { source_id, document_count, chunk_count, embedded_chunk_count, ...source } =
-      row as SourceStatsRow;
-    return { source, stats: { source_id, document_count, chunk_count, embedded_chunk_count } };
+    const { source_id, document_count, ...source } = row as SourceStatsRow;
+    return { source, stats: { source_id, document_count } };
   });
 }
 
 /**
- * The counters walk every chunk row, so on a real corpus this read belongs on
- * the read-only worker pool — see lib/documents/source-stats-cache.ts. HTTP
- * handlers use this; the synchronous variant above stays for tests and small
- * databases.
+ * Request-path read. Counters are index-only over `documents` (~35 ms for every
+ * source on a 51k-document corpus), so the cached snapshot is served directly
+ * and refreshed behind the response.
  */
 export async function listDocumentSourcesWithStatsAsync(): Promise<Array<{ source: DocumentSourceRow; stats: DocumentSourceStats }>> {
   await refreshForRequest();
   return listDocumentSources().map((source) => ({
     source,
-    stats: cachedDocumentSourceStats(source.id) ?? {
-      source_id: source.id, document_count: 0, chunk_count: 0, embedded_chunk_count: 0,
-    },
+    stats: cachedDocumentSourceStats(source.id) ?? { source_id: source.id, document_count: 0 },
   }));
 }
 
@@ -189,10 +182,5 @@ export async function getDocumentSourceStatsAsync(sourceId: string): Promise<Doc
 export function getDocumentSourceStats(sourceId: string): DocumentSourceStats {
   const row = getDb().prepare(`${SOURCE_STATS_QUERY} WHERE s.id=? GROUP BY s.id`)
     .get(sourceId) as SourceStatsRow | undefined;
-  return {
-    source_id: sourceId,
-    document_count: row?.document_count ?? 0,
-    chunk_count: row?.chunk_count ?? 0,
-    embedded_chunk_count: row?.embedded_chunk_count ?? 0,
-  };
+  return { source_id: sourceId, document_count: row?.document_count ?? 0 };
 }

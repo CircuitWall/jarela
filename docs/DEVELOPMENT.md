@@ -378,14 +378,14 @@ The watchdog exists because of a measured failure mode: on a live install
 `document_chunks` held 244k chunks (2.8 GB of JSON-encoded vectors) and the
 synchronous connection paid for it on the hot paths.
 
-- Source counters (`chunk_count`, `embedded_chunk_count`) are served from
+- Source counters are documents-only (`document_count`) and served from
   `lib/documents/source-stats-cache.ts`. The system prompt used to run
   `getDocumentSourceStats()` for every enabled source on every turn (~3.2 s of
-  blocked loop per turn); it now reads a cached snapshot refreshed on the
-  read-only worker pool at boot, after indexing, and in the background when a
-  request finds it older than five minutes. Requests never wait for a refresh
-  once a snapshot exists — counting a 244k-chunk corpus takes ~3.4 s, so
-  blocking the sources page on it made that page time out.
+  blocked loop per turn because it counted chunks and embeddings); counting
+  documents is index-only — ~35 ms for every source on a 51k-document corpus.
+  Chunk and embedded-chunk counts were removed rather than cached: they mean
+  reading the whole 2.8 GB chunk table (3–17 s measured) and nothing needs
+  them.
 - `searchDocuments` pages candidates (2,000 rows per page) from the read pool
   in `(document_id, chunk_index)` order with keyset pagination. The previous
   query read up to 20,000 rows — text and embeddings — on the writer with no

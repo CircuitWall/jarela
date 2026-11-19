@@ -33,6 +33,6 @@ it("rejects malformed mutation and aggregate values", () => {
   expect(remoteDocumentSourceSchema.safeParse({ kind: "github_repo", label: "", config: {} }).success).toBe(false);
   expect(documentSourcePatchSchema.safeParse({ enabled: "yes" }).success).toBe(false);
   expect(documentSourceStatsSchema.safeParse({
-    source_id: "synthetic", document_count: 1, chunk_count: -1, embedded_chunk_count: 0,
+    source_id: "synthetic", document_count: -1,
   }).success).toBe(false);
 });

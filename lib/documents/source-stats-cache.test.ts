@@ -46,11 +46,9 @@ describe("document source stats cache", () => {
     await cache.refreshDocumentSourceStats();
 
     expect(cache.cachedDocumentSourceStats("source-a")).toEqual({
-      source_id: "source-a", document_count: 1, chunk_count: 3, embedded_chunk_count: 2,
+      source_id: "source-a", document_count: 1,
     });
-    expect(cache.cachedDocumentSourceStats("source-b")).toMatchObject({
-      document_count: 1, chunk_count: 1, embedded_chunk_count: 0,
-    });
+    expect(cache.cachedDocumentSourceStats("source-b")).toMatchObject({ document_count: 1 });
     expect(cache.documentSourceStatsAgeMs()).toBeGreaterThanOrEqual(0);
   });
 
@@ -83,7 +81,7 @@ describe("document source stats cache", () => {
   it("refreshes on demand for request paths without blocking the writer", async () => {
     seed("source-e", 2, 1);
     const stats = await cache.documentSourceStatsAsync("source-e");
-    expect(stats).toMatchObject({ source_id: "source-e", chunk_count: 2, embedded_chunk_count: 1 });
+    expect(stats).toMatchObject({ source_id: "source-e", document_count: 1 });
     expect(cache.cachedDocumentSourceStats("source-e")).toEqual(stats);
   });
 
@@ -95,13 +93,13 @@ describe("document source stats cache", () => {
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const spy = vi.spyOn(pool, "readAppRows").mockImplementation(async () => {
       await gate;
-      return [{ source_id: "source-h", document_count: 1, chunk_count: 1, embedded_chunk_count: 1 }];
+      return [{ source_id: "source-h", document_count: 1 }];
     });
 
     const started = Date.now();
     await cache.refreshForRequest(-1);
     expect(Date.now() - started).toBeLessThan(500);
-    expect(cache.cachedDocumentSourceStats("source-h")).toMatchObject({ chunk_count: 1 });
+    expect(cache.cachedDocumentSourceStats("source-h")).toMatchObject({ document_count: 1 });
 
     release();
     await vi.waitFor(() => expect(spy).toHaveBeenCalled());

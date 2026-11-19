@@ -34,7 +34,7 @@ function document(sourceId: string, id: string, embeddings: Array<string | null>
   });
 }
 
-it("returns exact counts for empty sources, chunkless documents, and mixed embeddings", () => {
+it("returns exact document counts for empty, populated, and disabled sources", () => {
   const empty = createDocumentSource({ path: "synthetic-empty" });
   const populated = createDocumentSource({ path: "synthetic-populated" });
   const other = createDocumentSource({ path: "synthetic-other" });
@@ -50,14 +50,12 @@ it("returns exact counts for empty sources, chunkless documents, and mixed embed
   const rows = listDocumentSourcesWithStats();
   expect(rows.map(({ source }) => source)).toEqual([empty, populated, other]);
   expect(rows.map(({ stats }) => stats)).toEqual([
-    { source_id: empty.id, document_count: 0, chunk_count: 0, embedded_chunk_count: 0 },
-    { source_id: populated.id, document_count: 2, chunk_count: 3, embedded_chunk_count: 2 },
-    { source_id: other.id, document_count: 1, chunk_count: 1, embedded_chunk_count: 0 },
+    { source_id: empty.id, document_count: 0 },
+    { source_id: populated.id, document_count: 2 },
+    { source_id: other.id, document_count: 1 },
   ]);
   for (const { source, stats } of rows) expect(getDocumentSourceStats(source.id)).toEqual(stats);
-  expect(getDocumentSourceStats("missing")).toEqual({
-    source_id: "missing", document_count: 0, chunk_count: 0, embedded_chunk_count: 0,
-  });
+  expect(getDocumentSourceStats("missing")).toEqual({ source_id: "missing", document_count: 0 });
 });
 
 it("executes one query for the collection regardless of source count", () => {

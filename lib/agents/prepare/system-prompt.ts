@@ -746,22 +746,22 @@ function buildDocumentsContext(): string {
   const sources = listEnabledDocumentSources();
   if (sources.length === 0) return "";
 
-  let totalChunks = 0;
+  let totalDocuments = 0;
   const lines: string[] = [];
   for (const s of sources) {
-    // Cached: counting this corpus costs seconds and used to run on every
-    // turn (see lib/documents/source-stats-cache.ts).
+    // Cached document counts only: counting chunks meant reading the whole
+    // chunk table on every turn (see lib/documents/source-stats-cache.ts).
     const stats = cachedDocumentSourceStats(s.id);
-    if (!stats || stats.chunk_count === 0) continue;
-    totalChunks += stats.chunk_count;
+    if (!stats || stats.document_count === 0) continue;
+    totalDocuments += stats.document_count;
     const label = s.label ?? s.path;
-    lines.push(`- ${label} (${s.kind}, ${stats.chunk_count} chunks)`);
+    lines.push(`- ${label} (${s.kind}, ${stats.document_count} documents)`);
   }
-  if (totalChunks === 0) return "";
+  if (totalDocuments === 0) return "";
 
   return [
     "--- Indexed documents ---",
-    `The user has ${totalChunks} indexed chunks across ${lines.length} document source(s) available to you:`,
+    `The user has ${totalDocuments} indexed documents across ${lines.length} document source(s) available to you:`,
     ...lines,
     "Call `documents_search` whenever the user asks about local files, notes, project docs, or any content that sounds like it lives in one of these sources. Prefer it over guessing from training data. Use `documents_list_sources` to enumerate, and pass `source_id` to scope a search.",
   ].join("\n");
