@@ -4,7 +4,7 @@
 import { randomUUID } from "node:crypto";
 import type { SQLOutputValue } from "node:sqlite";
 import { getDb } from "@/lib/db";
-import { cachedDocumentSourceStats, documentSourceStatsAsync, refreshQuietly } from "@/lib/documents/source-stats-cache";
+import { cachedDocumentSourceStats, documentSourceStatsAsync, refreshForRequest } from "@/lib/documents/source-stats-cache";
 import type { DocumentSourceKind as CreatableDocumentSourceKind, DocumentSourceStats } from "@/api/document-sources";
 export type { DocumentSourceStats } from "@/api/document-sources";
 
@@ -173,7 +173,7 @@ export function listDocumentSourcesWithStats(): Array<{ source: DocumentSourceRo
  * databases.
  */
 export async function listDocumentSourcesWithStatsAsync(): Promise<Array<{ source: DocumentSourceRow; stats: DocumentSourceStats }>> {
-  await refreshQuietly();
+  await refreshForRequest();
   return listDocumentSources().map((source) => ({
     source,
     stats: cachedDocumentSourceStats(source.id) ?? {

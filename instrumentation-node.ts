@@ -91,7 +91,7 @@ export async function bootNode(): Promise<void> {
   } else getWorkflowService().cleanup();
 
   const { recoverAbandonedMessageDrafts } = await import("@/lib/stores/threads");
-  recoverAbandonedMessageDrafts();
+  await recoverAbandonedMessageDrafts();
 
   const { processMessageEmbeddingJobs } = await import("@/lib/embeddings");
   void processMessageEmbeddingJobs().catch((err) =>

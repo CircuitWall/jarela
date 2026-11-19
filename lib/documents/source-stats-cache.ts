@@ -24,6 +24,11 @@ const SOURCE_STATS_QUERY = `
   LEFT JOIN document_chunks c ON c.document_id = d.id
   GROUP BY s.id`;
 
+// Counting a real corpus reads every embedding column: ~3.4s on a 244k-chunk
+// install. That is fine once in a while on a worker thread, but never on a
+// page load, so request handlers serve the snapshot and refresh behind it.
+const DEFAULT_REFRESH_TTL_MS = 5 * 60_000;
+
 interface StatsSnapshot {
   computed_at: number | null;
   by_source: Map<string, DocumentSourceStats>;
@@ -98,8 +103,26 @@ export function documentSourceStatsAgeMs(): number | null {
 
 /** Async, authoritative read for HTTP handlers: refresh, then return. */
 export async function documentSourceStatsAsync(sourceId: string): Promise<DocumentSourceStats> {
-  await refreshQuietly();
+  await refreshForRequest();
   return cachedDocumentSourceStats(sourceId) ?? emptyStats(sourceId);
+}
+
+/**
+ * Request-path refresh. A snapshot already exists → trigger a background
+ * refresh when it is stale and answer from the current one immediately.
+ * No snapshot yet (first request after boot, boot's own refresh still
+ * running) → wait for it once, because answering zeros is worse than one
+ * slow first load.
+ */
+export async function refreshForRequest(ttlMs = DEFAULT_REFRESH_TTL_MS): Promise<void> {
+  const age = documentSourceStatsAgeMs();
+  if (age === null) {
+    await refreshQuietly();
+    return;
+  }
+  if (age > ttlMs && !snapshot().refreshing) {
+    void refreshDocumentSourceStats().catch(() => undefined);
+  }
 }
 
 /**

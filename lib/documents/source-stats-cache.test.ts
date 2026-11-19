@@ -87,6 +87,27 @@ describe("document source stats cache", () => {
     expect(cache.cachedDocumentSourceStats("source-e")).toEqual(stats);
   });
 
+  it("does not block a request on a stale refresh", async () => {
+    seed("source-h", 1, 1);
+    await cache.refreshDocumentSourceStats();
+    const pool = await import("@/lib/db/read-pool");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const spy = vi.spyOn(pool, "readAppRows").mockImplementation(async () => {
+      await gate;
+      return [{ source_id: "source-h", document_count: 1, chunk_count: 1, embedded_chunk_count: 1 }];
+    });
+
+    const started = Date.now();
+    await cache.refreshForRequest(-1);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(cache.cachedDocumentSourceStats("source-h")).toMatchObject({ chunk_count: 1 });
+
+    release();
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+    spy.mockRestore();
+  });
+
   it("falls back to the last snapshot when the pool is unavailable", async () => {
     seed("source-f", 1, 1);
     await cache.refreshDocumentSourceStats();
