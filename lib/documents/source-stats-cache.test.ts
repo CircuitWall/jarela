@@ -119,4 +119,20 @@ describe("document source stats cache", () => {
     failure.mockRestore();
     warn.mockRestore();
   });
+
+  it("warms a missing snapshot for synchronous prompt builds and reuses an existing one", async () => {
+    seed("source-g", 1, 1);
+    const pool = await import("@/lib/db/read-pool");
+    const spy = vi.spyOn(pool, "readAppRows");
+
+    expect(cache.warmDocumentSourceStatsIfMissing()).toBe(true);
+    await vi.waitFor(() => expect(cache.documentSourceStatsAgeMs()).not.toBeNull());
+    expect(cache.cachedDocumentSourceStats("source-g")).toMatchObject({ document_count: 1 });
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    const age = cache.documentSourceStatsAgeMs();
+    expect(cache.warmDocumentSourceStatsIfMissing()).toBe(false);
+    expect(spy).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(cache.documentSourceStatsAgeMs()).toBeGreaterThanOrEqual(age!));
+  });
 });

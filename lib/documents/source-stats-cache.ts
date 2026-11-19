@@ -118,6 +118,18 @@ export async function refreshForRequest(ttlMs = DEFAULT_REFRESH_TTL_MS): Promise
 }
 
 /**
+ * Prompt-path warm-up. Prompt builds are synchronous, so a missing snapshot
+ * means the whole "Indexed documents" section is omitted; request one on a
+ * worker thread instead of staying silent until a sources route is visited.
+ * Returns whether a refresh was started.
+ */
+export function warmDocumentSourceStatsIfMissing(): boolean {
+  if (documentSourceStatsAgeMs() !== null) return false;
+  void refreshDocumentSourceStats().catch(() => undefined);
+  return true;
+}
+
+/**
  * Refresh for request paths that must not fail on a pool error: a stale
  * snapshot (or zeros) is better than a 500 on the sources page.
  */

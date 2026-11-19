@@ -13,7 +13,7 @@ import { parseCitationStrictness } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
 import { listIntegrations } from "@/lib/stores/integrations";
 import { listEnabledDocumentSources } from "@/lib/stores/document-sources";
-import { cachedDocumentSourceStats } from "@/lib/documents/source-stats-cache";
+import { cachedDocumentSourceStats, warmDocumentSourceStatsIfMissing } from "@/lib/documents/source-stats-cache";
 import { buildPersonaContext } from "@/lib/agents/adaptive-persona";
 import { resolveHarness } from "@/lib/agents/harness/resolve";
 import {
@@ -746,12 +746,16 @@ function buildDelegatesContext(lines: string[]): string {
 
 // Surface indexed Documents so the model knows the RAG corpus exists.
 // Without this nudge agents almost never call `documents_search` — they have
-// no signal that any local content is searchable. Gated on actually-indexed
-// chunks (not just configured sources) so an empty/erroring source doesn't
-// produce false advertising.
+// no signal that any local content is searchable. Gated on indexed document
+// counts (not just configured sources) so an empty/erroring source doesn't
+// produce false advertising; a source with no cached count is left out rather
+// than guessed.
 function buildDocumentsContext(): string {
   const sources = listEnabledDocumentSources();
   if (sources.length === 0) return "";
+  // No snapshot yet (boot race or a failed pool refresh): ask for one so the
+  // next turn can advertise the corpus instead of silently omitting it.
+  warmDocumentSourceStatsIfMissing();
 
   let totalDocuments = 0;
   const lines: string[] = [];
