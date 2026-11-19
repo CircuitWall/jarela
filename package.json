@@ -160,6 +160,7 @@
     "@langchain/langgraph": "^1.4.17",
     "@langchain/langgraph-checkpoint": "^1.1.5",
     "@langchain/mcp-adapters": "^2.0.1",
+    "@microsoft/copilot-sdk": "^2.0.1",
     "@serwist/next": "^9.5.12",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/cross-spawn": "^6.0.6",

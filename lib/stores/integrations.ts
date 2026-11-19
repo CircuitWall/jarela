@@ -244,6 +244,20 @@ export const INTEGRATIONS = {
       { key: "default_timeout_seconds", label: "Timeout seconds (optional)", placeholder: "600", secret: false, required: false },
     ],
   },
+  "github-copilot-cli": {
+    label: "GitHub Copilot (agent runtime)",
+    category: "infrastructure" as IntegrationCategory,
+    description:
+      "Used by copilot_delegate to run the GitHub Copilot agent runtime through the Copilot SDK. " +
+      "Authentication reuses the GitHub integration token (add the Copilot Requests permission) or the " +
+      "Copilot CLI sign-in from `copilot login`. The bundled runtime is used unless a runtime path is set.",
+    fields: [
+      { key: "default_model", label: "Default model (optional)", placeholder: "claude-sonnet-4.5", secret: false, required: false },
+      { key: "default_timeout_seconds", label: "Timeout seconds (optional)", placeholder: "600", secret: false, required: false },
+      { key: "copilot_home", label: "Copilot home directory (optional)", placeholder: "C:\\Users\\you\\.copilot", secret: false, required: false },
+      { key: "runtime_path", label: "Runtime path (optional)", placeholder: "leave empty to use the bundled runtime", secret: false, required: false },
+    ],
+  },
   deepseek: {
     label: "DeepSeek",
     category: "llm" as IntegrationCategory,

@@ -64,3 +64,4 @@ import "../system/workflows";
 import "../general/terminal";
 import "../delegation/claude-delegate";
 import "../delegation/codex-delegate";
+import "../delegation/copilot-delegate";

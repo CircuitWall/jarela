@@ -21,7 +21,7 @@ import { startOwnedAsyncCall, completeAsyncCall, failAsyncCall, consumeAsyncResu
 import { requestSystemSignalDispatch } from "@/lib/lifecycle/system-signals";
 
 export type JobStatus = "running" | "done" | "error" | "cancelled";
-export type JobProvider = "claude" | "codex";
+export type JobProvider = "claude" | "codex" | "copilot";
 
 export interface DelegateJob {
   resultKey?: string;
@@ -39,6 +39,8 @@ export interface DelegateJob {
   resumed: boolean;
   launch: unknown;
   _child: ChildProcess | null;
+  /** Providers without a per-job child process cancel through this hook instead. */
+  _cancel?: (() => void) | null;
 }
 
 const JOBS_SYM: unique symbol = Symbol.for("@jarela/claude-delegate-jobs");
@@ -157,6 +159,9 @@ export function cancelJob(jobId: string, provider: JobProvider): boolean {
   job.status = "cancelled";
   if (job._child) {
     try { job._child.kill("SIGTERM"); } catch { /* already dead */ }
+  }
+  if (job._cancel) {
+    try { job._cancel(); } catch { /* provider already settled */ }
   }
   if (job.resultKey) {
     failAsyncCall(job.resultKey, "Delegate cancelled. Any external effects may already have happened; verify before retrying.");
