@@ -122,7 +122,8 @@ export const memorySearchTool = tool(
   {
     name: "memory_search",
     description:
-      "Search long-term memory by meaning and by exact text (embedding similarity plus literal key/value matches; falls back to keyword overlap when no embedding model is configured). Prefer this over memory_list for paraphrases or concepts. Set include_chats to also search past conversations, including archived turns.",
+      "Search long-term memory by meaning and by exact text (embedding similarity plus literal key/value matches; falls back to keyword overlap when no embedding model is configured). Prefer this over memory_list for paraphrases or concepts. Set include_chats to also search past conversations, including archived turns. " +
+      "Coverage limits: only entries that already carry an embedding are ranked semantically (pending or unembedded entries appear only through the keyword/literal fallback), policy-excluded records are never returned, and hits below the similarity floor are dropped — an empty result means no confident match, so fall back to memory_list or an exact-identifier query before concluding nothing was saved.",
     schema: z.object({
       query: z.string().describe("Natural-language query to search memory for"),
       namespace: z.string().optional().describe("Restrict results to this namespace (optional; excludes chat history)"),

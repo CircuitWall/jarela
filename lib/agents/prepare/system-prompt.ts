@@ -681,6 +681,11 @@ function buildMemoryContext(budget: ContextBudget): string {
     `- Hot conversation history is budgeted by model context size: ${formatContextBudgetSummary(budget)}.`,
     `- Active memory policy: ${policy}. ${writeGuidance}`,
     "- Use memory_search proactively when relevant saved facts or prior conversations could help. Use memory_read / memory_list to inspect known entries.",
+    "Recall limits — treat these as unknowns, never as evidence:",
+    "- memory_search only ranks records that already carry an embedding. A record still queued for embedding, or saved while no embedding provider was configured, is reachable only by the keyword/literal fallback and only within its recent window.",
+    "- Records the active policy or internal namespaces exclude are never returned (for example structured-memory policy filtering), and near-identical entries collapse to the newest one.",
+    "- Results below the similarity floor are dropped, so an empty result means 'no confident match', not 'nothing was saved'. When a search misses, try memory_list or a literal/keyword search (identifiers, names, error codes) before telling the user no record exists.",
+    "- Recall spans chat history across threads; replies still streaming (in progress) are excluded until they finish.",
     "Proactive save procedure — run it whenever information fits the active memory policy, without waiting to be asked:",
     "1. Trigger: the user states a preference, a fact about themselves or their work, a decision, a constraint, or a correction to something saved; or a tool result verifies a durable fact. Routine status, one-off chatter, secrets, credentials, and raw transcripts never qualify.",
     "2. Check: memory_search (or memory_read for a known key) for an existing record on the same subject. Update that stable key rather than creating a duplicate or contradictory copy.",
@@ -764,5 +769,6 @@ function buildDocumentsContext(): string {
     `The user has ${totalDocuments} indexed documents across ${lines.length} document source(s) available to you:`,
     ...lines,
     "Call `documents_search` whenever the user asks about local files, notes, project docs, or any content that sounds like it lives in one of these sources. Prefer it over guessing from training data. Use `documents_list_sources` to enumerate, and pass `source_id` to scope a search.",
+    "Limits: search scores a capped window of chunks in a stable order, so very large corpora are only partially covered — narrow with `source_id`, or run a second query with different terms. Without usable vectors it falls back to literal text matching, and low-similarity hits are dropped, so a miss is not proof the content is absent.",
   ].join("\n");
 }
