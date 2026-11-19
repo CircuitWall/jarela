@@ -149,28 +149,28 @@ export function listThreadsByAgent(agent_id: string, limit = 50): ThreadRow[] {
     .all(agent_id, limit) as unknown as ThreadRow[];
 }
 
-export function listLatestAssistantRepliesByAgent(): Array<{ agent_id: string; content: string }> {
+/**
+ * Latest non-empty assistant reply per agent. Read on the worker pool: the
+ * per-row `trim(content)` filter touches every assistant message, and the
+ * previous correlated `NOT EXISTS` shape made that quadratic (7.9s measured
+ * under load).
+ */
+export async function listLatestAssistantRepliesByAgent(): Promise<Array<{ agent_id: string; content: string }>> {
   const previewChars = 240;
-  return getDb()
-    .prepare(`
-      SELECT t.agent_id, substr(trim(m.content), 1, ${previewChars}) AS content
+  return readAppRows<{ agent_id: string; content: string }>(`
+    WITH latest AS (
+      SELECT t.agent_id, MAX(m.rowid) AS rowid
       FROM threads t
-      JOIN messages m ON m.thread_id=t.thread_id
+      JOIN messages m ON m.thread_id = t.thread_id
       WHERE m.role='assistant'
         AND m.transcript_status='completed'
         AND trim(m.content) <> ''
-        AND NOT EXISTS (
-          SELECT 1
-          FROM threads newer_t
-          JOIN messages newer_m ON newer_m.thread_id=newer_t.thread_id
-          WHERE newer_t.agent_id=t.agent_id
-            AND newer_m.role='assistant'
-            AND newer_m.transcript_status='completed'
-            AND trim(newer_m.content) <> ''
-            AND newer_m.rowid > m.rowid
-        )
-    `)
-    .all() as Array<{ agent_id: string; content: string }>;
+      GROUP BY t.agent_id
+    )
+    SELECT l.agent_id, substr(trim(m.content), 1, ${previewChars}) AS content
+    FROM latest l
+    JOIN messages m ON m.rowid = l.rowid
+  `);
 }
 
 export function getThread(thread_id: string): ThreadRow | null {

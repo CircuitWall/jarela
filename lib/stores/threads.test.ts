@@ -105,7 +105,7 @@ afterAll(async () => {
 });
 
 describe("latest assistant replies by agent", () => {
-  it("returns the latest completed non-empty reply even when a user message is newer", () => {
+  it("returns the latest completed non-empty reply even when a user message is newer", async () => {
     const thread = createThread("agent-menu-reply-preview");
     addMessage(thread.thread_id, "assistant", "Earlier reply");
     const newestReply = "latest reply ".repeat(40);
@@ -117,11 +117,11 @@ describe("latest assistant replies by agent", () => {
     const failedThread = createThread("agent-menu-reply-failed");
     addMessage(failedThread.thread_id, "assistant", "Failed reply", undefined, null, undefined, "failed");
 
-    expect(listLatestAssistantRepliesByAgent()).toContainEqual({
+    expect(await listLatestAssistantRepliesByAgent()).toContainEqual({
       agent_id: "agent-menu-reply-preview",
       content: newestReply.slice(0, 240).trim(),
     });
-    expect(listLatestAssistantRepliesByAgent()).not.toContainEqual(expect.objectContaining({
+    expect(await listLatestAssistantRepliesByAgent()).not.toContainEqual(expect.objectContaining({
       agent_id: "agent-menu-reply-failed",
     }));
   });

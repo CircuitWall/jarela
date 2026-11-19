@@ -11,6 +11,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { getDb } from "@/lib/db";
+import { readAppRows } from "@/lib/db/read-pool";
 import { withDbTransaction } from "@/lib/db/transaction";
 import { getConfig } from "@/lib/env/config";
 import { embedBestEffort } from "@/lib/embeddings";
@@ -141,13 +142,13 @@ interface IndexedDocRow {
   content_hash: string;
 }
 
-function listIndexedDocs(sourceId: string): Map<string, IndexedDocRow> {
-  const rows = getDb()
-    .prepare("SELECT id, path, mtime_ms, size_bytes, content_hash FROM documents WHERE source_id=?")
-    .all(sourceId) as unknown as IndexedDocRow[];
-  const map = new Map<string, IndexedDocRow>();
-  for (const r of rows) map.set(r.path, r);
-  return map;
+function listIndexedDocs(sourceId: string): Promise<IndexedDocRow[]> {
+  // A source can hold tens of thousands of documents (1.2s measured on a 43k
+  // document source), so the diff read runs on the worker pool.
+  return readAppRows<IndexedDocRow>(
+    "SELECT id, path, mtime_ms, size_bytes, content_hash FROM documents WHERE source_id=?",
+    [sourceId],
+  );
 }
 
 interface UnembeddedChunkRow {
@@ -155,19 +156,20 @@ interface UnembeddedChunkRow {
   text: string;
 }
 
-function listUnembeddedChunks(documentId: string): UnembeddedChunkRow[] {
-  return getDb()
-    .prepare(
-      `SELECT id, text
-       FROM document_chunks
-       WHERE document_id=? AND embedding IS NULL AND embed_failed_at IS NULL
-       ORDER BY chunk_index ASC`,
-    )
-    .all(documentId) as unknown as UnembeddedChunkRow[];
+function listUnembeddedChunks(documentId: string): Promise<UnembeddedChunkRow[]> {
+  // Per-document and index-backed, but a large document can hold thousands of
+  // chunks (0.6s measured): keep it off the writer.
+  return readAppRows<UnembeddedChunkRow>(
+    `SELECT id, text
+     FROM document_chunks
+     WHERE document_id=? AND embedding IS NULL AND embed_failed_at IS NULL
+     ORDER BY chunk_index ASC`,
+    [documentId],
+  );
 }
 
 async function backfillDocumentEmbeddings(documentId: string): Promise<{ missing: number; embedded: number; embedError: string | null }> {
-  const rows = listUnembeddedChunks(documentId);
+  const rows = await listUnembeddedChunks(documentId);
   if (rows.length === 0) return { missing: 0, embedded: 0, embedError: null };
 
   const { vectors, error, terminal, modelSignature } = await embedBestEffort(rows.map((r) => r.text));
@@ -272,7 +274,7 @@ export async function indexSource(
   const { files, truncated } = await walk(source.path);
   stats.scanned = files.length;
 
-  const indexed = listIndexedDocs(source.id);
+  const indexed = new Map((await listIndexedDocs(source.id)).map((row) => [row.path, row]));
   const onDisk = new Set<string>(files.map((f) => f.abs));
 
   // Drop entries whose file is gone.
@@ -433,12 +435,16 @@ export async function chunkAndEmbedDocument(
      VALUES (?, ?, ?, ?, ?, ?, NULL)`,
   );
   const chunkIds: string[] = [];
-  for (let i = 0; i < chunks.length; i++) {
-    const id = randomUUID();
-    chunkIds.push(id);
-    insertChunk.run(id, documentId, i, chunks[i].text, chunks[i].start_offset, chunks[i].end_offset);
-  }
-  db.prepare("UPDATE documents SET chunk_count=? WHERE id=?").run(chunks.length, documentId);
+  // One transaction for the whole chunk set: a per-row commit of a few
+  // thousand inserts blocked the loop for ~1s per document.
+  withDbTransaction(() => {
+    for (let i = 0; i < chunks.length; i++) {
+      const id = randomUUID();
+      chunkIds.push(id);
+      insertChunk.run(id, documentId, i, chunks[i].text, chunks[i].start_offset, chunks[i].end_offset);
+    }
+    db.prepare("UPDATE documents SET chunk_count=? WHERE id=?").run(chunks.length, documentId);
+  });
 
   // embedBestEffort handles retry + halving fallback internally so a
   // single bad input or transient 429 doesn't drop the whole document.
