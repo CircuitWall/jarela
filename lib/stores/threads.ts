@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { DB_PATH, getDb } from "@/lib/db";
-import { readRowsAsync } from "@/lib/db/read-pool";
+import { readAppRows, readRowsAsync } from "@/lib/db/read-pool";
 import { cachedRead } from "@/lib/db/statement-cache";
 import { withDbTransaction } from "@/lib/db/transaction";
 import { stripDeclaredReferencesFence } from "@/api/message-content";
@@ -616,11 +616,20 @@ export function replaceMessageDraft(msg_id: string, content: string): boolean {
   return changed > 0;
 }
 
-export function recoverAbandonedMessageDrafts(): number {
+export async function recoverAbandonedMessageDrafts(): Promise<number> {
   const db = getDb();
-  const drafts = db.prepare(
-    "SELECT msg_id, content, metadata FROM messages WHERE transcript_status='in_progress'",
-  ).all() as Array<{ msg_id: string; content: string; metadata: string | null }>;
+  const sql = "SELECT msg_id, content, metadata FROM messages WHERE transcript_status='in_progress'";
+  type DraftRow = { msg_id: string; content: string; metadata: string | null };
+  let drafts: DraftRow[];
+  try {
+    // Full scan of `messages` (no index on transcript_status): measured 7.4s
+    // on a 170 MB table, which froze boot on every start. Read it on the
+    // worker pool instead; the writer only handles the handful of updates.
+    drafts = await readAppRows<DraftRow>(sql);
+  } catch (error) {
+    console.warn("[threads] draft recovery fell back to the writer connection:", error);
+    drafts = db.prepare(sql).all() as DraftRow[];
+  }
   if (drafts.length === 0) return 0;
   withDbTransaction(() => {
     for (const draft of drafts) {

@@ -357,12 +357,12 @@ describe("addMessage embedding scheduling (issue: image attachments break embedd
     expect(getDb().prepare("SELECT source_hash FROM message_embedding_jobs WHERE message_id=?").get(draft.msg_id)).toBeDefined();
   });
 
-  it("recovers abandoned drafts as interrupted transcript entries", () => {
+  it("recovers abandoned drafts as interrupted transcript entries", async () => {
     const t = createThread("agent-draft-recovery");
     const draft = addMessage(t.thread_id, "assistant", "", null, null, null, "in_progress");
     appendMessageDraft(draft.msg_id, "Saved partial response");
 
-    expect(recoverAbandonedMessageDrafts()).toBe(1);
+    expect(await recoverAbandonedMessageDrafts()).toBe(1);
     expect(getMessages(t.thread_id)[0]).toMatchObject({
       content: "Saved partial response",
       transcript_status: "interrupted",

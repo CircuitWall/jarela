@@ -382,7 +382,10 @@ synchronous connection paid for it on the hot paths.
   `lib/documents/source-stats-cache.ts`. The system prompt used to run
   `getDocumentSourceStats()` for every enabled source on every turn (~3.2 s of
   blocked loop per turn); it now reads a cached snapshot refreshed on the
-  read-only worker pool at boot, after indexing, and after source mutations.
+  read-only worker pool at boot, after indexing, and in the background when a
+  request finds it older than five minutes. Requests never wait for a refresh
+  once a snapshot exists — counting a 244k-chunk corpus takes ~3.4 s, so
+  blocking the sources page on it made that page time out.
 - `searchDocuments` pages candidates (2,000 rows per page) from the read pool
   in `(document_id, chunk_index)` order with keyset pagination. The previous
   query read up to 20,000 rows — text and embeddings — on the writer with no
