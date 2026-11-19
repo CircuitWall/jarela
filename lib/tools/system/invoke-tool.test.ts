@@ -35,7 +35,9 @@ interface InvokeResult {
   tool: string;
   status: "done" | "rejected" | "error";
   result?: unknown;
+  error?: string;
   error_code?: string;
+  suggestions?: string[];
   permission_reason?: string | null;
 }
 
@@ -326,6 +328,29 @@ describe("invoke_tool", () => {
 
     await expect(invokeToolTool.invoke({ name: "invoke_tool", args: {} }))
       .rejects.toThrow(SELF_INVOKE_MESSAGE);
+  });
+
+  it("names close matches when the target does not exist", async () => {
+    // Live telemetry: the model retried a server-prefixed guess 29 times
+    // because the rejection pointed at nothing else.
+    registerTools("Files", "read", [tool(async () => "ok", {
+      name: "outlook_search_messages", description: "Synthetic unknown-target suggestion", schema: z.object({}),
+    })]);
+
+    const out = parse(await invokeToolTool.invoke({ name: "M365OutlookOutlookSearchMessages", args: {} }));
+
+    expect(out).toMatchObject({ ok: false, status: "rejected", error_code: "unknown_tool" });
+    expect(out.suggestions).toContain("outlook_search_messages");
+    expect(out.error).toContain("outlook_search_messages");
+    expect(out.error).toContain("list_tools");
+  });
+
+  it("still explains the naming convention when nothing matches", async () => {
+    const out = parse(await invokeToolTool.invoke({ name: "qqzzxx_no_such_tool", args: {} }));
+
+    expect(out).toMatchObject({ ok: false, error_code: "unknown_tool" });
+    expect(out.suggestions).toBeUndefined();
+    expect(out.error).toContain("list_tools");
   });
 
   it("rejects tools that are not enabled for the current agent", async () => {

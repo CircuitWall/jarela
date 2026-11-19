@@ -49,6 +49,7 @@ interface InvocationResult {
   result?: unknown;
   error?: string;
   error_code?: string;
+  suggestions?: string[];
   permission?: Permission;
   permission_reason?: string | null;
 }
@@ -94,7 +95,13 @@ function runPermissionMapFromConfig(config?: RunnableConfig): Map<string, { perm
   return out;
 }
 
-function reject(toolName: string, error: string, errorCode: string, entry?: ToolCatalogEntry): string {
+function reject(
+  toolName: string,
+  error: string,
+  errorCode: string,
+  entry?: ToolCatalogEntry,
+  suggestions?: string[],
+): string {
   const body: InvocationResult = {
     ok: false,
     tool: toolName,
@@ -104,7 +111,64 @@ function reject(toolName: string, error: string, errorCode: string, entry?: Tool
     permission: entry?.permission,
     permission_reason: entry?.permission_reason ?? null,
   };
+  if (suggestions && suggestions.length > 0) body.suggestions = suggestions;
   return JSON.stringify(body);
+}
+
+const MAX_UNKNOWN_TOOL_SUGGESTIONS = 5;
+
+function normalizeToolName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function commonPrefixLength(a: string, b: string): number {
+  const limit = Math.min(a.length, b.length);
+  let index = 0;
+  while (index < limit && a[index] === b[index]) index += 1;
+  return index;
+}
+
+/**
+ * Rank catalog names against a name the caller guessed. Telemetry showed the
+ * model retrying 29 times on `M365OutlookOutlookSearchMessages` because the
+ * rejection named no alternative; a closest-match list lets it self-correct
+ * in one call.
+ */
+function suggestToolNames(requested: string, available: readonly string[]): string[] {
+  const target = normalizeToolName(requested);
+  if (!target) return [];
+  const scored: Array<{ name: string; score: number }> = [];
+  for (const name of available) {
+    const normalized = normalizeToolName(name);
+    if (!normalized) continue;
+    let score = 0;
+    if (normalized === target) {
+      score = 100;
+    } else if (target.includes(normalized)) {
+      // Guessed name repeats the real one behind a server-name prefix.
+      score = 60 + Math.round((normalized.length / target.length) * 20);
+    } else if (normalized.includes(target)) {
+      score = 50 + Math.round((target.length / normalized.length) * 20);
+    } else {
+      const prefix = commonPrefixLength(normalized, target);
+      if (prefix >= 6 && prefix / Math.max(normalized.length, target.length) >= 0.6) {
+        score = 40 + prefix;
+      }
+    }
+    if (score > 0) scored.push({ name, score });
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+    .slice(0, MAX_UNKNOWN_TOOL_SUGGESTIONS)
+    .map((candidate) => candidate.name);
+}
+
+function unknownToolMessage(toolName: string, suggestions: readonly string[]): string {
+  if (suggestions.length === 0) {
+    return `Unknown tool: ${toolName}. Tool names are not prefixed with their MCP server name; call list_tools with include_schema=true to get the exact name.`;
+  }
+  const quoted = suggestions.map((name) => `"${name}"`).join(", ");
+  return `Unknown tool: ${toolName}. Closest permitted matches: ${quoted}. Retry with one of these names, or call list_tools with include_schema=true for the exact name.`;
 }
 
 async function resolveTargetPermission(
@@ -123,9 +187,13 @@ async function resolveTargetPermission(
   const permissionMap = applyAgentPermissionsToCatalog(catalog, agentCfg);
   const entry = permissionMap.find((toolEntry) => toolEntry.name === toolName);
   if (!entry) {
+    const suggestions = suggestToolNames(
+      toolName,
+      permissionMap.filter((toolEntry) => toolEntry.permission === "enabled").map((toolEntry) => toolEntry.name),
+    );
     return {
       ok: false,
-      response: reject(toolName, `Unknown tool: ${toolName}`, "unknown_tool"),
+      response: reject(toolName, unknownToolMessage(toolName, suggestions), "unknown_tool", undefined, suggestions),
     };
   }
 

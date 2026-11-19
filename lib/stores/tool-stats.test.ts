@@ -216,6 +216,54 @@ describe("tool usefulness telemetry", () => {
     ]));
   });
 
+  it("classifies an unknown tool name as caller input, not a permission problem", () => {
+    // Live telemetry: 29 invoke_tool rejections for
+    // "Unknown tool: M365OutlookOutlookSearchMessages" were recorded as
+    // configuration_problem/permission because the rejection envelope carries
+    // `permission: "enabled"` and `permission_reason: null` field names.
+    const name = `proxy_unknown_${Date.now()}`;
+    for (let i = 0; i < 2; i += 1) {
+      recordToolUsage([
+        { id: `unknown-${i}`, phase: "call", name, payload: { name: "M365OutlookOutlookSearchMessages", args: {} } },
+        {
+          id: `unknown-${i}`,
+          phase: "result",
+          name,
+          payload: {
+            ok: false,
+            tool: "M365OutlookOutlookSearchMessages",
+            status: "rejected",
+            error: "Unknown tool: M365OutlookOutlookSearchMessages",
+            error_code: "unknown_tool",
+            permission: "enabled",
+            permission_reason: null,
+          },
+        },
+      ], "");
+    }
+
+    expect(listToolFailureSamples(name)).toEqual([
+      expect.objectContaining({
+        normalized_reason: "unknown_tool",
+        failure_class: "caller_argument_error",
+        count: 2,
+      }),
+    ]);
+  });
+
+  it("treats transport failures as transient instead of product gaps", () => {
+    const name = `proxy_fetch_${Date.now()}`;
+    for (const [id, error] of [["fetch", "fetch failed"], ["reset", "read ECONNRESET"]]) {
+      recordToolUsage([
+        { id, phase: "call", name, payload: { name: "web_search", args: {} } },
+        { id, phase: "result", name, payload: { ok: false, tool: "web_search", status: "error", error } },
+      ], "");
+    }
+
+    const rows = listToolFailureSamples(name);
+    expect(rows).toEqual([expect.objectContaining({ normalized_reason: "network", failure_class: "transient_tool_failure", count: 2 })]);
+  });
+
   it.each(["invalid_tool_arguments", "bad_args_json"])("recognizes structured caller errors (%s)", (code) => {
     for (const payload of [{ error_code: code, error: "invalid field" }, JSON.stringify({ error_code: code, error: "invalid field" })]) {
       const samples = summarizeToolFailureSamples([{ id: "typed", phase: "result", name: "invoke_tool", payload }]);

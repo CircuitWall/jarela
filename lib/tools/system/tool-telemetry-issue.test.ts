@@ -260,4 +260,107 @@ describe("report_tool_telemetry_issue", () => {
     expect(result).toMatchObject({ skipped: true, reason: "threshold_not_met", metric: { value: 0 } });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("does not refile the same escalation as failure counts grow", async () => {
+    process.env.GH_TOKEN = "ghp_test";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ number: 789 }), { status: 201 }),
+    );
+    const toolName = `recurring_growth_${Date.now()}`;
+    const record = (id: string) => recordToolUsage([
+      { id, phase: "call", name: toolName, payload: { value: "x" } },
+      { id, phase: "result", name: toolName, payload: { error: "schema validation failed" } },
+    ], "");
+    for (const id of ["one", "two", "three"]) record(id);
+
+    const first = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-05T00:00:00.000Z"), {
+      failureThreshold: 100_000,
+    });
+    record("four");
+    const second = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-06T00:00:00.000Z"), {
+      failureThreshold: 100_000,
+    });
+
+    expect(first.github).toMatchObject({ ok: true });
+    expect(second).toMatchObject({ skipped: true, reason: "already_filed" });
+    expect(second.issue?.fingerprint).toBe(first.issue?.fingerprint);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not refile an escalation after the aggregate threshold files its own complaint", async () => {
+    process.env.GH_TOKEN = "ghp_test";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ number: 790 }), { status: 201 }),
+    );
+    const escalate = `escalation_then_threshold_${Date.now()}`;
+    for (let i = 0; i < 3; i += 1) {
+      recordToolUsage([
+        { id: `esc-${i}`, phase: "call", name: escalate, payload: { value: "x" } },
+        { id: `esc-${i}`, phase: "result", name: escalate, payload: { error: "schema validation failed" } },
+      ], "");
+    }
+    const first = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-07T00:00:00.000Z"), {
+      failureThreshold: 100_000,
+    });
+    // Simulate the aggregate-threshold path replacing the shared last-filed key.
+    const { recordSeen } = await import("@/lib/stores/change-tracker");
+    recordSeen("tool-telemetry-issues", "last-filed", "unrelated-signature");
+    const second = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-08T00:00:00.000Z"), {
+      failureThreshold: 100_000,
+    });
+
+    expect(first.skipped).toBe(false);
+    expect(second).toMatchObject({ skipped: true, reason: "already_filed" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the fingerprint stable as failure counts grow", () => {
+    // Issues #951-#962 were one complaint refiled daily: the fingerprint
+    // hashed the rendered body, whose call counts and timestamps move on
+    // every call.
+    const toolName = `stable_signature_${Date.now()}`;
+    const record = (id: string) => recordToolUsage([
+      { id, phase: "call", name: toolName, payload: { value: "x" } },
+      { id, phase: "result", name: toolName, payload: { error: "schema validation failed" } },
+    ], "");
+    record("first");
+    record("second");
+    const before = buildToolTelemetryComplaintIssue({ tool_names: [toolName], min_failure_count: 1 });
+    record("third");
+    const after = buildToolTelemetryComplaintIssue({ tool_names: [toolName], min_failure_count: 1 });
+
+    expect(before.body).not.toBe(after.body);
+    expect(after.fingerprint).toBe(before.fingerprint);
+  });
+
+  it("keeps unknown tool names out of drafts and automatic escalation", async () => {
+    process.env.GH_TOKEN = "ghp_test";
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    for (let i = 0; i < 3; i += 1) {
+      recordToolUsage([
+        { id: `miss-${i}`, phase: "call", name: "invoke_tool", payload: { name: "M365OutlookOutlookSearchMessages", args: {} } },
+        {
+          id: `miss-${i}`,
+          phase: "result",
+          name: "invoke_tool",
+          payload: {
+            ok: false,
+            tool: "M365OutlookOutlookSearchMessages",
+            status: "rejected",
+            error: "Unknown tool: M365OutlookOutlookSearchMessages",
+            error_code: "unknown_tool",
+            permission: "enabled",
+            permission_reason: null,
+          },
+        },
+      ], "");
+    }
+
+    expect(buildToolTelemetryComplaintIssue({ tool_names: ["invoke_tool"], min_failure_count: 1 }).tool_count).toBe(0);
+    const result = await maybeAutoFileToolTelemetryIssue(new Date("2026-11-20T00:00:00.000Z"), {
+      failureThreshold: 1, patternFailureThreshold: 1,
+    });
+    expect(result).toMatchObject({ skipped: true, reason: "threshold_not_met", metric: { value: 0 } });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

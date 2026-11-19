@@ -200,7 +200,9 @@ export function listToolFailureSamples(toolName?: string): ToolFailureSampleRow[
     : getDb().prepare(sql).all()) as unknown as ToolFailureSampleRow[];
   return rows.map((row) => isCallerArgumentError(row.sample_error, undefined)
     ? { ...row, normalized_reason: "caller_arguments", failure_class: "caller_argument_error" }
-    : row);
+    : isUnknownToolError(row.sample_error, undefined)
+      ? { ...row, normalized_reason: "unknown_tool", failure_class: "caller_argument_error" }
+      : row);
 }
 
 export function getToolFailurePatterns(
@@ -412,16 +414,40 @@ function sampleErrorText(payload: unknown): string {
   return stringifyPayload(candidate ?? payload);
 }
 
-function isCallerArgumentError(text: string, payload: unknown): boolean {
+function errorCodeOf(payload: unknown): string | undefined {
   const parsed = typeof payload === "string" ? parseJsonSafe<unknown>(payload) : payload;
-  const code = parsed && typeof parsed === "object" && "error_code" in parsed ? parsed.error_code : undefined;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const code = (parsed as { error_code?: unknown }).error_code;
+  return typeof code === "string" ? code : undefined;
+}
+
+function isCallerArgumentError(text: string, payload: unknown): boolean {
+  const code = errorCodeOf(payload);
   return code === "invalid_tool_arguments" || code === "bad_args_json"
     || /^(?:Error:\s*)?Received tool input did not match expected schema\b/i.test(text.trim());
 }
 
+// A caller that names a tool that does not exist is a bad input, not a broken
+// tool. It is grouped with caller argument errors so a model guessing names
+// never escalates into a filed complaint.
+function isUnknownToolError(text: string, payload: unknown): boolean {
+  return errorCodeOf(payload) === "unknown_tool" || /^(?:Error:\s*)?Unknown tool\b/i.test(text.trim());
+}
+
+// Only the message and the structured error code describe the failure. The
+// rest of a tool result envelope carries field names — invoke_tool returns
+// `permission: "enabled"` on every rejection, so classifying against the raw
+// payload marked every rejection a permission problem.
+function classificationPayload(payload: unknown): unknown {
+  if (typeof payload === "string") return payload;
+  const code = errorCodeOf(payload);
+  return code === undefined ? undefined : { error_code: code };
+}
+
 function normalizeFailureReason(text: string, payload: unknown): string {
   if (isCallerArgumentError(text, payload)) return "caller_arguments";
-  const lower = `${text} ${stringifyPayload(payload)}`.toLowerCase();
+  if (isUnknownToolError(text, payload)) return "unknown_tool";
+  const lower = `${text} ${stringifyPayload(classificationPayload(payload))}`.toLowerCase();
   if (/auth|token|credential|unauthorized|401|master key|locked/.test(lower)) return "auth";
   if (/permission|forbidden|denied|403/.test(lower)) return "permission";
   if (/not found|enoent|404|missing|unknown/.test(lower)) return "not_found";
@@ -429,15 +455,29 @@ function normalizeFailureReason(text: string, payload: unknown): string {
   if (/timeout|timed out|deadline|aborted/.test(lower)) return "timeout";
   if (/rate.?limit|too many requests|429|quota/.test(lower)) return "rate_limited";
   if (/context|too long|max_tokens|token count|payload too large/.test(lower)) return "size_or_context";
+  if (isNetworkFailure(lower)) return "network";
   return "other";
 }
 
+// Undici reports unreachable hosts as bare "fetch failed", and Node socket
+// errors carry codes like ECONNRESET/ENOTFOUND. Both are retryable transport
+// noise, not product gaps.
+function isNetworkFailure(lower: string): boolean {
+  return /fetch failed|econn(reset|refused|aborted)|enotfound|eai_again|etimedout|getaddrinfo|socket hang up|network|dns/.test(lower);
+}
+
 function classifyFailure(text: string, payload: unknown): ToolFailureClass {
-  if (isCallerArgumentError(text, payload)) return "caller_argument_error";
-  const lower = `${text} ${stringifyPayload(payload)}`.toLowerCase();
+  if (isCallerArgumentError(text, payload) || isUnknownToolError(text, payload)) return "caller_argument_error";
+  const lower = `${text} ${stringifyPayload(classificationPayload(payload))}`.toLowerCase();
   if (/\b(skip|skipped|not applicable|duplicate|no event)\b/.test(lower)) return "expected_skip";
   const reason = normalizeFailureReason(text, payload);
-  if (reason === "timeout" || reason === "rate_limited" || /\b(network|econn|temporar|503|502)\b/.test(lower)) {
+  if (
+    reason === "timeout"
+    || reason === "rate_limited"
+    || reason === "network"
+    || /\b(network|econn|temporar|503|502)\b/.test(lower)
+    || isNetworkFailure(lower)
+  ) {
     return "transient_tool_failure";
   }
   if (reason === "auth" || reason === "permission" || reason === "not_found" || /not configured|disabled/.test(lower)) {
