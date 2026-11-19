@@ -14,6 +14,7 @@ import { gmailManifest } from "@/lib/integrations/gmail/manifest";
 import { googleManifest } from "@/lib/integrations/google/manifest";
 import { icloudManifest } from "@/lib/integrations/icloud/manifest";
 import { jiraAlignManifest } from "@/lib/integrations/jira_align/manifest";
+import { githubCopilotCliManifest } from "@/lib/integrations/github-copilot-cli/manifest";
 import { openaiCodexManifest } from "@/lib/integrations/openai-codex/manifest";
 import { outlookManifest } from "@/lib/integrations/outlook/manifest";
 import type { IntegrationManifest } from "@/lib/integrations/manifest";
@@ -27,6 +28,7 @@ const RAW: IntegrationManifest[] = [
   googleManifest,
   icloudManifest,
   jiraAlignManifest,
+  githubCopilotCliManifest,
   openaiCodexManifest,
   outlookManifest,
 ];

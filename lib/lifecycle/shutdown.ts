@@ -102,6 +102,12 @@ async function runShutdown(): Promise<void> {
     console.error("[jarela] draining advertisement generation failed");
   }
   try {
+    const { stopCopilotRuntime } = await import("@/lib/tools/delegation/copilot-sdk-adapter");
+    await stopCopilotRuntime();
+  } catch {
+    console.error("[jarela] stopping the Copilot runtime failed");
+  }
+  try {
     const { stopScheduler } = await import("@/lib/scheduler");
     stopScheduler();
   } catch (err) {

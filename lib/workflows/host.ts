@@ -7,7 +7,7 @@ import type { WorkflowHostAdapter, WorkflowHostContext, WorkflowExecutionContext
 import type { WorkflowStep } from "./definition";
 
 const MODEL_OUTPUT_TOOLS = new Set([
-  "delegate_to_agent", "claude_delegate", "claude_delegate_status", "codex_delegate", "codex_delegate_status",
+  "delegate_to_agent", "claude_delegate", "claude_delegate_status", "codex_delegate", "codex_delegate_status", "copilot_delegate", "copilot_delegate_status",
 ]);
 async function permittedTool(agentId: string, action: string, readOnly: boolean) {
   if (["run_workflow", "advance_workflow", "answer_workflow", "cancel_workflow", "reconcile_workflow",

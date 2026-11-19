@@ -65,6 +65,9 @@ const nextConfig: NextConfig = {
     "utf-8-validate",
     "@napi-rs/keyring",
     "@appthreat/sqlite3",
+    // Copilot SDK loads a native runtime and a platform package; bundling it
+    // through webpack breaks both the dynamic import and the runtime lookup.
+    "@microsoft/copilot-sdk",
     "@whiskeysockets/baileys",
     "baileys",
     // libsignal is a transitive baileys dep that does `require('crypto')`
@@ -103,6 +106,8 @@ const nextConfig: NextConfig = {
       "./lib/skills/process-owner-*.cjs",
       "./node_modules/@napi-rs/keyring/**/*",
       "./node_modules/@appthreat/sqlite3/**/*",
+      "./node_modules/@microsoft/copilot-sdk/**/*",
+      "./node_modules/@microsoft/copilot-sdk-*/**/*",
       // Transformers.js uses onnxruntime-node in Node; onnxruntime-web is the
       // browser backend and is never loaded. scripts/postbuild.mjs prunes
       // foreign-platform ONNX binaries the tracer still pulls in.
