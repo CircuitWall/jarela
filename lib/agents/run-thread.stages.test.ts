@@ -33,7 +33,7 @@ vi.mock("@/lib/embeddings", () => ({
   upsertMessageEmbedCache: () => undefined,
 }));
 
-const { prepareThreadRun, persistAssistantMessage } = await import("./run-thread");
+const { prepareThreadRun, persistAssistantMessage, SIGNAL_LEASE_RENEW_MS } = await import("./run-thread");
 const { closeDb } = await import("@/lib/db");
 const { deleteModelConfig, upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
@@ -130,21 +130,29 @@ it("releases an owned lease and closes the provider iterator when its consumer r
   expect(state.release).toHaveBeenCalledExactlyOnceWith(prepared.signal_delivery);
 });
 
-it("renews an owned lease while streaming and retains it for successful transcript settlement", async () => {
-  let now = Date.now();
-  const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+it("renews an owned lease on a timer while the stream is quiet", async () => {
+  vi.useFakeTimers();
   try {
+    let unblock!: () => void;
+    const gate = new Promise<void>((resolve) => { unblock = resolve; });
     state.stream.mockImplementation(() => (async function* () {
       yield { type: "text_delta", data: { delta: "Answer" } } satisfies StreamChunk;
-      now += 10_001;
+      // A long tool call or approval wait: no chunks for many minutes.
+      await gate;
       yield { type: "done", data: {} } satisfies StreamChunk;
     })());
     const prepared = await prepareThreadRun(request(createThread("stages").thread_id));
-    for await (const chunk of prepared.stream) void chunk;
-    expect(state.renew).toHaveBeenCalledExactlyOnceWith(prepared.signal_delivery);
+    const consume = (async () => {
+      for await (const chunk of prepared.stream) void chunk;
+    })();
+    await vi.advanceTimersByTimeAsync(SIGNAL_LEASE_RENEW_MS * 3);
+    expect(state.renew.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(state.release).not.toHaveBeenCalled();
+    unblock();
+    await consume;
     expect(state.release).not.toHaveBeenCalled();
   } finally {
-    clock.mockRestore();
+    vi.useRealTimers();
   }
 });
 

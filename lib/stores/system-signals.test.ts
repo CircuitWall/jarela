@@ -212,6 +212,27 @@ describe("durable signal outbox", () => {
     expect(signals.systemSignalDiagnostics(base.agentId, base.threadId)[0].state).toBe("acknowledged");
   });
 
+  it("keeps the transcript and retries deliveries when the lease expired mid-turn", () => {
+    // Issue #936: "persist failed: System signal delivery lease was lost
+    // before transcript commit". A turn that outlives its lease (long tool
+    // call, approval wait, suspended host) used to throw away the finished
+    // reply because the acknowledgment could no longer be fenced.
+    vi.useFakeTimers();
+    signals.emitSystemSignal(base);
+    const batch = signals.claimSystemSignals(base.agentId, base.threadId, "instance", 10);
+    vi.advanceTimersByTime(11);
+
+    expect(() => persistAssistantMessage(
+      base.threadId, "Late answer", undefined, undefined, undefined,
+      undefined, undefined, undefined, undefined, undefined, batch,
+    )).not.toThrow();
+
+    const row = getDb().prepare("SELECT content FROM messages WHERE thread_id=? ORDER BY rowid DESC LIMIT 1")
+      .get(base.threadId) as { content: string } | undefined;
+    expect(row?.content).toBe("Late answer");
+    expect(signals.systemSignalDiagnostics(base.agentId, base.threadId)[0].state).toBe("ready");
+  });
+
   it("releases receipts when actual assistant persistence fails", () => {
     signals.emitSystemSignal(base);
     const batch = signals.claimSystemSignals(base.agentId, base.threadId, "instance");
