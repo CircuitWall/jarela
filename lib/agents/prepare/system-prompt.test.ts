@@ -166,6 +166,24 @@ describe("buildSystemPrompt delivery channel", () => {
       expect(prompt.match(/--- Persona ---/g)).toHaveLength(1);
     }
   });
+  it("tells the model what recall cannot see, so a miss is not read as absent data", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(),
+      trimmedMessage: "hi", budget, recallCtx: "", warmSummaryCtx: "", factsCtx: "",
+      experienceMode: "full", delegateRosterLines: [],
+    });
+
+    expect(prompt).toContain("Recall limits — treat these as unknowns, never as evidence:");
+    expect(prompt).toMatch(/only ranks records that already carry an embedding/);
+    expect(prompt).toMatch(/empty result means 'no confident match', not 'nothing was saved'/);
+    expect(prompt).toMatch(/replies still streaming \(in progress\) are excluded/);
+    // The documents advert carries its own coverage limits whenever it renders.
+    if (prompt.includes("--- Indexed documents ---")) {
+      expect(prompt).toMatch(/a query scores a capped window of chunks/);
+      expect(prompt).toMatch(/a miss is not proof the content is absent/);
+    }
+  });
+
   it("includes a Delivery channel block when delivered through a bridge", () => {
     const prompt = buildSystemPrompt({
       agentCfg: agentCfg(),

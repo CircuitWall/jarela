@@ -90,7 +90,10 @@ export const documentsSearch = tool(
       "Search indexed local documents (notes, READMEs, code, configs) by semantic similarity. " +
       "Use when the user references files in folders they've added under Documents, or when " +
       "you need facts from project-specific text the model wouldn't otherwise know. Returns " +
-      "matching files with up to two ranked passages each.",
+      "matching files with up to two ranked passages each. " +
+      "Coverage limits: a query scores a capped window of chunks in a stable order, so very large corpora are only " +
+      "partially covered — narrow with source_id or query again with different terms. With no usable vectors it falls " +
+      "back to literal text matching, and low-similarity hits are dropped, so a miss is not proof the content is absent.",
     schema: z.object({
       query: z.string().describe("Natural-language question or keywords to look up."),
       limit: z.number().int().min(1).max(25).optional()
