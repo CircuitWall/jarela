@@ -23,6 +23,11 @@ const AUTO_NAMESPACE = "tool-telemetry-issues";
 const AUTO_STATE_KEY = "auto-file";
 const AUTO_FINGERPRINT_SCOPE = "tool-telemetry-issues";
 const AUTO_FINGERPRINT_KEY = "last-filed";
+const AUTO_SIGNATURE_KEY_PREFIX = "signature:";
+// A filed complaint is not refiled for the same failure signature until this
+// window passes. Long enough to stop nightly duplicates, short enough that a
+// regression of a fixed failure resurfaces.
+const AUTO_REFILE_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 const AUTO_THRESHOLD_SCOPE = "internal-metric-thresholds";
 const TOOL_FAILURE_TOTAL_METRIC = "tool_failure_patterns_total";
 const AUTO_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -79,7 +84,7 @@ export function buildToolTelemetryComplaintIssue(input: TelemetryIssueInput = {}
   const title = input.title?.trim() || defaultIssueTitle(rows);
   const body = truncateBody(renderIssueBody(rows, { requestedNames, minCalls, minFailureCount, includeSuccessful: input.include_successful === true }));
   const tools = rows.map((row) => row.name);
-  return { title, body, tools, tool_count: rows.length, fingerprint: fingerprintIssue(title, body, tools) };
+  return { title, body, tools, tool_count: rows.length, fingerprint: fingerprintIssue(title, rows) };
 }
 
 export async function createToolTelemetryGitHubIssue(input: {
@@ -193,7 +198,7 @@ export async function maybeAutoFileToolTelemetryIssue(
       min_failure_count: 1,
       title: `Blocked tool escalation: ${pattern.tool_name} ${pattern.normalized_reason}`,
     });
-    if (getFingerprint(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY) === issue.fingerprint) {
+    if (recentlyFiledSignature(issue.fingerprint, nowDate)) {
       return { skipped: true, reason: "already_filed", issue };
     }
     const github = await createToolTelemetryGitHubIssue({
@@ -201,7 +206,10 @@ export async function maybeAutoFileToolTelemetryIssue(
       body: issue.body,
       labels: ["bug", "telemetry", "tools"],
     });
-    if (github.ok) recordSeen(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY, issue.fingerprint);
+    if (github.ok) {
+      recordFiledSignature(issue.fingerprint, nowDate);
+      recordSeen(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY, issue.fingerprint);
+    }
     return { skipped: !github.ok, reason: github.ok ? undefined : "github_create_failed", issue, github };
   }
 
@@ -220,6 +228,9 @@ export async function maybeAutoFileToolTelemetryIssue(
   if (getFingerprint(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY) === issue.fingerprint) {
     return { skipped: true, reason: "already_filed", issue, metric };
   }
+  if (recentlyFiledSignature(issue.fingerprint, nowDate)) {
+    return { skipped: true, reason: "already_filed", issue, metric };
+  }
 
   const github = await createToolTelemetryGitHubIssue({
     title: issue.title,
@@ -227,6 +238,7 @@ export async function maybeAutoFileToolTelemetryIssue(
     labels: ["bug", "telemetry"],
   });
   if (github.ok) {
+    recordFiledSignature(issue.fingerprint, nowDate);
     recordSeen(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY, issue.fingerprint);
     recordSeen(AUTO_THRESHOLD_SCOPE, metric.metric, String(metric.bucket));
   }
@@ -256,6 +268,17 @@ export function currentToolFailureMetric(threshold = DEFAULT_AUTO_FAILURE_THRESH
     bucket,
     previous_bucket: Number.isFinite(previous) ? previous : 0,
   };
+}
+
+function recentlyFiledSignature(fingerprint: string, nowDate: Date): boolean {
+  const filedAt = getFingerprint(AUTO_FINGERPRINT_SCOPE, `${AUTO_SIGNATURE_KEY_PREFIX}${fingerprint}`);
+  if (!filedAt) return false;
+  const filedMs = Date.parse(filedAt);
+  return Number.isFinite(filedMs) && nowDate.getTime() - filedMs < AUTO_REFILE_WINDOW_MS;
+}
+
+function recordFiledSignature(fingerprint: string, nowDate: Date): void {
+  recordSeen(AUTO_FINGERPRINT_SCOPE, `${AUTO_SIGNATURE_KEY_PREFIX}${fingerprint}`, nowDate.toISOString());
 }
 
 function autoTelemetryDue(nowDate: Date): boolean {
@@ -371,13 +394,27 @@ function truncateBody(body: string): string {
   return `${body.slice(0, MAX_BODY_CHARS - 80)}\n\n_Trimmed to ${MAX_BODY_CHARS} characters._`;
 }
 
-function fingerprintIssue(title: string, body: string, tools: readonly string[]): string {
+// Fingerprint the failure identity, not the rendered body. The body carries
+// running totals and timestamps that move on every call, so hashing it made a
+// nightly re-run look like new evidence and refiled the same complaint once a
+// day (issues #951-#962 were one such family).
+function fingerprintIssue(title: string, rows: readonly TelemetryToolRow[]): string {
+  const signature = rows
+    .map((row) => [
+      row.name,
+      ...row.failures.map((failure) => [
+        failure.failure_class,
+        failure.normalized_reason,
+        failure.sample_error,
+        failure.sample_arg_shape,
+      ].join(":")).sort(),
+    ].join("\n"))
+    .sort()
+    .join("\n\n");
   return createHash("sha256")
     .update(title)
     .update("\0")
-    .update(body)
-    .update("\0")
-    .update([...tools].sort().join("\n"))
+    .update(signature)
     .digest("hex");
 }
 

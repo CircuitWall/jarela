@@ -342,9 +342,11 @@ function failureReasonHint(reason: string): string {
     case "permission": return "check scopes/permissions and avoid retry loops until access changes";
     case "not_found": return "refresh ids/list sources first, or ask the user for the correct target";
     case "validation": return "repair argument format locally before calling again";
+    case "unknown_tool": return "call list_tools for the exact name instead of guessing another spelling";
     case "timeout": return "verify whether any write took effect before retrying; split large changes into smaller batches and checkpoint progress";
     case "rate_limited": return "wait and reduce request volume before retrying; do not change credentials or providers without authorization";
     case "size_or_context": return "reduce payload size, narrow scope, or summarize before retrying";
+    case "network": return "treat transport errors as retryable and do not re-send side-effecting writes blindly";
     default: return "validate inputs and avoid blind retries";
   }
 }
