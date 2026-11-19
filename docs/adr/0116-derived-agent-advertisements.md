@@ -98,3 +98,37 @@ unavailable models, freshness, prompt overflow/authorization and handoff budgets
 Production UI/API fixtures exercise explicit controls without live model calls.
 Live semantic-selection quality, a named maintainer and human release acceptance
 are separate gates; structural tests do not certify model judgment.
+
+## Amendment 2026-11-19: per-agent budget and bounded retry
+
+Two consequences of the original design are corrected here.
+
+**The shared hourly ledger starved the roster.** `max_calls_per_hour` was one
+`agent-advertisement-usage` row shared by every agent, while several ordinary
+actions change many agents' fingerprints at once: creating any agent changes
+every other agent's exclusive-tool set, and a `refreshAll()` from a policy save
+regenerates the whole roster. The tail of the roster then failed with
+`hourly_call_limit` and, because `failed` was terminal, never recovered. The
+ledger is now per agent (`agent-advertisement-usage:<agent_id>`), so the
+default of ten calls per rolling hour is a per-agent budget. Cost scales with
+the number of agents that actually change, not with one global allowance.
+
+**Terminal failures for transient faults.** A provider 5xx, a timeout or an
+interrupted generation parked the receipt in `failed` permanently; only an
+explicit regenerate could recover it, and delegation silently fell back to
+legacy identity metadata in the meantime. Transient codes
+(`generation_failed`, `generation_timeout_or_cancelled`,
+`generation_interrupted`) now carry `attempts` and `next_retry_at` and are
+retried at most three times with 1 minute, 5 minute and 30 minute backoff. The
+retry is lazy: it happens on the next status read, because there is no timer
+and the panel already polls while a generation is pending. Deterministic
+refusals (`output_*`, `source_*`), `hourly_call_limit`, `model_unavailable`,
+`provider_unavailable`, `queue_limit` and `service_closed` remain terminal and
+still spend no further calls. A source or policy change resets the attempt
+budget, since a new source is a new question.
+
+There is still no timer and no automatic regeneration of `stale` receipts: a
+config save invalidates synchronously and the operator's next regenerate (or
+`refreshAll()` from a policy save) recomputes. The earlier sentence claiming the
+post-save hook "schedules recomputation outside the write" overstated the
+implementation; invalidation is the only automatic step.

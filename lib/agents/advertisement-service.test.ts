@@ -19,7 +19,7 @@ vi.mock("@/lib/stores/agent-advertisements", () => ({
   putAdvertisement: (state: AdvertisementState) => mocks.states.set(state.agent_id, state),
   getAdvertisementPolicy: () => mocks.policy,
   setAdvertisementPolicy: (policy: typeof mocks.policy) => { mocks.policy = policy; },
-  reserveAdvertisementCall: (_now: number, limit: number) => ++mocks.calls <= limit,
+  reserveAdvertisementCall: (_agentId: string, _now: number, limit: number) => ++mocks.calls <= limit,
 }));
 vi.mock("@/lib/stores/model-config", () => ({
   getModelConfig: () => mocks.model ? { provider: "synthetic", model_id: mocks.modelId, enabled: 1 } : null,
@@ -327,11 +327,37 @@ describe("derived advertisement lifecycle", () => {
     expect(mocks.states.get("a")?.error).toBe("hourly_call_limit");
     expect(generator).toHaveBeenCalledTimes(1);
   });
-  it("reports failed generation without provider response leakage or automatic retry", async () => {
+  it("records a transient failure with backoff instead of retrying immediately", async () => {
     generator.mockRejectedValue(new Error("private provider response"));
     await service.refresh("a"); await service.settle();
-    expect(mocks.states.get("a")).toMatchObject({ status: "failed", error: "generation_failed", advertisement: null });
+    const failed = mocks.states.get("a")!;
+    expect(failed).toMatchObject({ status: "failed", error: "generation_failed", advertisement: null, attempts: 1 });
+    expect(Date.parse(failed.next_retry_at!)).toBeGreaterThan(Date.now());
     await service.refresh("a"); await service.settle();
+    expect(generator).toHaveBeenCalledTimes(1);
+  });
+  it("retries a due transient failure on read and clears the attempt budget on success", async () => {
+    generator.mockRejectedValueOnce(new Error("private provider response")).mockResolvedValue(valid());
+    await service.refresh("a"); await service.settle();
+    mocks.states.set("a", { ...mocks.states.get("a")!, next_retry_at: new Date(Date.now() - 1000).toISOString() });
+    expect((await service.inspect("a"))?.status).toBe("pending");
+    await service.settle();
+    expect(mocks.states.get("a")).toMatchObject({ status: "ready", attempts: 0, next_retry_at: null });
+    expect(generator).toHaveBeenCalledTimes(2);
+  });
+  it("never retries a deterministic refusal or an exhausted attempt budget", async () => {
+    mocks.agents.get("peer")!.tools = '["fixture_read"]';
+    await service.refresh("a"); await service.settle();
+    expect(mocks.states.get("a")).toMatchObject({ status: "failed", error: "output_capability_refused", next_retry_at: null });
+    mocks.states.set("a", { ...mocks.states.get("a")!, next_retry_at: new Date(Date.now() - 1000).toISOString() });
+    expect((await service.inspect("a"))?.status).toBe("failed");
+    expect(generator).toHaveBeenCalledTimes(1);
+
+    mocks.states.set("a", {
+      ...mocks.states.get("a")!, error: "generation_failed", attempts: 3,
+      next_retry_at: new Date(Date.now() - 1000).toISOString(),
+    });
+    expect((await service.inspect("a"))?.status).toBe("failed");
     expect(generator).toHaveBeenCalledTimes(1);
   });
   it("invalidates persisted pending receipts after restart", async () => {
