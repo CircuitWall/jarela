@@ -540,9 +540,14 @@ export async function* toAnthropicMessages(
 - `anthropic.ts` — Anthropic Claude provider
 - `openai.ts` — OpenAI GPT provider
 - `google.ts` / `gemini.ts` — Google Gemini provider
-- `cohere.ts` / `external.ts` — Cohere and custom external providers
+- `external.ts` — Custom external `~/.jarela/providers/*.cjs` providers
 - `github-copilot.ts` — GitHub Copilot provider
 - `deepseek.ts` — DeepSeek provider
+
+> There is no `cohere.ts`. Cohere runs through the LangChain bridge below
+> (`provider: "langchain"`, `params.lc_class: "ChatCohere"`), which is text
+> only — `@langchain/cohere` rejects image/audio/file parts. Vision or audio
+> for Cohere requires a native adapter under this directory.
 
 ### Infrastructure
 - `types.ts` — `ModelProvider` interface and types (public API)
@@ -556,7 +561,7 @@ export async function* toAnthropicMessages(
 - `index.ts` — Provider registry and getProvider() factory
 - `registry.ts` — In-tree and external provider loading
 - `jarela-chat-model.ts` — LangChain adapter (wraps providers for LangGraph)
-- `langchain.ts` — LangChain integration helpers
+- `langchain.ts` — LangChain bridge for vendor-only integrations (text only; multimodal parts are rejected with a clear error)
 - `streaming.ts` — Common streaming utilities
 - `tool-arguments.ts` — Tool argument parsing and truncation
 - `tool-limit.ts` — Per-provider tool limit enforcement

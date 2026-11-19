@@ -23,6 +23,11 @@
  * bundles server code at build time; dynamic specifiers can't be statically
  * traced and the package wouldn't end up in the bundle. A small switch keeps
  * the bundling explicit and the dependency footprint visible.
+ *
+ * Text only: ChatCohere throws on non-string message content, so this bridge
+ * rejects image/audio/file parts with an error naming the model and the part
+ * types (see toLangChainTextContent). Vision or audio for a bridged vendor
+ * needs a native adapter under `lib/providers/`, not this file.
  */
 import { AIMessage, AIMessageChunk, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
@@ -38,6 +43,7 @@ import type {
   InvokeResult,
   OpenAITool,
 } from "./types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 
 // ── Module-cached model instances ────────────────────────────────────────────
 // LangChain model classes are usually cheap to construct, but caching keeps
@@ -81,26 +87,52 @@ async function loadLangChainModel(model_id: string, params: ProviderParams): Pro
 }
 
 // ── Message conversion ──────────────────────────────────────────────────────
-function toLCMessages(messages: ProviderMessage[]): BaseMessage[] {
+// The bridged LangChain chat models Jarela ships with (ChatCohere) accept text
+// only: their own converter throws "does not support non text message
+// content". Converting here first means the caller gets an error that names
+// the model and the part types instead of an empty message or a vendor
+// exception, and it fails before any credential or network work.
+export function toLangChainTextContent(
+  content: string | ContentPart[],
+  role: string,
+  modelLabel: string,
+): string {
+  if (typeof content === "string") return content;
+  const unsupported = [...new Set(content.filter((part) => part.type !== "text").map((part) => part.type))];
+  if (unsupported.length > 0) {
+    throw new Error(
+      `langchain provider: ${modelLabel} accepts text only, but this ${role} message carries ` +
+      `[${unsupported.join(", ")}] content. Nothing was sent to the provider. ` +
+      `Use a vision-capable provider (Anthropic, OpenAI, or Gemini) for image turns, or remove the attachment.`,
+    );
+  }
+  return content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+}
+
+function modelLabel(params: ProviderParams): string {
+  const cls = typeof params.lc_class === "string" ? params.lc_class : "langchain model";
+  return cls;
+}
+
+function toLCMessages(messages: ProviderMessage[], modelLabelText: string): BaseMessage[] {
   return messages.map((m) => {
-    if (m.role === "system") return new SystemMessage(m.content);
-    if (m.role === "assistant") return new AIMessage(m.content);
-    return new HumanMessage(m.content);
+    const content = toLangChainTextContent(m.content, m.role, modelLabelText);
+    if (m.role === "system") return new SystemMessage(content);
+    if (m.role === "assistant") return new AIMessage(content);
+    return new HumanMessage(content);
   });
 }
 
-function toLCInvokeMessages(messages: InvokeMessage[]): BaseMessage[] {
+function toLCInvokeMessages(messages: InvokeMessage[], modelLabelText: string): BaseMessage[] {
   return messages.map((m) => {
-    if (m.role === "system") return new SystemMessage(typeof m.content === "string" ? m.content : "");
+    const content = toLangChainTextContent(m.content, m.role, modelLabelText);
+    if (m.role === "system") return new SystemMessage(content);
     if (m.role === "tool") {
-      return new ToolMessage({
-        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-        tool_call_id: m.tool_call_id ?? "",
-      });
+      return new ToolMessage({ content, tool_call_id: m.tool_call_id ?? "" });
     }
     if (m.role === "assistant") {
       const ai = new AIMessage({
-        content: typeof m.content === "string" ? m.content : "",
+        content,
         tool_calls: m.tool_calls?.map((tc) => ({
           id: tc.id,
           name: tc.function?.name ?? "",
@@ -110,7 +142,7 @@ function toLCInvokeMessages(messages: InvokeMessage[]): BaseMessage[] {
       });
       return ai;
     }
-    return new HumanMessage(typeof m.content === "string" ? m.content : "");
+    return new HumanMessage(content);
   });
 }
 
@@ -130,8 +162,9 @@ export const langchainProvider: ModelProvider = {
   name: "langchain",
 
   async chat(model_id, messages, params): Promise<ProviderStreamResult> {
+    const lcMessages = toLCMessages(messages, modelLabel(params));
     const model = await loadLangChainModel(model_id, params);
-    const stream = await model.stream(toLCMessages(messages));
+    const stream = await model.stream(lcMessages);
     return {
       stream: (async function* () {
         for await (const chunk of stream) {
@@ -142,11 +175,12 @@ export const langchainProvider: ModelProvider = {
   },
 
   async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
+    const lcMessages = toLCInvokeMessages(messages, modelLabel(params));
     const model = await loadLangChainModel(model_id, params);
     const bound: Runnable = tools.length > 0 && (model as { bindTools?: unknown }).bindTools
       ? (model as unknown as { bindTools: (t: unknown) => Runnable }).bindTools(toLCTools(tools))
       : model;
-    const result = await bound.invoke(toLCInvokeMessages(messages)) as AIMessage;
+    const result = await bound.invoke(lcMessages) as AIMessage;
 
     const text = typeof result.content === "string" ? result.content : extractText(result.content);
     const toolCalls = (result.tool_calls ?? []).map((tc) => ({
@@ -162,13 +196,15 @@ export const langchainProvider: ModelProvider = {
   },
 
   streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
+    const modelLabelText = modelLabel(params);
     return (async function* () {
+      const lcMessages = toLCInvokeMessages(messages, modelLabelText);
       const model = await loadLangChainModel(model_id, params);
       const bound: Runnable = tools.length > 0 && (model as { bindTools?: unknown }).bindTools
         ? (model as unknown as { bindTools: (t: unknown) => Runnable }).bindTools(toLCTools(tools))
         : model;
 
-      const stream = await bound.stream(toLCInvokeMessages(messages)) as AsyncIterable<AIMessageChunk>;
+      const stream = await bound.stream(lcMessages) as AsyncIterable<AIMessageChunk>;
 
       // Track which tool_call_chunk indices we've already announced an id for —
       // some providers send id once at start, others repeat it on every chunk.
