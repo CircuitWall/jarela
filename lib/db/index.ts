@@ -10,6 +10,7 @@ import {
 import { applyProxyConfigFromDb } from "@/lib/proxy/dispatcher"; // env-var dispatcher applied at module load; DB layer applied below
 import { runEnvSyncOnce } from "@/lib/env/sync";
 import { clearStatementCache } from "./statement-cache";
+import { instrumentDatabase } from "./timing";
 
 export const DB_PATH = join(getDataDir(), "jarela.db");
 
@@ -45,7 +46,7 @@ export function getDb(): DatabaseSync {
       db.close();
       throw error;
     }
-    _db = db; // only assign after migrations succeed
+    _db = instrumentDatabase(db); // only assign after migrations succeed
     // Layer DB-backed proxy config on top of the env-var dispatcher
     // (ADR-0009). Fire-and-forget — keeps getDb() synchronous so existing
     // call sites stay unchanged. Errors are logged but don't break boot;

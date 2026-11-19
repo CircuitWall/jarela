@@ -1,4 +1,5 @@
 import type sqlite3Type from "@appthreat/sqlite3";
+import { DB_PATH } from "./index";
 
 type SqliteReadPool = Awaited<ReturnType<typeof sqlite3Type.pool>>;
 
@@ -16,6 +17,19 @@ export async function readRowsAsync<T extends object = Record<string, unknown>>(
 ): Promise<T[]> {
   const pool = await getReadPool(filename);
   return await pool.read(sql, [...params]) as unknown as T[];
+}
+
+/**
+ * Read against the app database on the read-only worker pool. Use this for
+ * any read that can grow with user data (chunk tables, message history): the
+ * write connection is synchronous, so the same query on the main thread
+ * freezes every HTTP handler, stream and timer until it finishes.
+ */
+export async function readAppRows<T extends object = Record<string, unknown>>(
+  sql: string,
+  params: readonly unknown[] = [],
+): Promise<T[]> {
+  return readRowsAsync<T>(DB_PATH, sql, params);
 }
 
 async function getReadPool(filename: string): Promise<SqliteReadPool> {

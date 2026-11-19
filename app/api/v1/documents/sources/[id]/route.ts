@@ -3,7 +3,7 @@ import { documentSourcePatchSchema } from "@/api/document-sources";
 import {
   deleteDocumentSource,
   getDocumentSource,
-  getDocumentSourceStats,
+  getDocumentSourceStatsAsync,
   updateDocumentSource,
 } from "@/lib/stores/document-sources";
 import { notifyTriggerHandlers } from "@/lib/triggers";
@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const row = getDocumentSource(id);
   if (!row) return notFoundResponse();
-  return NextResponse.json(documentSourceToResponse(row, getDocumentSourceStats(row.id)));
+  return NextResponse.json(documentSourceToResponse(row, await getDocumentSourceStatsAsync(row.id)));
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const row = updateDocumentSource(id, parsed);
   if (!row) return notFoundResponse();
   await notifyTriggerHandlers("source_changed");
-  return NextResponse.json(documentSourceToResponse(row, getDocumentSourceStats(row.id)));
+  return NextResponse.json(documentSourceToResponse(row, await getDocumentSourceStatsAsync(row.id)));
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {

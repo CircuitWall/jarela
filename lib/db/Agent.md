@@ -75,7 +75,10 @@ node:sqlite DatabaseSync         @appthreat/sqlite3 read workers
 7. **Read scheduling is explicit at the store boundary**
    - Keep `DatabaseSync` for writes and ordinary small reads.
    - Add a specifically named `...Async` store method for measured, potentially
-     large reads; run it through `lib/db/read-pool.ts` on read-only workers.
+     large reads; run it through `lib/db/read-pool.ts` on read-only workers
+     (`readAppRows` is the app-database shortcut). The writer connection is
+     synchronous: a multi-second read there freezes every handler, stream and
+     timer, not just the caller.
    - Do not infer sync/async behavior from SQL keywords or return a value-or-
      Promise union from one API.
    - Async readers see committed WAL snapshots. Do not use them to read a
@@ -453,6 +456,8 @@ DELETE FROM threads WHERE thread_id = 'x'; // Cascades to messages
 - `data-dir.ts` — Platform-specific database directory (`~/.jarela`, `%APPDATA%\Jarela`)
 - `migrations.ts` — Schema creation, table definitions, migrations
 - `statement-cache.ts` — Prepared statement cache for performance
+- `timing.ts` — Timing proxy around `DatabaseSync`; reports slow statements so
+  the event-loop watchdog can name what blocked the process
 
 ### Transactions & Safety
 - `transaction.ts` — Savepoint-based transaction wrapper

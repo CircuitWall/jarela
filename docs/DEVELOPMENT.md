@@ -348,6 +348,53 @@ Validate with `npx vitest run lib/stores/tool-stats.test.ts lib/agents/prepare/s
 - Event-driven hooks are eventually consistent; prefer deterministic asserts
   (`waitFor`) over synchronous assumptions.
 
+## Event-loop stalls
+
+`node:sqlite` is synchronous: one slow statement or in-process embedding batch
+freezes every HTTP handler, stream, and timer at once, and the only symptom is
+that requests time out.
+
+`lib/diagnostics/event-loop.ts` starts with the server and logs what was
+blocking:
+
+- `[db] slow statement <ms> rows=<n>: <sql>` — emitted by the timing wrapper
+  `instrumentDatabase` in [lib/db/timing.ts](../lib/db/timing.ts) for any
+  statement at or above `JARELA_SLOW_SQL_MS` (default 250 ms).
+- `[event-loop] slow sync region <ms>: <label>` — a labelled synchronous
+  region (`withBlockingWork`) took too long, e.g. `documents:search-select`,
+  `documents:search-score`, `embeddings:local-inference`.
+- `[event-loop] blocked for <ms> (mean …, p99 …, threshold …) while running
+  "<label>"` — the watchdog sampled real loop delay at or above
+  `JARELA_EVENT_LOOP_STALL_MS` (default 1000 ms). Set it to `0` to disable the
+  watchdog, or `JARELA_EVENT_LOOP_SAMPLE_MS` to change how often the histogram
+  is read.
+
+When a stall is reported, the label and the slow-statement lines name the work;
+a stall with no label means the blocking code is not instrumented yet.
+
+### Document retrieval costs
+
+The watchdog exists because of a measured failure mode: on a live install
+`document_chunks` held 244k chunks (2.8 GB of JSON-encoded vectors) and the
+synchronous connection paid for it on the hot paths.
+
+- Source counters (`chunk_count`, `embedded_chunk_count`) are served from
+  `lib/documents/source-stats-cache.ts`. The system prompt used to run
+  `getDocumentSourceStats()` for every enabled source on every turn (~3.2 s of
+  blocked loop per turn); it now reads a cached snapshot refreshed on the
+  read-only worker pool at boot, after indexing, and after source mutations.
+- `searchDocuments` pages candidates (2,000 rows per page) from the read pool
+  in `(document_id, chunk_index)` order with keyset pagination. The previous
+  query read up to 20,000 rows — text and embeddings — on the writer with no
+  `ORDER BY`, so it both blocked the loop and silently ignored every chunk past
+  the first 20k by rowid.
+- Embedding batches commit in a single transaction instead of one synchronous
+  `UPDATE` per chunk.
+
+Any new read that scales with the corpus belongs on `readAppRows` from
+[lib/db/read-pool.ts](../lib/db/read-pool.ts), exposed as a typed `...Async`
+store method.
+
 ## LLM provider rate limiting
 
 `getProvider()` applies a process-wide `p-queue` limiter to chat, structured

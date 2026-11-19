@@ -12,7 +12,8 @@ import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import { parseCitationStrictness } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
 import { listIntegrations } from "@/lib/stores/integrations";
-import { listEnabledDocumentSources, getDocumentSourceStats } from "@/lib/stores/document-sources";
+import { listEnabledDocumentSources } from "@/lib/stores/document-sources";
+import { cachedDocumentSourceStats } from "@/lib/documents/source-stats-cache";
 import { buildPersonaContext } from "@/lib/agents/adaptive-persona";
 import { resolveHarness } from "@/lib/agents/harness/resolve";
 import {
@@ -748,8 +749,10 @@ function buildDocumentsContext(): string {
   let totalChunks = 0;
   const lines: string[] = [];
   for (const s of sources) {
-    const stats = getDocumentSourceStats(s.id);
-    if (stats.chunk_count === 0) continue;
+    // Cached: counting this corpus costs seconds and used to run on every
+    // turn (see lib/documents/source-stats-cache.ts).
+    const stats = cachedDocumentSourceStats(s.id);
+    if (!stats || stats.chunk_count === 0) continue;
     totalChunks += stats.chunk_count;
     const label = s.label ?? s.path;
     lines.push(`- ${label} (${s.kind}, ${stats.chunk_count} chunks)`);

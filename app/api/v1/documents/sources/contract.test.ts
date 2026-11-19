@@ -10,8 +10,10 @@ vi.mock("@/lib/stores/document-sources", () => ({
   listDocumentSources: mocks.list, getDocumentSource: mocks.get,
   createDocumentSource: mocks.create, updateDocumentSource: mocks.update,
   deleteDocumentSource: mocks.remove, getDocumentSourceStats: mocks.stats,
+  getDocumentSourceStatsAsync: async (id: string) => mocks.stats(id),
   getDocumentSourceByPath: mocks.find,
   listDocumentSourcesWithStats: mocks.listWithStats,
+  listDocumentSourcesWithStatsAsync: async () => mocks.listWithStats(),
 }));
 vi.mock("@/lib/triggers", () => ({ notifyTriggerHandlers: mocks.notify }));
 import { GET as list, POST as create } from "./route";

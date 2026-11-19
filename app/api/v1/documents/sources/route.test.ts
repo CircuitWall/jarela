@@ -5,7 +5,8 @@ import { resolve } from "node:path";
 const mocks = vi.hoisted(() => ({ create: vi.fn(), find: vi.fn(), stat: vi.fn(), notify: vi.fn() }));
 vi.mock("@/lib/stores/document-sources", () => ({
   createDocumentSource: mocks.create, getDocumentSourceByPath: mocks.find,
-  getDocumentSourceStats: () => ({}), listDocumentSources: () => [],
+  getDocumentSourceStats: () => ({}), getDocumentSourceStatsAsync: async () => ({}),
+  listDocumentSources: () => [], listDocumentSourcesWithStatsAsync: async () => [],
 }));
 vi.mock("@/lib/triggers", () => ({ notifyTriggerHandlers: mocks.notify }));
 vi.mock("node:fs", async (importOriginal) => {

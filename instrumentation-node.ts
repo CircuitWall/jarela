@@ -30,6 +30,12 @@ export async function bootNode(): Promise<void> {
 
   installGlobalErrorHandlers();
 
+  // Start the event-loop watchdog before anything heavy runs. node:sqlite is
+  // synchronous, so a single slow statement freezes every handler at once;
+  // this is what turns "requests timed out" into a log line naming the work.
+  const { startEventLoopWatchdog } = await import("@/lib/diagnostics/event-loop");
+  startEventLoopWatchdog();
+
   // Single-instance guard. If another live Jarela process is already
   // holding the lock, print a diagnostic and exit before we open the
   // DB / bind the port. Bypass with JARELA_SKIP_INSTANCE_LOCK=1 (dev-
@@ -90,6 +96,13 @@ export async function bootNode(): Promise<void> {
   const { processMessageEmbeddingJobs } = await import("@/lib/embeddings");
   void processMessageEmbeddingJobs().catch((err) =>
     console.warn("[embeddings] startup message queue failed:", err),
+  );
+
+  // Prime the document counters from the read-only worker pool so the first
+  // agent turn's system prompt never has to count the corpus on the writer.
+  const { refreshDocumentSourceStats } = await import("@/lib/documents/source-stats-cache");
+  void refreshDocumentSourceStats().catch((err) =>
+    console.warn("[documents] startup source-stat refresh failed:", err),
   );
 
   const triggers = await import("@/lib/triggers");
