@@ -689,10 +689,19 @@ function* inferenceFailure(
 
   // The registry watchdog aborts the provider after publishing its own typed
   // timeout event. Preserve that reason here so persistence does not mislabel
-  // an automatic timeout as a user pressing Stop.
+  // an automatic timeout as a user pressing Stop. The watchdog knows how long
+  // the stream was silent; only this layer knows which model was being called,
+  // so merge that in before composing the terminal message — it is what ends
+  // up in `scheduled_tasks.last_error`.
   const abortReason = signal?.reason;
-  const watchdog = watchdogTermination(abortReason);
+  const watchdog = watchdogTermination(abortReason, {
+    model: `${cfg.provider}/${cfg.model_id}`,
+  });
   if (watchdog) {
+    console.warn(
+      `[agent_timeout] ${watchdog.code} thread=${threadId} model=${cfg.provider}/${cfg.model_id} ` +
+        `detail=${JSON.stringify(watchdog.detail)}`,
+    );
     yield { type: "error", data: { message: watchdog.message, code: watchdog.code } };
     yield projection.done(threadId, cfg, runCfg, false);
     return;

@@ -144,10 +144,52 @@ Rules now enforced:
   `abort_reason` on the terminal `aborted` chunk, and re-materialize the
   watchdog's typed `run_idle_timeout` / `run_max_timeout` chunk instead of
   degrading it to `aborted`.
-- Watchdog codes are not retried: the signal cannot recover, so the retry
-  could only overwrite the real cause.
+- Watchdog codes are not retried *through the aborted stream*: the signal
+  cannot recover, so an in-place retry could only overwrite the real cause.
 - Persistence mirrors the actor: the transcript footer reads
   `Cancelled by the system — …` with a matching `status_reason`, automation
   activity rows carry `cancel_actor` / `cancel_reason`, and the toast says
   "cancelled by the system" instead of implying the user stopped the check.
+
+## Follow-up (2026-11-19): the idle timeout reports nothing actionable
+
+The live install still showed the same signature: every scheduled task
+failing with `Run timed out after the provider stream stopped making
+progress.` after ~128s, with zero tool calls, zero tokens, and no detail
+about which model stalled or whether anything had been produced. The
+composed message was built by `watchdogTermination()` from the bare abort
+code alone, so the watchdog's own diagnostics (idle elapsed, phase, output
+count) were dropped on the floor between `run-registry.ts` and the caller —
+and with them the difference between "the provider never sent a first token"
+and "the provider stalled mid-reply", which are different bugs.
+
+Rules now enforced:
+
+- `encodeWatchdogReason()` appends a JSON diagnostic suffix to the abort
+  reason (`run_idle_timeout|{"idleMs":120000,"phase":"starting",
+  "producedOutput":false}`). The bare code prefix is unchanged, so every
+  consumer that compares against the code keeps working;
+  `classifyAbortReason()` and `watchdogTermination()` split it back apart
+  and tolerate a malformed suffix.
+- The terminal message — and therefore `scheduled_tasks.last_error`, the
+  automation activity row, and the transcript failure reason — names the
+  model (`provider/model`, added by `inferenceFailure`), the silence
+  duration, the phase, and whether the run ever produced output.
+- `ActiveRun.output_chunks` counts model-output chunks so the watchdog can
+  report a first-token stall instead of guessing, and `runAgentTurn` marks the
+  run `preparing` before context assembly and `thinking` once the provider
+  call starts — so a terminated run says whether it was stuck in our own
+  preparation or waiting on the provider.
+- A watchdog kill *before any output* is retried once for unattended turns
+  (`scheduler`, `watcher`, `trigger`, `bridge`) inside `runAgentTurn`, using
+  the documented `JARELA_MAX_STALL_RETRIES` budget. Each attempt is a fresh
+  registry run with a fresh `AbortController` — the reason the ADR's
+  "watchdog codes are not retried" rule does not apply. The retry passes
+  `_user_message_persisted` only when the earlier attempt actually committed
+  the prompt (tracked through `_onTranscriptUserPersisted`), because the
+  watchdog can fire during context assembly, before the row is written —
+  bridge turns read their history back from the DB, so a blanket skip would
+  hand the model a turn without its inbound message. Interactive and one-shot
+  extension turns are never retried, and a stall after output has started is
+  not retried because the transcript already shows that work.
 

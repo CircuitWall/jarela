@@ -1,4 +1,5 @@
 import type { StreamChunk } from "./base";
+import { encodeWatchdogReason, watchdogTermination } from "./abort-reason";
 import { getConfig } from "@/lib/env/config";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { publishTransient } from "@/lib/notifications/bus";
@@ -73,6 +74,11 @@ export interface ActiveRun {
   // client that is not attached to the stream still report the activity.
   phase: string;
   phase_label: string;
+  // Count of model-output chunks (text, thinking, tool calls) broadcast so
+  // far. The watchdog uses it to tell "the provider never sent its first
+  // token" from "the provider stalled mid-reply", which are different bugs
+  // with different fixes.
+  output_chunks: number;
 }
 
 const registryState = getOrCreateGlobal("__jarela_active_run_registry", () => ({
@@ -146,6 +152,7 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     steering: [],
     phase: "starting",
     phase_label: "Starting…",
+    output_chunks: 0,
   };
   runs.set(thread_id, run);
   publishTransient({ type: "activity_update", active_runs: getActiveRunCount() });
@@ -214,13 +221,21 @@ function scheduleIdleWatchdog(run: ActiveRun): void {
       setTimeout(() => scheduleIdleWatchdog(run), idleMs).unref?.();
       return;
     }
-    console.warn(`[run-registry] idle watchdog: force-finishing stalled run for thread ${run.thread_id} after ${idle}ms of no progress`);
-    emitWatchdogTermination(
-      run,
-      "run_idle_timeout",
-      `Run timed out — no progress for ${Math.round(idle / 1000)}s. The provider stream went silent before the agent finished. Try again, or split the request into smaller steps.`,
+    const reason = encodeWatchdogReason("run_idle_timeout", {
+      idleMs: Math.round(idle),
+      idleLimitMs: idleMs,
+      elapsedMs: Date.now() - run.started_at,
+      phase: run.phase,
+      producedOutput: (run.output_chunks ?? 0) > 0,
+    });
+    const termination = watchdogTermination(reason);
+    console.warn(
+      `[run-registry] idle watchdog: force-finishing stalled run for thread ${run.thread_id} ` +
+        `after ${idle}ms of no progress (phase=${run.phase}, ` +
+        `output_chunks=${run.output_chunks ?? 0}, elapsed=${Date.now() - run.started_at}ms)`,
     );
-    try { run.abort.abort("run_idle_timeout"); } catch { /* */ }
+    emitWatchdogTermination(run, "run_idle_timeout", termination?.message ?? "Run timed out.");
+    try { run.abort.abort(reason); } catch { /* */ }
     finishRun(run, "error");
   }, fireIn).unref?.();
 }
@@ -256,12 +271,20 @@ function scheduleMaxWatchdog(run: ActiveRun): void {
       return;
     }
     console.warn(`[run-registry] wall-clock watchdog: force-finishing run for thread ${run.thread_id} after ${elapsed}ms of agent time (excluding tool execution)`);
+    const reason = encodeWatchdogReason("run_watchdog_timeout", {
+      elapsedMs: Math.round(elapsed),
+      phase: run.phase,
+      producedOutput: (run.output_chunks ?? 0) > 0,
+    });
+    const termination = watchdogTermination(reason);
     emitWatchdogTermination(
       run,
       "run_max_timeout",
-      `Run exceeded the wall-clock limit (${Math.round(max / 1000)}s of agent time, excluding tool execution). The agent was force-stopped. Try a smaller scope or raise JARELA_RUN_MAX_MS if this is expected.`,
+      termination?.message ??
+        `Run exceeded the wall-clock limit (${Math.round(max / 1000)}s of agent time, excluding tool execution). ` +
+          "The agent was force-stopped. Try a smaller scope or raise JARELA_RUN_MAX_MS if this is expected.",
     );
-    try { run.abort.abort("run_watchdog_timeout"); } catch { /* */ }
+    try { run.abort.abort(reason); } catch { /* */ }
     finishRun(run, "error");
   }, fireIn).unref?.();
 }
@@ -300,6 +323,11 @@ export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
   // meaningless tick events.
   if (chunk.type === "heartbeat") return;
   trackPhase(run, chunk);
+  if (chunk.type === "text_delta" || chunk.type === "thinking_delta" || chunk.type === "tool_call") {
+    // Anything the model itself produced counts as progress for the idle
+    // watchdog's "did this run ever get going?" diagnostic.
+    run.output_chunks = (run.output_chunks ?? 0) + 1;
+  }
   if (chunk.type === "text_delta") {
     run.final_text += (chunk.data.delta as string) ?? "";
   } else if (chunk.type === "reset_text") {
