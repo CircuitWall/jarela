@@ -53,6 +53,9 @@ function stringifyResult(action: string, result: BrowserResult): string {
 const EXTRACT_INLINE_CHAR_LIMIT = 12_000;
 const EXTRACT_PREVIEW_CHAR_LIMIT = 2_000;
 const DEFAULT_NAVIGATE_TIMEOUT_MS = 90_000;
+const DEFAULT_WAIT_TIMEOUT_MS = 15_000;
+const DEFAULT_BATCH_BASE_MS = 20_000;
+const DEFAULT_BATCH_STEP_MS = 8_000;
 
 type ExtractOutputMode = "auto" | "inline" | "file";
 
@@ -121,6 +124,7 @@ function maybeReduceExtractResult(result: BrowserResult, output: ExtractOutputMo
 
 export interface SnapshotInteractive {
   idx: number;
+  ref: number;
   role: string;
   name: string;
   selector: string;
@@ -132,6 +136,7 @@ interface SnapshotData {
   title?: unknown;
   tab_id?: unknown;
   interactive?: unknown;
+  tree?: unknown;
   [k: string]: unknown;
 }
 
@@ -144,8 +149,15 @@ interface CachedSnapshot {
   items: SnapshotInteractive[];
 }
 
+// Snapshots are cached per tab. The old single module-level slot meant a
+// workflow that touched two tabs constantly invalidated its own handles —
+// and handles are now durable refs, so the cache is only used to answer
+// `browser_snapshot` cheaply and to diff what an action changed.
 const SNAPSHOT_TTL_MS = 5 * 60_000;
-let lastSnapshot: CachedSnapshot | null = null;
+const snapshotsByTab = new Map<number, CachedSnapshot>();
+// Only used to answer a cheap `browser_snapshot` from cache; the cache
+// itself is still keyed per tab so two-tab workflows cannot collide.
+let lastSnapshotTabId: number | null = null;
 
 function asSnapshot(raw: unknown): CachedSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
@@ -156,14 +168,17 @@ function asSnapshot(raw: unknown): CachedSnapshot | null {
     if (!item || typeof item !== "object") continue;
     const it = item as Record<string, unknown>;
     if (
-      typeof it.idx !== "number" ||
       typeof it.role !== "string" ||
       typeof it.name !== "string" ||
       typeof it.selector !== "string"
     ) {
       continue;
     }
-    items.push(it as unknown as SnapshotInteractive);
+    if (typeof it.idx !== "number") continue;
+    items.push({
+      ...(it as unknown as SnapshotInteractive),
+      ref: typeof it.ref === "number" ? it.ref : it.idx,
+    });
   }
   return {
     at: Date.now(),
@@ -175,28 +190,39 @@ function asSnapshot(raw: unknown): CachedSnapshot | null {
   };
 }
 
-function getSnapshot(maxAgeMs = SNAPSHOT_TTL_MS): CachedSnapshot | null {
-  if (!lastSnapshot) return null;
-  if (Date.now() - lastSnapshot.at > maxAgeMs) {
-    lastSnapshot = null;
-    return null;
-  }
-  return lastSnapshot;
+function rememberSnapshot(snap: CachedSnapshot): void {
+  const tabId = snap.tab_id;
+  if (typeof tabId !== "number") return;
+  snapshotsByTab.set(tabId, snap);
+  lastSnapshotTabId = tabId;
 }
 
-function cachedSnapshotResult(maxAgeMs: number | undefined): string | null {
-  const snap = getSnapshot(maxAgeMs ?? SNAPSHOT_TTL_MS);
+function getSnapshot(tabId: number | undefined, maxAgeMs = SNAPSHOT_TTL_MS): CachedSnapshot | null {
+  if (typeof tabId !== "number") return null;
+  const snap = snapshotsByTab.get(tabId);
   if (!snap) return null;
-  const ageMs = Date.now() - snap.at;
+  if (Date.now() - snap.at > maxAgeMs) {
+    snapshotsByTab.delete(tabId);
+    return null;
+  }
+  return snap;
+}
+
+function cachedSnapshotResult(tabId: number | undefined, maxAgeMs: number | undefined): string | null {
+  const snap = getSnapshot(tabId, maxAgeMs ?? SNAPSHOT_TTL_MS);
+  if (!snap) return null;
   const raw = snap.raw ?? { url: snap.url, tab_id: snap.tab_id, interactive: snap.items };
+  const { interactive: _drop, ...rest } = raw as Record<string, unknown>;
+  void _drop;
   return JSON.stringify({
     action: "browser_snapshot",
     ok: true,
     data: {
-      ...raw,
+      ...rest,
+      ...(Array.isArray(raw.interactive) ? { interactive: snap.items } : {}),
       cache: {
         hit: true,
-        age_ms: ageMs,
+        age_ms: Date.now() - snap.at,
         max_age_ms: maxAgeMs ?? SNAPSHOT_TTL_MS,
         fingerprint: snap.fingerprint ?? null,
       },
@@ -207,79 +233,63 @@ function cachedSnapshotResult(maxAgeMs: number | undefined): string | null {
 
 /** @internal — test-only: clear the snapshot cache. */
 export function _resetSnapshotCache(): void {
-  lastSnapshot = null;
+  snapshotsByTab.clear();
 }
 
-type LocatorInput = {
+export interface LocatorInput {
   selector?: string;
+  ref?: number;
+  /** @deprecated alias for `ref`, kept so older prompts keep working. */
   handle?: number;
   role?: string;
   name?: string;
-};
+}
 
-type Locator = { ok: true; selector: string } | { ok: false; error: string };
+export interface TargetLocator {
+  selector?: string;
+  ref?: number;
+  role?: string;
+  name?: string;
+}
 
-export function resolveLocator(input: LocatorInput): Locator {
-  if (input.selector) return { ok: true, selector: input.selector };
-  if (typeof input.handle === "number") {
-    const snap = getSnapshot();
-    if (!snap) {
-      return {
-        ok: false,
-        error: `no recent snapshot to resolve handle ${input.handle}. Call browser_snapshot first (or pass an explicit selector).`,
-      };
-    }
-    const item = snap.items.find((i) => i.idx === input.handle);
-    if (!item) {
-      return {
-        ok: false,
-        error: `handle ${input.handle} is not in the last snapshot (${snap.items.length} items). Re-run browser_snapshot to refresh handles.`,
-      };
-    }
-    return { ok: true, selector: item.selector };
+export type LocatorResolution =
+  | { ok: true; locator: TargetLocator }
+  | { ok: false; error: string };
+
+/**
+ * Turn the tool's locator fields into the locator the extension will resolve
+ * against the live DOM. There is deliberately no server-side lookup: a
+ * handle is now the durable `ref` the extension handed out, and a
+ * role + name pair is resolved in the page at execution time. That removes
+ * the "no recent snapshot" failure mode entirely and, more importantly,
+ * removes the stale CSS string that caused most click/fill misses.
+ */
+export function resolveLocator(input: LocatorInput): LocatorResolution {
+  const ref = typeof input.ref === "number" ? input.ref : input.handle;
+  if (input.selector && (typeof ref === "number" || input.role || input.name)) {
+    return { ok: false, error: "provide exactly one of `selector`, `ref`, or `role` + `name`." };
   }
+  if (input.selector) return { ok: true, locator: { selector: input.selector } };
+  if (typeof ref === "number") return { ok: true, locator: { ref } };
+  if (input.role && input.name) return { ok: true, locator: { role: input.role, name: input.name } };
   if (input.role || input.name) {
-    if (!input.role || !input.name) {
-      return {
-        ok: false,
-        error: "`role` and `name` must be provided together to look up an element by accessible name.",
-      };
-    }
-    const snap = getSnapshot();
-    if (!snap) {
-      return {
-        ok: false,
-        error: `no recent snapshot to resolve role="${input.role}" name="${input.name}". Call browser_snapshot first.`,
-      };
-    }
-    const wantName = input.name.toLowerCase();
-    let candidates = snap.items.filter(
-      (i) => i.role === input.role && i.name.toLowerCase() === wantName,
-    );
-    if (candidates.length === 0) {
-      candidates = snap.items.filter(
-        (i) => i.role === input.role && i.name.toLowerCase().includes(wantName),
-      );
-    }
-    if (candidates.length === 0) {
-      return {
-        ok: false,
-        error: `no ${input.role} with accessible name "${input.name}" in the last snapshot. Call browser_snapshot to refresh handles if the page changed, or pass an explicit selector.`,
-      };
-    }
-    if (candidates.length > 1) {
-      const hits = candidates
-        .slice(0, 5)
-        .map((i) => `handle ${i.idx} (${i.name})`)
-        .join(", ");
-      return {
-        ok: false,
-        error: `${candidates.length} ${input.role}s match name "${input.name}" — disambiguate with a numeric handle: ${hits}. Call browser_snapshot to refresh handles if these options look stale.`,
-      };
-    }
-    return { ok: true, selector: candidates[0].selector };
+    return { ok: false, error: "`role` and `name` must be provided together to look up an element by accessible name." };
   }
-  return { ok: false, error: "provide one of `selector`, `handle`, or `role` + `name`." };
+  return { ok: false, error: "provide one of `selector`, `ref`, or `role` + `name`." };
+}
+
+function describeLocator(locator: TargetLocator): string {
+  if (locator.selector) return `selector \`${locator.selector}\``;
+  if (locator.role && locator.name) return `${locator.role} "${locator.name}"`;
+  if (typeof locator.ref === "number") return `ref ${locator.ref}`;
+  return "target";
+}
+
+export interface SnapshotItemRef {
+  ref: number;
+  role: string;
+  name: string;
+  disabled?: boolean;
 }
 
 export interface SnapshotDiff {
@@ -287,8 +297,17 @@ export interface SnapshotDiff {
   baseline: "first" | "diff";
   total: number;
   unchanged: number;
-  added: SnapshotInteractive[];
-  removed: SnapshotInteractive[];
+  added: SnapshotItemRef[];
+  removed: SnapshotItemRef[];
+}
+
+function toItemRef(item: SnapshotInteractive): SnapshotItemRef {
+  return {
+    ref: item.ref,
+    role: item.role,
+    name: item.name,
+    ...(item.disabled === true ? { disabled: true } : {}),
+  };
 }
 
 export function diffInteractive(
@@ -301,7 +320,7 @@ export function diffInteractive(
       baseline: "first",
       total: next.items.length,
       unchanged: 0,
-      added: next.items.slice(0, 40),
+      added: next.items.slice(0, 40).map(toItemRef),
       removed: [],
     };
   }
@@ -315,35 +334,40 @@ export function diffInteractive(
     baseline: "diff",
     total: next.items.length,
     unchanged: next.items.length - added.length,
-    added: added.slice(0, 25),
-    removed: removed.slice(0, 15),
+    added: added.slice(0, 25).map(toItemRef),
+    removed: removed.slice(0, 15).map(toItemRef),
   };
 }
 
 function formatActionResult(action: string, result: BrowserResult): string {
   if (!result.ok) {
-    return JSON.stringify({ action, ok: false, error: result.error });
+    return JSON.stringify({
+      action,
+      ok: false,
+      error: result.error,
+      ...(result.data !== undefined ? { data: result.data } : {}),
+    });
   }
   const data = (result.data ?? {}) as Record<string, unknown>;
   const snap = asSnapshot(data.snapshot);
   if (!snap) {
     return JSON.stringify({ action, ok: true, data });
   }
-  const prev = lastSnapshot;
-  lastSnapshot = snap;
+  const prev = getSnapshot(snap.tab_id);
+  rememberSnapshot(snap);
   const diff = diffInteractive(prev, snap);
   // Strip the bulky snapshot blob from `data`; the diff already carries
-  // every interactive element the agent needs and the `page` summary
-  // gives URL/title context. Total payload is ~20% of the full snapshot
-  // on the common "a couple of new controls appeared" case.
+  // every control the agent needs to chain the next step, and the `page`
+  // summary gives URL/title context.
   const { snapshot: _drop, ...rest } = data;
   void _drop;
+  const rawSnap = data.snapshot as Record<string, unknown> | undefined;
   const page: Record<string, unknown> = {
     url: snap.url,
     total_interactive: snap.items.length,
   };
-  const rawSnap = data.snapshot as Record<string, unknown> | undefined;
   if (rawSnap && typeof rawSnap.title === "string") page.title = rawSnap.title;
+  if (rawSnap && typeof rawSnap.text === "string") page.text = clipText(rawSnap.text, 1_500);
   return JSON.stringify({
     action,
     ok: true,
@@ -351,8 +375,32 @@ function formatActionResult(action: string, result: BrowserResult): string {
     page,
     diff,
     hint:
-      "`diff.added` / `diff.removed` list the elements that changed after this action. Refer to them via `handle: <idx>` or `role`+`name` on the next browser_click / browser_fill — no need to call browser_snapshot first.",
+      "`diff.added` / `diff.removed` list the elements that changed after this action. Refer to them by `ref` on the next browser_click / browser_fill — no need to call browser_snapshot first.",
   });
+}
+
+function clipText(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+/**
+ * Render the extension's structured tree as indented text. The tree is the
+ * model's reading surface: it carries structure, labels, and the refs needed
+ * to act, which is what removes the snapshot → extract second call.
+ */
+export function formatTree(tree: unknown, limit = 200): string | null {
+  if (!Array.isArray(tree) || tree.length === 0) return null;
+  const lines: string[] = [];
+  for (const node of tree.slice(0, limit)) {
+    if (!node || typeof node !== "object") continue;
+    const n = node as Record<string, unknown>;
+    if (typeof n.role !== "string") continue;
+    const depth = typeof n.depth === "number" ? Math.max(0, Math.min(n.depth, 20)) : 0;
+    const label = typeof n.name === "string" ? n.name : "";
+    const ref = typeof n.ref === "number" ? ` [ref ${n.ref}]` : "";
+    lines.push(`${"  ".repeat(depth)}${n.role}${label ? ` "${label}"` : ""}${ref}`);
+  }
+  return lines.length > 0 ? lines.join("\n") : null;
 }
 
 // --------------------------------------------------------------------- //
@@ -360,9 +408,15 @@ function formatActionResult(action: string, result: BrowserResult): string {
 // --------------------------------------------------------------------- //
 
 export const browserNavigateTool = withStreamDefault(tool(
-  async ({ url, wait_for_selector, timeout_ms }) => {
+  async ({ url, to, wait_for_selector, timeout_ms }) => {
+    if (!url && !to) {
+      return JSON.stringify({ action: "browser_navigate", ok: false, error: "provide either `url` or `to` (back/forward/reload)." });
+    }
+    if (url && to) {
+      return JSON.stringify({ action: "browser_navigate", ok: false, error: "provide either `url` or `to`, not both." });
+    }
     const result = await run(
-      { type: "navigate", url, wait_for_selector, auto_snapshot: true },
+      { type: "navigate", ...(url ? { url } : {}), ...(to ? { to } : {}), wait_for_selector, auto_snapshot: true },
       timeout_ms ?? DEFAULT_NAVIGATE_TIMEOUT_MS,
     );
     return formatActionResult("browser_navigate", result);
@@ -370,12 +424,17 @@ export const browserNavigateTool = withStreamDefault(tool(
   {
     name: "browser_navigate",
     description:
-      "Drive the user's browser: navigate the active tab to `url`. The Jarela browser extension must be installed and connected. " +
-      "Returns once the page reports loaded (or `wait_for_selector` resolves). The response includes a `diff` of the interactive controls on the new page — use the numeric `handle` from those entries (or `role`+`name`) on the next `browser_click`/`browser_fill` instead of calling `browser_snapshot` first. Fall back to `browser_screenshot` only when the visual layout itself matters. " +
+      "Drive the user's browser: open `url`, or move through history with `to: \"back\" | \"forward\" | \"reload\"`. The Jarela browser extension must be installed and connected. " +
+      "Returns once the page reports loaded (or `wait_for_selector` resolves) and reports a tab crash or discard instead of timing out. The response includes a `diff` of the interactive controls on the new page — use the numeric `ref` from those entries on the next `browser_click`/`browser_fill` instead of calling `browser_snapshot` first. " +
+      "Only http and https URLs are accepted. " +
       "Uses a 90s default timeout so approval prompts and slow navigations have enough room; pass `timeout_ms` only when you intentionally want a different budget. " +
       "Use this only when the user has explicitly asked you to drive their browser — opening arbitrary URLs surprises users.",
     schema: z.object({
-      url: z.string().url().describe("Absolute http(s) URL to navigate the active tab to."),
+      url: z.string().url().optional().describe("Absolute http(s) URL to navigate the active tab to."),
+      to: z
+        .enum(["back", "forward", "reload"])
+        .optional()
+        .describe("History move instead of a URL. Use `reload` after the page changed server-side."),
       wait_for_selector: z
         .string()
         .min(1)
@@ -391,14 +450,41 @@ export const browserNavigateTool = withStreamDefault(tool(
 // click                                                                 //
 // --------------------------------------------------------------------- //
 
+const LocatorFields = {
+  selector: z
+    .string()
+    .min(1)
+    .max(2000)
+    .optional()
+    .describe("CSS selector. Use this only when you already hold an exact selector; prefer `ref`."),
+  ref: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe("Durable handle from browser_snapshot or a previous action `diff`. Resolved in the page, so it survives re-renders."),
+  role: z
+    .string()
+    .min(1)
+    .max(60)
+    .optional()
+    .describe("ARIA-like role (`button`, `link`, `textbox`, ...). Pair with `name`."),
+  name: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe("Accessible name (case-insensitive; exact match preferred, otherwise substring). Pair with `role`."),
+};
+
 export const browserClickTool = withStreamDefault(tool(
-  async ({ selector, handle, role, name, timeout_ms }) => {
-    const loc = resolveLocator({ selector, handle, role, name });
+  async ({ selector, ref, role, name, timeout_ms }) => {
+    const loc = resolveLocator({ selector, ref, role, name });
     if (!loc.ok) {
       return JSON.stringify({ action: "browser_click", ok: false, error: loc.error });
     }
     const result = await run(
-      { type: "click", selector: loc.selector, auto_snapshot: true },
+      { type: "click", ...loc.locator, auto_snapshot: true },
       timeout_ms,
     );
     return formatActionResult("browser_click", result);
@@ -406,32 +492,37 @@ export const browserClickTool = withStreamDefault(tool(
   {
     name: "browser_click",
     description:
-      "Click an element in the active tab. Identify the target with EXACTLY ONE of: `selector` (CSS), `handle` (numeric `idx` from the most recent `browser_snapshot` or auto-snapshot diff), or `role` + `name` (accessible-name lookup against the last snapshot). The response includes a fresh diff so you can chain the next action without a separate snapshot call.",
+      "Click an element in the active tab. Identify the target with EXACTLY ONE of: `ref` (from the most recent snapshot or action diff), `role` + `name` (accessible-name lookup), or `selector` (CSS, last resort). " +
+      "Resolution happens against the live DOM and a stale or ambiguous target is retried once after refreshing the page map, so you do not need a `browser_snapshot` call between steps. " +
+      "The response includes a fresh diff so you can chain the next action directly.",
+    schema: z.object({ ...LocatorFields, timeout_ms: TimeoutMs }),
+  },
+), true);
+
+export const browserPressTool = withStreamDefault(tool(
+  async ({ selector, ref, role, name, key, timeout_ms }) => {
+    const hasLocator = Boolean(selector) || typeof ref === "number" || Boolean(role) || Boolean(name);
+    const loc = hasLocator
+      ? resolveLocator({ selector, ref, role, name })
+      : { ok: true as const, locator: {} };
+    if (!loc.ok) {
+      return JSON.stringify({ action: "browser_press", ok: false, error: loc.error });
+    }
+    const result = await run(
+      { type: "press", ...loc.locator, key, auto_snapshot: true },
+      timeout_ms,
+    );
+    return formatActionResult("browser_press", result);
+  },
+  {
+    name: "browser_press",
+    description:
+      "Press a key or chord in the active tab: `key: \"Escape\"`, `\"Enter\"`, `\"Tab\"`, `\"ArrowDown\"`, or a chord such as `\"Control+a\"`. " +
+      "Without a locator the key goes to the focused element, which is how you dismiss a modal or a menu. With a locator the element is focused first. " +
+      "Use this instead of clicking when a control only reacts to the keyboard.",
     schema: z.object({
-      selector: z
-        .string()
-        .min(1)
-        .max(2000)
-        .optional()
-        .describe("CSS selector for the element to click. Use this when you have an exact selector in hand."),
-      handle: z
-        .number()
-        .int()
-        .min(0)
-        .optional()
-        .describe("Numeric `idx` from the most recent snapshot/diff. Invalidated when the page re-snapshots."),
-      role: z
-        .string()
-        .min(1)
-        .max(60)
-        .optional()
-        .describe("ARIA-like role (`button`, `link`, `textbox`, ...). Pair with `name`."),
-      name: z
-        .string()
-        .min(1)
-        .max(200)
-        .optional()
-        .describe("Accessible name (case-insensitive; exact match preferred, otherwise substring). Pair with `role`."),
+      ...LocatorFields,
+      key: z.string().min(1).max(80).describe("Key, chord (`Control+a`), or named key such as `Enter` / `Escape` / `Tab`."),
       timeout_ms: TimeoutMs,
     }),
   },
@@ -442,13 +533,13 @@ export const browserClickTool = withStreamDefault(tool(
 // --------------------------------------------------------------------- //
 
 export const browserFillTool = withStreamDefault(tool(
-  async ({ selector, handle, role, name, value, submit, timeout_ms }) => {
-    const loc = resolveLocator({ selector, handle, role, name });
+  async ({ selector, ref, role, name, value, submit, timeout_ms }) => {
+    const loc = resolveLocator({ selector, ref, role, name });
     if (!loc.ok) {
       return JSON.stringify({ action: "browser_fill", ok: false, error: loc.error });
     }
     const result = await run(
-      { type: "fill", selector: loc.selector, value, submit, auto_snapshot: true },
+      { type: "fill", ...loc.locator, value, submit, auto_snapshot: true },
       timeout_ms,
     );
     return formatActionResult("browser_fill", result);
@@ -456,28 +547,11 @@ export const browserFillTool = withStreamDefault(tool(
   {
     name: "browser_fill",
     description:
-      "Type `value` into the input/textarea/contenteditable in the active tab. Identify the target with EXACTLY ONE of: `selector` (CSS), `handle` (numeric `idx` from the most recent snapshot/diff), or `role` + `name`. " +
-      "When `submit` is true the form is submitted after typing (or Enter is dispatched on a bare input). The response includes a fresh diff so you can chain the next action without a separate snapshot call.",
+      "Type `value` into the input/textarea/contenteditable (or choose an option in a `<select>`) in the active tab. Identify the target with EXACTLY ONE of: `ref`, `role` + `name`, or `selector`. " +
+      "For a select, pass the option's value or its visible text. " +
+      "When `submit` is true the enclosing form is submitted after typing. The response includes a fresh diff so you can chain the next action without a separate snapshot call.",
     schema: z.object({
-      selector: z.string().min(1).max(2000).optional().describe("CSS selector for the field to fill."),
-      handle: z
-        .number()
-        .int()
-        .min(0)
-        .optional()
-        .describe("Numeric `idx` from the most recent snapshot/diff."),
-      role: z
-        .string()
-        .min(1)
-        .max(60)
-        .optional()
-        .describe("ARIA-like role (`textbox`, `combobox`, ...). Pair with `name`."),
-      name: z
-        .string()
-        .min(1)
-        .max(200)
-        .optional()
-        .describe("Accessible name of the field. Pair with `role`."),
+      ...LocatorFields,
       value: z.string().max(50_000).describe("Text to type into the field. Replaces the existing value."),
       submit: z.boolean().optional().describe("Submit the enclosing form (or press Enter) after typing."),
       timeout_ms: TimeoutMs,
@@ -490,16 +564,13 @@ export const browserFillTool = withStreamDefault(tool(
 // --------------------------------------------------------------------- //
 
 const LocatorField = z.object({
-  selector: z.string().min(1).max(2000).optional().describe("CSS selector for the field to fill."),
-  handle: z.number().int().min(0).optional().describe("Numeric `idx` from the most recent snapshot/diff."),
-  role: z.string().min(1).max(60).optional().describe("ARIA-like role. Pair with `name`."),
-  name: z.string().min(1).max(200).optional().describe("Accessible name of the field. Pair with `role`."),
+  ...LocatorFields,
   value: z.string().max(50_000).describe("Text to type into the field. Replaces the existing value."),
 });
 
 export const browserFillManyTool = withStreamDefault(tool(
-  async ({ fields, submit_selector, timeout_ms }) => {
-    const resolved: Array<{ selector: string; value: string }> = [];
+  async ({ fields, submit_selector, submit_ref, timeout_ms }) => {
+    const resolved = [];
     for (const [idx, field] of fields.entries()) {
       const loc = resolveLocator(field);
       if (!loc.ok) {
@@ -509,10 +580,10 @@ export const browserFillManyTool = withStreamDefault(tool(
           error: `field ${idx}: ${loc.error}`,
         });
       }
-      resolved.push({ selector: loc.selector, value: field.value });
+      resolved.push({ ...loc.locator, value: field.value });
     }
     const result = await run(
-      { type: "fill_many", fields: resolved, submit_selector, auto_snapshot: true },
+      { type: "fill_many", fields: resolved, submit_selector, submit_ref, auto_snapshot: true },
       timeout_ms,
     );
     return formatActionResult("browser_fill_many", result);
@@ -520,11 +591,12 @@ export const browserFillManyTool = withStreamDefault(tool(
   {
     name: "browser_fill_many",
     description:
-      "Fill multiple fields in the active tab in one browser round-trip. Use this for forms after a `browser_snapshot` or auto-snapshot diff. " +
-      "Each field uses EXACTLY ONE locator: `selector`, `handle`, or `role` + `name`; ambiguous role/name matches return an error instead of guessing. " +
-      "Raw values are sent only to the local browser extension and are not included in command history. Use `submit_selector` to click a submit button after all fields are filled.",
+      "Fill multiple fields in the active tab in one browser round-trip. Prefer this over repeated `browser_fill` calls for forms. " +
+      "Each field uses EXACTLY ONE locator: `ref`, `role` + `name`, or `selector`. " +
+      "Raw values are sent only to the local browser extension and are not included in command history. Use `submit_ref` (preferred) or `submit_selector` to submit after all fields are filled.",
     schema: z.object({
       fields: z.array(LocatorField).min(1).max(25).describe("Fields to fill, in page order."),
+      submit_ref: z.number().int().min(0).optional().describe("Ref of the submit control to click after filling."),
       submit_selector: z.string().min(1).max(2000).optional().describe("CSS selector for the submit button to click after all fields are filled."),
       timeout_ms: TimeoutMs,
     }),
@@ -536,22 +608,102 @@ export const browserFillManyTool = withStreamDefault(tool(
 // --------------------------------------------------------------------- //
 
 export const browserScrollTool = withStreamDefault(tool(
-  async ({ selector, to, timeout_ms }) => {
-    const result = await run({ type: "scroll", selector, to }, timeout_ms);
+  async ({ selector, ref, role, name, to, timeout_ms }) => {
+    if (to !== "into-view") {
+      const result = await run({ type: "scroll", to }, timeout_ms);
+      return stringifyResult("browser_scroll", result);
+    }
+    const loc = resolveLocator({ selector, ref, role, name });
+    if (!loc.ok) {
+      return JSON.stringify({ action: "browser_scroll", ok: false, error: loc.error });
+    }
+    const result = await run({ type: "scroll", ...loc.locator, to }, timeout_ms);
     return stringifyResult("browser_scroll", result);
   },
   {
     name: "browser_scroll",
     description:
-      "Scroll the active tab. `to: top|bottom` scrolls the viewport. With `selector` and `to: into-view` scrolls the matching element into view.",
+      "Scroll the active tab. `to: top|bottom` scrolls the viewport. With `to: into-view` plus a locator (`ref`, `role` + `name`, or `selector`) scrolls that element into view.",
     schema: z.object({
-      selector: z
-        .string()
-        .min(1)
-        .max(2000)
-        .optional()
-        .describe("CSS selector. Required when `to` is `into-view`; ignored otherwise."),
+      ...LocatorFields,
       to: z.enum(["top", "bottom", "into-view"]).describe("Scroll target."),
+      timeout_ms: TimeoutMs,
+    }),
+  },
+), true);
+
+// --------------------------------------------------------------------- //
+// wait                                                                  //
+// --------------------------------------------------------------------- //
+
+export const browserWaitTool = withStreamDefault(tool(
+  async ({ for: waitFor, selector, text, url, quiet_ms, timeout_ms }) => {
+    const result = await run(
+      { type: "wait", for: waitFor, selector, text, url, quiet_ms, timeout_ms },
+      timeout_ms ?? DEFAULT_WAIT_TIMEOUT_MS + 5_000,
+    );
+    return stringifyResult("browser_wait", result);
+  },
+  {
+    name: "browser_wait",
+    description:
+      "Wait for a page condition before the next step: `for: \"selector\"` (element appears), `\"text\"` (visible text appears), `\"url\"` (location matches), `\"idle\"` (DOM quiet and document complete), `\"time\"` (fixed pause). " +
+      "Use this instead of re-snapshotting in a loop when an action starts a request or a render. `idle` is a DOM-quiet check, not a network-inspector claim.",
+    schema: z.object({
+      for: z.enum(["selector", "text", "url", "idle", "time"]).describe("Condition to wait for."),
+      selector: z.string().min(1).max(2000).optional().describe("Required when `for` is `selector`."),
+      text: z.string().min(1).max(2000).optional().describe("Required when `for` is `text`. Case-insensitive substring."),
+      url: z.string().min(1).max(2000).optional().describe("Required when `for` is `url`. Case-insensitive substring of location.href."),
+      quiet_ms: z.number().int().positive().max(10_000).optional().describe("Quiet window for `for: idle`. Defaults to 500ms."),
+      timeout_ms: TimeoutMs,
+    }),
+  },
+), true);
+
+// --------------------------------------------------------------------- //
+// batch                                                                 //
+// --------------------------------------------------------------------- //
+
+const BatchExpectField = z.object({
+  selector: z.string().min(1).max(2000).optional(),
+  text: z.string().min(1).max(2000).optional(),
+  url: z.string().min(1).max(2000).optional(),
+  idle: z.boolean().optional(),
+  timeout_ms: z.number().int().positive().max(MAX_COMMAND_TIMEOUT_MS).optional(),
+});
+
+const BatchStepField = z.object({
+  action: z.enum(["navigate", "click", "fill", "fill_many", "scroll", "press", "wait"]),
+  ...LocatorFields,
+  url: z.string().url().optional(),
+  to: z.enum(["back", "forward", "reload", "top", "bottom", "into-view"]).optional(),
+  value: z.string().max(50_000).optional(),
+  submit: z.boolean().optional(),
+  fields: z.array(LocatorField).min(1).max(25).optional(),
+  submit_selector: z.string().min(1).max(2000).optional(),
+  key: z.string().min(1).max(80).optional(),
+  for: z.enum(["selector", "text", "url", "idle", "time"]).optional(),
+  text: z.string().min(1).max(2000).optional(),
+  timeout_ms: z.number().int().positive().max(MAX_COMMAND_TIMEOUT_MS).optional(),
+  expect: BatchExpectField.optional(),
+});
+
+export const browserBatchTool = withStreamDefault(tool(
+  async ({ steps, timeout_ms }) => {
+    const budget = timeout_ms ?? Math.min(MAX_COMMAND_TIMEOUT_MS, DEFAULT_BATCH_BASE_MS + steps.length * DEFAULT_BATCH_STEP_MS);
+    const result = await run({ type: "batch", steps, auto_snapshot: true }, budget);
+    return formatActionResult("browser_batch", result);
+  },
+  {
+    name: "browser_batch",
+    description:
+      "Run an ordered list of browser steps in ONE extension round trip. This is the default for any multi-step flow: click → type → press Enter → expect results, or fill several fields and submit. " +
+      "Each step is `{ action, ...step fields, expect? }`. Steps run in order and stop at the first failure or unmet expectation; later steps are reported as not executed, so nothing runs against a page that has already diverged. " +
+      "Put an `expect` on the step whose effect you care about (`selector`, `text`, `url`, or `idle`) instead of adding a `wait` step. " +
+      "The response lists per-step status plus one diff of the page afterwards. Do not wrap a single action in a batch; call that tool directly. " +
+      "A step that needs the user's approval stops the batch and surfaces the prompt.",
+    schema: z.object({
+      steps: z.array(BatchStepField).min(1).max(20).describe("Ordered steps. Each is one action, optionally followed by its expectation."),
       timeout_ms: TimeoutMs,
     }),
   },
@@ -567,13 +719,18 @@ interface ScreenshotData {
 }
 
 export const browserScreenshotTool = withStreamDefault(tool(
-  async ({ selector, format, full_page, timeout_ms }) => {
+  async ({ selector, ref, format, full_page, timeout_ms }) => {
+    const hasLocator = Boolean(selector) || typeof ref === "number";
+    const loc = hasLocator ? resolveLocator({ selector, ref }) : { ok: true as const, locator: {} };
+    if (!loc.ok) {
+      return JSON.stringify({ action: "browser_screenshot", ok: false, error: loc.error });
+    }
     const result = await run(
-      { type: "screenshot", selector, format: format ?? "png", full_page },
+      { type: "screenshot", ...loc.locator, format: format ?? "png", full_page },
       timeout_ms,
     );
     if (!result.ok) return stringifyResult("browser_screenshot", result);
-    const sd = (result.data ?? {}) as ScreenshotData;
+    const sd = (result.data ?? {}) as ScreenshotData & { activated_for_capture?: boolean };
     if (!sd.base64) {
       return JSON.stringify({
         action: "browser_screenshot",
@@ -598,6 +755,7 @@ export const browserScreenshotTool = withStreamDefault(tool(
         markdown: `![browser screenshot](${url})`,
         media_type: mime,
         bytes: data.length,
+        ...(sd.activated_for_capture ? { activated_for_capture: true } : {}),
       },
       hint: "Embed the screenshot in your reply by writing the `markdown` field verbatim.",
     });
@@ -606,11 +764,12 @@ export const browserScreenshotTool = withStreamDefault(tool(
     name: "browser_screenshot",
     description:
       "Take a screenshot of the active tab and store it as a local file. Returns a `/api/v1/files/<name>` URL and a ready-to-use `markdown` snippet. " +
-      "Without `selector` the visible viewport is captured; with `selector` only that element is cropped. `full_page: true` captures the entire scrollable page when supported.",
+      "Without a locator the visible viewport is captured; with `ref` or `selector` only that element is cropped. A pinned or background target is briefly activated for the capture and the user's tab is restored afterwards. " +
+      "Screenshots are a visual fallback — use `browser_snapshot` for reading structure and text. `full_page` cannot be honoured from a viewport capture and says so.",
     schema: z.object({
-      selector: z.string().min(1).max(2000).optional().describe("CSS selector to crop to."),
+      ...LocatorFields,
       format: z.enum(["png", "jpeg"]).optional().describe("Image format. Defaults to png."),
-      full_page: z.boolean().optional().describe("Capture the whole scrollable page rather than just the viewport."),
+      full_page: z.boolean().optional().describe("Request the whole scrollable page. Reported back as unavailable when it cannot be honoured."),
       timeout_ms: TimeoutMs,
     }),
   },
@@ -669,28 +828,67 @@ export const browserExtractTool = withStreamDefault(tool(
 // --------------------------------------------------------------------- //
 
 export const browserSnapshotTool = withStreamDefault(tool(
-  async ({ max_items, include_hidden, force_refresh, max_age_ms, timeout_ms }) => {
-    if (!force_refresh && !include_hidden && !max_items) {
-      const cached = cachedSnapshotResult(max_age_ms);
+  async ({ filter, depth, ref, max_items, include_inventory, include_hidden, force_refresh, max_age_ms, timeout_ms }) => {
+    const effectiveFilter = filter ?? "interactive";
+    const cacheable =
+      !force_refresh &&
+      !include_hidden &&
+      !max_items &&
+      typeof ref !== "number" &&
+      !depth &&
+      !include_inventory &&
+      effectiveFilter === "interactive";
+    if (cacheable) {
+      const cached = cachedSnapshotResult(lastSnapshotTabId ?? undefined, max_age_ms);
       if (cached) return cached;
     }
     const result = await run(
-      { type: "snapshot", max_items, include_hidden },
+      {
+        type: "snapshot",
+        max_items,
+        include_hidden,
+        filter: effectiveFilter,
+        depth,
+        ref,
+      },
       timeout_ms,
     );
-    if (result.ok) {
-      const snap = asSnapshot(result.data);
-      if (snap) lastSnapshot = snap;
-    }
-    return stringifyResult("browser_snapshot", result);
+    if (!result.ok) return stringifyResult("browser_snapshot", result);
+    const data = (result.data ?? {}) as Record<string, unknown>;
+    const snap = asSnapshot(data);
+    if (snap) rememberSnapshot(snap);
+    const { interactive: _interactive, tree: rawTree, text, headings, landmarks, ...rest } = data;
+    void _interactive;
+    void headings;
+    void landmarks;
+    const tree = formatTree(rawTree);
+    return JSON.stringify({
+      action: "browser_snapshot",
+      ok: true,
+      data: {
+        ...rest,
+        tree,
+        text: typeof text === "string" ? clipText(text, 12_000) : null,
+        ...(include_inventory && Array.isArray(_interactive) ? { interactive: _interactive } : {}),
+        cache: { hit: false, tab_id: snap?.tab_id ?? null },
+      },
+      hint:
+        tree !== null
+          ? "`tree` is the page structure; act with `ref` from the bracketed handles. Pass `include_inventory: true` only when you need selectors or link targets."
+          : "The page exposed no actionable structure. Try filter: \"text\" to read it, or browser_extract for raw text.",
+    });
   },
   {
     name: "browser_snapshot",
     description:
-      "Return a compact, structured map of the active tab — URL, title, headings, landmarks, and a numbered list of every interactive control (links, buttons, inputs, selects, etc.) with `role`, accessible `name`, and a CSS `selector`. The numeric `idx` on each entry is a short-lived `handle` you can pass to `browser_click` / `browser_fill` instead of repeating the selector. " +
-      "Repeated calls reuse a recent same-process page map by default, which is cheaper than rediscovering complex pages every turn. Pass `force_refresh: true` when the page changed or the cached controls look stale. " +
-      "You usually do NOT need to call this explicitly: `browser_navigate` / `browser_click` / `browser_fill` already return a fresh diff. Call this when you want the full inventory of the page (e.g. to plan a multi-step flow) or when the cached snapshot is stale (>5 minutes old).",
+      "Return the page as an indented accessibility tree — role, accessible name, and a durable `ref` for every control — plus a text excerpt. This is the primary read: it is enough to decide the next action in one call. " +
+      "`filter: \"interactive\"` (default) lists only controls; `\"text\"` adds text-bearing nodes; `\"all\"` also includes containers. `depth` caps nesting, `ref` scopes the read to one subtree. " +
+      "Repeated calls reuse a recent page map per tab; pass `force_refresh: true` after switching tabs, or when the cached tree looks stale. " +
+      "You usually do NOT need this after an action: navigate/click/fill already return a diff with refs.",
     schema: z.object({
+      filter: z.enum(["interactive", "text", "all"]).optional().describe("What to include. Defaults to interactive."),
+      depth: z.number().int().positive().max(40).optional().describe("Maximum nesting depth. Defaults to 15."),
+      ref: z.number().int().min(0).optional().describe("Scope the read to this element's subtree."),
       max_items: z
         .number()
         .int()
@@ -698,6 +896,10 @@ export const browserSnapshotTool = withStreamDefault(tool(
         .max(300)
         .optional()
         .describe("Cap the number of interactive elements returned. Defaults to 80."),
+      include_inventory: z
+        .boolean()
+        .optional()
+        .describe("Also return the flat inventory (selectors, hrefs, select options). Off by default to keep the payload small."),
       include_hidden: z
         .boolean()
         .optional()
@@ -705,7 +907,7 @@ export const browserSnapshotTool = withStreamDefault(tool(
       force_refresh: z
         .boolean()
         .optional()
-        .describe("Ignore the in-process snapshot cache and ask the extension to rediscover the page controls."),
+        .describe("Ignore the per-tab snapshot cache and rediscover the page."),
       max_age_ms: z
         .number()
         .int()
@@ -762,7 +964,7 @@ export const browserActivateTabTool = withStreamDefault(tool(
 registerLangChainPackage({
   category: "Web",
   tools: {
-    read: [browserScreenshotTool, browserExtractTool, browserSnapshotTool, browserTabsTool],
-    write: [browserNavigateTool, browserClickTool, browserFillTool, browserFillManyTool, browserScrollTool, browserActivateTabTool],
+    read: [browserScreenshotTool, browserExtractTool, browserSnapshotTool, browserWaitTool, browserTabsTool],
+    write: [browserNavigateTool, browserClickTool, browserPressTool, browserFillTool, browserFillManyTool, browserScrollTool, browserBatchTool, browserActivateTabTool],
   },
 });

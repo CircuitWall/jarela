@@ -77,34 +77,107 @@ export const ExtractFormat = z.enum(["text", "html", "outerHTML"]);
 // agent-side tool wrapper uses that snapshot to update its locator cache
 // and emit a diff to the LLM, eliminating the explicit follow-up
 // `browser_snapshot` call on every step.
+// Target locators are resolved by the extension against the *live* DOM at
+// execution time (ADR-0123 D1). `ref` comes from the most recent snapshot
+// for that tab, `role` + `name` is an accessible-name lookup, and
+// `selector` is the escape hatch. The extension tries ref → role + name →
+// selector in that order, so a re-render between observation and action
+// does not cost another model round trip.
+const LocatorShape = {
+  selector: z.string().min(1).max(2000).optional(),
+  ref: z.number().int().min(0).optional(),
+  role: z.string().min(1).max(60).optional(),
+  name: z.string().min(1).max(200).optional(),
+};
+
+export const NavigateTo = z.enum(["back", "forward", "reload"]);
+export const WaitFor = z.enum(["selector", "text", "url", "idle", "time"]);
+
 const NavigateCommandShape = z.object({
   type: z.literal("navigate"),
-  url: z.string().url(),
+  url: z.string().url().optional(),
+  to: NavigateTo.optional(),
   wait_for_selector: z.string().min(1).max(2000).optional(),
   auto_snapshot: z.boolean().optional(),
 });
 const ClickCommandShape = z.object({
   type: z.literal("click"),
-  selector: z.string().min(1).max(2000),
+  ...LocatorShape,
   auto_snapshot: z.boolean().optional(),
 });
 const FillCommandShape = z.object({
   type: z.literal("fill"),
-  selector: z.string().min(1).max(2000),
+  ...LocatorShape,
   value: z.string().max(50_000),
   submit: z.boolean().optional(),
+  auto_snapshot: z.boolean().optional(),
+});
+const PressCommandShape = z.object({
+  type: z.literal("press"),
+  ...LocatorShape,
+  key: z.string().min(1).max(80),
   auto_snapshot: z.boolean().optional(),
 });
 const FillManyCommandShape = z.object({
   type: z.literal("fill_many"),
   fields: z
     .array(z.object({
-      selector: z.string().min(1).max(2000),
+      ...LocatorShape,
       value: z.string().max(50_000),
     }))
     .min(1)
     .max(25),
   submit_selector: z.string().min(1).max(2000).optional(),
+  submit_ref: z.number().int().min(0).optional(),
+  auto_snapshot: z.boolean().optional(),
+});
+const WaitCommandShape = z.object({
+  type: z.literal("wait"),
+  for: WaitFor,
+  selector: z.string().min(1).max(2000).optional(),
+  text: z.string().min(1).max(2000).optional(),
+  url: z.string().min(1).max(2000).optional(),
+  quiet_ms: z.number().int().positive().max(10_000).optional(),
+  timeout_ms: z.number().int().positive().max(MAX_COMMAND_TIMEOUT_MS).optional(),
+});
+
+// Expectations for a batch step. The step is considered failed when an
+// expectation is not met within its own budget, which stops the batch
+// instead of letting the model discover the desync one turn later.
+const BatchExpectShape = z.object({
+  selector: z.string().min(1).max(2000).optional(),
+  text: z.string().min(1).max(2000).optional(),
+  url: z.string().min(1).max(2000).optional(),
+  idle: z.boolean().optional(),
+  timeout_ms: z.number().int().positive().max(MAX_COMMAND_TIMEOUT_MS).optional(),
+});
+
+export const BatchStepShape = z.object({
+  action: z.enum(["navigate", "click", "fill", "fill_many", "scroll", "press", "wait"]),
+  ...LocatorShape,
+  url: z.string().url().optional(),
+  to: z.union([NavigateTo, ScrollTo]).optional(),
+  value: z.string().max(50_000).optional(),
+  submit: z.boolean().optional(),
+  fields: z
+    .array(z.object({
+      ...LocatorShape,
+      value: z.string().max(50_000),
+    }))
+    .min(1)
+    .max(25)
+    .optional(),
+  submit_selector: z.string().min(1).max(2000).optional(),
+  key: z.string().min(1).max(80).optional(),
+  for: WaitFor.optional(),
+  text: z.string().min(1).max(2000).optional(),
+  timeout_ms: z.number().int().positive().max(MAX_COMMAND_TIMEOUT_MS).optional(),
+  expect: BatchExpectShape.optional(),
+});
+
+const BatchCommandShape = z.object({
+  type: z.literal("batch"),
+  steps: z.array(BatchStepShape).min(1).max(20),
   auto_snapshot: z.boolean().optional(),
 });
 const ScrollCommandShape = z.object({
@@ -126,10 +199,16 @@ const ExtractCommandShape = z.object({
   offset: z.number().int().min(0).optional(),
 });
 
+export const SnapshotFilter = z.enum(["interactive", "text", "all"]);
+
 const SnapshotCommandShape = z.object({
   type: z.literal("snapshot"),
   max_items: z.number().int().positive().max(300).optional(),
   include_hidden: z.boolean().optional(),
+  filter: SnapshotFilter.optional(),
+  depth: z.number().int().positive().max(40).optional(),
+  ref: z.number().int().min(0).optional(),
+  max_chars: z.number().int().positive().max(200_000).optional(),
 });
 
 const TabsCommandShape = z.object({
@@ -181,7 +260,10 @@ const CommandShape = z.discriminatedUnion("type", [
   ClickCommandShape,
   FillCommandShape,
   FillManyCommandShape,
+  PressCommandShape,
   ScrollCommandShape,
+  WaitCommandShape,
+  BatchCommandShape,
   ScreenshotCommandShape,
   ExtractCommandShape,
   SnapshotCommandShape,
@@ -208,7 +290,7 @@ const ResultBodyShape = z.object({
 
 export type BrowserResult =
   | { cmd_id: string; ok: true; data: unknown }
-  | { cmd_id: string; ok: false; error: string };
+  | { cmd_id: string; ok: false; error: string; data?: unknown };
 
 // --------------------------------------------------------------------- //
 // In-memory queue                                                       //
@@ -538,7 +620,12 @@ export async function handleBrowserResult(req: Request): Promise<Response> {
   const body = parsed.data;
   const result: BrowserResult = body.ok
     ? { cmd_id: body.cmd_id, ok: true, data: body.data ?? null }
-    : { cmd_id: body.cmd_id, ok: false, error: body.error ?? "unspecified extension error" };
+    : {
+        cmd_id: body.cmd_id,
+        ok: false,
+        error: body.error ?? "unspecified extension error",
+        ...(body.data !== undefined ? { data: body.data } : {}),
+      };
   const { matched } = submitResult(result);
   return new Response(JSON.stringify({ ok: true, matched }), {
     status: 200,
