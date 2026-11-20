@@ -72,6 +72,12 @@ export const ScrollTo = z.enum(["top", "bottom", "into-view"]);
 export const ScreenshotFormat = z.enum(["png", "jpeg"]);
 export const ExtractFormat = z.enum(["text", "html", "outerHTML"]);
 
+// Wire-contract version between the app and the extension. Bump whenever a
+// command shape changes in a way an older extension cannot execute: a stale
+// service worker is otherwise indistinguishable from a code defect, which is
+// exactly the confusion this constant exists to end.
+export const BROWSER_PROTOCOL_VERSION = 3;
+
 // `auto_snapshot` instructs the extension to take a page snapshot after
 // a successful state-changing action and ship it back in the result. The
 // agent-side tool wrapper uses that snapshot to update its locator cache
@@ -329,6 +335,8 @@ const pollWaiters: Array<(c: BrowserCommand | null) => void> = [];
 
 let lastPollAt = 0;
 let pollerWaiting = 0;
+let lastExtensionProtocol: number | null = null;
+let lastExtensionVersion: string | null = null;
 
 export interface ExtensionStatus {
   connected: boolean;
@@ -336,6 +344,13 @@ export interface ExtensionStatus {
   lastSeenMs: number;            // ms since the last `/poll` hit, or -1 if never
   pendingCommands: number;
   liveness_window_ms: number;
+  /** Protocol the extension reported, or null when it reported none (a pre-handshake build). */
+  protocol: number | null;
+  protocol_expected: number;
+  /** True when the extension is older or newer than this server's contract. */
+  protocol_mismatch: boolean;
+  /** Extension build string, when it reports one. */
+  version: string | null;
 }
 
 export function getExtensionStatus(): ExtensionStatus {
@@ -347,13 +362,48 @@ export function getExtensionStatus(): ExtensionStatus {
     lastSeenMs: sinceLast,
     pendingCommands: queue.length,
     liveness_window_ms: EXTENSION_LIVENESS_WINDOW_MS,
+    protocol: lastExtensionProtocol,
+    protocol_expected: BROWSER_PROTOCOL_VERSION,
+    protocol_mismatch: lastExtensionProtocol !== BROWSER_PROTOCOL_VERSION,
+    version: lastExtensionVersion,
   };
+}
+
+/**
+ * Record the handshake an extension sends with each poll.
+ *
+ * A reloaded extension and a stale service worker look identical from the
+ * outside; both poll, both answer with the last code they loaded. The
+ * protocol a build reports is the only way to tell "this command failed"
+ * apart from "this command was never understood". Callers use
+ * `mismatchHint` to say which.
+ */
+export function recordExtensionHandshake(protocol: unknown, version: unknown): void {
+  lastExtensionProtocol =
+    typeof protocol === "number" && Number.isFinite(protocol) ? Math.floor(protocol) : null;
+  lastExtensionVersion = typeof version === "string" ? version.slice(0, 40) : null;
+}
+
+/** Sentence to append when a browser command fails while the extension reports an older contract. */
+export function extensionMismatchHint(): string | null {
+  // Nothing has polled yet: we know nothing about the build, so guessing is
+  // worse than staying quiet.
+  if (lastPollAt === 0) return null;
+  if (lastExtensionProtocol === BROWSER_PROTOCOL_VERSION) return null;
+  const reported = lastExtensionProtocol === null ? "no protocol" : `protocol ${lastExtensionProtocol}`;
+  const build = lastExtensionVersion ? ` (build ${lastExtensionVersion})` : "";
+  return (
+    `the extension reports ${reported}${build} but this server expects protocol ${BROWSER_PROTOCOL_VERSION}: ` +
+    `reload it at edge://extensions or chrome://extensions and retry`
+  );
 }
 
 /** @internal — test-only: reset the connectivity tracker. */
 export function _resetExtensionStatus(): void {
   lastPollAt = 0;
   pollerWaiting = 0;
+  lastExtensionProtocol = null;
+  lastExtensionVersion = null;
 }
 
 /** @internal — test-only: simulate that the extension just polled. */
@@ -585,10 +635,11 @@ export async function handleBrowserPoll(req: Request): Promise<Response> {
   let waitMs = POLL_WAIT_MS;
   if (req.method === "POST") {
     try {
-      const raw = (await req.json()) as { wait_ms?: unknown };
+      const raw = (await req.json()) as { wait_ms?: unknown; protocol?: unknown; version?: unknown };
       if (typeof raw?.wait_ms === "number" && raw.wait_ms > 0) {
         waitMs = Math.min(POLL_WAIT_MS, raw.wait_ms);
       }
+      recordExtensionHandshake(raw?.protocol, raw?.version);
     } catch {
       // Empty / non-JSON body → use default. Extension is permitted to
       // send GET; treat both shapes identically.

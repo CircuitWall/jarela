@@ -21,6 +21,10 @@ import {
   pollNextCommand,
   submitResult,
   _resetQueue,
+  _resetExtensionStatus,
+  recordExtensionHandshake,
+  BROWSER_PROTOCOL_VERSION,
+  _markExtensionSeen,
   type BrowserCommand,
 } from "@/lib/api/browser-control";
 
@@ -709,5 +713,30 @@ describe("browser_snapshot refuses an empty payload", () => {
     expect(parsed.ok).toBe(false);
     expect(parsed.error).toMatch(/returned no page structure/);
     expect(parsed.error).toMatch(/Reload the extension/);
+  });
+});
+
+describe("stale extension hint", () => {
+  it("appends the reload instruction when the polling build is older", async () => {
+    _resetExtensionStatus();
+    _markExtensionSeen();
+    recordExtensionHandshake(1, "0.2.0");
+    const p = browserSnapshotTool.invoke({ force_refresh: true });
+    const { parsed } = await driveTool(p, () => ({
+      ok: true,
+      data: { tab_id: 7 },
+    }));
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toMatch(/protocol 1/);
+    expect(parsed.error).toMatch(/reload it/);
+  });
+
+  it("stays quiet when the extension reports the current protocol", async () => {
+    _resetExtensionStatus();
+    _markExtensionSeen();
+    recordExtensionHandshake(BROWSER_PROTOCOL_VERSION, "0.3.0");
+    const p = browserClickTool.invoke({ selector: "#missing" });
+    const { parsed } = await driveTool(p, () => ({ ok: false, error: "no element matched" }));
+    expect(parsed.error).toBe("no element matched");
   });
 });

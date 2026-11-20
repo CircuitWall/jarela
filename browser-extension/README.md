@@ -155,6 +155,17 @@ duplicate the registry key strings and the actionable-selector list locally.
 context with page globals only, and fails on both a throw and an `undefined`
 result — add any new page function to its `INJECTED` list.
 
+### Stale service workers are detected, not guessed
+
+Chromium keeps running the files it loaded until the extension is reloaded, so
+a worker can answer with code several revisions old while content scripts
+(outside the worker) already match the folder. The worker now reports a
+`protocol` on every poll; the app compares it with
+`BROWSER_PROTOCOL_VERSION` in `lib/api/browser-control.ts` and, when they
+differ, appends *"the extension reports protocol N … reload it"* to failed
+commands. Bump the constant in **both** places whenever a command shape
+changes in a way an older worker cannot execute.
+
 For large pages, agents should use `browser_snapshot` to understand page
 structure, then `browser_extract` for the actual page text or HTML. Small
 extracts stay inline. Large or truncated extracts are reduced into a local
