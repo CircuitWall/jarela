@@ -227,10 +227,17 @@ default name is `"<name> (copy)"`. Conversations are not copied. Returns
 ### `GET /api/v1/tools`
 
 Returns every tool in the agent's pool with `{ name, description, source,
-category, capability, group, mcp_server, stats }`. Source is
+category, capability, group, mcp_server, credentials_required, dependencies,
+status, status_reason, permission, permission_reason, stats }`. Source is
 `builtin | external | mcp`. Capability is `read | write | execute`.
 `mcp_server` is populated for MCP-sourced tools so clients can render
 `MCP -> server -> tools` permission hierarchies.
+
+`dependencies` lists the probed state of code or binaries the tool needs
+(ADR-0121). A tool whose required dependency is definitively missing carries
+`permission: "unavailable"` with `permission_reason` `dependency_missing`
+(Jarela can install it) or `dependency_manual` (the operator must), and is
+never bound to a model. `unverified` never hides a tool.
 
 Query parameters:
 
@@ -239,6 +246,31 @@ Query parameters:
 
 - **Source:** [`app/api/v1/tools/route.ts`](../app/api/v1/tools/route.ts)
 - **Agent equivalent:** `list_tools` tool — same data, callable from inside an agent run, with the same `query` search behavior.
+
+### `GET /api/v1/dependencies?target=<kind>:<id>`
+
+Read-only dependency plan for one enabling target. Targets are
+`tool:<name>`, `integration:<id>`, `package:<id>`, `manifest:<name>`, and
+`mcp:<name>`. Returns `{ target, status, dependencies, missing, steps, manual }`
+where `status` is `ready | unverified | install_required | manual`, and each
+step carries the exact `command`, `cwd`, `publisher`, and `allowlisted`
+decision. Unknown targets return `404`.
+
+- **Source:** [`app/api/v1/dependencies/route.ts`](../app/api/v1/dependencies/route.ts)
+
+### `POST /api/v1/dependencies/install`
+
+Installs the missing dependencies of one target after an explicit request
+(ADR-0121). Body: `{ "target": "<kind>:<id>" }`.
+
+`200` means `installed` or `already_ready`; `202` means a non-allowlisted
+managed package was queued for the existing approval flow
+(`pending_approval`); `409` means `blocked` (non-allowlisted global install —
+the command is returned), `manual` (operator-owned prerequisite), or `failed`.
+The response always includes the plan before (`plan`) and after (`result`) the
+attempt.
+
+- **Source:** [`app/api/v1/dependencies/install/route.ts`](../app/api/v1/dependencies/install/route.ts)
 
 ---
 

@@ -33,6 +33,14 @@ interface ToolSummary {
   status_reason: string | null;
   permission: "enabled" | "disabled" | "unavailable";
   permission_reason: string | null;
+  /** Declared dependencies that are not satisfied (ADR-0121). Omitted when none. */
+  dependencies?: Array<{
+    kind: string;
+    id: string;
+    state: string;
+    installable: boolean;
+    hint: string | null;
+  }>;
   input_schema?: ToolParamSchema | null;
 }
 
@@ -63,6 +71,13 @@ export const listToolsTool = tool(
       status_reason: t.status_reason,
       permission: t.permission ?? "disabled",
       permission_reason: t.permission_reason ?? null,
+      ...(t.dependencies.some((d) => d.state !== "satisfied")
+        ? {
+          dependencies: t.dependencies
+            .filter((d) => d.state !== "satisfied")
+            .map((d) => ({ kind: d.kind, id: d.id, state: d.state, installable: d.installable, hint: d.hint })),
+        }
+        : {}),
       ...(include_schema ? { input_schema: schemasByName.get(t.name) ?? null } : {}),
     }));
 

@@ -9,6 +9,7 @@ import {
   registeredCapability,
   registeredGroup,
   registeredIntegration,
+  registeredDependencies,
   groupForCategory,
   type ToolCategory,
 } from "./registry";
@@ -25,10 +26,16 @@ import { normalizeToolCategory } from "./categories";
 import { isAlwaysOnTool } from "./always-on";
 import {
   allBuiltins,
+  getToolDependencies,
   loadExternal,
   toCatalogEntry,
   type ToolCatalogEntry,
 } from "./catalog";
+import {
+  missingDependencies,
+  missingDependencyMessage,
+  probeDependencies,
+} from "@/lib/dependencies/probe";
 
 export * from "./catalog";
 
@@ -83,6 +90,7 @@ export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
       capability: registeredCapability(tool.name) ?? "execute",
       group: registeredGroup(tool.name) ?? groupForCategory(category),
       integration: registeredIntegration(tool.name) ?? null,
+      dependencies: getToolDependencies(tool.name),
       status: disabled ? "disabled" : "enabled",
       status_reason: disabled ? "category_disabled" : null,
     }));
@@ -167,6 +175,20 @@ export function toOpenAITools(tools: StructuredToolInterface[]): OpenAITool[] {
   });
 }
 
+/**
+ * Refuse a tool whose required dependency is missing. Defense in depth for
+ * stale agent configs: the catalog already marks these tools unavailable, so
+ * the model should never call them (ADR-0121).
+ */
+async function assertDependenciesReady(name: string): Promise<void> {
+  const specs = registeredDependencies(name);
+  if (specs.length === 0) return;
+  const blocking = missingDependencies(await probeDependencies(specs))[0];
+  if (blocking) {
+    throw new Error(`Tool "${name}" is unavailable: ${missingDependencyMessage(blocking)}`);
+  }
+}
+
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
@@ -207,6 +229,7 @@ export async function executeTool(
   if (!registeredCategory(name)) {
     t = wrapWithWallclock(t);
   }
+  await assertDependenciesReady(t.name);
   if (context.tool_credentials && Object.keys(context.tool_credentials).length > 0) {
     t = wrapToolForCredentialRouting(t, context.tool_credentials);
   }

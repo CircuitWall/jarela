@@ -6,6 +6,17 @@ export const openaiCodexManifest: IntegrationManifest = {
   summary:
     "Lets the agent delegate a coding task to the locally installed Codex CLI, using your existing ChatGPT sign-in or an OpenAI API key for trusted automation.",
   category: "infrastructure",
+  dependencies: [
+    {
+      kind: "node-package",
+      id: "@openai/codex",
+      scope: "global",
+      bin: "codex",
+      version: "latest",
+      hint: "Install the Codex CLI with `npm install -g @openai/codex`, then run `codex login`.",
+      docs_url: "https://learn.chatgpt.com/docs/codex/cli",
+    },
+  ],
   prerequisites: [
     {
       check: "credentials",

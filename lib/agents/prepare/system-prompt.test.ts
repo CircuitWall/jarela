@@ -481,6 +481,8 @@ describe("buildToolPermissionContext", () => {
       "dropin_tool_disabled",
       "credentials_missing",
       "integration_unconfigured",
+      "dependency_missing",
+      "dependency_manual",
     ]) {
       expect(ctx).toContain(reason);
     }

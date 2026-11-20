@@ -127,6 +127,7 @@ and the boundaries new code should use.
 | `lib/agents/` | Agent construction, turn execution, prompt preparation, validation, and run lifecycle. |
 | `lib/providers/` | Provider adapters, model routing, pacing, and vendor-specific SDK behavior. |
 | `lib/tools/`, `lib/mcp/` | Capability-aware tool registry and domains; MCP discovery and invocation. |
+| `lib/dependencies/` | Declaration, probing, and install plans for optional tool/integration dependencies (ADR-0121). |
 | `lib/stores/`, `lib/db/`, `lib/crypto/` | Persistent state, SQLite access, checkpoints, and encryption. |
 | `lib/scheduler/`, `lib/bridges/`, `lib/streaming/`, `lib/notifications/` | Background triggers, inbound transports, run updates, and alerts. |
 | `packages/` | Separately scoped npm workspace packages. |
@@ -677,6 +678,32 @@ gate, UI badges, the ADR-0037 validator's citation rules — switch on the
 three values exhaustively. The `capability-coverage.test.ts` runtime check
 asserts every registered tool has a capability so a new tool cannot land
 uncategorised.
+
+### Optional dependencies — declaration, probe, plan
+
+A tool or integration may need code or a binary that is not guaranteed to be
+installed ([ADR-0121](./adr/0121-optional-tool-and-integration-dependencies.md)).
+Registrations declare that need as data —
+`registerTools(..., dependencies?)`, `registerLangChainPackage({ dependencies })`,
+`setToolDependencies(names, specs)`, an integration manifest's `dependencies`,
+or a package manifest's `dependencies` — and `lib/dependencies/` answers whether
+it is present:
+
+* **`schema.ts`** — the only declaration contract (`node-package`,
+  `executable`, `node-runtime`), plus probe result types. No commands, so a
+  manifest cannot inject argv.
+* **`probe.ts`** — cached, single-flight, never-throwing probes. `unverified`
+  never hides a tool, matching `lib/health/probe-cache.ts`; only a definitive
+  `missing` does.
+* **`plan.ts`** — target (`tool:`, `integration:`, `package:`, `manifest:`,
+  `mcp:`) → `ready` / `install_required` / `manual` / `unverified`, with the
+  exact argv and publisher allowlist decision for each install step.
+
+Gating reuses the three existing layers: catalog `dependencies` plus
+`status_reason` (`dependency_missing` / `dependency_manual`),
+`applyAgentPermissionsToCatalog` marking those tools `unavailable`, and an
+`executeTool` refusal for stale agent configs. Nothing installs during a probe;
+installs stay behind the `package-install.ts` trust model.
 
 ### Output validator (anti-fabrication)
 

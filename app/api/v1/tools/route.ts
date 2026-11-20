@@ -23,6 +23,17 @@ interface ToolEnvelope {
   group: string | null;
   mcp_server: string | null;
   credentials_required: string[];
+  dependencies: Array<{
+    kind: string;
+    id: string;
+    scope: string | null;
+    state: string;
+    installable: boolean;
+    required: boolean;
+    detail: string | null;
+    hint: string | null;
+    docs_url: string | null;
+  }>;
   stats: ReturnType<typeof defaultToolStats>;
   failure_samples: Array<{ normalized_reason: string; count: number; last_seen_at: string }>;
 }
@@ -60,6 +71,17 @@ export async function GET(req: Request) {
       group: t.group,
       mcp_server: t.mcp_server ?? null,
       credentials_required: t.credentials_required,
+        dependencies: t.dependencies.map((d) => ({
+          kind: d.kind,
+          id: d.id,
+          scope: d.scope,
+          state: d.state,
+          installable: d.installable,
+          required: d.required,
+          detail: d.detail,
+          hint: d.hint,
+          docs_url: d.docs_url,
+        })),
         stats: stats.get(t.name) ?? defaultToolStats(),
         failure_samples: failuresByTool.get(t.name) ?? [],
       }));
