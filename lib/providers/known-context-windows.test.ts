@@ -3,6 +3,7 @@ import {
   getKnownModelLimits,
   getKnownContextLength,
   getKnownMaxOutputTokens,
+  stripSupersededLimits,
 } from "./known-context-windows";
 
 describe("known-context-windows", () => {
@@ -52,5 +53,30 @@ describe("known-context-windows", () => {
       context_length: 1_000_000,
       max_output_tokens: 8192,
     });
+  });
+});
+
+describe("stripSupersededLimits", () => {
+  it("drops a context/output pair copied from a previous catalog snapshot", () => {
+    expect(stripSupersededLimits("deepseek", "deepseek-v4-flash", {
+      api_key: "sk-x",
+      context_window_tokens: 65_536,
+      max_tokens: 8_192,
+    })).toEqual({ api_key: "sk-x" });
+  });
+
+  it("keeps a deliberate cap, because only the exact pair is stale", () => {
+    const onlyMax = { max_tokens: 8_192 };
+    const lowerCap = { context_window_tokens: 65_536, max_tokens: 4_096 };
+    const current = { context_window_tokens: 1_000_000, max_tokens: 8_192 };
+    expect(stripSupersededLimits("deepseek", "deepseek-v4-flash", onlyMax)).toEqual(onlyMax);
+    expect(stripSupersededLimits("deepseek", "deepseek-v4-flash", lowerCap)).toEqual(lowerCap);
+    expect(stripSupersededLimits("deepseek", "deepseek-v4-flash", current)).toEqual(current);
+  });
+
+  it("leaves other providers and models alone", () => {
+    const params = { context_window_tokens: 65_536, max_tokens: 8_192 };
+    expect(stripSupersededLimits("openai", "gpt-4", params)).toEqual(params);
+    expect(stripSupersededLimits("deepseek", "deepseek-flash", params)).toEqual(params);
   });
 });

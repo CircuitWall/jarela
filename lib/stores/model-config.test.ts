@@ -84,6 +84,38 @@ describe("upsertModelConfig params merge", () => {
   });
 });
 
+describe("catalog-stamped capability numbers", () => {
+  it("ignores a context/output pair an older catalog snapshot wrote", () => {
+    // Shape of a row created before 6468c2e6 raised the DeepSeek V4 limits.
+    const legacy = {
+      provider: "deepseek",
+      model_id: "deepseek-v4-flash",
+      params: JSON.stringify({ api_key: "sk-x", context_window_tokens: 65_536, max_tokens: 8_192 }),
+    };
+    expect(getModelParams(legacy)).toEqual({ api_key: "sk-x" });
+  });
+
+  it("keeps a cap the user set below the model limit", () => {
+    const deliberate = {
+      provider: "deepseek",
+      model_id: "deepseek-v4-flash",
+      params: JSON.stringify({ max_tokens: 8_192 }),
+    };
+    expect(getModelParams(deliberate)).toEqual({ max_tokens: 8_192 });
+  });
+
+  it("removes the stale pair from the stored row on the next save", () => {
+    upsertModelConfig("legacy-deepseek", "deepseek", "deepseek-v4-flash", {
+      context_window_tokens: 65_536,
+      max_tokens: 8_192,
+    }, false);
+    const stored = JSON.parse(getModelConfig("legacy-deepseek")!.params) as Record<string, unknown>;
+    expect(stored).not.toHaveProperty("max_tokens");
+    expect(stored).not.toHaveProperty("context_window_tokens");
+    deleteModelConfig("legacy-deepseek");
+  });
+});
+
 describe("deleteModelConfig auto-promotes default", () => {
   it("makes the first created model the explicit default", () => {
     upsertModelConfig("no-default-1", "anthropic", "claude-x", {}, false);

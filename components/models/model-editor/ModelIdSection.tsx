@@ -18,6 +18,9 @@ export function ModelIdSection({ form, onLoadCatalog }: Props) {
         onChange={(e) => {
           const next = e.target.value;
           form.setModelId(next);
+          // The catalog hint belonged to the previous id.
+          form.setAutoMaxTokens(null);
+          form.setAutoContextWindowTokens(null);
           if (!form.nameTouched && !form.isEdit) form.setName(next);
         }}
         placeholder="e.g. claude-sonnet-4-6"
@@ -95,22 +98,16 @@ function CatalogRow({ model, form }: { model: CatalogModel; form: ModelEditorFor
   );
 }
 
-function applyCatalogPick(model: CatalogModel, form: ModelEditorForm) {
+export function applyCatalogPick(model: CatalogModel, form: ModelEditorForm) {
   form.setModelId(model.id);
   if (!form.nameTouched && !form.isEdit) form.setName(model.id);
-  // Auto-apply the catalog's known sizing as the default so the agent doesn't
-  // fall back to the global 8K window. Only fills when the field is currently
-  // empty — never clobbers a value the user explicitly typed.
-  if (model.context_length && !form.contextWindowTokens.trim()) {
-    const v = String(model.context_length);
-    form.setContextWindowTokens(v);
-    form.setAutoContextWindowTokens(v);
-  }
-  if (model.max_output_tokens && !form.maxTokens.trim()) {
-    const v = String(model.max_output_tokens);
-    form.setMaxTokens(v);
-    form.setAutoMaxTokens(v);
-  }
+  // Show the catalog's sizing, but never write it into the saved params: a
+  // stamped number becomes indistinguishable from a deliberate cap, so it
+  // stops following the model when the provider raises its limits (every
+  // config picked before 6468c2e6 kept generating 8k tokens for DeepSeek V4).
+  // Empty fields mean "automatic", which the runtime resolves per turn.
+  form.setAutoContextWindowTokens(model.context_length ? String(model.context_length) : null);
+  form.setAutoMaxTokens(model.max_output_tokens ? String(model.max_output_tokens) : null);
   form.setShowCatalog(false);
 }
 
