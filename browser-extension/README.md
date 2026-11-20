@@ -118,9 +118,9 @@ through tools registered in the Jarela toolbelt:
 
 | Tool                   | Action                                                            |
 | ---------------------- | ----------------------------------------------------------------- |
-| `browser_tabs`         | List open tabs, target markers, and URL/title metadata where permissions allow. |
-| `browser_activate_tab` | Focus a tab by id from `browser_tabs`.                            |
-| `browser_navigate`     | Open a URL, or move with `back` / `forward` / `reload` (http/https only), and optionally wait for a selector. |
+| `browser_tabs`         | List open tabs with a small `tab_ref`, target markers, and URL/title metadata where permissions allow. |
+| `browser_activate_tab` | Focus a tab by `tab_ref` from `browser_tabs` (a raw tab id is accepted too). |
+| `browser_navigate`     | Open a URL, or move with `back` / `forward` / `reload` (http/https only), and optionally wait for a selector. Refuses to steer the Jarela app tab unless `allow_app_tab` is set. |
 | `browser_snapshot`     | Return an indented accessibility tree (role, accessible name, durable `ref`) plus a text excerpt; `filter`, `depth`, `ref` scope it. |
 | `browser_click`        | Click by `ref`, `role` + `name`, or selector — resolved against the live DOM. |
 | `browser_press`        | Press a key or chord (`Escape`, `Enter`, `Control+a`); without a locator it goes to the focused element. |
@@ -138,6 +138,22 @@ retried once when it goes stale), snapshots return a text-bearing
 accessibility tree, and `browser_batch` collapses a multi-step flow into one
 execute → observe round trip. Dialogs, trusted input and cross-frame reads still
 require the opt-in CDP layer described in the ADR and are not shipped yet.
+
+### Injected page functions
+
+Every function passed to `chrome.scripting.executeScript` is serialized with
+`Function.toString()` and re-evaluated **inside the page**, so it cannot see
+anything from its module: not a top-level constant, not a helper declared
+alongside it. Violating this throws a `ReferenceError` in the page, and Chrome
+then resolves the injection with `result: undefined` — which reaches the agent
+as a successful no-op. That shipped once (a snapshot that reported
+`{ ok: true, data: null }` and silently disabled every ref-based action).
+
+Consequently `pageActFn`, `pageSnapshotFn` and `pageBoundsForTargetFn`
+duplicate the registry key strings and the actionable-selector list locally.
+`lib/injection.test.mjs` runs each injected function in a bare `node:vm`
+context with page globals only, and fails on both a throw and an `undefined`
+result — add any new page function to its `INJECTED` list.
 
 For large pages, agents should use `browser_snapshot` to understand page
 structure, then `browser_extract` for the actual page text or HTML. Small

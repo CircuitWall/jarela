@@ -21,6 +21,17 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // could. The registry lives on the page's `globalThis`, which means it dies
 // with the document — a ref from a previous page is never silently reused
 // against a new one.
+//
+// IMPORTANT — every function in this file that is handed to
+// `chrome.scripting.executeScript` is serialized with `Function.toString()`
+// and re-evaluated inside the page. It therefore cannot see *any* binding
+// from this module: not these constants, not a helper declared below, not an
+// imported type. A reference to module scope throws
+// `ReferenceError: <name> is not defined` inside the page, and Chrome then
+// resolves the injection with `result: undefined` — which looks like a
+// successful no-op to the caller. Duplicate the values locally (they are
+// covered by `injection.test.mjs`, which runs each injected function in a
+// bare context) instead of referencing the module constants below.
 const NODE_REGISTRY_KEY = "__jarelaAgentNodes";
 const NODE_REF_COUNTER_KEY = "__jarelaAgentNextRef";
 const NODE_REF_BY_NODE_KEY = "__jarelaAgentRefByNode";
@@ -37,8 +48,10 @@ export const ACTIONABLE_SELECTOR =
 // cannot resolve is reported as data (`reason`) instead of thrown, so the
 // dispatcher can refresh once and retry instead of failing the agent turn.
 export function pageActFn(action, payload) {
+  // Local copy: this function is injected, so it cannot see module scope.
+  const REGISTRY_KEY = "__jarelaAgentNodes";
   const p = payload && typeof payload === "object" ? payload : {};
-  const registry = globalThis[NODE_REGISTRY_KEY];
+  const registry = globalThis[REGISTRY_KEY];
   const report = (fields) => ({ matched: false, action, ...fields });
 
   function lookupRef(ref) {
@@ -382,8 +395,10 @@ export function pageWaitFn(opts) {
 // --------------------------------------------------------------------- //
 
 export function pageBoundsForTargetFn(locator) {
+  // Local copy: this function is injected, so it cannot see module scope.
+  const REGISTRY_KEY = "__jarelaAgentNodes";
   const p = locator && typeof locator === "object" ? locator : {};
-  const registry = globalThis[NODE_REGISTRY_KEY];
+  const registry = globalThis[REGISTRY_KEY];
   let el = null;
   if (typeof p.ref === "number" && registry && typeof registry.get === "function") {
     const entry = registry.get(p.ref);
@@ -437,6 +452,14 @@ export function pageElementBoundsFn(selector) {
 // --------------------------------------------------------------------- //
 
 export function pageSnapshotFn(opts) {
+  // Locals: this function is injected, so it cannot see module scope.
+  const REGISTRY_KEY = "__jarelaAgentNodes";
+  const COUNTER_KEY = "__jarelaAgentNextRef";
+  const REF_BY_NODE_KEY = "__jarelaAgentRefByNode";
+  const MAX_ENTRIES = 4000;
+  const ACTIONABLE =
+    "a[href], button, select, textarea, input:not([type=hidden]), [role=button], [role=link], [role=checkbox], [role=radio], [role=menuitem], [role=tab], [role=switch], [role=combobox], [role=listbox], [contenteditable=true]";
+
   const maxItems = (opts && opts.max_items) || 80;
   const includeHidden = !!(opts && opts.include_hidden);
   const filter = (opts && opts.filter) || "interactive";
@@ -449,13 +472,13 @@ export function pageSnapshotFn(opts) {
   // document simply is not in the map.
   const registry = (() => {
     const g = globalThis;
-    if (!(g[NODE_REGISTRY_KEY] instanceof Map)) g[NODE_REGISTRY_KEY] = new Map();
-    return g[NODE_REGISTRY_KEY];
+    if (!(g[REGISTRY_KEY] instanceof Map)) g[REGISTRY_KEY] = new Map();
+    return g[REGISTRY_KEY];
   })();
   const refByNode = (() => {
     const g = globalThis;
-    if (!(g[NODE_REF_BY_NODE_KEY] instanceof WeakMap)) g[NODE_REF_BY_NODE_KEY] = new WeakMap();
-    return g[NODE_REF_BY_NODE_KEY];
+    if (!(g[REF_BY_NODE_KEY] instanceof WeakMap)) g[REF_BY_NODE_KEY] = new WeakMap();
+    return g[REF_BY_NODE_KEY];
   })();
   // A ref is durable for the life of a node, not for the life of one
   // snapshot: re-registering a node that is still connected returns the ref
@@ -467,9 +490,9 @@ export function pageSnapshotFn(opts) {
       if (meta) registry.set(known, meta);
       return known;
     }
-    const next = Number(globalThis[NODE_REF_COUNTER_KEY] || 1);
-    globalThis[NODE_REF_COUNTER_KEY] = next + 1;
-    if (registry.size >= REGISTRY_MAX_ENTRIES) registry.clear();
+    const next = Number(globalThis[COUNTER_KEY] || 1);
+    globalThis[COUNTER_KEY] = next + 1;
+    if (registry.size >= MAX_ENTRIES) registry.clear();
     registry.set(next, meta ?? { node: el });
     refByNode.set(el, next);
     return next;
@@ -600,7 +623,7 @@ export function pageSnapshotFn(opts) {
 
   const interactive = [];
   const seen = new Set();
-  const selector = ACTIONABLE_SELECTOR;
+  const selector = ACTIONABLE;
   const nodes = document.querySelectorAll(selector);
   for (const el of nodes) {
     if (interactive.length >= maxItems) break;
@@ -702,6 +725,18 @@ export function pageSnapshotFn(opts) {
   const compactText = rawText.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
   const text = compactText.length > textBudget ? `${compactText.slice(0, textBudget - 1)}…` : compactText;
 
+  // Local copy: this function is injected, so the helper cannot live at
+  // module scope (that was the cause of a shipped `data: null` snapshot).
+  function hashSnapshot(value) {
+    const raw = JSON.stringify(value);
+    let h = 2166136261;
+    for (let i = 0; i < raw.length; i += 1) {
+      h ^= raw.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(16).padStart(8, "0");
+  }
+
   const fingerprint = hashSnapshot({
     url: location.href,
     title: document.title,
@@ -729,16 +764,6 @@ export function pageSnapshotFn(opts) {
     truncated: nodes.length > interactive.length,
     total_interactive: nodes.length,
   };
-}
-
-function hashSnapshot(value) {
-  const raw = JSON.stringify(value);
-  let h = 2166136261;
-  for (let i = 0; i < raw.length; i += 1) {
-    h ^= raw.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0).toString(16).padStart(8, "0");
 }
 
 // --------------------------------------------------------------------- //
@@ -941,6 +966,20 @@ function toPagePayload(command) {
   return payload;
 }
 
+// One place that turns a failed page action into the sentence the agent
+// reads. A silent no-op (page script returned nothing) must never be
+// reported as "no element matched" — that sends the agent looking for a
+// selector bug that does not exist.
+function actError(command, result) {
+  if (result?.reason === "no_result") {
+    return result.hint || "the page script returned nothing — reload the extension and retry";
+  }
+  if (result?.reason === "option_not_found") {
+    return `no option matched the supplied value in ${describeTarget(command)}`;
+  }
+  return `no element matched ${describeTarget(command)}`;
+}
+
 function isHttpUrl(value) {
   try {
     const url = new URL(value);
@@ -1014,6 +1053,20 @@ function isRetryableMiss(result) {
 async function runAct(deps, tabId, action, payload) {
   const first = await preparePayload(deps, tabId, action, payload);
   const result = await execInTab(deps, tabId, pageActFn, [action, first.effective]);
+  if (result === undefined) {
+    // The injected script returned nothing. That is what a closed-over
+    // module reference looks like from here, and reporting it as "no element
+    // matched" would send the agent chasing a phantom selector.
+    return {
+      result: {
+        matched: false,
+        action,
+        reason: "no_result",
+        hint: "the page script returned nothing — reload the extension so the service worker picks up its current code",
+      },
+      snapshot: first.snapshot,
+    };
+  }
   if (!isRetryableMiss(result)) return { result, snapshot: first.snapshot };
 
   // One recovery attempt against a freshly discovered page map. A stale ref
@@ -1037,6 +1090,18 @@ async function runAct(deps, tabId, action, payload) {
 
 async function runNavigate(deps, tab, command, timeout) {
   if (!command.url && !command.to) return { ok: false, error: "navigate needs `url` or `to`" };
+  // Navigating the Jarela app tab destroys the user's own chat surface. The
+  // agent can still open the app in a different tab; it just cannot steer the
+  // tab the user is having the conversation in without saying so.
+  if (!command.allow_app_tab && typeof deps.isAppTabUrl === "function" && deps.isAppTabUrl(tab.url)) {
+    return {
+      ok: false,
+      error:
+        "this tab is the Jarela app itself — navigating it would close the conversation the user is watching. " +
+        "Target another tab, or pass allow_app_tab when the user explicitly asked for it.",
+      data: { needs_tab: "non_app" },
+    };
+  }
   await reportProgress(deps, command, "navigating");
   if (command.to === "back" || command.to === "forward") {
     const navigateHistory = command.to === "back" ? deps.goBack : deps.goForward;
@@ -1114,7 +1179,7 @@ async function runBatchStep(deps, tab, step, timeout) {
       await execInTab(deps, tab.id, pageScrollFn, [step.selector ?? null, step.to]);
     } else {
       const { result } = await runAct(deps, tab.id, step.action, step);
-      if (!result?.matched) return { ok: false, error: `no element matched ${describeTarget(step)}`, data: result };
+      if (!result?.matched) return { ok: false, error: actError(step, result), data: result };
     }
     const expectation = await runExpect(deps, tab.id, step.expect, timeout);
     if (!expectation.met) {
@@ -1176,7 +1241,7 @@ export async function dispatchCommand(deps, command) {
         await reportProgress(deps, command, "clicking");
         const { result } = await runAct(deps, tab.id, "click", toPagePayload(command));
         if (!result?.matched) {
-          return { ok: false, error: `no element matched ${describeTarget(command)}` , data: result };
+          return { ok: false, error: actError(command, result), data: result };
         }
         const after = await captureAutoSnapshot(deps, tab.id, command);
         return { ok: true, data: { ...result, ...(after ? { snapshot: after } : {}) } };
@@ -1184,7 +1249,7 @@ export async function dispatchCommand(deps, command) {
       case "press": {
         await reportProgress(deps, command, "pressing");
         const { result } = await runAct(deps, tab.id, "press", toPagePayload(command));
-        if (!result?.matched) return { ok: false, error: `no element matched ${describeTarget(command)}`, data: result };
+        if (!result?.matched) return { ok: false, error: actError(command, result), data: result };
         const after = await captureAutoSnapshot(deps, tab.id, command);
         return { ok: true, data: { ...result, ...(after ? { snapshot: after } : {}) } };
       }
@@ -1192,13 +1257,7 @@ export async function dispatchCommand(deps, command) {
         await reportProgress(deps, command, "filling");
         const { result } = await runAct(deps, tab.id, "fill", toPagePayload(command));
         if (!result?.matched) {
-          return {
-            ok: false,
-            error: result?.reason === "option_not_found"
-              ? `no option matched the supplied value in ${describeTarget(command)}`
-              : `no fillable element matched ${describeTarget(command)}`,
-            data: result,
-          };
+          return { ok: false, error: actError(command, result), data: result };
         }
         const after = await captureAutoSnapshot(deps, tab.id, command);
         return { ok: true, data: { ...result, ...(after ? { snapshot: after } : {}) } };
@@ -1210,9 +1269,11 @@ export async function dispatchCommand(deps, command) {
           const failed = Array.isArray(result?.fields) ? result.fields.filter((field) => !field.matched) : [];
           return {
             ok: false,
-            error: failed.length > 0
-              ? `${failed.length} of ${result.total ?? command.fields.length} fields did not match`
-              : "no fillable elements matched the supplied fields",
+            error: result?.reason === "no_result"
+              ? actError(command, result)
+              : failed.length > 0
+                ? `${failed.length} of ${result.total ?? command.fields.length} fields did not match`
+                : "no fillable elements matched the supplied fields",
             data: result,
           };
         }
@@ -1222,7 +1283,7 @@ export async function dispatchCommand(deps, command) {
       case "scroll": {
         if (command.to === "into-view") {
           const { result } = await runAct(deps, tab.id, "scroll", toPagePayload(command));
-          if (!result?.matched) return { ok: false, error: `no element matched ${describeTarget(command)}`, data: result };
+          if (!result?.matched) return { ok: false, error: actError(command, result), data: result };
           return { ok: true, data: result };
         }
         const result = await execInTab(deps, tab.id, pageScrollFn, [command.selector ?? null, command.to]);
@@ -1323,13 +1384,34 @@ export async function dispatchCommand(deps, command) {
             await new Promise((resolve) => setTimeout(resolve, 120));
           } catch { /* capture will fail with its own error */ }
         }
-        let dataUrl;
+        let dataUrl = null;
+        let captureError = null;
         try {
           dataUrl = await deps.captureVisibleTab(tab.windowId ?? undefined, { format });
+        } catch (err) {
+          captureError = err;
         } finally {
           if (restoredTabId !== null) {
             try { await deps.activateTab(restoredTabId); } catch { /* best-effort */ }
           }
+        }
+        if (captureError) {
+          const raw = captureError instanceof Error ? captureError.message : String(captureError);
+          const host = tabHost(tab.url);
+          // Chrome grants captureVisibleTab to a tab only through activeTab
+          // (which needs a user gesture the agent does not have) or a host
+          // permission. Say so instead of surfacing a bare Chrome error that
+          // reads like a bug in Jarela.
+          if (/activeTab|<all_urls>|permission/i.test(raw)) {
+            return {
+              ok: false,
+              error:
+                `Chrome will not let the extension capture ${host || "this tab"} without host access. ` +
+                `Grant host access for ${host || "that site"} in the Jarela extension options, then retry.`,
+              data: { needs_permission: "host", host: host || null, raw },
+            };
+          }
+          throw captureError;
         }
         const commaIdx = dataUrl.indexOf(",");
         const base64Full = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
