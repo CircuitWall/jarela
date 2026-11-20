@@ -19,12 +19,11 @@ export function OptionalPackages() {
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (force = false) => {
+  const load = useCallback(async () => {
     try {
       const next = await api.dependencies.optional();
       setData(next);
       setError(null);
-      if (force) setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -64,7 +63,29 @@ export function OptionalPackages() {
 
   const categories = data?.categories.filter((group) => group.packages.length > 0) ?? [];
   const anyMissing = categories.some((group) => group.packages.some((pkg) => pkg.state !== "satisfied"));
-  if (!data || (categories.length === 0 && !error)) return null;
+
+  // Never hide a failure: an empty card is indistinguishable from "there are
+  // no optional packages", which is exactly the confusion this panel exists to
+  // remove (a stale build without this route used to render nothing).
+  if (!data) {
+    if (!error) return null;
+    return (
+      <SettingsCard id="optional-packages" title="Optional packages">
+        <p className="text-xs text-danger-fg">
+          Couldn&apos;t load optional packages: {error}
+        </p>
+        <p className="text-[11px] text-fg-faint pt-1">
+          If this instance was just upgraded, restart it so the new API routes load.
+        </p>
+        <button
+          onClick={() => void load()}
+          className="text-xs px-2 py-1 rounded border border-border text-fg-muted hover:bg-surface-3 mt-2"
+        >
+          Retry
+        </button>
+      </SettingsCard>
+    );
+  }
 
   return (
     <SettingsCard id="optional-packages" title="Optional packages">

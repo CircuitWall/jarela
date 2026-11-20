@@ -17,6 +17,8 @@ import { notFoundResponse, validateBody } from "@/lib/api/responses";
 import type { AgentConfigIn } from "@/api/types";
 import { toUpdateAgentInput, WarmSummaryLimitSchema, UsageProfileSchema } from "../payload";
 import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
+import { ensureNewlyEnabledTools } from "@/lib/dependencies/ensure-tools";
+import { parseJsonSafe } from "@/lib/utils/json";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -41,6 +43,13 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const body = parsed as Partial<AgentConfigIn>;
 
   const row = upsertAgentConfig(toUpdateAgentInput(id, body, existing));
+
+  // Enabling a tool in the agent editor obtains what it needs (ADR-0122).
+  // Fire-and-forget: a 400 MB download must not hold the save request open,
+  // and non-allowlisted publishers still go through the approval queue.
+  if (Array.isArray(body.tools)) {
+    void ensureNewlyEnabledTools(parseJsonSafe<string[]>(existing.tools, []), body.tools);
+  }
 
   return NextResponse.json(agentToResponse(row));
 }

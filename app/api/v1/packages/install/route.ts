@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { errorResponse, validateBody } from "@/lib/api/responses";
+import { errorJson, errorResponse, validateBody } from "@/lib/api/responses";
 import {
   beginInstall,
   listPendingInstalls,
   removePackage,
 } from "@/lib/tools/packages/package-install";
+import { describeInstallError } from "@/lib/tools/packages/install-error";
 import { errorMessage } from "@/lib/utils/error";
 
 // Strict character sets so a malicious request can never reach
@@ -57,6 +58,8 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ status: "installed", ...outcome.result });
   } catch (err) {
+    const failure = describeInstallError(err);
+    if (failure) return errorJson(failure.body, { status: failure.status });
     return errorResponse(errorMessage(err), 500);
   }
 }

@@ -31,6 +31,7 @@ import { setDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
 import { BUILTIN_CATEGORIES, type BuiltinCategory } from "@/lib/tools/runtime/registry";
 import { gateEnable } from "@/lib/dependencies/gate";
 import { firstMissingDependency, missingDependencyMessage } from "@/lib/dependencies/probe";
+import { ensureNewlyEnabledTools } from "@/lib/dependencies/ensure-tools";
 import { applyArtifactProposal } from "./artifact-proposals";
 import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
 import { z } from "zod";
@@ -192,7 +193,12 @@ function applyUpdateAgentTools(payload: unknown): ApplyResult {
     tools: nextTools,
     model_config_name: existing.model_config_name,
   });
-  return { ok: true, detail: { agent_id: p.agent_id, mode, before_tools: before, tools: nextTools, added_tools: nextTools.filter((t) => !before.includes(t)) } };
+  // Enabling a tool obtains what it needs (ADR-0122) instead of leaving it
+  // permanently unavailable. Only newly added tools are considered, and the
+  // install stays behind the publisher allowlist/approval queue.
+  const addedTools = nextTools.filter((t) => !before.includes(t));
+  if (addedTools.length > 0) void ensureNewlyEnabledTools(before, nextTools);
+  return { ok: true, detail: { agent_id: p.agent_id, mode, before_tools: before, tools: nextTools, added_tools: addedTools } };
 }
 
 function applyUpdateAgent(payload: unknown): ApplyResult {

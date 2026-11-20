@@ -140,6 +140,14 @@ curl -X POST http://localhost:4312/api/v1/dependencies/install \
 install state, grouped by category, so a script or UI can show what is
 installed and what it would cost.
 
+**Enabling a feature also installs what it needs.** Turning on a tool in the
+agent editor, enabling an integration, or selecting *Jarela Local* for
+embeddings triggers the dependency install in the background (allowlisted
+publishers only; anything else becomes an approval). For local embeddings that
+means the inference runtime first, then the model assets. The request returns
+immediately and the UI reports progress; a failed attempt backs off for five
+minutes before retrying.
+
 They install into the Jarela packages directory, not into the global npm
 prefix, and can be removed again with `DELETE /api/v1/packages/install`.
 Until then, recall falls back to lexical search and `copilot_delegate`

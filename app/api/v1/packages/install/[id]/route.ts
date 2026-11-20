@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { errorResponse } from "@/lib/api/responses";
+import { errorJson, errorResponse } from "@/lib/api/responses";
 import {
   approvePackageInstall,
   denyPackageInstall,
 } from "@/lib/tools/packages/package-install";
+import { describeInstallError } from "@/lib/tools/packages/install-error";
 import { errorMessage } from "@/lib/utils/error";
 
 interface Ctx {
@@ -16,6 +17,8 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     const result = await approvePackageInstall(id);
     return NextResponse.json({ status: "installed", ...result });
   } catch (err) {
+    const failure = describeInstallError(err);
+    if (failure) return errorJson(failure.body, { status: failure.status });
     const msg = errorMessage(err);
     const status = msg.startsWith("unknown approval id") ? 404 : 500;
     return errorResponse(msg, status);
