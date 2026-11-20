@@ -1623,6 +1623,13 @@ const chromeDeps = {
   executeScript: (opts) => chrome.scripting.executeScript(opts),
   captureVisibleTab: captureVisibleTabDep,
   waitTabLoaded,
+  isAppTabUrl: (url) => {
+    try {
+      return typeof url === "string" && url.length > 0 && new URL(url).origin === buildBase(currentConfig);
+    } catch {
+      return false;
+    }
+  },
   getTab: (id) => chrome.tabs.get(id),
   goBack: (id) => chrome.tabs.goBack(id),
   goForward: (id) => chrome.tabs.goForward(id),

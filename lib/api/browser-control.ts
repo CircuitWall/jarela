@@ -98,6 +98,7 @@ const NavigateCommandShape = z.object({
   url: z.string().url().optional(),
   to: NavigateTo.optional(),
   wait_for_selector: z.string().min(1).max(2000).optional(),
+  allow_app_tab: z.boolean().optional(),
   auto_snapshot: z.boolean().optional(),
 });
 const ClickCommandShape = z.object({
@@ -157,6 +158,7 @@ export const BatchStepShape = z.object({
   ...LocatorShape,
   url: z.string().url().optional(),
   to: z.union([NavigateTo, ScrollTo]).optional(),
+  allow_app_tab: z.boolean().optional(),
   value: z.string().max(50_000).optional(),
   submit: z.boolean().optional(),
   fields: z

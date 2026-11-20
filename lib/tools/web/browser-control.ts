@@ -158,6 +158,10 @@ const snapshotsByTab = new Map<number, CachedSnapshot>();
 // Only used to answer a cheap `browser_snapshot` from cache; the cache
 // itself is still keyed per tab so two-tab workflows cannot collide.
 let lastSnapshotTabId: number | null = null;
+// `browser_tabs` hands out small symbolic handles because a raw Chrome tab
+// id is a large number that the redaction layer masks in tool output.
+const TAB_INVENTORY_TTL_MS = 5 * 60_000;
+let lastTabInventory: { at: number; byRef: Map<number, number> } | null = null;
 
 function asSnapshot(raw: unknown): CachedSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
@@ -408,7 +412,7 @@ export function formatTree(tree: unknown, limit = 200): string | null {
 // --------------------------------------------------------------------- //
 
 export const browserNavigateTool = withStreamDefault(tool(
-  async ({ url, to, wait_for_selector, timeout_ms }) => {
+  async ({ url, to, wait_for_selector, allow_app_tab, timeout_ms }) => {
     if (!url && !to) {
       return JSON.stringify({ action: "browser_navigate", ok: false, error: "provide either `url` or `to` (back/forward/reload)." });
     }
@@ -416,7 +420,7 @@ export const browserNavigateTool = withStreamDefault(tool(
       return JSON.stringify({ action: "browser_navigate", ok: false, error: "provide either `url` or `to`, not both." });
     }
     const result = await run(
-      { type: "navigate", ...(url ? { url } : {}), ...(to ? { to } : {}), wait_for_selector, auto_snapshot: true },
+      { type: "navigate", ...(url ? { url } : {}), ...(to ? { to } : {}), wait_for_selector, allow_app_tab, auto_snapshot: true },
       timeout_ms ?? DEFAULT_NAVIGATE_TIMEOUT_MS,
     );
     return formatActionResult("browser_navigate", result);
@@ -441,6 +445,12 @@ export const browserNavigateTool = withStreamDefault(tool(
         .max(2000)
         .optional()
         .describe("CSS selector to wait for before returning. Useful when the target page is JS-rendered."),
+      allow_app_tab: z
+        .boolean()
+        .optional()
+        .describe(
+          "Set only when the user explicitly asked you to navigate the Jarela app tab. Without it, navigating the tab that is running the conversation is refused, because it would close the chat the user is watching.",
+        ),
       timeout_ms: TimeoutMs,
     }),
   },
@@ -862,13 +872,28 @@ export const browserSnapshotTool = withStreamDefault(tool(
     void headings;
     void landmarks;
     const tree = formatTree(rawTree);
+    const textValue = typeof text === "string" ? clipText(text, 12_000) : null;
+    const hasStructure = tree !== null || typeof rest.url === "string";
+    if (!hasStructure && !textValue) {
+      // A success with no payload is the worst possible answer: the agent
+      // cannot tell a broken extension from an empty page, and every
+      // ref-based follow-up then fails for the wrong reason.
+      return JSON.stringify({
+        action: "browser_snapshot",
+        ok: false,
+        error:
+          "the extension returned no page structure or text for this tab. " +
+          "Reload the extension (chrome://extensions → reload) so its service worker runs current code, then retry.",
+        data: rest,
+      });
+    }
     return JSON.stringify({
       action: "browser_snapshot",
       ok: true,
       data: {
         ...rest,
         tree,
-        text: typeof text === "string" ? clipText(text, 12_000) : null,
+        text: textValue,
         ...(include_inventory && Array.isArray(_interactive) ? { interactive: _interactive } : {}),
         cache: { hit: false, tab_id: snap?.tab_id ?? null },
       },
@@ -930,13 +955,44 @@ export const browserTabsTool = withStreamDefault(tool(
       { type: "tabs", include_unusable: include_unusable ?? true },
       timeout_ms,
     );
-    return stringifyResult("browser_tabs", result);
+    if (!result.ok) return stringifyResult("browser_tabs", result);
+    const data = (result.data ?? {}) as { tabs?: unknown; [k: string]: unknown };
+    const tabs = Array.isArray(data.tabs) ? (data.tabs as Array<Record<string, unknown>>) : [];
+    // `tab_id` is a large browser number, and the redaction layer masks
+    // numeric runs of eight or more digits in tool output. Give the model a
+    // small symbolic handle it can actually repeat back to
+    // `browser_activate_tab`, and keep the numeric id for humans and logs.
+    const byRef = new Map<number, number>();
+    const annotated = tabs.map((tab, index) => {
+      const ref = index + 1;
+      if (typeof tab.tab_id === "number") byRef.set(ref, tab.tab_id);
+      return { tab_ref: ref, ...tab } as Record<string, unknown>;
+    });
+    lastTabInventory = { at: Date.now(), byRef };
+    const unidentified = annotated.filter((tab) => tab.usable === false && !tab.url).length;
+    return JSON.stringify({
+      action: "browser_tabs",
+      ok: true,
+      data: {
+        ...data,
+        tabs: annotated,
+        ...(unidentified > 0
+          ? {
+              metadata_hint:
+                `${unidentified} tab(s) could not be identified because Chrome withheld their title and URL. ` +
+                "Grant host access for those sites in the Jarela extension options to see and target them.",
+            }
+          : {}),
+      },
+      hint: "Address a tab with `tab_ref` (small and stable for this inventory) rather than `tab_id`.",
+    });
   },
   {
     name: "browser_tabs",
     description:
-      "List browser tabs known to the Jarela extension, including tab id, window id, active/focused/pinned/foreground markers, title, URL/host when permissions allow, and whether the tab can be scripted. " +
-      "Use this before switching tabs or when the current target is uncertain. Tab ids are browser-session scoped and should not be treated as durable identifiers.",
+      "List browser tabs known to the Jarela extension: a small `tab_ref`, tab id, window id, active/focused/pinned/foreground markers, title, URL/host when permissions allow, and whether the tab can be scripted. " +
+      "Use `tab_ref` with `browser_activate_tab`. The inventory is a snapshot in time: re-run this if a target tab was opened or closed since. " +
+      "Tabs whose title and URL were withheld need host access granted in the extension options.",
     schema: z.object({
       include_unusable: z.boolean().optional().describe("Include chrome://, extension, blank, or metadata-unavailable tabs. Defaults to true."),
       timeout_ms: TimeoutMs,
@@ -945,17 +1001,39 @@ export const browserTabsTool = withStreamDefault(tool(
 ), true);
 
 export const browserActivateTabTool = withStreamDefault(tool(
-  async ({ tab_id, timeout_ms }) => {
-    const result = await run({ type: "activate_tab", tab_id }, timeout_ms);
+  async ({ tab_ref, tab_id, timeout_ms }) => {
+    let resolved = tab_id;
+    if (typeof resolved !== "number") {
+      const inventory = lastTabInventory;
+      if (!inventory || Date.now() - inventory.at > TAB_INVENTORY_TTL_MS) {
+        return JSON.stringify({
+          action: "browser_activate_tab",
+          ok: false,
+          error: "tab_ref needs a recent tab inventory — call browser_tabs first.",
+        });
+      }
+      const mapped = inventory.byRef.get(tab_ref as number);
+      if (typeof mapped !== "number") {
+        return JSON.stringify({
+          action: "browser_activate_tab",
+          ok: false,
+          error: `tab_ref ${tab_ref} is not in the last tab inventory (${inventory.byRef.size} tabs). Re-run browser_tabs.`,
+        });
+      }
+      resolved = mapped;
+    }
+    const result = await run({ type: "activate_tab", tab_id: resolved }, timeout_ms);
     return stringifyResult("browser_activate_tab", result);
   },
   {
     name: "browser_activate_tab",
     description:
-      "Focus a browser tab by `tab_id` from `browser_tabs`. This activates the tab and asks Chromium to focus its window. " +
+      "Focus a browser tab. Pass `tab_ref` from the most recent `browser_tabs` (preferred) or a literal `tab_id`. " +
+      "This activates the tab and asks Chromium to focus its window. " +
       "Use only when the user asked you to control browser focus or a workflow clearly needs a different open tab. This does not change the pinned target unless the user pins that tab separately.",
     schema: z.object({
-      tab_id: z.number().int().positive().describe("Tab id returned by `browser_tabs` for this browser session."),
+      tab_ref: z.number().int().positive().optional().describe("`tab_ref` from the most recent browser_tabs result."),
+      tab_id: z.number().int().positive().optional().describe("Literal Chrome tab id, when you already have one."),
       timeout_ms: TimeoutMs,
     }),
   },

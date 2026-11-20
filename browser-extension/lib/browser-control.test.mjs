@@ -935,3 +935,82 @@ describe("round-trip budget", () => {
     expect(r.data.snapshot.tab_id).toBe(7);
   });
 });
+
+// --------------------------------------------------------------------- //
+// Failure paths reported from a live session: a capture Chrome refuses,  //
+// a page script that returns nothing, and a snapshot with no payload.    //
+// --------------------------------------------------------------------- //
+
+describe("dispatchCommand — capture without host access", () => {
+  it("explains the missing host permission instead of surfacing a raw Chrome error", async () => {
+    const { deps } = makeDeps({
+      resolveTargetTab: vi.fn().mockResolvedValue({
+        tab: { id: 9, windowId: 1, active: true, url: "https://example.com/reports" },
+      }),
+      captureVisibleTab: vi.fn().mockRejectedValue(
+        new Error("Either the '<all_urls>' or 'activeTab' permission is required."),
+      ),
+    });
+    const r = await dispatchCommand(deps, { type: "screenshot", format: "png" });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/Grant host access for example\.com/);
+    expect(r.data).toMatchObject({ needs_permission: "host", host: "example.com" });
+  });
+
+  it("still restores the user's tab when the capture fails", async () => {
+    const { deps } = makeDeps({
+      resolveTargetTab: vi.fn().mockResolvedValue({ tab: { id: 9, windowId: 1, active: false, url: "https://example.com" } }),
+      queryTabs: vi.fn().mockResolvedValue([{ id: 7, windowId: 1, active: true }]),
+      captureVisibleTab: vi.fn().mockRejectedValue(new Error("Either the '<all_urls>' or 'activeTab' permission is required.")),
+    });
+    await dispatchCommand(deps, { type: "screenshot", format: "png" });
+    expect(deps.activateTab).toHaveBeenNthCalledWith(1, 9);
+    expect(deps.activateTab).toHaveBeenNthCalledWith(2, 7);
+  });
+});
+
+describe("dispatchCommand — a page script that returns nothing", () => {
+  it("reports a silent no-op instead of a phantom selector miss", async () => {
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockResolvedValue([{ result: undefined }]),
+    });
+    const r = await dispatchCommand(deps, { type: "click", selector: "#go" });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/reload the extension/);
+    expect(r.data.reason).toBe("no_result");
+  });
+});
+
+describe("dispatchCommand — navigating the app tab", () => {
+  const appTab = { id: 9, windowId: 1, active: true, url: "http://127.0.0.1:4312/" };
+  const deps = (extra = {}) => makeDeps({
+    resolveTargetTab: vi.fn().mockResolvedValue({ tab: appTab }),
+    isAppTabUrl: (url) => url.startsWith("http://127.0.0.1:4312"),
+    ...extra,
+  });
+
+  it("refuses to steer the tab that is running the conversation", async () => {
+    const { deps: d } = deps();
+    const r = await dispatchCommand(d, { type: "navigate", url: "https://example.com" });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/is the Jarela app itself/);
+    expect(r.data).toMatchObject({ needs_tab: "non_app" });
+    expect(d.updateTab).not.toHaveBeenCalled();
+  });
+
+  it("honours an explicit allow_app_tab", async () => {
+    const { deps: d } = deps();
+    const r = await dispatchCommand(d, { type: "navigate", url: "https://example.com", allow_app_tab: true });
+    expect(r.ok).toBe(true);
+    expect(d.updateTab).toHaveBeenCalledWith({ tabId: 9, url: "https://example.com" });
+  });
+
+  it("still allows opening the app in a different tab", async () => {
+    const { deps: d } = makeDeps({
+      resolveTargetTab: vi.fn().mockResolvedValue({ tab: { id: 11, windowId: 1, active: true, url: "https://example.com" } }),
+      isAppTabUrl: (url) => url.startsWith("http://127.0.0.1:4312"),
+    });
+    const r = await dispatchCommand(d, { type: "navigate", url: "http://127.0.0.1:4312/" });
+    expect(r.ok).toBe(true);
+  });
+});
