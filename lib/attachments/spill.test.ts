@@ -86,6 +86,7 @@ describe("spillFileBuffer", () => {
     expect(ref).toEqual({
       type: "file_ref",
       media_type: "application/pdf",
+      path: expect.stringMatching(/[\\/][0-9a-f]{64}\.pdf$/),
       name: `${sha}.pdf`,
       filename: "report.pdf",
       sha256: sha,
