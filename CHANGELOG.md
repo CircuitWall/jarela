@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-11-20
+
+### Added
+
+- recall: Add full-text prefilter and bounded scope
+- tools: Add a github copilot delegate
+- tools: Gate optional tools and integrations on dependencies
+- deps: Move heavy runtimes to on-demand installs
+- packages: Group optional packages by category
+
+### Fixed
+
+- agents: Expose and retry idle-timeout kills
+- telemetry: Prevent duplicate tool-complaint issues
+- providers: Block multimodal content in the langchain bridge
+- signals: Keep the transcript when the delivery lease expires
+- documents: Keep corpus reads off the event loop
+- documents: Avoid blocking source-stat requests
+- documents: Drop per-chunk source counters
+- db: Move hot-path reads off the writer
+- advertisements: Keep in-flight generations claimed
+- documents: Refresh source stats when the snapshot is missing
+- advertisements: Keep transient failures retryable
+
+### Changed
+
+- prompts: Document recall and search coverage limits
+
 ## [3.5.6] - 2026-11-16
 
 ### Changed

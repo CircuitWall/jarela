@@ -17,6 +17,72 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.6.0
+
+From 3.5.6 · 2026-11-20
+
+### Tools
+
+- `copilot_delegate` — added; params added: `async_run`, `background`, `cwd`, `deadline_ms`, `feature`, `fresh`, `model`, `stream`, `task`, `timeout_seconds`; now required: `task`
+- `copilot_delegate_status` — added; params added: `action`, `async_run`, `deadline_ms`, `job_id`, `last_step_index`, `stream`; now required: `job_id`
+- `documents_search` — changed; description changed
+- `memory_search` — changed; description changed
+
+### Prompts
+
+- `static.agent.tool-usage-sop` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…
+    - 8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing or integration_unconfigured. The first three are permission decisions and the last two mean the integration is not set up — propose a configuration change or tell the user…
+    ```
+
+- `system.Enabled tools` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + You can execute the 107 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    - You can execute the 107 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 167 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    ```
+
+- `system.Memory & recall` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + Recall limits — treat these as unknowns, never as evidence:
+    + - Automatic recall for this turn considers this whole conversation plus the last 30 days of other conversations, most recent first. Older history surfaces only when its wording matches yours, so say you found nothing only after running memory_search.
+    + - memory_search ranks records that already carry an embedding. A record still queued for embedding, or saved while no embedding provider was configured, is reachable only by the keyword/literal fallback and only within its recent window.
+    + - Records the active policy or internal namespaces exclude are never returned (for example structured-memory policy filtering), and near-identical entries collapse to the newest one.
+    + - Results below the similarity floor are dropped, so an empty result means 'no confident match', not 'nothing was saved'. When a search misses, try memory_list or a literal/keyword search (identifiers, names, error codes) before telling the user no record exists.
+    + - Recall spans chat history across threads; replies still streaming (in progress) are excluded until they finish.
+    + - memory_search runs a deep pass over stored history, so use it when automatic recall came up empty and the material may be old or from an unrelated conversation.
+    ```
+
+- `system.Tool usage SOP` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…
+    - 8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing or integration_unconfigured. The first three are permission decisions and the last two mean the integration is not set up — propose a configuration change or tell the user…
+    ```
+
+### Commits
+
+- feat(packages): group optional packages by category
+- feat(deps): move heavy runtimes to on-demand installs
+- feat(tools): gate optional tools and integrations on dependencies
+- feat(tools): add a github copilot delegate
+- fix(advertisements): keep transient failures retryable
+- fix(documents): refresh source stats when the snapshot is missing
+- fix(advertisements): keep in-flight generations claimed
+- feat(recall): add full-text prefilter and bounded scope
+- docs(prompts): document recall and search coverage limits
+- perf(db): move hot-path reads off the writer
+- fix(documents): drop per-chunk source counters
+- fix(documents): avoid blocking source-stat requests
+- fix(documents): keep corpus reads off the event loop
+- fix(signals): keep the transcript when the delivery lease expires
+- fix(providers): block multimodal content in the langchain bridge
+- fix(telemetry): prevent duplicate tool-complaint issues
+- fix(agents): expose and retry idle-timeout kills
+
 ## 3.5.6
 
 From 3.5.5 · 2026-11-16
