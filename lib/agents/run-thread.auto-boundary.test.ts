@@ -183,6 +183,35 @@ describe("prepareThreadRun auto context boundary", () => {
     expect(options.agent_run_config?.output_reserve_tokens).toBe(expected);
   });
 
+  it("uses the model's current limits when the config carries a stale catalog snapshot", async () => {
+    // Exactly what the Models panel stamped before 6468c2e6 raised DeepSeek's
+    // V4 limits: the saved config must not keep generating 8k tokens.
+    upsertModelConfig("stale-deepseek", "deepseek", "deepseek-v4-flash", {
+      max_tokens: 8_192,
+      context_window_tokens: 65_536,
+    }, false);
+    upsertAgentConfig({
+      id: "stale-deepseek",
+      name: "Stale DeepSeek",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: "stale-deepseek",
+    });
+    const thread = createThread("stale-deepseek");
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "hey",
+      context_profile: { include_warm: false, include_facts: false, include_recall: false },
+    });
+
+    const options = streamWithConfigMock.mock.calls[0][2] as StreamOptions;
+    expect(options.agent_run_config?.max_output_tokens).toBe(393_216);
+    // Balanced keeps 80% of the model's real 1M window instead of the stale 64K.
+    expect(options.agent_run_config?.context_window_tokens).toBe(800_000);
+  });
+
   it.each([
     { strategy: "cost_saving", context: 76_800, output: 16_384 },
     { strategy: "fast", context: 64_000, output: 16_384 },

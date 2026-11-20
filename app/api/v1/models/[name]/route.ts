@@ -15,6 +15,7 @@ import { validateBody, errorJson, errorResponse } from "@/lib/api/responses";
 import { preserveInlineModelSecrets, redactInlineModelParams } from "@/lib/models/inline-params";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
 import { resolvedModelMetadata } from "@/lib/stores/model-metadata";
+import { stripSupersededLimits } from "@/lib/providers/known-context-windows";
 import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 type Params = { params: Promise<{ name: string }> };
@@ -82,7 +83,7 @@ function toResponse(r: NonNullable<ReturnType<typeof getModelConfig>>) {
   return {
     ...r,
     ...resolvedModelMetadata(r.provider, r.model_id),
-    params: redactInlineModelParams(r.params),
+    params: stripSupersededLimits(r.provider, r.model_id, redactInlineModelParams(r.params)),
     is_default: Boolean(r.is_default),
     enabled: isModelConfigEnabled(r),
   };

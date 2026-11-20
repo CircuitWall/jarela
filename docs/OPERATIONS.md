@@ -356,6 +356,14 @@ An explicit model `max_tokens` setting is the requested output ceiling.
 Static known model output limits apply when it is not configured, and the
 physical model/context limits always remain hard ceilings. The selected amount
 is reserved before assembling conversation history.
+
+Leaving **Max tokens** or **Context window tokens** empty in the Models panel
+means "automatic": the value is resolved from the model on every turn, and the
+editor shows the model's current limit next to the field. The catalog picker
+only suggests those numbers — it never saves them — so a config keeps following
+the model when a provider raises its limits. Pairs that an earlier release
+stamped into a config (DeepSeek V4 was 65,536/8,192 before 1M/384K) are ignored
+and removed on the next save; a single pinned value is kept as a deliberate cap.
 An enabled thinking budget must remain strictly below the effective output
 limit. Incompatible settings fail preparation with `invalid_thinking_budget`
 before the provider request, rather than silently reducing the thinking budget.

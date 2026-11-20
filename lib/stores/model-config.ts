@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
+import { stripSupersededLimits } from "@/lib/providers/known-context-windows";
 import { withDbTransaction } from "@/lib/db/transaction";
 import { withKeyedMutation } from "@/lib/utils/keyed-mutation";
 
@@ -146,7 +147,10 @@ export function upsertModelConfig(
     // context_window_tokens), so a plain overwrite silently deletes any
     // other field a custom provider relies on (e.g. custom-provider.js's
     // username/password auth) on every save.
-    const mergedParams = { ...decodeInlineParams(existing), ...params };
+    const mergedParams = stripSupersededLimits(provider, model_id, {
+      ...decodeInlineParams(existing),
+      ...params,
+    });
     const hasOtherEnabledDefault = !!db.prepare(
       "SELECT 1 FROM model_configs WHERE is_default=1 AND enabled=1 AND name<>? LIMIT 1",
     ).get(name);
@@ -190,13 +194,20 @@ export function deleteModelConfig(name: string): boolean {
  * inline params, so per-model overrides still win when both sides
  * define the same key.
  */
-export function getModelParams(cfg: Pick<ModelConfigRow, "params"> & Partial<Pick<ModelConfigRow, "credential_id">> | null | undefined): ProviderParams {
+export function getModelParams(cfg: (Pick<ModelConfigRow, "params"> & Partial<Pick<ModelConfigRow, "credential_id" | "provider" | "model_id">>) | null | undefined): ProviderParams {
   const inline = decodeInlineParams(cfg);
   const credId = cfg && "credential_id" in cfg ? cfg.credential_id : null;
-  if (!credId) return inline;
-  const cred = getCredential(credId);
-  if (!cred) return inline;
-  return { ...getCredentialParams(cred), ...inline } as ProviderParams;
+  const provider = cfg && "provider" in cfg ? cfg.provider : undefined;
+  const modelId = cfg && "model_id" in cfg ? cfg.model_id : undefined;
+  const resolved = (() => {
+    if (!credId) return inline;
+    const cred = getCredential(credId);
+    if (!cred) return inline;
+    return { ...getCredentialParams(cred), ...inline } as ProviderParams;
+  })();
+  // Capacity numbers a previous catalog snapshot wrote must not outlive the
+  // model they were copied from; the runtime re-resolves them per turn.
+  return provider && modelId ? stripSupersededLimits(provider, modelId, resolved) : resolved;
 }
 
 function decodeInlineParams(cfg: Pick<ModelConfigRow, "params"> | null | undefined): ProviderParams {

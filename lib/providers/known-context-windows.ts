@@ -124,6 +124,50 @@ export function getKnownMaxOutputTokens(provider: string, model_id: string): num
   return getKnownModelLimits(provider, model_id)?.max_output_tokens ?? null;
 }
 
+// Limits Jarela itself stamped into model configs from an earlier catalog
+// snapshot. The Models panel used to write the catalog's numbers into
+// `params.context_window_tokens` / `params.max_tokens` on every pick, so a
+// saved pair is provenance, not a user decision — and it never follows the
+// model when the vendor raises its limits. DeepSeek's V4 family moved from
+// 65,536/8,192 to 1M/384K in 6468c2e6, which left every config created before
+// that commit generating 8k tokens.
+//
+// Only the exact pair is treated as stale: a config that pins just one of the
+// two numbers is a deliberate cap and is kept.
+const SUPERSEDED_LIMIT_PAIRS: ReadonlyArray<{
+  provider: string;
+  model_id: string;
+  context_length: number;
+  max_output_tokens: number;
+}> = [
+  { provider: "deepseek", model_id: "deepseek-v4-flash", context_length: 65_536, max_output_tokens: 8_192 },
+  { provider: "deepseek", model_id: "deepseek-v4-pro", context_length: 65_536, max_output_tokens: 8_192 },
+  { provider: "deepseek", model_id: "deepseek-chat", context_length: 65_536, max_output_tokens: 8_192 },
+  { provider: "deepseek", model_id: "deepseek-reasoner", context_length: 65_536, max_output_tokens: 8_192 },
+];
+
+/**
+ * Drop the context/output pair when both values came from a superseded catalog
+ * snapshot, so the config falls back to the model's current limits.
+ */
+export function stripSupersededLimits<T extends Record<string, unknown>>(
+  provider: string,
+  model_id: string,
+  params: T,
+): T {
+  if (!provider || !model_id) return params;
+  const lower = model_id.toLowerCase();
+  const stale = SUPERSEDED_LIMIT_PAIRS.some((pair) =>
+    pair.provider === provider
+    && pair.model_id === lower
+    && params.context_window_tokens === pair.context_length
+    && params.max_tokens === pair.max_output_tokens,
+  );
+  if (!stale) return params;
+  const { context_window_tokens: _context, max_tokens: _max, ...rest } = params;
+  return rest as T;
+}
+
 // Flat catalog snapshot for one provider — used by introspection tools so
 // the agent can enumerate what's known statically. Returns [] for providers
 // without a static table (e.g. `langchain`, `mock`, externals).

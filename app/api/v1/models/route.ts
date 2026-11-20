@@ -12,6 +12,7 @@ import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
 import { preserveInlineModelSecrets, redactInlineModelParams } from "@/lib/models/inline-params";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
 import { listModelMetadata, resolvedModelMetadata } from "@/lib/stores/model-metadata";
+import { stripSupersededLimits } from "@/lib/providers/known-context-windows";
 
 const CreateBody = z.object({
   name: z.string().min(1, "name required"),
@@ -27,7 +28,7 @@ export function GET() {
   return cachedJson(listModelConfigs().map((r) => ({
     ...r,
     ...resolvedModelMetadata(r.provider, r.model_id, metadata),
-    params: redactInlineModelParams(r.params),
+    params: stripSupersededLimits(r.provider, r.model_id, redactInlineModelParams(r.params)),
     is_default: Boolean(r.is_default),
     enabled: isModelConfigEnabled(r),
   })), 15, 60);
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
     return createdResponse({
       ...r,
       ...resolvedModelMetadata(r.provider, r.model_id),
-      params: redactInlineModelParams(r.params),
+      params: stripSupersededLimits(r.provider, r.model_id, redactInlineModelParams(r.params)),
       is_default: Boolean(r.is_default),
       enabled: isModelConfigEnabled(r),
     });
