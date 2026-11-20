@@ -174,7 +174,9 @@ function maybeReduceExtractResult(result: BrowserResult, output: ExtractOutputMo
 
   const ext = extensionForExtractFormat(data.format);
   const name = `browser-extract-${randomUUID()}.${ext}`;
-  writeTextFile(name, content);
+  // The agent must never have to reconstruct this path: return the absolute
+  // location the file actually landed in, alongside the ref used for paging.
+  const savedTo = writeTextFile(name, content);
   const { content: _content, ...rest } = data;
   void _content;
   const preview = content.slice(0, EXTRACT_PREVIEW_CHAR_LIMIT);
@@ -190,8 +192,9 @@ function maybeReduceExtractResult(result: BrowserResult, output: ExtractOutputMo
     ok: true,
     data: {
       ...rest,
-      result_ref: ref,
-      content_ref: ref,
+      result_ref: { ...ref, path: savedTo },
+      content_ref: { ...ref, path: savedTo },
+      saved_to: savedTo,
       preview,
       preview_chars: preview.length,
     },
@@ -856,13 +859,14 @@ export const browserScreenshotTool = withStreamDefault(tool(
     const ext = mime === "image/jpeg" ? "jpg" : "png";
     const name = `browser-${randomUUID()}.${ext}`;
     const data = Buffer.from(sd.base64, "base64");
-    writeBinaryFile(name, data);
+    const savedTo = writeBinaryFile(name, data);
     const url = `/api/v1/files/${name}`;
     return JSON.stringify({
       action: "browser_screenshot",
       ok: true,
       data: {
         url,
+        path: savedTo,
         markdown: `![browser screenshot](${url})`,
         media_type: mime,
         bytes: data.length,

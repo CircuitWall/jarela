@@ -69,7 +69,7 @@ export const generateVoiceTool = withStreamDefault(tool(
     });
 
     const name = `voice-${randomUUID()}.wav`;
-    writeBinaryFile(name, wav);
+    const savedTo = writeBinaryFile(name, wav);
     const baseUrl = `/api/v1/files/${name}`;
     const url = autoplay ? `${baseUrl}?autoplay=1` : baseUrl;
 
@@ -79,6 +79,7 @@ export const generateVoiceTool = withStreamDefault(tool(
       autoplay: !!autoplay,
       bytes: wav.length,
       url,
+      path: savedTo,
       markdown: `[\u{1F50A} Voice clip${autoplay ? " (auto)" : ""}](${url})`,
       hint: "Embed the `markdown` field verbatim in your reply on its own line; the chat renderer will turn that link into an inline audio player. Set autoplay=true only when the user asked you to speak (e.g. they sent voice input or explicitly asked you to talk). Do NOT wrap it in a code fence and do NOT transcribe the audio in the reply \u2014 the player is the answer.",
     });

@@ -146,9 +146,9 @@ export const generateImageTool = withStreamDefault(tool(
 
     const saved = images.map((img) => {
       const name = `img-${randomUUID()}.${extForMime(img.mime)}`;
-      writeBinaryFile(name, img.data);
+      const savedTo = writeBinaryFile(name, img.data);
       const url = `/api/v1/files/${name}`;
-      return { url, mime: img.mime, bytes: img.data.length };
+      return { url, path: savedTo, mime: img.mime, bytes: img.data.length };
     });
 
     return JSON.stringify({
