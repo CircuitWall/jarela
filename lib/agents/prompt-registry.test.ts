@@ -259,7 +259,8 @@ describe("prompt registry coverage", () => {
     const references: Record<string, string[]> = {
       "browser-navigation": [
         "list_tools", "browser_tabs", "browser_activate_tab", "browser_snapshot", "browser_extract",
-        "browser_screenshot", "browser_click", "browser_fill_many", "browser_fill", "tool_result_get",
+        "browser_screenshot", "browser_click", "browser_fill_many", "browser_fill", "browser_batch",
+        "browser_press", "browser_wait", "tool_result_get",
         "memory_list", "memory_read", "memory_write",
       ],
       "extension-development": ["list_tools", "describe_extension_surfaces", "scaffold_extension", "start_extension_authoring", "request_extension_stage", "inspect_extension_authoring", "inspect_authoring_operation", "cancel_authoring_operation", "run_skill", "workflow_progress"],
