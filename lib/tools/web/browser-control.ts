@@ -74,7 +74,37 @@ export function hostPermissionRequired(error: string | undefined): { hostname?: 
   return match ? { hostname: match[1].toLowerCase() } : {};
 }
 
+// The extension accepted a command and never answered. The common reason is
+// that it is holding the command behind its own approval prompt, on a tab the
+// user is not looking at — nobody answers, the command times out, and the
+// retryable wording sends the agent straight back into the same wall.
+const AWAITING_APPROVAL_PATTERN = /picked it up .*did not return a result/i;
+const EXTENSION_ASLEEP_PATTERN = /before the browser extension picked it up|browser extension is not connected/i;
+
 function withAskInstruction(error: string): Record<string, unknown> {
+  if (AWAITING_APPROVAL_PATTERN.test(error)) {
+    return {
+      error_code: "extension_approval_pending",
+      error: withMismatchHint(error),
+      ask_user: true,
+      retryable: false,
+      next_step:
+        "Stop and tell the user: a Jarela approval prompt is waiting on the target tab (it appears in the page overlay, " +
+        "with Always allow persisting the choice). Do not retry until the user answers; if no prompt is visible, ask them " +
+        "to bring that tab to the foreground and retry once.",
+    };
+  }
+  if (EXTENSION_ASLEEP_PATTERN.test(error)) {
+    return {
+      error_code: "extension_not_responding",
+      error: withMismatchHint(error),
+      ask_user: true,
+      retryable: false,
+      next_step:
+        "Stop and tell the user the Jarela browser extension is not answering. Ask them to open the browser, click the " +
+        "Jarela toolbar icon to wake it, and confirm it is connected; then retry once.",
+    };
+  }
   const denied = hostPermissionRequired(error);
   if (!denied) return { error: withMismatchHint(error) };
   const host = denied.hostname;
@@ -83,6 +113,7 @@ function withAskInstruction(error: string): Record<string, unknown> {
     error: withMismatchHint(error),
     ...(host ? { hostname: host } : {}),
     ask_user: true,
+    retryable: false,
     next_step:
       "Stop retrying this call. Ask the user once with " +
       `propose_config_change({ kind: "allow_site", payload: { hostname: "${host ?? "<hostname>"}" }, reason: "..." }) ` +

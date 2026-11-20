@@ -126,6 +126,37 @@ describe("browser_navigate", () => {
     expect(parsed).not.toHaveProperty("error_code");
     expect(parsed).not.toHaveProperty("next_step");
   });
+
+  it("reports a picked-up-but-silent command as an unanswered approval, not a retry", async () => {
+    const p = browserNavigateTool.invoke({ url: "https://www.google.com/" });
+    const { parsed } = await driveTool(p, () => ({
+      ok: false,
+      error:
+        "command timed out after 30000ms; the browser extension picked it up 30s ago but did not return a result. " +
+        "Check the target tab for a Jarela approval prompt, a stuck page load, or a blocked browser action, then retry.",
+    }));
+
+    expect(parsed).toMatchObject({
+      error_code: "extension_approval_pending",
+      ask_user: true,
+      retryable: false,
+    });
+    expect(String((parsed as Record<string, unknown>).next_step)).toContain("Do not retry");
+  });
+
+  it("reports an extension that never picked the command up", async () => {
+    const p = browserNavigateTool.invoke({ url: "https://example.com" });
+    const { parsed } = await driveTool(p, () => ({
+      ok: false,
+      error: "command timed out after 30000ms before the browser extension picked it up. Open Chrome, click the Jarela toolbar icon to wake the extension, then retry.",
+    }));
+
+    expect(parsed).toMatchObject({
+      error_code: "extension_not_responding",
+      ask_user: true,
+      retryable: false,
+    });
+  });
 });
 
 describe("browser_click", () => {
