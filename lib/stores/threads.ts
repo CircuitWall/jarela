@@ -246,6 +246,19 @@ export function getMessageBySteeringRequestId(thread_id: string, request_id: str
   return row ?? null;
 }
 
+/**
+ * The thread's most recent user message, for turns whose request carries no
+ * text of its own (replayed or retried runs whose row is already persisted).
+ * `idx_messages_thread_id` keeps this to one indexed lookup.
+ */
+export function getLastUserMessage(thread_id: string): MessageRow | null {
+  const row = cachedRead(
+    getDb(),
+    MSG_COLS_SQL + " WHERE thread_id=? AND role='user' AND trim(content) <> '' ORDER BY rowid DESC LIMIT 1",
+  ).get(thread_id) as unknown as MessageRow | undefined;
+  return row ?? null;
+}
+
 // Pull the latest N messages within a time window. Used to build the LLM
 // context — keeps prompt size bounded as threads grow indefinitely.
 //   limit: 0 or negative = unlimited

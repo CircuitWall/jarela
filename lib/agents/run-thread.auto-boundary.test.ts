@@ -212,6 +212,80 @@ describe("prepareThreadRun auto context boundary", () => {
     expect(options.agent_run_config?.context_window_tokens).toBe(800_000);
   });
 
+  it("prompts with the request even when the profile asks for no hot history and nothing is persisted", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-one-shot-prompt",
+      name: "One shot prompt",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-one-shot-prompt");
+
+    // Shape of the failing retry/replay: no message on the request, nothing
+    // persisted, and a profile that asks for no hot history.
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "",
+      _current_turn_content: "summarise the inbox",
+      _skip_persist_message: true,
+      context_profile: {
+        include_hot: false, include_warm: false, include_facts: false, include_recall: false, history_scope: "none",
+      },
+    });
+
+    const messages = streamWithConfigMock.mock.calls[0][1] as Array<{ role: string; content: string }>;
+    expect(messages).toEqual([{ role: "user", content: "summarise the inbox" }]);
+  });
+
+  it("rejects a turn with no request text and no recoverable stored message", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-empty-turn",
+      name: "Empty turn",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-empty-turn");
+
+    await expect(prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "",
+      _skip_persist_message: true,
+    })).rejects.toThrow(/no user content/i);
+    expect(streamWithConfigMock).not.toHaveBeenCalled();
+  });
+
+  it("recovers the stored request when a replayed turn arrives without a message", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-replayed-turn",
+      name: "Replayed turn",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-replayed-turn");
+    addMessage(thread.thread_id, "user", "the original ask");
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "",
+      _skip_persist_message: true,
+      context_profile: {
+        include_hot: false, include_warm: false, include_facts: false, include_recall: false, history_scope: "none",
+      },
+    });
+
+    const messages = streamWithConfigMock.mock.calls[0][1] as Array<{ role: string; content: string }>;
+    expect(messages).toEqual([{ role: "user", content: "the original ask" }]);
+  });
+
   it.each([
     { strategy: "cost_saving", context: 76_800, output: 16_384 },
     { strategy: "fast", context: 64_000, output: 16_384 },
