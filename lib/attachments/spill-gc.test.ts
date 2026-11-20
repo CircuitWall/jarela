@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,10 +9,12 @@ const TMP_ROOT = mkdtempSync(join(tmpdir(), "jarela-spill-gc-"));
 process.env.JARELA_DB_DIR = TMP_ROOT;
 
 const { closeDb, getDb } = await import("@/lib/db");
+const { closeReadPool } = await import("@/lib/db/read-pool");
 const { FILES_DIR } = await import("@/lib/files");
 const { collectFileRefNames, runSpillFileGc } = await import("./spill-gc");
 
-afterAll(() => {
+afterAll(async () => {
+  await closeReadPool();
   closeDb();
   rmSync(TMP_ROOT, { recursive: true, force: true });
 });
@@ -84,5 +86,20 @@ describe("runSpillFileGc", () => {
     expect(existsSync(join(FILES_DIR, oldUnreferenced))).toBe(false);
     expect(existsSync(join(FILES_DIR, oldReferenced))).toBe(true);
     expect(existsSync(join(FILES_DIR, freshUnreferenced))).toBe(true);
+  });
+
+  it("deletes nothing when the reference scan fails", async () => {
+    const pool = await import("@/lib/db/read-pool");
+    const spy = vi.spyOn(pool, "readAppRows").mockRejectedValueOnce(new Error("pool offline"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const name = `${createHash("sha256").update(`fail-${randomUUID()}`).digest("hex")}.txt`;
+    await writeFile(join(FILES_DIR, name), "old");
+    const stale = new Date(Date.now() - 120_000);
+    await utimes(join(FILES_DIR, name), stale, stale);
+
+    const result = await runSpillFileGc({ retentionMs: 60_000, now: Date.now() });
+    expect(result).toEqual({ scanned: 0, referenced: 0, removed: 0, removed_bytes: 0 });
+    expect(existsSync(join(FILES_DIR, name))).toBe(true);
+    spy.mockRestore();
   });
 });
