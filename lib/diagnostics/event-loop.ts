@@ -24,10 +24,20 @@ const DEFAULT_SAMPLE_MS = 10_000;
 const SLOW_WORK_MS = 250;
 const MAX_RECENT_STATEMENTS = 5;
 const MAX_SQL_CHARS = 200;
+// Two sample windows of history, so a stall that straddles a sample boundary
+// still names the statement that caused it. Anything older is history from a
+// previous stall and must not be reported as this stall's cause.
+const REPORT_WINDOW_FACTOR = 2;
 
 interface BlockingRegion {
   label: string;
   started_at: number;
+}
+
+interface SlowWorkEntry {
+  label: string;
+  ms: number;
+  at: string;
 }
 
 interface SlowStatement {
@@ -41,7 +51,7 @@ interface DiagnosticsState {
   started: boolean;
   timer: NodeJS.Timeout | null;
   regions: BlockingRegion[];
-  slow_work: Array<{ label: string; ms: number; at: string }>;
+  slow_work: SlowWorkEntry[];
   slow_statements: SlowStatement[];
   stall_count: number;
 }
@@ -145,8 +155,30 @@ export interface EventLoopSample {
   p99Ms: number;
   stallMs: number;
   currentWork: string | null;
-  slowWork: readonly { label: string; ms: number; at: string }[];
+  slowWork: readonly SlowWorkEntry[];
   slowStatements: readonly SlowStatement[];
+}
+
+/**
+ * Slow work recorded at or after `sinceMs`. Without the window the watchdog
+ * blamed work that had ended long before: one report listed a sync region and
+ * two statements from 42 minutes earlier, so the reader chased a cause that
+ * was already gone.
+ */
+export function recentDiagnostics(sinceMs: number): { slowWork: SlowWorkEntry[]; slowStatements: SlowStatement[] } {
+  const s = state();
+  const fresh = (entry: { at: string }): boolean => {
+    const at = Date.parse(entry.at);
+    return Number.isFinite(at) && at >= sinceMs;
+  };
+  return { slowWork: s.slow_work.filter(fresh), slowStatements: s.slow_statements.filter(fresh) };
+}
+
+/** Drop recorded work after it has been reported, so the next stall starts clean. */
+function clearRecordedDiagnostics(): void {
+  const s = state();
+  s.slow_work.length = 0;
+  s.slow_statements.length = 0;
 }
 
 /** Pure formatter so the report shape is testable without a real stall. */
@@ -166,16 +198,20 @@ export function formatStallReport(sample: EventLoopSample): string {
   return lines.join("\n");
 }
 
-function readSample(stallMs: number, histogram: { max: number; mean: number; percentile(p: number): number }): EventLoopSample {
-  const s = state();
+function readSample(
+  stallMs: number,
+  sinceMs: number,
+  histogram: { max: number; mean: number; percentile(p: number): number },
+): EventLoopSample {
+  const { slowWork, slowStatements } = recentDiagnostics(sinceMs);
   return {
     maxMs: histogram.max / 1e6,
     meanMs: histogram.mean / 1e6,
     p99Ms: histogram.percentile(99) / 1e6,
     stallMs,
     currentWork: currentBlockingWork(),
-    slowWork: [...s.slow_work],
-    slowStatements: [...s.slow_statements],
+    slowWork,
+    slowStatements,
   };
 }
 
@@ -194,11 +230,15 @@ export function startEventLoopWatchdog(options: EventLoopWatchdogOptions = {}): 
   histogram.enable();
   s.started = true;
   s.timer = setInterval(() => {
-    const sample = readSample(stallMs, histogram);
+    const sinceMs = Date.now() - sampleMs * REPORT_WINDOW_FACTOR;
+    const sample = readSample(stallMs, sinceMs, histogram);
     histogram.reset();
     if (sample.maxMs < stallMs) return;
     s.stall_count += 1;
     console.warn(formatStallReport(sample));
+    // Consumed: a statement reported as this stall's cause must not be listed
+    // again for the next one.
+    clearRecordedDiagnostics();
   }, sampleMs);
   s.timer.unref?.();
 
