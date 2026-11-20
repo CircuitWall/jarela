@@ -5274,6 +5274,155 @@
       ],
       "prompts": [],
       "tools": []
+    },
+    {
+      "version": "3.6.0",
+      "previous_version": "3.5.6",
+      "date": "2026-11-20",
+      "hints": [],
+      "commits": [
+        "feat(packages): group optional packages by category",
+        "feat(deps): move heavy runtimes to on-demand installs",
+        "feat(tools): gate optional tools and integrations on dependencies",
+        "feat(tools): add a github copilot delegate",
+        "fix(advertisements): keep transient failures retryable",
+        "fix(documents): refresh source stats when the snapshot is missing",
+        "fix(advertisements): keep in-flight generations claimed",
+        "feat(recall): add full-text prefilter and bounded scope",
+        "docs(prompts): document recall and search coverage limits",
+        "perf(db): move hot-path reads off the writer",
+        "fix(documents): drop per-chunk source counters",
+        "fix(documents): avoid blocking source-stat requests",
+        "fix(documents): keep corpus reads off the event loop",
+        "fix(signals): keep the transcript when the delivery lease expires",
+        "fix(providers): block multimodal content in the langchain bridge",
+        "fix(telemetry): prevent duplicate tool-complaint issues",
+        "fix(agents): expose and retry idle-timeout kills"
+      ],
+      "prompts": [
+        {
+          "id": "static.agent.tool-usage-sop",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…"
+          ],
+          "removed_lines": [
+            "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing or integration_unconfigured. The first three are permission decisions and the last two mean the integration is not set up — propose a configuration change or tell the user…"
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Enabled tools",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "You can execute the 107 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "removed_lines": [
+            "You can execute the 107 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 167 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Memory & recall",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "Recall limits — treat these as unknowns, never as evidence:",
+            "- Automatic recall for this turn considers this whole conversation plus the last 30 days of other conversations, most recent first. Older history surfaces only when its wording matches yours, so say you found nothing only after running memory_search.",
+            "- memory_search ranks records that already carry an embedding. A record still queued for embedding, or saved while no embedding provider was configured, is reachable only by the keyword/literal fallback and only within its recent window.",
+            "- Records the active policy or internal namespaces exclude are never returned (for example structured-memory policy filtering), and near-identical entries collapse to the newest one.",
+            "- Results below the similarity floor are dropped, so an empty result means 'no confident match', not 'nothing was saved'. When a search misses, try memory_list or a literal/keyword search (identifiers, names, error codes) before telling the user no record exists.",
+            "- Recall spans chat history across threads; replies still streaming (in progress) are excluded until they finish.",
+            "- memory_search runs a deep pass over stored history, so use it when automatic recall came up empty and the material may be old or from an unrelated conversation."
+          ],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Tool usage SOP",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…"
+          ],
+          "removed_lines": [
+            "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing or integration_unconfigured. The first three are permission decisions and the last two mean the integration is not set up — propose a configuration change or tell the user…"
+          ],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "copilot_delegate",
+          "change": "added",
+          "description_changed": false,
+          "description": "Delegate a focused coding task to GitHub Copilot through the Copilot agent runtime (@microsoft/copilot-sdk). Call workspace_init with the target repository before this tool, or pass cwd explicitly; do not use Jarela's install directory as the project workspace. The runtime is the same engine as GitHub Copilot CLI, so the user's Copilot sign-in (copilot login) or a saved fine-grained token authenticates it, and the CLI's own instructions, skills, MCP servers and plugins apply to the delegated run. Under JARELA_TOOL_SAFETY=mostly_safe (default) and 'bypass' each permission request the runtime r…",
+          "params_added": [
+            "async_run",
+            "background",
+            "cwd",
+            "deadline_ms",
+            "feature",
+            "fresh",
+            "model",
+            "stream",
+            "task",
+            "timeout_seconds"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "task"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "copilot_delegate_status",
+          "change": "added",
+          "description_changed": false,
+          "description": "Poll or cancel a background copilot_delegate job. Agent-owned jobs return bounded status/step counts and result_key; retrieve encrypted output with tool_result_get. Legacy unowned jobs return steps and results. Cancelling aborts the running Copilot turn and does not undo external effects; inspect changes before reporting business-level success.",
+          "params_added": [
+            "action",
+            "async_run",
+            "deadline_ms",
+            "job_id",
+            "last_step_index",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "job_id"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "documents_search",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Search indexed local documents (notes, READMEs, code, configs) by semantic similarity. Use when the user references files in folders they've added under Documents, or when you need facts from project-specific text the model wouldn't otherwise know. Returns matching files with up to two ranked passages each. Coverage limits: a query scores a capped window of chunks in a stable order, so very large corpora are only partially covered — narrow with source_id or query again with different terms. With no usable vectors it falls back to literal text matching, and low-similarity hits are dropped, so …",
+          "previous_description": "Search indexed local documents (notes, READMEs, code, configs) by semantic similarity. Use when the user references files in folders they've added under Documents, or when you need facts from project-specific text the model wouldn't otherwise know. Returns matching files with up to two ranked passages each.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "memory_search",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Search long-term memory by meaning and by exact text (embedding similarity plus literal key/value matches; falls back to keyword overlap when no embedding model is configured). Prefer this over memory_list for paraphrases or concepts. Set include_chats to also search past conversations, including archived turns. Coverage limits: only entries that already carry an embedding are ranked semantically (pending or unembedded entries appear only through the keyword/literal fallback), policy-excluded records are never returned, and hits below the similarity floor are dropped — an empty result means n…",
+          "previous_description": "Search long-term memory by meaning and by exact text (embedding similarity plus literal key/value matches; falls back to keyword overlap when no embedding model is configured). Prefer this over memory_list for paraphrases or concepts. Set include_chats to also search past conversations, including archived turns.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
