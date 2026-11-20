@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  appendHistoryMessage,
   buildRetryContextSummary,
   buildActionEvidenceRetryNudge,
   buildFabricationNudge,
@@ -36,21 +35,6 @@ describe("toolCallSignature", () => {
   it("treats different tool names as distinct", () => {
     expect(toolCallSignature("file_read", { path: "/x" }))
       .not.toBe(toolCallSignature("file_write", { path: "/x" }));
-  });
-});
-
-describe("appendHistoryMessage", () => {
-  it("does not duplicate the base message history when no injected content is provided", () => {
-    const base = [{ role: "user" as const, content: "hello" }];
-    expect(appendHistoryMessage(base, undefined)).toEqual(base);
-  });
-
-  it("appends only the explicit injected retry message", () => {
-    const base = [{ role: "user" as const, content: "hello" }];
-    expect(appendHistoryMessage(base, "retry nudge")).toEqual([
-      { role: "user", content: "hello" },
-      { role: "user", content: "retry nudge" },
-    ]);
   });
 });
 

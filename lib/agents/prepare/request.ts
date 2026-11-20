@@ -137,6 +137,15 @@ export interface ThreadRunRequest {
   _history_append_message?: string | ContentPart[];
 
   /**
+   * Internal — public callers leave undefined. The current turn's user content
+   * when it is not carried by `message` (retries that swap `message` for their
+   * nudge, replayed turns whose row is already persisted). One assembler owns
+   * the prompt's user turn; this keeps its source explicit instead of inferring
+   * it from whichever field happens to be populated.
+   */
+  _current_turn_content?: string | ContentPart[];
+
+  /**
    * Internal — public callers leave undefined. Tool call/result events
    * observed on prior attempts this turn (stall/loop/fabrication retries),
    * carried forward so a replacement retry's citation manifest covers the

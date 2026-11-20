@@ -19,7 +19,7 @@ import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-
 import { kickBoundaryCompaction, kickWarmSummaryRefresh, pendingCompactionBoundarySeq } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
-import { addMessage, capToolEventPayload, countForegroundThreadMessages, getMessagesPage, isValidThreadContextCursor, pruneThreadMessages, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, capToolEventPayload, countForegroundThreadMessages, getLastUserMessage, getMessagesPage, isValidThreadContextCursor, pruneThreadMessages, getRecentlyUsedToolNames, getRecentMessagesWindow, getThread, mergeMessageMetadata, touchThread, updateMessageContent, type MessageTranscriptStatus, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -29,7 +29,7 @@ import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { getMemoryPolicy } from "@/lib/stores/app-settings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { getDefaultModelConfig, getModelConfig, getModelParams, isModelConfigEnabled, listEnabledModelConfigs } from "@/lib/stores/model-config";
-import { buildHistoryWindow, buildSystemPrompt, buildSurroundingsContext, buildConversationGapContext, resolveExperienceMode, warmSummaryMessageLimit, type ThreadRunRequest } from "@/lib/agents/prepare";
+import { assemblePromptMessages, buildHistoryWindow, buildSystemPrompt, buildSurroundingsContext, buildConversationGapContext, EmptyPromptError, promptTurnText, resolveExperienceMode, warmSummaryMessageLimit, type ThreadRunRequest } from "@/lib/agents/prepare";
 import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateProviderCostUsd } from "@/lib/stores/pricing";
 import { computeContextBudget, DEFAULT_CONTEXT_WINDOW_TOKENS, estimateTokens } from "@/lib/agents/context-budget";
@@ -366,14 +366,6 @@ function getLatestRoutingObservation(threadId: string): RouteDecisionMetadata | 
 // mis-configured agent network can't runaway.
 export const MAX_DELEGATION_DEPTH = 2;
 
-function contentText(content: string | ContentPart[]): string {
-  if (typeof content === "string") return content;
-  return content
-    .filter((p): p is ContentPart & { type: "text" } => p.type === "text")
-    .map((p) => p.text)
-    .join(" ");
-}
-
 function contentHasImage(content: string | ContentPart[]): boolean {
   if (typeof content !== "string") return content.some((p) => p.type === "image" || p.type === "image_ref");
   if (!content.startsWith("[")) return false;
@@ -399,13 +391,6 @@ export function snapshotThreadModelConfigName(thread_id: string): string | null 
   }
   if (getConfig().modelRouterMode !== "off") return null;
   return getDefaultModelConfig()?.name ?? null;
-}
-
-export function appendHistoryMessage(
-  history: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
-  injected: string | ContentPart[] | undefined,
-): Array<{ role: "user" | "assistant"; content: string | ContentPart[] }> {
-  return injected === undefined ? history : [...history, { role: "user", content: injected }];
 }
 
 /**
@@ -487,7 +472,8 @@ interface TurnContext {
   surroundingsCtx: string;
   rawRecallCtx: Awaited<ReturnType<typeof buildRecallContext>>;
   profile: ThreadRunRequest["context_profile"];
-  effectiveHistory: TurnHistory["history"];
+  /** Whether this turn's history sources may enter the prompt (`include_hot`). */
+  includeHot: boolean;
   effectiveWarmSummary: string;
   effectiveFacts: string;
   recallCtx: string;
@@ -503,7 +489,15 @@ async function initializeTurn(req: ThreadRunRequest): Promise<TurnAdmission> {
   if (!thread) throw new RunThreadError(404, "Thread not found", "thread_not_found");
 
   const trimmed = req.message.trim();
-  if (!trimmed && !req.attachments?.length) {
+  // A turn needs some request content. Internal retry/replay turns carry it
+  // outside `message` (the row is already persisted, or the nudge replaced the
+  // message), so they are allowed through here and the prompt assembler either
+  // recovers the stored request or rejects the turn with `empty_turn`.
+  const hasRequestContent = trimmed !== ""
+    || (req.attachments?.length ?? 0) > 0
+    || req._current_turn_content !== undefined
+    || req._skip_persist_message === true;
+  if (!hasRequestContent) {
     throw new RunThreadError(400, "message required", "message_required");
   }
 
@@ -547,8 +541,7 @@ async function persistTurnInput(req: ThreadRunRequest, admission: TurnAdmission)
   const spilledAttachments = req.attachments?.length
     ? await spillAttachments(req.attachments)
     : undefined;
-  const content: string | ContentPart[] =
-    spilledAttachments?.length ? [{ type: "text", text: trimmed }, ...spilledAttachments] : trimmed;
+  const content: string | ContentPart[] = resolveCurrentTurnContent(req, trimmed, spilledAttachments);
   const stored = typeof content === "string" ? content : JSON.stringify(content);
 
   const autoBoundaryScope = req.context_profile?.history_scope
@@ -609,6 +602,27 @@ async function persistTurnInput(req: ThreadRunRequest, admission: TurnAdmission)
   const hasImageContext = contentHasImage(content)
     || getMessagesPage(req.thread_id, agentCfg.history_limit ?? 50).messages.some((m) => contentHasImage(m.content));
   return { content, idleMsBeforeTurn, autoBoundaryScope, hasImageContext };
+}
+
+/**
+ * The current turn's user content, from the one source that has it.
+ *
+ * Retries and replayed turns can arrive with an empty `message` (the row is
+ * already persisted, so nothing re-sends the text). Rather than handing the
+ * model an empty user turn, fall back to the thread's last stored user message.
+ * A turn with no recoverable text is rejected by `assemblePromptMessages`.
+ */
+function resolveCurrentTurnContent(
+  req: ThreadRunRequest,
+  trimmed: string,
+  spilledAttachments: ContentPart[] | undefined,
+): string | ContentPart[] {
+  const explicit = req._current_turn_content
+    ?? (trimmed !== "" ? trimmed : getLastUserMessage(req.thread_id)?.content ?? "");
+  if (spilledAttachments?.length) {
+    return [{ type: "text", text: promptTurnText(explicit) }, ...spilledAttachments];
+  }
+  return explicit;
 }
 
 function resolveTurnBoundary(req: ThreadRunRequest, admission: TurnAdmission): TurnBoundary {
@@ -823,7 +837,7 @@ function configureTurnModel(
   // The latest user message and prompt overhead reduce the real context that
   // remains available for generation. For models without known output metadata,
   // retain the context planner's default 20% output reserve as a fallback.
-  const inputTokenEstimate = estimateTokens(contentText(input.content));
+  const inputTokenEstimate = estimateTokens(promptTurnText(input.content));
   const { overheadTokens: outputBudgetOverhead } = computeContextBudget({ context_window_tokens: configuredContextWindow, max_tokens: 256 });
   const contextOutputCeiling = Math.max(1, configuredContextWindow - inputTokenEstimate - outputBudgetOverhead);
   const fallbackOutputReserve = computeContextBudget({ context_window_tokens: configuredContextWindow }).outputReserveTokens;
@@ -975,7 +989,7 @@ async function prepareTurnContext(
   // Recall is best-effort: cap on the recall budget so a cold embeddings
   // round-trip doesn't block the LLM stream from starting.
   const oldestInWindow = historyWindow.history.length > 0
-    ? contentText(historyWindow.history[0].content)
+    ? promptTurnText(historyWindow.history[0].content)
     : null;
   const rawRecallCtx = !autoRecallEnabled
     ? { text: "", memoryHits: 0, messageHits: 0 }
@@ -990,12 +1004,11 @@ async function prepareTurnContext(
   // shows what we *would have* spent on hot/warm — useful when debugging
   // why an extension turn answered with the field's own context only.
   const profile = req.context_profile;
-  // include_hot=false strips PRIOR thread history but must keep the current
-  // turn's user message, otherwise the LLM is called with only a system
-  // prompt (e.g. Gemini rejects with "contents is not specified").
-  const effectiveHistory = profile && profile.include_hot === false
-    ? [{ role: "user" as const, content }]
-    : historyWindow.history;
+  // The prompt's user turn has exactly one owner: `assemblePromptMessages`,
+  // which injects the current request when the history sources are off or the
+  // window does not carry it, and rejects a turn with no user text. This flag
+  // only says whether the history sources may enter that assembly.
+  const includeHot = profile?.include_hot !== false;
   const effectiveWarmSummary = profile && profile.include_warm === false
     ? ""
     : historyWindow.warmSummaryCtx;
@@ -1030,7 +1043,7 @@ async function prepareTurnContext(
     surroundingsCtx,
     rawRecallCtx,
     profile,
-    effectiveHistory,
+    includeHot,
     effectiveWarmSummary,
     effectiveFacts,
     recallCtx,
@@ -1056,7 +1069,7 @@ function createPreparedTurn(
     surroundingsCtx,
     rawRecallCtx,
     profile,
-    effectiveHistory,
+    includeHot,
     effectiveWarmSummary,
     effectiveFacts,
     recallCtx,
@@ -1097,9 +1110,33 @@ function createPreparedTurn(
 
   // Retry paths may need to append an explicit non-persisted message (for
   // example a stall/transient nudge) to the in-memory history for THIS run
-  // only. Never infer that from the main request message, or retries will
-  // duplicate the already-persisted user prompt in model context.
-  const finalHistory = appendHistoryMessage(effectiveHistory, req._history_append_message);
+  // only. The current turn is supplied separately so a retry that swapped
+  // `message` for its nudge cannot lose the user's request.
+  const assembled = (() => {
+    try {
+      return assemblePromptMessages({
+        hotHistory: historyWindow.history,
+        includeHot,
+        currentContent: input.content,
+        extraUserContext: req._history_append_message,
+      });
+    } catch (error) {
+      if (error instanceof EmptyPromptError) {
+        throw new RunThreadError(
+          400,
+          "This turn has no user content to answer: the request message is empty and no stored user message could be recovered.",
+          "empty_turn",
+        );
+      }
+      throw error;
+    }
+  })();
+  if (assembled.recoveredFromEmptyWindow) {
+    console.warn(
+      `[prompt] thread=${req.thread_id} history requested but did not carry the current turn; injected it`,
+    );
+  }
+  const finalHistory = assembled.messages;
 
   // A dedicated controller for THIS attempt, chained from the caller's own
   // signal (Stop button / run abort still works normally) but independently
@@ -1739,5 +1776,3 @@ export function shouldEmitChunk(
   if (!includeThinking && chunkType === "thinking_delta") return false;
   return true;
 }
-
-export { contentText };

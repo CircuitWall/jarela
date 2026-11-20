@@ -149,6 +149,7 @@ export async function* transientRetryStream(
     ...originalReq,
     _transient_retries_left: retriesLeft - 1,
     _skip_persist_message: true,
+    _current_turn_content: originalReq._current_turn_content ?? originalReq.message,
     _retry_count: (originalReq._retry_count ?? 0) + 1,
     _router_policy_override: originalReq._pinned_model_config_name ? (originalReq._router_policy_override ?? null) : nextPolicy,
   }).catch(() => null);
@@ -547,6 +548,10 @@ export async function* stallRetryStream(
     // LLM mistakes for user input on every future turn.
     _skip_persist_message: true,
     _history_append_message: nudgeWithContext,
+    // The nudge replaces `message`, so the user's request must be carried
+    // explicitly: a profile that asks for no hot history would otherwise
+    // prompt the model with only the nudge (see ADR-0126).
+    _current_turn_content: originalReq._current_turn_content ?? originalReq.message,
     // Carry this attempt's tool evidence forward so a replacement retry's
     // citation manifest still covers sources this attempt read even if the
     // retry itself calls no tools.
