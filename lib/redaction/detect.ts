@@ -161,7 +161,26 @@ export function detectMatches(text: string, config: RedactionConfig): Match[] {
     }
   }
 
-  return resolveOverlaps(raw);
+  return resolveOverlaps(dropAppFileRefs(text, raw));
+}
+
+// Jarela mints these paths itself — `browser-<uuid>.png` screenshots,
+// attachment refs, generated images. A UUID clears the entropy bar, so
+// without this the model receives `![…](/api/v1/files/«SECRET:1 …»)`: it
+// cannot reference the file it just produced, and the UI cannot render it.
+// Nothing in a name this server generated is user-sensitive, so a match that
+// lies entirely inside one of these spans is not a secret.
+const APP_FILE_REF = /\/api\/v1\/files\/[A-Za-z0-9._-]+/g;
+
+function dropAppFileRefs(text: string, matches: Match[]): Match[] {
+  if (matches.length === 0) return matches;
+  const spans: Array<[number, number]> = [];
+  for (const m of text.matchAll(APP_FILE_REF)) {
+    const start = m.index ?? 0;
+    spans.push([start, start + m[0].length]);
+  }
+  if (spans.length === 0) return matches;
+  return matches.filter((match) => !spans.some(([start, end]) => match.start >= start && match.end <= end));
 }
 
 // URLs, paths, file names, and slugs clear the entropy bar because they mix
