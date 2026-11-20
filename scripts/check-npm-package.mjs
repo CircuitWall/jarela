@@ -138,7 +138,6 @@ try {
 
   const required = [
     "package/.next/standalone/server.js",
-    "package/.next/standalone/node_modules/@huggingface/transformers/package.json",
     "package/proxy.ts",
     "package/instrumentation.ts",
     "package/instrumentation-node.ts",
@@ -198,8 +197,15 @@ try {
   }
 
   const packedPackage = JSON.parse(packedManifest);
-  if (!packedPackage.dependencies?.["@huggingface/transformers"]) {
-    throw new Error("npm package must install @huggingface/transformers and its Node ONNX runtime dependencies");
+  if (packedPackage.dependencies?.["@huggingface/transformers"]) {
+    throw new Error(
+      "npm package must not hard-install @huggingface/transformers: the embedding runtime is an on-demand install (ADR-0122)",
+    );
+  }
+  if (packedPackage.dependencies?.["@microsoft/copilot-sdk"]) {
+    throw new Error(
+      "npm package must not hard-install @microsoft/copilot-sdk: the Copilot runtime is an on-demand install (ADR-0122)",
+    );
   }
   if (!packedPackage.dependencies?.["@serwist/next"]) {
     throw new Error("npm package must install @serwist/next to support consumer builds");
@@ -214,33 +220,18 @@ try {
     "--no-audit",
     "--no-fund",
   ], { cwd: consumerPackageRoot });
+  // The two heavy runtimes are optional capabilities: a plain install must not
+  // carry them, and the app must still build, boot, and serve (verified below).
   run("node", ["-e", [
     'const { createRequire } = require("node:module");',
-    'const { resolve, sep } = require("node:path");',
-    'const root = process.cwd();',
-    'const fromServer = createRequire(resolve(root, ".next/standalone/server.js"));',
-    'const transformers = fromServer.resolve("@huggingface/transformers");',
-    'const onnxRuntime = createRequire(transformers).resolve("onnxruntime-node");',
-    'const bundledModules = `${resolve(root, ".next/standalone/node_modules")}${sep}`;',
-    'if (onnxRuntime.startsWith(bundledModules)) {',
-    '  throw new Error(`ONNX runtime resolved from standalone instead of installed dependencies: ${onnxRuntime}`);',
+    'const { resolve } = require("node:path");',
+    'const fromPackage = createRequire(resolve(process.cwd(), "package.json"));',
+    'for (const spec of ["@huggingface/transformers", "onnxruntime-node", "@microsoft/copilot-sdk"]) {',
+    '  let present = true;',
+    '  try { fromPackage.resolve(spec); } catch { present = false; }',
+    '  if (present) throw new Error(`${spec} is installed; heavy runtimes must be on-demand (ADR-0122)`);',
     '}',
-    'require(onnxRuntime);',
-  ].join("\n")], { cwd: consumerPackageRoot });
-  // Fetch/verify the pinned model (cached in CI) and run it through the
-  // installed ONNX runtime the package resolves.
-  run("node", ["scripts/prepare-local-embedding-model.mjs"], { cwd: repoRoot });
-  run("node", ["-e", [
-    '(async () => {',
-    '  const { env, pipeline } = await import("@huggingface/transformers");',
-    `  env.localModelPath = ${JSON.stringify(join(repoRoot, ".jarela-assets", "local-embedding"))};`,
-    '  env.allowRemoteModels = false;',
-    '  env.allowLocalModels = true;',
-    '  const extractor = await pipeline("feature-extraction", "Xenova/multilingual-e5-small", { dtype: "q8" });',
-    '  const result = await extractor(["passage: npm package runtime smoke test"], { pooling: "mean", normalize: true });',
-    '  const vector = result.tolist()[0];',
-    '  if (vector.length !== 384 || !vector.every(Number.isFinite)) throw new Error("local embedding smoke test returned an invalid vector");',
-  '})().catch((error) => { console.error(error); process.exitCode = 1; });',
+    'console.log("[npm-package] heavy optional runtimes are absent as expected");',
   ].join("\n")], { cwd: consumerPackageRoot });
   run("npm", ["run", "build", "--silent"], { cwd: consumerPackageRoot });
 

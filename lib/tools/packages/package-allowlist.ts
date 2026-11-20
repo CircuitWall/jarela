@@ -18,6 +18,11 @@ export const PACKAGE_PUBLISHER_ALLOWLIST: readonly string[] = [
   "@langchain/",
   "@circuitwall/",
   "langchain",            // matches bare "langchain" and "langchain/..." subpaths
+  // On-demand runtimes that used to ship as regular dependencies (ADR-0122).
+  // Allowlisting the exact package keeps the install path one click without
+  // widening trust to the whole publisher scope.
+  "@microsoft/copilot-sdk",
+  "@huggingface/transformers",
 ] as const;
 
 export interface PackageAllowDecision {

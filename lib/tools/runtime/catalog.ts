@@ -15,6 +15,7 @@ import { loadExternalTools } from "./external";
 import { getAgentTools, type AgentConfigRow } from "@/lib/stores/agent-configs";
 import { isBasicToolCategory, normalizeToolCategory } from "./categories";
 import { getIntegrationReadiness } from "@/lib/health/probe-cache";
+import { getIntegrationDependencies } from "@/lib/dependencies/integration-declaration";
 import {
   anyMissingDependencyInstallable,
   getCachedDependencyStatus,
@@ -114,7 +115,14 @@ export function getToolIntegration(name: string): string | null {
 
 /** Declaration-level dependencies for a tool (no probing). */
 export function getToolDependencySpecs(name: string) {
-  return registeredDependencies(name);
+  const own = registeredDependencies(name);
+  if (own.length > 0) return own;
+  // Fall back to the backing integration's manifest so a delegate tool is
+  // gated by the CLI/runtime its integration declares (ADR-0121). Without this,
+  // only the enable action would be checked, not actual execution.
+  const integration = registeredIntegration(name);
+  if (!integration) return [];
+  return getIntegrationDependencies(integration);
 }
 
 /** Cached, non-blocking dependency status for a tool. */

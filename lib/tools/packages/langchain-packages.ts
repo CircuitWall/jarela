@@ -34,11 +34,14 @@
  *     "requiredEnv": ["TAVILY_API_KEY"]   // optional; skips if any unset
  *   }
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { z } from "zod";
 import type { StructuredToolInterface } from "@langchain/core/tools";
+import {
+  getManifestsDir as manifestsDir,
+  getPackagesDir as packagesDir,
+} from "./packages-dir";
 import {
   registerLangChainPackage,
   type RegisteredPackage,
@@ -49,7 +52,6 @@ import { isPackageDisabled } from "@/lib/stores/disabled-packages";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { BUILTIN_CATEGORIES } from "../runtime/registry";
 import { DependencySpecSchema, packageRootOf, type DependencySpec } from "@/lib/dependencies/schema";
-import { getDataDir } from "@/lib/db/data-dir";
 
 // Re-exported for convenience so callers already importing from
 // `langchain-packages` don't have to add a second import. The single
@@ -104,18 +106,11 @@ export interface LangChainPackageLoadResult {
 }
 
 export function getPackagesDir(): string {
-  const raw = process.env.JARELA_PACKAGES_DIR;
-  if (raw && raw.trim().length > 0) {
-    return raw.startsWith("~") ? raw.replace(/^~/, homedir()) : raw;
-  }
-  const dataDir = getDataDir();
-  const packagesDir = join(dataDir, "packages");
-  mkdirSync(packagesDir, { recursive: true });
-  return packagesDir;
+  return packagesDir();
 }
 
 export function getManifestsDir(): string {
-  return join(getPackagesDir(), "manifests");
+  return manifestsDir();
 }
 
 const handles: RegisteredPackage<unknown>[] = [];

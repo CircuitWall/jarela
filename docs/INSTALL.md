@@ -119,6 +119,28 @@ jarela
 The published npm package ships a **prebuilt standalone bundle**, so `jarela`
 starts immediately after install — no in-place webpack/build step.
 
+Two large capabilities are **not** installed by default and are fetched only
+when you enable them (ADR-0122):
+
+| Capability | Installed on demand | Size |
+| --- | --- | --- |
+| Local embeddings (semantic recall) | `@huggingface/transformers` + ONNX runtime | ~426 MB |
+| Copilot delegate | `@microsoft/copilot-sdk` + platform runtime | ~206 MB |
+
+Install one explicitly with the dependency API (or the Tools → Packages
+panel), for example:
+
+```sh
+curl -X POST http://localhost:4312/api/v1/dependencies/install \
+  -H "Content-Type: application/json" \
+  -d '{"target":"runtime:@huggingface/transformers"}'
+```
+
+They install into the Jarela packages directory, not into the global npm
+prefix, and can be removed again the same way (`DELETE /api/v1/packages/install`
+with the package name). Until then, recall falls back to lexical search and
+`copilot_delegate` reports the missing runtime instead of failing mid-task.
+
 On the very first interactive `jarela` run, you'll be offered to register
 autostart for the current user:
 

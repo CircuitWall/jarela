@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { getPackagesDir } from "./langchain-packages";
+import { getPackagesDir } from "./packages-dir";
 
 const missing = Symbol("optional-package-missing");
 const testOverrides = new Map<string, AnyModule>();
@@ -27,7 +27,20 @@ interface ResolvedOptionalPackage {
   path: string;
 }
 
-function resolveOptionalPackage(packageName: string): ResolvedOptionalPackage | null {
+interface ResolveOptions {
+  /**
+   * When the managed packages dir does not have the package, also try the
+   * app root. Needed for packages that used to ship as regular dependencies
+   * (dev checkouts, and the initial rollout of an on-demand runtime).
+   * Workspace `@circuitwall/*` packages always use this fallback.
+   */
+  appRootFallback?: boolean;
+}
+
+function resolveOptionalPackage(
+  packageName: string,
+  options: ResolveOptions = {},
+): ResolvedOptionalPackage | null {
   const managedReq = createRuntimeRequire(join(getPackagesDir(), "_anchor"));
   try {
     return {
@@ -38,8 +51,13 @@ function resolveOptionalPackage(packageName: string): ResolvedOptionalPackage | 
     // Workspace builds expose bundled @circuitwall packages from the app root.
   }
 
+  // Workspace builds expose bundled @circuitwall packages from the app root;
+  // on-demand runtimes opt in explicitly. An operator-set packages dir always
+  // wins over the app root, so a slim install never silently picks up a
+  // developer checkout.
+  const eligible = packageName.startsWith("@circuitwall/") || options.appRootFallback === true;
+  if (!eligible) return null;
   if (process.env.JARELA_PACKAGES_DIR?.trim()) return null;
-  if (!packageName.startsWith("@circuitwall/")) return null;
 
   const appReq = createRuntimeRequire(join(process.cwd(), "package.json"));
   try {
@@ -49,10 +67,13 @@ function resolveOptionalPackage(packageName: string): ResolvedOptionalPackage | 
   }
 }
 
-export function loadOptionalPackage<T extends AnyModule>(packageName: string): T | null {
+export function loadOptionalPackage<T extends AnyModule>(
+  packageName: string,
+  options: ResolveOptions = {},
+): T | null {
   const override = testOverrides.get(packageName);
   if (override) return override as T;
-  const resolved = resolveOptionalPackage(packageName);
+  const resolved = resolveOptionalPackage(packageName, options);
   if (!resolved) return null;
   try {
     return resolved.req(resolved.path) as T;
@@ -95,8 +116,11 @@ export function optionalFunction<T extends (...args: any[]) => any>(
   }) as T;
 }
 
-export function isOptionalPackageInstalled(packageName: string): boolean {
-  const resolved = resolveOptionalPackage(packageName);
+export function isOptionalPackageInstalled(
+  packageName: string,
+  options: ResolveOptions = {},
+): boolean {
+  const resolved = resolveOptionalPackage(packageName, options);
   if (!resolved) return false;
   try {
     resolved.req(resolved.path);

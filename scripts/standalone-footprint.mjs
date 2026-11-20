@@ -39,8 +39,13 @@ export function pruneStandaloneFootprint(standalone, { platform = process.platfo
 
 /**
  * Return problems that would bloat or break the standalone bundle: a traced
- * `.git` directory, missing or foreign onnxruntime-node binaries, or the
- * unused browser ONNX backend. An empty array means the footprint is valid.
+ * `.git` directory, missing or foreign onnxruntime-node binaries, or a heavy
+ * runtime that should be installed on demand (ADR-0122). An empty array means
+ * the footprint is valid.
+ *
+ * The embedding stack and the Copilot SDK are no longer dependencies, so their
+ * absence is the expected state; if a checkout still has them installed they
+ * must at least be pruned to the running platform's binding.
  */
 export function findStandaloneFootprintProblems(standalone, { platform = process.platform, arch = process.arch } = {}) {
   const problems = [];
@@ -48,8 +53,18 @@ export function findStandaloneFootprintProblems(standalone, { platform = process
     problems.push(".git was traced into the standalone bundle");
   }
 
+  for (const [dir, label] of [
+    [join(standalone, "node_modules", "@huggingface", "transformers"), "@huggingface/transformers"],
+    [join(standalone, "node_modules", "@microsoft", "copilot-sdk"), "@microsoft/copilot-sdk"],
+  ]) {
+    if (existsSync(dir)) {
+      problems.push(`${label} should be installed on demand, not bundled`);
+    }
+  }
+
   const bins = napiDir(standalone);
-  if (!existsSync(join(bins, platform, arch, "onnxruntime_binding.node"))) {
+  const hasOnnx = existsSync(join(standalone, "node_modules", "onnxruntime-node"));
+  if (hasOnnx && !existsSync(join(bins, platform, arch, "onnxruntime_binding.node"))) {
     problems.push(`onnxruntime-node binding for ${platform}/${arch} is missing`);
   }
   if (existsSync(bins)) {

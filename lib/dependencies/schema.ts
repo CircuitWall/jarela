@@ -28,6 +28,21 @@ export type DependencyKind = (typeof DEPENDENCY_KINDS)[number];
 export const NODE_PACKAGE_SCOPES = ["managed", "workspace", "global"] as const;
 export type NodePackageScope = (typeof NODE_PACKAGE_SCOPES)[number];
 
+/**
+ * Reject ids that could escape the packages directory or be read as a local
+ * path by the installer: no absolute paths, no backslashes, no empty, `.` or
+ * `..` segments.
+ */
+export function isSafeDependencyId(value: string): boolean {
+  if (value.length === 0 || value.startsWith("/") || value.includes("\\")) return false;
+  const segments = value.split("/");
+  if (value.startsWith("@")) {
+    if (segments.length < 2) return false;
+    return segments.slice(1).every((segment) => segment !== "" && segment !== "." && segment !== "..");
+  }
+  return segments.every((segment) => segment !== "" && segment !== "." && segment !== "..");
+}
+
 export const DependencySpecSchema = z
   .object({
     kind: z.enum(DEPENDENCY_KINDS),
@@ -39,12 +54,19 @@ export const DependencySpecSchema = z
       .string()
       .min(1)
       .max(214)
-      // Package names and binary names only — no paths, no shell metacharacters.
-      .regex(/^@?[A-Za-z0-9._~/-]+$/, "dependency id must be a package or binary name"),
+      // Package names and binary names only — no shell metacharacters.
+      .regex(/^@?[A-Za-z0-9._~/-]+$/, "dependency id must be a package or binary name")
+      .refine(isSafeDependencyId, "dependency id must not contain path traversal segments"),
     /** `node-package` only. Defaults to `managed`. */
     scope: z.enum(NODE_PACKAGE_SCOPES).optional(),
     /** `node-package` (global) only: the CLI this package installs. */
-    bin: z.string().min(1).max(64).regex(/^[A-Za-z0-9._~-]+$/).optional(),
+    bin: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z0-9._~-]+$/)
+      .refine((value) => value !== "." && value !== "..", "bin must be a binary name")
+      .optional(),
     /** `node-runtime`: a semver range, e.g. `^24.15.0 || >=26.0.0`. */
     version: z.string().min(1).max(128).optional(),
     /**

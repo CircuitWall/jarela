@@ -5,10 +5,20 @@ import { LOCAL_EMBEDDING_DIMENSIONS, LOCAL_EMBEDDING_MODEL_ID } from "./constant
 const mocks = vi.hoisted(() => {
   const tokenizer = Object.assign(vi.fn(), { decode: vi.fn() });
   const extractor = Object.assign(vi.fn(), { tokenizer });
-  return { env: {} as Record<string, unknown>, pipeline: vi.fn(), tokenizer, extractor };
+  return {
+    env: {} as Record<string, unknown>,
+    pipeline: vi.fn(),
+    tokenizer,
+    extractor,
+    requireRuntimePackage: vi.fn(),
+  };
 });
 
-vi.mock("@huggingface/transformers", () => ({ env: mocks.env, pipeline: mocks.pipeline }));
+vi.mock("@/lib/dependencies/runtime-package", () => ({
+  requireRuntimePackage: mocks.requireRuntimePackage,
+  loadRuntimePackage: mocks.requireRuntimePackage,
+  RuntimePackageUnavailableError: class RuntimePackageUnavailableError extends Error {},
+}));
 vi.mock("./local-model", () => ({ requireLocalModelRoot: () => modelRoot }));
 
 const modelRoot = `${join("data", "models", "local-embedding")}${sep}`;
@@ -18,6 +28,7 @@ beforeEach(() => {
   const globals = globalThis as typeof globalThis & { __jarelaLocalEmbeddingPipeline?: Promise<unknown> };
   globals.__jarelaLocalEmbeddingPipeline = undefined;
   mocks.env.allowRemoteModels = true;
+  mocks.requireRuntimePackage.mockReset().mockReturnValue({ env: mocks.env, pipeline: mocks.pipeline });
   mocks.pipeline.mockReset().mockResolvedValue(mocks.extractor);
   mocks.tokenizer.mockReset().mockImplementation(() => ({
     input_ids: { tolist: () => [Array.from({ length: 600 }, (_, index) => index + 1)] },
@@ -63,5 +74,18 @@ describe("local embedding model", () => {
       "query: window-500",
       "query: window-132",
     ]);
+  });
+
+  it("reports a missing runtime instead of crashing, without memoising the failure", async () => {
+    mocks.requireRuntimePackage.mockReset().mockImplementation(() => {
+      throw new Error('Local embeddings needs the "@huggingface/transformers" package, which is not installed.');
+    });
+
+    await expect(embedLocally(["hello"], "passage")).rejects.toThrow(/@huggingface\/transformers/);
+
+    mocks.requireRuntimePackage.mockReturnValue({ env: mocks.env, pipeline: mocks.pipeline });
+    const vectors = await embedLocally(["hello"], "passage");
+    expect(vectors).toHaveLength(1);
+    expect(mocks.requireRuntimePackage).toHaveBeenCalledTimes(2);
   });
 });

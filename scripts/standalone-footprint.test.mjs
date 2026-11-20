@@ -60,6 +60,21 @@ describe("findStandaloneFootprintProblems", () => {
       "onnxruntime-web (browser backend) should not be bundled",
     ]);
   });
+
+  it("accepts a bundle without the on-demand runtimes (ADR-0122)", () => {
+    dir = mkdtempSync(join(tmpdir(), "jarela-footprint-"));
+    expect(findStandaloneFootprintProblems(dir, target)).toEqual([]);
+  });
+
+  it("flags heavy runtimes that should be installed on demand", () => {
+    setup();
+    mkdirSync(join(dir, "node_modules", "@huggingface", "transformers"), { recursive: true });
+    mkdirSync(join(dir, "node_modules", "@microsoft", "copilot-sdk"), { recursive: true });
+    expect(findStandaloneFootprintProblems(dir, target)).toEqual([
+      "@huggingface/transformers should be installed on demand, not bundled",
+      "@microsoft/copilot-sdk should be installed on demand, not bundled",
+    ]);
+  });
 });
 
 describe("pruneStandaloneFootprint", () => {

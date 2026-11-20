@@ -148,6 +148,24 @@ describe("resolveDependencies", () => {
   it("reports unknown MCP servers", async () => {
     expect((await resolveDependencies({ kind: "mcp", id: "no-such-mcp" })).status).toBe("unknown_target");
   });
+
+  it("resolves an on-demand runtime target by package name", async () => {
+    const resolution = await resolveDependencies(
+      { kind: "runtime", id: "@huggingface/transformers" },
+      { force: true },
+    );
+    expect(resolution.status).toBe("install_required");
+    expect(resolution.steps[0]!.spec).toMatchObject({
+      kind: "node-package",
+      id: "@huggingface/transformers",
+      scope: "managed",
+    });
+    expect(resolution.steps[0]!.allowlisted).toBe(true);
+  });
+
+  it("rejects an invalid runtime package id", async () => {
+    expect((await resolveDependencies({ kind: "runtime", id: "../evil" })).status).toBe("unknown_target");
+  });
 });
 
 describe("buildInstallStep", () => {
