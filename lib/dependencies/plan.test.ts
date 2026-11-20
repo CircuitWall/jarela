@@ -166,6 +166,13 @@ describe("resolveDependencies", () => {
   it("rejects an invalid runtime package id", async () => {
     expect((await resolveDependencies({ kind: "runtime", id: "../evil" })).status).toBe("unknown_target");
   });
+
+  it("only allows catalogue runtimes through the runtime target", async () => {
+    // A valid, allowlisted package that is not in the optional catalogue must
+    // not be installable just by naming it.
+    expect((await resolveDependencies({ kind: "runtime", id: "@langchain/community" })).status)
+      .toBe("unknown_target");
+  });
 });
 
 describe("buildInstallStep", () => {

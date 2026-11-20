@@ -680,6 +680,10 @@ export const api = {
       request<import("./types").DependencyResolutionInfo>(
         `/dependencies?target=${encodeURIComponent(target)}`,
       ),
+    optional: (category?: string) =>
+      request<import("./types").OptionalPackagesResponse>(
+        category ? `/dependencies/optional?category=${encodeURIComponent(category)}` : "/dependencies/optional",
+      ),
     install: async (target: string): Promise<import("./types").DependencyInstallOutcomeInfo> => {
       const result = await request<import("./types").DependencyInstallOutcomeInfo>(
         "/dependencies/install",

@@ -770,6 +770,34 @@ export interface DependencyInstallOutcomeInfo {
   error: string | null;
 }
 
+export type OptionalPackageCategory = "embeddings" | "agent-runtimes" | "messaging" | "connectors";
+
+export interface OptionalPackageStatusInfo {
+  id: string;
+  category: OptionalPackageCategory;
+  label: string;
+  summary: string;
+  withoutIt: string;
+  sizeMb: number;
+  docsUrl: string | null;
+  /** `runtime:<package>` — accepted by `POST /api/v1/dependencies/install`. */
+  target: string;
+  state: "satisfied" | "missing" | "unverified";
+  installable: boolean;
+  detail: string | null;
+  hint: string | null;
+}
+
+export interface OptionalPackagesResponse {
+  packages: OptionalPackageStatusInfo[];
+  categories: Array<{
+    id: OptionalPackageCategory;
+    label: string;
+    pendingSizeMb: number;
+    packages: OptionalPackageStatusInfo[];
+  }>;
+}
+
 export interface ToolUsefulnessStats {
   call_count: number;
   success_count: number;

@@ -120,15 +120,15 @@ The published npm package ships a **prebuilt standalone bundle**, so `jarela`
 starts immediately after install — no in-place webpack/build step.
 
 Two large capabilities are **not** installed by default and are fetched only
-when you enable them (ADR-0122):
+when you enable them (ADR-0122). They are grouped by category in
+**Settings → Tools → Packages → Optional packages**:
 
-| Capability | Installed on demand | Size |
-| --- | --- | --- |
-| Local embeddings (semantic recall) | `@huggingface/transformers` + ONNX runtime | ~426 MB |
-| Copilot delegate | `@microsoft/copilot-sdk` + platform runtime | ~206 MB |
+| Category | Capability | Installed on demand | Size | Without it |
+| --- | --- | --- | --- | --- |
+| Embeddings and recall | Local embeddings | `@huggingface/transformers` + ONNX runtime | ≈426 MB | Recall/search use lexical matching; indexing and chat unaffected |
+| Agent runtimes | GitHub Copilot runtime | `@microsoft/copilot-sdk` + platform runtime | ≈206 MB | `copilot_delegate` unavailable; Claude/Codex delegates unaffected |
 
-Install one explicitly with the dependency API (or the Tools → Packages
-panel), for example:
+Install one explicitly from that panel, or with the dependency API:
 
 ```sh
 curl -X POST http://localhost:4312/api/v1/dependencies/install \
@@ -136,10 +136,14 @@ curl -X POST http://localhost:4312/api/v1/dependencies/install \
   -d '{"target":"runtime:@huggingface/transformers"}'
 ```
 
+`GET /api/v1/dependencies/optional` returns the same catalogue with live
+install state, grouped by category, so a script or UI can show what is
+installed and what it would cost.
+
 They install into the Jarela packages directory, not into the global npm
-prefix, and can be removed again the same way (`DELETE /api/v1/packages/install`
-with the package name). Until then, recall falls back to lexical search and
-`copilot_delegate` reports the missing runtime instead of failing mid-task.
+prefix, and can be removed again with `DELETE /api/v1/packages/install`.
+Until then, recall falls back to lexical search and `copilot_delegate`
+reports the missing runtime instead of failing mid-task.
 
 On the very first interactive `jarela` run, you'll be offered to register
 autostart for the current user:

@@ -4,6 +4,7 @@ import { Package } from "lucide-react";
 import { PanelHeader } from "@/components/ui/PanelHeader";
 import { SettingsCard, SettingsGroup } from "@/components/ui/SettingsCard";
 import { InstallPanel } from "./InstallPanel";
+import { OptionalPackages } from "./OptionalPackages";
 import { ToolCatalog } from "./ToolCatalog";
 import { UnifiedPackageList } from "./UnifiedPackageList";
 import { WebSearchConfigCard } from "./WebSearchConfigCard";
@@ -24,6 +25,7 @@ export function PackagesPanel() {
           enabled, disabled, or removed. Drop-in tools show their credentials inline.
         </p>
         <InstallPanel />
+        <OptionalPackages />
         <UnifiedPackageList />
         <SettingsGroup>
           <InternalToolConfigCard />
