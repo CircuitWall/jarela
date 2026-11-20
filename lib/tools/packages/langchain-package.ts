@@ -22,6 +22,7 @@
  */
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
+import type { DependencySpec } from "@/lib/dependencies/schema";
 import { registerTools, unregisterTools, type BuiltinCategory } from "../runtime/registry";
 
 /**
@@ -69,9 +70,17 @@ export interface LangChainPackageSpec<TAuth = unknown> {
    * integration is unconfigured.
    */
   integrationId?: string;
+  /**
+   * Code or binaries these tools need before they can run (ADR-0121). When a
+   * required dependency is missing, the catalog marks the tools unavailable
+   * and `executeTool` refuses them instead of failing mid-call.
+   */
+  dependencies?: readonly DependencySpec[];
 }
 
 export interface RegisteredPackage<TAuth> {
+  /** Tools this package added to the registry, in registration order. */
+  toolNames: readonly string[];
   /**
    * Resolves credentials the same way the package will at call time. Used
    * by the integrations test endpoint to probe live API connectivity right
@@ -96,14 +105,15 @@ export function registerLangChainPackage<TAuth>(
 ): RegisteredPackage<TAuth> {
   const registered: string[] = [];
   const packageIntegrationId = spec.integrationId ?? spec.auth?.integrationId;
+  const dependencies = spec.dependencies;
   if (spec.tools.read && spec.tools.read.length > 0) {
-    for (const t of registerTools(spec.category, "read", spec.tools.read, packageIntegrationId)) registered.push(t.name);
+    for (const t of registerTools(spec.category, "read", spec.tools.read, packageIntegrationId, dependencies)) registered.push(t.name);
   }
   if (spec.tools.write && spec.tools.write.length > 0) {
-    for (const t of registerTools(spec.category, "write", spec.tools.write, packageIntegrationId)) registered.push(t.name);
+    for (const t of registerTools(spec.category, "write", spec.tools.write, packageIntegrationId, dependencies)) registered.push(t.name);
   }
   if (spec.tools.execute && spec.tools.execute.length > 0) {
-    for (const t of registerTools(spec.category, "execute", spec.tools.execute, packageIntegrationId)) registered.push(t.name);
+    for (const t of registerTools(spec.category, "execute", spec.tools.execute, packageIntegrationId, dependencies)) registered.push(t.name);
   }
 
   const unregister = (): void => {
@@ -118,7 +128,7 @@ export function registerLangChainPackage<TAuth>(
     const noop = (): TAuth | { error: string } => ({
       error: `package "${spec.category}" has no auth bridge configured`,
     });
-    return { resolveAuth: noop, unregister };
+    return { resolveAuth: noop, unregister, toolNames: registered };
   }
 
   const { integrationId, setAuthResolver, resolveAuthFromEnv, mapStoreFields, notConfiguredError } = spec.auth;
@@ -136,7 +146,7 @@ export function registerLangChainPackage<TAuth>(
   };
 
   setAuthResolver(resolveAuth);
-  return { resolveAuth, unregister };
+  return { resolveAuth, unregister, toolNames: registered };
 }
 
 function isErr<T>(v: T | { error: string }): v is { error: string } {

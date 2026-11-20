@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import type { ActionKind } from "@/lib/stores/pending-actions";
+import { DependencySpecSchema, type DependencySpec } from "@/lib/dependencies/schema";
 
 export const PrerequisiteSchema = z.object({
   check: z.enum(["provider_key", "oauth_app", "env", "credentials", "custom"]),
@@ -60,6 +61,12 @@ export const IntegrationManifestSchema = z.object({
   summary: z.string().min(1),
   category: z.enum(["llm", "mail", "calendar", "issue-tracker", "chat", "infrastructure", "other"]),
   prerequisites: z.array(PrerequisiteSchema),
+  /**
+   * Machine-checkable dependencies (ADR-0121). Prose prerequisites stay for
+   * browser-only steps; anything Jarela can verify belongs here so enabling
+   * the integration can gate on it.
+   */
+  dependencies: z.array(DependencySpecSchema).optional(),
   steps: z.array(SetupStepSchema).min(1),
   troubleshooting: z.array(TroubleshootingSchema),
 });
@@ -67,6 +74,7 @@ export const IntegrationManifestSchema = z.object({
 export type Prerequisite = z.infer<typeof PrerequisiteSchema>;
 export type SetupStep = z.infer<typeof SetupStepSchema>;
 export type Troubleshooting = z.infer<typeof TroubleshootingSchema>;
+export type { DependencySpec } from "@/lib/dependencies/schema";
 
 export interface IntegrationManifest {
   id: string;
@@ -74,6 +82,7 @@ export interface IntegrationManifest {
   summary: string;
   category: "llm" | "mail" | "calendar" | "issue-tracker" | "chat" | "infrastructure" | "other";
   prerequisites: Prerequisite[];
+  dependencies?: DependencySpec[];
   steps: Array<Omit<SetupStep, "proposes"> & { proposes?: ActionKind }>;
   troubleshooting: Troubleshooting[];
 }

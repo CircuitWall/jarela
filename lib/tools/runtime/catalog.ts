@@ -5,6 +5,7 @@ import {
   registeredNames,
   registeredCategory,
   registeredIntegration,
+  registeredDependencies,
   type Capability,
   type ToolCategory,
   type ToolGroup,
@@ -14,6 +15,12 @@ import { loadExternalTools } from "./external";
 import { getAgentTools, type AgentConfigRow } from "@/lib/stores/agent-configs";
 import { isBasicToolCategory, normalizeToolCategory } from "./categories";
 import { getIntegrationReadiness } from "@/lib/health/probe-cache";
+import {
+  anyMissingDependencyInstallable,
+  getCachedDependencyStatus,
+  missingDependencies,
+} from "@/lib/dependencies/probe";
+import type { DependencyStatus } from "@/lib/dependencies/schema";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { getAllTools } from "./runtime";
 
@@ -31,6 +38,8 @@ export interface ToolCatalogEntry {
   mcp_server?: string | null;
   integration?: string | null;
   credentials_required: string[];
+  /** Probed dependency state (ADR-0121). Empty when the tool is self-contained. */
+  dependencies: DependencyStatus[];
   status: ToolStatus;
   status_reason: string | null;
   permission?: ToolPermissionState;
@@ -103,6 +112,16 @@ export function getToolIntegration(name: string): string | null {
     ?? null;
 }
 
+/** Declaration-level dependencies for a tool (no probing). */
+export function getToolDependencySpecs(name: string) {
+  return registeredDependencies(name);
+}
+
+/** Cached, non-blocking dependency status for a tool. */
+export function getToolDependencies(name: string): DependencyStatus[] {
+  return getToolDependencySpecs(name).map(getCachedDependencyStatus);
+}
+
 function missingCredentialKeys(keys: readonly string[]): string[] {
   if (keys.length === 0) return [];
   let injected: Record<string, string> = {};
@@ -122,6 +141,9 @@ function missingCredentialKeys(keys: readonly string[]): string[] {
 function unconfiguredReason(entry: ToolCatalogEntry): string | null {
   if (missingCredentialKeys(entry.credentials_required).length > 0) return "credentials_missing";
   if (getIntegrationReadiness(entry.integration) === "unconfigured") return "integration_unconfigured";
+  if (missingDependencies(entry.dependencies).length > 0) {
+    return anyMissingDependencyInstallable(entry.dependencies) ? "dependency_missing" : "dependency_manual";
+  }
   return null;
 }
 
@@ -357,6 +379,7 @@ export function toCatalogEntry(
     mcp_server?: string | null;
     integration?: string | null;
     credentials_required?: string[];
+    dependencies?: DependencyStatus[];
     status: ToolStatus;
     status_reason: string | null;
   },
@@ -371,6 +394,7 @@ export function toCatalogEntry(
     mcp_server: meta.mcp_server ?? null,
     integration: meta.integration ?? null,
     credentials_required: meta.credentials_required ?? [],
+    dependencies: meta.dependencies ?? [],
     status: meta.status,
     status_reason: meta.status_reason,
   };

@@ -156,6 +156,9 @@ export default defineConfig({
         "lib/pricing/llm-extract.ts",
         // Notification hub uses node-notifier; OS-bound.
         "lib/notifications/**",
+        // Dependency installer process boundary — spawns the platform npm
+        // binary; the install decisions around it are unit-tested.
+        "lib/dependencies/run-command.ts",
         // Streaming WebSocket plumbing tied to ws lifecycle.
         "lib/streaming/**",
         // Integration-category metadata — pure data tables, no logic worth testing.

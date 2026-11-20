@@ -28,6 +28,7 @@ import {
   type LangChainPackageLoadResult,
   type LangChainPackageManifest,
 } from "./langchain-packages";
+import { DependencySpecSchema } from "@/lib/dependencies/schema";
 import {
   isPackageDisabled,
   setPackageDisabled,
@@ -59,6 +60,7 @@ export const MANIFEST_INPUT_SCHEMA = z.object({
   capability: z.enum(["read", "write", "execute"]).optional(),
   args: z.record(z.string(), z.unknown()).optional(),
   requiredEnv: z.array(z.string().min(1)).optional(),
+  dependencies: z.array(DependencySpecSchema).optional(),
 });
 
 export type ManifestInput = z.infer<typeof MANIFEST_INPUT_SCHEMA>;
@@ -159,6 +161,7 @@ export async function createManifest(
     capability: validated.capability ?? "execute",
     args: validated.args,
     requiredEnv: validated.requiredEnv,
+    dependencies: validated.dependencies,
   });
   writeFileSync(path, JSON.stringify(onDisk, null, 2));
   const load = await reloadLangChainPackages();

@@ -5,7 +5,9 @@
 import { isOptionalPackageInstalled } from "./optional-package";
 import type { RegisteredPackage } from "./langchain-package";
 import { setPackageAuthResolver } from "../runtime/auth-registry";
+import { setToolDependencies } from "../runtime/registry";
 import { isPackageDisabled } from "@/lib/stores/disabled-packages";
+import type { DependencySpec } from "@/lib/dependencies/schema";
 import type { DefaultPackageDescriptor, DefaultPackageInfo } from "./default-packages/types";
 import { atlassianDefaultPackage } from "./default-packages/atlassian";
 import { githubDefaultPackage } from "./default-packages/github";
@@ -13,6 +15,12 @@ import { icloudDefaultPackages } from "./default-packages/icloud";
 import { jiraAlignDefaultPackage } from "./default-packages/jira-align";
 
 export type { DefaultPackageDescriptor, DefaultPackageInfo } from "./default-packages/types";
+
+/** Dependency specs for one bundled package, or `[]` for an unknown id. */
+export function defaultPackageDependencies(id: string): DependencySpec[] {
+  const descriptor = DESCRIPTORS.find((d) => d.id === id);
+  return descriptor ? dependenciesFor(descriptor) : [];
+}
 
 const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
   atlassianDefaultPackage,
@@ -22,6 +30,15 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
 ];
 
 const handles = new Map<string, RegisteredPackage<unknown>>();
+
+/**
+ * Dependencies a bundled package needs before its tools can run (ADR-0121).
+ * `workspace` keeps the dev/bundled resolution path while still allowing the
+ * managed install location to satisfy a slim install.
+ */
+function dependenciesFor(descriptor: DefaultPackageDescriptor): DependencySpec[] {
+  return [{ kind: "node-package", id: descriptor.npmPackage, scope: "workspace" }];
+}
 
 /** Register every default package whose disable flag is unset. Idempotent. */
 export function registerDefaultPackages(): void {
@@ -44,6 +61,7 @@ export function listDefaultPackages(): DefaultPackageInfo[] {
     description: descriptor.description,
     enabled: !isPackageDisabled(descriptor.id),
     installed: isOptionalPackageInstalled(descriptor.npmPackage),
+    dependencies: dependenciesFor(descriptor),
   }));
 }
 
@@ -80,6 +98,7 @@ function registerOne(descriptor: DefaultPackageDescriptor): void {
   const handle = descriptor.register();
   handles.set(descriptor.id, handle);
   setPackageAuthResolver(descriptor.integrationId, handle.resolveAuth);
+  setToolDependencies(handle.toolNames, dependenciesFor(descriptor));
 }
 
 /** @internal — test-only. */

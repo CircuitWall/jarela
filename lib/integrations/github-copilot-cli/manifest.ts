@@ -6,6 +6,15 @@ export const githubCopilotCliManifest: IntegrationManifest = {
   summary:
     "Lets the agent delegate a coding task to the GitHub Copilot agent runtime through the Copilot SDK, using your existing Copilot CLI sign-in or a fine-grained GitHub token.",
   category: "infrastructure",
+  dependencies: [
+    {
+      kind: "node-runtime",
+      id: "node",
+      version: "^24.15.0 || >=26.0.0",
+      hint: "Upgrade Node.js to 24.15.0+ (24.x) or 26+ — the Copilot SDK runtime requires it.",
+      docs_url: "https://nodejs.org/en/download",
+    },
+  ],
   prerequisites: [
     {
       check: "credentials",

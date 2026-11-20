@@ -29,6 +29,8 @@ import { applyInstructionEdits } from "@/lib/agents/instruction-edits";
 import { setCategoryEnabled } from "@/lib/stores/builtin-tools";
 import { setDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
 import { BUILTIN_CATEGORIES, type BuiltinCategory } from "@/lib/tools/runtime/registry";
+import { gateEnable } from "@/lib/dependencies/gate";
+import { firstMissingDependency, missingDependencyMessage } from "@/lib/dependencies/probe";
 import { applyArtifactProposal } from "./artifact-proposals";
 import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
 import { z } from "zod";
@@ -93,7 +95,7 @@ export async function applyAction(
     case "update_agent":       return applyUpdateAgent(payload);
     case "start_oauth":        return applyStartOauth(payload);
     case "set_provider_key":   return applySetProviderKey(payload, extras);
-    case "enable_integration": return applyEnableIntegration(payload, extras);
+    case "enable_integration": return await applyEnableIntegration(payload, extras);
     case "upsert_harness":     return applyUpsertHarness(payload);
     case "write_skill":
     case "update_scheduled_task_prompt":
@@ -388,14 +390,29 @@ function applySetProviderKey(
 // resolveAuth() helpers finding a record. Field values arrive in `extras`
 // for the same reason as set_provider_key — secrets stay out of the agent
 // payload.
-function applyEnableIntegration(
+async function applyEnableIntegration(
   payload: unknown,
   extras?: Record<string, unknown>,
-): ApplyResult {
+): Promise<ApplyResult> {
   const p = payload as { id?: string };
   if (!p.id) return { ok: false, detail: "id required" };
   const manifest = getManifest(p.id);
   if (!manifest) return { ok: false, detail: `unknown integration "${p.id}"` };
+
+  // Check-only: saving credentials must not install anything implicitly
+  // (ADR-0121). Surface the exact fix instead.
+  const gate = await gateEnable({ kind: "integration", id: p.id });
+  if (!gate.ok) {
+    const missing = firstMissingDependency(gate.resolution.dependencies);
+    const step = gate.resolution.steps[0];
+    const detail = [
+      `integration "${p.id}" has an unmet dependency`,
+      missing ? missingDependencyMessage(missing) : null,
+      step ? `Run: ${step.command.join(" ")}` : null,
+    ].filter(Boolean).join(". ");
+    return { ok: false, detail };
+  }
+
   const def = (INTEGRATIONS as unknown as Record<string, { fields: ReadonlyArray<{ key: string }> } | undefined>)[p.id];
   if (!def) {
     return {

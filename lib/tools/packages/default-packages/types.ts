@@ -1,4 +1,5 @@
 import type { BuiltinCategory } from "../../runtime/registry";
+import type { DependencySpec } from "@/lib/dependencies/schema";
 import type { RegisteredPackage } from "../langchain-package";
 
 export interface DefaultPackageDescriptor {
@@ -22,4 +23,6 @@ export interface DefaultPackageInfo {
   description: string;
   enabled: boolean;
   installed: boolean;
+  /** Declared dependency specs (ADR-0121); probed status comes from the catalog. */
+  dependencies: DependencySpec[];
 }

@@ -6,9 +6,14 @@
  *
  *   - category   — topical group ("Memory", "Files", "Mail", …) used by
  *                  the Agent editor sidebar to organise tools for users.
- *   - capability — safety class ("read" | "write" | "execute") used by
+ | **capability** — safety class ("read" | "write" | "execute") used by
  *                  the future per-capability approval gate, UI badges,
  *                  and the ADR-0037 output validator. See ADR-0038.
+ *
+ * A registration may also declare **dependencies** — code or binaries the
+ * tool needs before it can run. The catalog and the execution guard probe
+ * them and keep the tool unavailable while a required one is missing. See
+ * ADR-0121 and `lib/dependencies/`.
  *
  * `lib/tools/index.ts` only needs to side-effect-import the modules
  * (see ./builtins.ts) — there is no central map listing every tool by
@@ -32,6 +37,7 @@
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { wrapWithWallclock } from "../support/wallclock";
 import { isBasicToolCategory } from "./categories";
+import type { DependencySpec } from "@/lib/dependencies/schema";
 
 export type ToolCategory =
   | "Memory" | "Documents" | "Files" | "Shell" | "Web" | "Images" | "Voice"
@@ -74,6 +80,7 @@ interface RegistryEntry {
   capability: Capability;
   group: ToolGroup;
   integration?: string;
+  dependencies?: readonly DependencySpec[];
 }
 
 const REGISTRY = new Map<string, RegistryEntry>();
@@ -89,6 +96,7 @@ export function registerTools<T extends StructuredToolInterface>(
   capability: Capability,
   tools: readonly T[],
   integration?: string,
+  dependencies?: readonly DependencySpec[],
 ): readonly T[] {
   const group = CATEGORY_GROUPS[category];
   const wrapped: T[] = [];
@@ -100,10 +108,33 @@ export function registerTools<T extends StructuredToolInterface>(
     // single stuck call (network hang, fs on a wedged cloud-sync drive,
     // runaway shell) can't pin the turn — see lib/tools/wallclock.ts.
     const w = wrapWithWallclock(t);
-    REGISTRY.set(w.name, { tool: w, category, capability, group, integration });
+    REGISTRY.set(w.name, {
+      tool: w,
+      category,
+      capability,
+      group,
+      integration,
+      ...(dependencies && dependencies.length > 0 ? { dependencies } : {}),
+    });
     wrapped.push(w);
   }
   return wrapped;
+}
+
+/**
+ * Attach dependency declarations to already-registered tools. Used where the
+ * registration happens before the declaration is known (bundled packages that
+ * resolve their dependency from a descriptor). See ADR-0121.
+ */
+export function setToolDependencies(
+  names: Iterable<string>,
+  dependencies: readonly DependencySpec[],
+): void {
+  if (dependencies.length === 0) return;
+  for (const name of names) {
+    const entry = REGISTRY.get(name);
+    if (entry) entry.dependencies = dependencies;
+  }
 }
 
 /** @internal — all registered built-in tools, in registration order. */
@@ -148,6 +179,14 @@ export function registeredGroup(name: string): ToolGroup | undefined {
 /** @internal — integration id backing this tool, when it has one. */
 export function registeredIntegration(name: string): string | undefined {
   return REGISTRY.get(name)?.integration;
+}
+
+/**
+ * @internal — dependencies this tool needs before it can run, declared at
+ * registration time (ADR-0121). Empty when the tool is self-contained.
+ */
+export function registeredDependencies(name: string): readonly DependencySpec[] {
+  return REGISTRY.get(name)?.dependencies ?? [];
 }
 
 /**

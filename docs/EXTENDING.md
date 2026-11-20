@@ -852,6 +852,26 @@ resolve in neither `process.env` nor the env-sync allowlist
 way so the operator can still find it and set it up — see
 [ADR-0078](adr/0078-tool-integration-declaration.md).
 
+**Declare optional dependencies** when the tool needs code or a binary that
+may not be installed:
+
+```ts
+registerLangChainPackage({
+  category: "Agent",
+  dependencies: [
+    { kind: "node-package", id: "@openai/codex", scope: "global", bin: "codex" },
+    { kind: "executable", id: "docker", hint: "Install Docker Desktop." },
+  ],
+  tools: { execute: [codexDelegateTool] },
+});
+```
+
+A required dependency that is definitively missing marks the tool
+`unavailable` with `dependency_missing` (Jarela can install it) or
+`dependency_manual` (the operator must), and `executeTool` refuses it. A probe
+that could not decide reports `unverified`, which never hides the tool. See
+[ADR-0121](adr/0121-optional-tool-and-integration-dependencies.md).
+
 **Only basic tools are bound to the model each turn.** Everything else an
 agent may run is reached through the `invoke_tool` proxy, so a new tool does
 not need to be in the agent's pinned list to be reachable — it needs a
@@ -956,6 +976,14 @@ returned tool under a Jarela category + capability.
    - `args` — constructor arguments, passed as a single object.
    - `requiredEnv` — optional. If any listed env var is unset, the
      manifest is skipped (with a `skipped` reason) instead of erroring.
+   - `dependencies` — optional. Extra binaries or runtimes the tool needs
+     beyond its own package, in the ADR-0121 shape (for example
+     `{ "kind": "executable", "id": "uvx" }`). The manifest's `package` is
+     always treated as a managed `node-package` dependency, so only list
+     anything beyond it. While a required dependency is missing, the tool is
+     listed but marked unavailable with `dependency_missing` (Jarela can
+     install it) or `dependency_manual` (the operator must install it), and
+     the agent cannot call it.
 4. Either restart the server (the agent sees the tool on its next turn)
    or hit `POST /api/v1/packages/reload` to re-scan without restart.
 
@@ -983,7 +1011,7 @@ the manifest-CRUD endpoints create the file that the loader picks up:
 
 - `GET /api/v1/packages/manifests` — list current manifests.
 - `POST /api/v1/packages/manifests` with `{ name, package, export?,
-  category, capability?, args?, requiredEnv? }` — write a new
+  category, capability?, args?, requiredEnv?, dependencies? }` — write a new
   manifest and trigger a reload. 409 on duplicate name.
 - `GET|PUT|DELETE /api/v1/packages/manifests/:name` — fetch, upsert
   (replace), or remove a single manifest.

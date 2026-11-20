@@ -48,6 +48,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { isPackageDisabled } from "@/lib/stores/disabled-packages";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { BUILTIN_CATEGORIES } from "../runtime/registry";
+import { DependencySpecSchema, packageRootOf, type DependencySpec } from "@/lib/dependencies/schema";
 import { getDataDir } from "@/lib/db/data-dir";
 
 // Re-exported for convenience so callers already importing from
@@ -69,9 +70,27 @@ export const MANIFEST_SCHEMA = z.object({
   capability: z.enum(["read", "write", "execute"]).optional(),
   args: z.record(z.string(), z.unknown()).optional(),
   requiredEnv: z.array(z.string().min(1)).optional(),
+  /**
+   * Extra binaries/runtimes the loaded tool needs (ADR-0121). The manifest's
+   * own `package` is always treated as a managed node-package dependency, so
+   * only list anything beyond it.
+   */
+  dependencies: z.array(DependencySpecSchema).optional(),
 });
 
 export type LangChainPackageManifest = z.infer<typeof MANIFEST_SCHEMA>;
+
+/**
+ * Dependencies a manifest implies (ADR-0121): its own package is a managed
+ * node-package dependency, plus anything the manifest declares explicitly.
+ */
+export function manifestDependencies(manifest: LangChainPackageManifest): DependencySpec[] {
+  const root = packageRootOf(manifest.package);
+  return [
+    { kind: "node-package", id: root, scope: "managed" },
+    ...(manifest.dependencies ?? []),
+  ];
+}
 
 export interface LangChainPackageLoadError {
   manifest: string;
@@ -300,6 +319,7 @@ async function loadOneManifest(
   try {
     handle = registerLangChainPackage({
       category: manifest.category,
+      dependencies: manifestDependencies(manifest),
       tools: {
         read: bucket.read.length ? bucket.read : undefined,
         write: bucket.write.length ? bucket.write : undefined,
@@ -359,6 +379,7 @@ function loadWildcardManifest(
   try {
     handle = registerLangChainPackage({
       category: manifest.category,
+      dependencies: manifestDependencies(manifest),
       tools: {
         read: bucket.read.length ? bucket.read : undefined,
         write: bucket.write.length ? bucket.write : undefined,

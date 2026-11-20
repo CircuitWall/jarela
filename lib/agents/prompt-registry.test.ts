@@ -612,6 +612,8 @@ describe("assembled agent system prompt", () => {
       "dropin_tool_disabled",
       "credentials_missing",
       "integration_unconfigured",
+      "dependency_missing",
+      "dependency_manual",
       "proxy_only",
       "provider_tool_limit",
     ];

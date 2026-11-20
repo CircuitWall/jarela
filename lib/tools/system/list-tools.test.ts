@@ -28,6 +28,7 @@ interface Result {
     status_reason: string | null;
     permission: "enabled" | "disabled" | "unavailable";
     permission_reason: string | null;
+    dependencies?: Array<{ kind: string; id: string; state: string; installable: boolean; hint: string | null }>;
     input_schema?: {
       type: "object";
       properties: Record<string, unknown>;
@@ -256,5 +257,35 @@ describe("list_tools", () => {
     // regardless of capability — verifying empty-result is a normal shape.
     expect(out.tools).toEqual([]);
     expect(out.counts.total).toBe(0);
+  });
+
+  it("reports unmet dependencies on the tools that declare them", async () => {
+    const { registerTools, unregisterTools } = await import("../runtime/registry");
+    const { _setDependencyStatusForTests } = await import("@/lib/dependencies/probe");
+    const { tool } = await import("@langchain/core/tools");
+    const { z } = await import("zod");
+
+    const spec = { kind: "node-package" as const, id: "@scope/list-tools-dep" };
+    registerTools(
+      "Web",
+      "read",
+      [tool(async () => "ok", { name: "dep_list_probe", description: "probe", schema: z.object({}) })],
+      undefined,
+      [spec],
+    );
+    _setDependencyStatusForTests(spec, "missing");
+
+    try {
+      const out = parse(await listToolsTool.invoke({ names: ["dep_list_probe"] }));
+      expect(out.tools[0]).toMatchObject({
+        permission: "unavailable",
+        permission_reason: "dependency_missing",
+        dependencies: [
+          expect.objectContaining({ kind: "node-package", id: "@scope/list-tools-dep", state: "missing", installable: true }),
+        ],
+      });
+    } finally {
+      unregisterTools(["dep_list_probe"]);
+    }
   });
 });

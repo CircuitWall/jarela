@@ -138,13 +138,14 @@ function buildRows(
   }
 
   for (const p of defaults) {
-    if (!p.installed) continue;
     const total = p.toolCounts.read + p.toolCounts.write + p.toolCounts.execute;
     rows.push({
       kind: "default",
       id: `default:${p.id}`,
       title: p.label,
-      description: p.description,
+      // Uninstalled bundles stay listed so the toggle can install them on
+      // enable (ADR-0121) instead of the capability silently disappearing.
+      description: p.installed ? p.description : `${p.description} — not installed (${p.npmPackage})`,
       toolNames: [],
       toolCount: total,
       toolCounts: p.toolCounts,

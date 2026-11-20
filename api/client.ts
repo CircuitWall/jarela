@@ -649,7 +649,7 @@ export const api = {
         `/packages/manifests/${encodeURIComponent(name)}`,
         { method: "DELETE" },
       ),
-    setManifestEnabled: (name: string, enabled: boolean) =>
+    setManifestEnabled: (name: string, enabled: boolean, installMissing?: boolean) =>
       request<{
         name: string;
         enabled: boolean;
@@ -657,17 +657,37 @@ export const api = {
         load: import("./types").LangChainPackageLoadResult;
       }>(`/packages/manifests/${encodeURIComponent(name)}/enabled`, {
         method: "POST",
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify(installMissing === undefined ? { enabled } : { enabled, install_missing: installMissing }),
       }),
-    setDefaultEnabled: (id: string, enabled: boolean) =>
+    setDefaultEnabled: (id: string, enabled: boolean, installMissing?: boolean) =>
       request<{
         id: string;
         enabled: boolean;
         package: import("./types").DefaultLangChainPackageInfo;
       }>(`/packages/defaults/${encodeURIComponent(id)}`, {
         method: "POST",
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify(installMissing === undefined ? { enabled } : { enabled, install_missing: installMissing }),
       }),
+  },
+
+  /**
+   * Optional dependency state for a target (ADR-0121). `resolve` is read-only;
+   * `install` runs only allowlisted installers unless the publisher is already
+   * approved, and reports the plan it observed.
+   */
+  dependencies: {
+    resolve: (target: string) =>
+      request<import("./types").DependencyResolutionInfo>(
+        `/dependencies?target=${encodeURIComponent(target)}`,
+      ),
+    install: async (target: string): Promise<import("./types").DependencyInstallOutcomeInfo> => {
+      const result = await request<import("./types").DependencyInstallOutcomeInfo>(
+        "/dependencies/install",
+        { method: "POST", body: JSON.stringify({ target }) },
+      );
+      invalidateToolListCache();
+      return result;
+    },
   },
 
   extensions: {

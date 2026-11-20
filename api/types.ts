@@ -719,8 +719,55 @@ export interface ToolInfo {
    * panel shows a key icon on the tool checkbox when this is non-empty.
    */
   credentials_required?: string[];
+  /**
+   * Probed dependency state for tools that need code or a binary Jarela does
+   * not ship (ADR-0121). Empty for self-contained tools. `state: "missing"`
+   * with `installable: true` means the UI can offer an install.
+   */
+  dependencies?: ToolDependencyInfo[];
   stats?: ToolUsefulnessStats;
   failure_samples?: ToolFailureSampleInfo[];
+}
+
+export interface ToolDependencyInfo {
+  kind: "node-package" | "executable" | "node-runtime";
+  id: string;
+  scope?: "managed" | "workspace" | "global" | null;
+  state: "satisfied" | "missing" | "unverified";
+  installable: boolean;
+  required: boolean;
+  detail?: string | null;
+  hint?: string | null;
+  docs_url?: string | null;
+}
+
+export type DependencyTargetKind = "tool" | "integration" | "package" | "manifest" | "mcp";
+
+export interface DependencyResolutionInfo {
+  target: { kind: DependencyTargetKind; id: string };
+  status: "ready" | "unverified" | "install_required" | "manual" | "unknown_target";
+  dependencies: ToolDependencyInfo[];
+  missing: ToolDependencyInfo[];
+  steps: Array<{
+    dependency: ToolDependencyInfo;
+    spec: unknown;
+    command: string[];
+    cwd: string | null;
+    publisher: string;
+    allowlisted: boolean;
+  }>;
+  manual: ToolDependencyInfo[];
+}
+
+export interface DependencyInstallOutcomeInfo {
+  target: { kind: DependencyTargetKind; id: string };
+  status: "installed" | "already_ready" | "pending_approval" | "blocked" | "manual" | "failed";
+  plan: DependencyResolutionInfo;
+  result: DependencyResolutionInfo;
+  ran: Array<{ command: string[]; cwd: string | null }>;
+  pending: Array<{ id: string; spec: string; publisher: string; reason: string }>;
+  blocked: Array<{ step: DependencyResolutionInfo["steps"][number]; reason: string }>;
+  error: string | null;
 }
 
 export interface ToolUsefulnessStats {
