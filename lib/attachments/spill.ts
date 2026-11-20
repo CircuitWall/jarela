@@ -55,7 +55,7 @@ function extForFile(media_type: string, filename?: string): string {
   return /^[a-z0-9]{1,12}$/.test(ext) ? ext : "bin";
 }
 
-async function writeContentAddressedFile(buf: Buffer, ext: string): Promise<{ name: string; sha256: string }> {
+async function writeContentAddressedFile(buf: Buffer, ext: string): Promise<{ name: string; path: string; sha256: string }> {
   const sha256 = createHash("sha256").update(buf).digest("hex");
   const name = `${sha256}.${ext}`;
   if (!isSafeFileName(name)) throw new Error(`spill: unsafe file name ${name}`);
@@ -71,7 +71,9 @@ async function writeContentAddressedFile(buf: Buffer, ext: string): Promise<{ na
   if (!exists) {
     await fsp.writeFile(abs, buf);
   }
-  return { name, sha256 };
+  // Callers (and the agent) must never rebuild this from FILES_DIR + name.
+
+  return { name, path: abs, sha256 };
 }
 
 /**
@@ -92,7 +94,7 @@ export async function spillImageBuffer(
   const shrunk = await shrinkImage(raw, media_type, opts?.shrink);
   const buf = shrunk.buf;
   const storedMediaType = shrunk.media_type;
-  const { name, sha256 } = await writeContentAddressedFile(buf, extForMime(storedMediaType));
+  const { name, path, sha256 } = await writeContentAddressedFile(buf, extForMime(storedMediaType));
   const ref: Extract<ContentPart, { type: "image_ref" }> = {
     type: "image_ref",
     media_type: storedMediaType,
@@ -118,13 +120,14 @@ export async function spillFileBuffer(
   media_type: string,
   filename: string,
 ): Promise<Extract<ContentPart, { type: "file_ref" }>> {
-  const { name, sha256 } = await writeContentAddressedFile(raw, extForFile(media_type, filename));
+  const { name, path, sha256 } = await writeContentAddressedFile(raw, extForFile(media_type, filename));
   return {
     type: "file_ref",
     media_type,
     name,
-    filename: safeDisplayName(filename),
-    sha256,
+      path,
+      filename: safeDisplayName(filename),
+      sha256,
     size: raw.length,
   };
 }
