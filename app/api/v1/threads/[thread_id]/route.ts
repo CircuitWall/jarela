@@ -138,7 +138,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const fileRefs = collectThreadFileRefNames(thread_id);
   const deleted = deleteThread(thread_id);
   if (!deleted) return errorResponse(NOT_FOUND_ERRORS.THREAD, 404);
-  removeFilesNoLongerReferenced(fileRefs);
+  await removeFilesNoLongerReferenced(fileRefs);
 
   // Drop the thread's LangGraph checkpoint rows too. Without this the
   // checkpoints.db file grows forever as users delete threads — the rows
