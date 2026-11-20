@@ -4,6 +4,7 @@ import {
   currentBlockingWork,
   formatStallReport,
   noteSlowStatement,
+  recentDiagnostics,
   startEventLoopWatchdog,
   withBlockingWork,
   withBlockingWorkAsync,
@@ -62,6 +63,26 @@ describe("blocking work diagnostics", () => {
       slowStatements: [],
     });
     expect(report).toContain('while running "documents:search-score"');
+  });
+
+  it("only reports slow work recorded inside the stall window", () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.setSystemTime(new Date("2026-11-20T19:00:54.640Z"));
+      noteSlowStatement("UPDATE access_whitelist SET last_seen_at=? WHERE identity=?", 540, 1);
+
+      vi.setSystemTime(new Date("2026-11-20T19:42:13.914Z"));
+      const windowStart = Date.now() - 20_000;
+      expect(recentDiagnostics(windowStart).slowStatements).toEqual([]);
+
+      noteSlowStatement("SELECT content, tool_events, metadata FROM messages", 460, 11_083);
+      expect(recentDiagnostics(windowStart).slowStatements.map((entry) => entry.sql)).toEqual([
+        "SELECT content, tool_events, metadata FROM messages",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is a no-op when disabled and reports once per stall sample", async () => {
