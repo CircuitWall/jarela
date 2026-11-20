@@ -65,9 +65,9 @@
   },
   "dependencies": {
     "ical.js": "^2.2.1",
-    "imapflow": "^2.11.0",
-    "nodemailer": "^10.5.0",
-    "tsdav": "^2.3.4"
+    "imapflow": "^2.12.1",
+    "nodemailer": "^10.6.0",
+    "tsdav": "^2.5.1"
   },
   "devDependencies": {
     "@langchain/core": "^1.2.12",
