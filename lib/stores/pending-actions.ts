@@ -20,6 +20,8 @@ export type ActionKind =
   | "enable_integration"
   // Added by ADR-0036 (agent-driven harness edits).
   | "upsert_harness"
+  // Browser allow-list: the agent asks once for a host it needs to act on.
+  | "allow_site"
   | "write_skill"
   | "ask_choice"
   | "execute_skill"

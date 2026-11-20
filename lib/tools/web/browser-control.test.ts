@@ -99,6 +99,33 @@ describe("browser_navigate", () => {
     expect(parsed.ok).toBe(false);
     expect(parsed.error).toBe("tab crashed");
   });
+
+  it("classifies a host-permission failure as ask-user, naming the host", async () => {
+    const p = browserNavigateTool.invoke({ url: "https://unpermitted.example/x" });
+    const { parsed } = await driveTool(p, () => ({
+      ok: false,
+      error:
+        "Cannot access contents of the url \"https://unpermitted.example/x\". Extension manifest must request permission to access this host.",
+    }));
+
+    expect(parsed.ok).toBe(false);
+    expect(parsed).toMatchObject({
+      error_code: "host_permission_required",
+      hostname: "unpermitted.example",
+      ask_user: true,
+    });
+    // The instruction is what stops the retry loop: it must name the proposal
+    // kind and the settings surface where the decision lands.
+    expect(String((parsed as Record<string, unknown>).next_step)).toContain("allow_site");
+    expect(String((parsed as Record<string, unknown>).next_step)).toContain("Allowed sites");
+  });
+
+  it("leaves unrelated failures without a permission hint", async () => {
+    const p = browserNavigateTool.invoke({ url: "https://example.com" });
+    const { parsed } = await driveTool(p, () => ({ ok: false, error: "net::ERR_NAME_NOT_RESOLVED" }));
+    expect(parsed).not.toHaveProperty("error_code");
+    expect(parsed).not.toHaveProperty("next_step");
+  });
 });
 
 describe("browser_click", () => {

@@ -28,6 +28,7 @@ import {
 import { applyInstructionEdits } from "@/lib/agents/instruction-edits";
 import { setCategoryEnabled } from "@/lib/stores/builtin-tools";
 import { setDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
+import { addAllowedSite } from "@/lib/stores/allowed-sites";
 import { BUILTIN_CATEGORIES, type BuiltinCategory } from "@/lib/tools/runtime/registry";
 import { gateEnable } from "@/lib/dependencies/gate";
 import { firstMissingDependency, missingDependencyMessage } from "@/lib/dependencies/probe";
@@ -97,6 +98,7 @@ export async function applyAction(
     case "start_oauth":        return applyStartOauth(payload);
     case "set_provider_key":   return applySetProviderKey(payload, extras);
     case "enable_integration": return await applyEnableIntegration(payload, extras);
+    case "allow_site": return applyAllowSite(payload);
     case "upsert_harness":     return applyUpsertHarness(payload);
     case "write_skill":
     case "update_scheduled_task_prompt":
@@ -105,8 +107,21 @@ export async function applyAction(
   }
 }
 
-function applyEnableToolCategory(payload: unknown): ApplyResult {
-  const p = payload as { category?: string };
+// Browser allow-list: the agent asks once for a host it needs to act on. The
+// decision lands in `allowed_sites`, which is also what the Settings → Allowed
+// sites UI lists and revokes (and what the extension caches for cookie
+// passthrough), so there is one place to manage the answer.
+function applyAllowSite(payload: unknown): ApplyResult {
+  const p = payload as { hostname?: unknown };
+  if (typeof p.hostname !== "string" || p.hostname.trim() === "") {
+    return { ok: false, detail: "hostname required" };
+  }
+  const result = addAllowedSite({ hostname: p.hostname });
+  if ("error" in result) return { ok: false, detail: result.error };
+  return { ok: true, detail: { hostname: result.hostname, allowed: true } };
+}
+
+function applyEnableToolCategory(payload: unknown): ApplyResult {  const p = payload as { category?: string };
   if (!p.category) return { ok: false, detail: "category required" };
   if (!(BUILTIN_CATEGORIES as readonly string[]).includes(p.category)) {
     return { ok: false, detail: `unknown built-in category: ${p.category}` };

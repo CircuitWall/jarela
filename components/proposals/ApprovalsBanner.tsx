@@ -165,6 +165,14 @@ function approvalToastTarget(action: PendingAction): { href: string; hrefLabel: 
       const name = str("category") ?? str("name");
       return name ? { href: `?tab=tools&item=${encodeURIComponent(name)}`, hrefLabel: "Open Tools →", title: "Tool permission enabled" } : null;
     }
+    // The agent asked once for browser access to a host; the answer is stored
+    // in the allowed-sites list, which is also where it is revoked.
+    case "allow_site": {
+      const host = str("hostname");
+      return host
+        ? { href: "?tab=credentials&item=network", hrefLabel: "Manage in Allowed sites →", title: `Agent may act on ${host}` }
+        : null;
+    }
     case "upsert_harness": {
       // Prefer the harness id from the apply result (creates assign a fresh
       // custom:<uuid>); fall back to the payload id for edits.

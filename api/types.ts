@@ -1336,6 +1336,7 @@ export interface PendingAction {
     | "update_agent_tools"
     | "enable_tool_category"
     | "enable_dropin_tool"
+    | "allow_site"
     | "update_agent"
     | "start_oauth"
     | "set_provider_key"

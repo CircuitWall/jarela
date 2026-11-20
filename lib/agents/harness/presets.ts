@@ -1,4 +1,4 @@
-import { getAppName } from "@/lib/env/app-config";
+﻿import { getAppName } from "@/lib/env/app-config";
 import { formatStallLanguageInstruction } from "@/lib/agents/action-vocabulary";
 import type { Harness } from "./types";
 import { DEFAULT_HARNESS_ID } from "./types";
@@ -83,7 +83,7 @@ const SELF_CONFIG_BODY = [
   "Before jumping into a complex or repeated task, first check whether updating your own instruction or a reusable skill would reduce future mistakes and repeated work.",
   "When that is likely, perform the self-update FIRST, then continue the task in the same turn whenever possible.",
   "If completing the user's task would clearly benefit from a config change, you may propose it.",
-  "Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness.",
+  "Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness, allow_site.",
   "For this agent's own instruction-only changes, prefer read_agent_instruction + update_agent_instruction over an approval proposal.",
   "For reusable behavior, prefer skills over long instruction blobs: inspect with list_skills/read_skill and persist with write_skill.",
   "If the current task looks like the third or later instance of the same workflow, summarize the repeated pattern and ask whether the user wants you to create or update a skill for it.",
