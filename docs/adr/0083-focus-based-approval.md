@@ -67,3 +67,29 @@ Supporting changes:
 
 * Per-command-type approval. Type is not the axis that matters; visibility is.
 * Removing the sensitive-risk heuristics. They still explain a prompt; they just no longer force one.
+
+## Update (2026-11-20): agent-initiated site approval
+
+The gate above covers tabs the user cannot see, but it never covers a host the
+extension has **no Chrome host permission** for at all: `chrome.permissions.request`
+needs a user gesture, so the agent cannot grant it, and the failure surfaced as a
+bare `executeScript` error. The agent retried and eventually gave up without ever
+asking — reported as "agent did not ask for permission grant".
+
+Because this decision removed `syncApprovalsWithAllowedHosts`, there was no
+server-side surface where the agent could ask. Two additions restore the ask
+without reintroducing the silent coupling this ADR objected to:
+
+* `browser_permission` (read tool) reports whether a host is already allowed and
+  returns the exact ask-user instruction when it is not.
+* `propose_config_change({ kind: "allow_site", payload: { hostname } })` creates an
+  approval card. Approving it writes the host to `allowed_sites`, and the card's
+  reason must name both effects — driving a tab on that host **and** cookie
+  passthrough — because the row grants both by design. That is an explicit,
+  labelled consent, which is what the original defect was missing: the old path
+  enrolled cookies from a prompt that asked only about page control.
+
+Browser failures that Chrome attributes to a missing host permission are now
+returned as `error_code: "host_permission_required"` with `hostname`, `ask_user`
+and a `next_step`, and the tool-usage SOP treats that code like any other
+`Stop and ask` reason.

@@ -61,6 +61,9 @@ function validateProposalPayload(kind: string, payload: Record<string, unknown>)
   if (kind === "upsert_harness") {
     return hasString("name") && hasObject("sections") ? null : "upsert_harness requires name and sections";
   }
+  if (kind === "allow_site") {
+    return hasString("hostname") ? null : "allow_site requires hostname";
+  }
   return null;
 }
 
@@ -118,6 +121,7 @@ export const proposeConfigChangeTool = tool(
           "update_agent_tools",
           "enable_tool_category",
           "enable_dropin_tool",
+          "allow_site",
           "update_agent",
           "start_oauth",
           "set_provider_key",
@@ -146,6 +150,7 @@ export const proposeConfigChangeTool = tool(
           "— default mode is 'add' and merges tools into the existing allowlist; use mode='replace' only when the user explicitly asks to replace the full tool list\n" +
           "- enable_tool_category: { category: 'Web' } — only when list_tools shows a globally disabled built-in category is required\n" +
           "- enable_dropin_tool: { name: 'custom_tool_name' } — only when list_tools shows a globally disabled drop-in tool is required\n" +
+          "- allow_site: { hostname: 'example.com' } — ask the user (once) to let browser tools act on this host; the answer is saved in the Allowed sites list, where it can be reviewed or revoked. Use it when a browser step reports `host_permission_required`; never retry that step with the same host before the user answers.\n" +
           "- update_agent: { agent_id, identity?, instructions?, instructions_append?, history_limit?, history_window_hours?, hot_turn_limit?, warm_summary_limit?, harness_id? } " +
           "  — use instructions_append to add standing rules without overwriting existing ones; " +
           "  use instructions_edits for deterministic transforms over the current saved instruction text " +

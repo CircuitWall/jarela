@@ -17,6 +17,7 @@ const { listAllHarnesses, getHarness, createCustomHarness, deleteCustomHarness }
 const { upsertAgentConfig, getAgentConfig } = await import("@/lib/stores/agent-configs");
 const { isCategoryEnabled, setCategoryEnabled } = await import("@/lib/stores/builtin-tools");
 const { isDropinDisabled, setDropinDisabled } = await import("@/lib/stores/disabled-dropin-tools");
+const { listAllowedSites } = await import("@/lib/stores/allowed-sites");
 const { DEFAULT_HARNESS_ID } = await import("./harness/types");
 
 function seedAgent(id: string) {
@@ -326,6 +327,21 @@ describe("applyAction(tool permission enablement)", () => {
     expect(result.ok).toBe(true);
     expect(isDropinDisabled("custom_tool")).toBe(false);
     expect(result.detail).toEqual({ name: "custom_tool", enabled: true });
+  });
+});
+
+describe("applyAction(allow_site)", () => {
+  it("persists the host in the allowed-sites list", async () => {
+    const result = await applyAction("allow_site", { hostname: "Example.COM" });
+
+    expect(result.ok).toBe(true);
+    expect(result.detail).toEqual({ hostname: "example.com", allowed: true });
+    expect(listAllowedSites().map((s) => s.hostname)).toContain("example.com");
+  });
+
+  it("rejects an empty or missing hostname", async () => {
+    expect((await applyAction("allow_site", { hostname: "  " })).ok).toBe(false);
+    expect((await applyAction("allow_site", {})).ok).toBe(false);
   });
 });
 

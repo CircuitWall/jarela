@@ -59,6 +59,7 @@ import "../system/harness-info";
 import "../support/async-results-tool";
 import "../system/tool-telemetry-issue";
 import "../web/browser-control";
+import "../web/browser-permission";
 import "../system/skills";
 import "../system/workflows";
 import "../general/terminal";

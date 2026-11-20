@@ -1,4 +1,4 @@
-// Browser-control agent tools. Each tool enqueues a command on the
+﻿// Browser-control agent tools. Each tool enqueues a command on the
 // shared queue in `lib/api/browser-control.ts`, awaits the extension's
 // outcome, and returns a stringified result the LLM can read. The
 // user's installed Jarela browser extension is the executor — these
@@ -52,9 +52,48 @@ function withMismatchHint(error: string): string {
   return hint ? `${error} (${hint})` : error;
 }
 
+// Chrome refuses to script a page whose origin the extension has no host
+// permission for ("Cannot access contents of the url ... Extension manifest
+// must request permission ..."), and `chrome.permissions.request` needs a user
+// gesture, so the agent can never fix this itself. Left as a bare error the
+// model retried the same call and eventually gave up without ever asking;
+// classifying it gives the tool-usage SOP something to branch on.
+const PERMISSION_DENIED_PATTERNS = [
+  /cannot access contents of/i,
+  /extension manifest must request permission/i,
+  /must request permission to access/i,
+  /missing host permission/i,
+  /no host permissions? for/i,
+];
+
+export function hostPermissionRequired(error: string | undefined): { hostname?: string } | null {
+  if (!error) return null;
+  if (!PERMISSION_DENIED_PATTERNS.some((re) => re.test(error))) return null;
+  // Chrome usually names the origin; take the first host it mentions.
+  const match = error.match(/https?:\/\/([^\s/'"`]+)/i);
+  return match ? { hostname: match[1].toLowerCase() } : {};
+}
+
+function withAskInstruction(error: string): Record<string, unknown> {
+  const denied = hostPermissionRequired(error);
+  if (!denied) return { error: withMismatchHint(error) };
+  const host = denied.hostname;
+  return {
+    error_code: "host_permission_required",
+    error: withMismatchHint(error),
+    ...(host ? { hostname: host } : {}),
+    ask_user: true,
+    next_step:
+      "Stop retrying this call. Ask the user once with " +
+      `propose_config_change({ kind: "allow_site", payload: { hostname: "${host ?? "<hostname>"}" }, reason: "..." }) ` +
+      "and state that approval lets the agent drive a tab on this host and share its cookies with web_fetch. " +
+      "The answer is saved in Settings → Allowed sites (revocable there). Only after the user answers, retry.",
+  };
+}
+
 function stringifyResult(action: string, result: BrowserResult): string {
   if (!result.ok) {
-    return JSON.stringify({ action, ok: false, error: withMismatchHint(result.error) });
+    return JSON.stringify({ action, ok: false, ...withAskInstruction(result.error) });
   }
   return JSON.stringify({ action, ok: true, data: result.data });
 }
@@ -357,7 +396,7 @@ function formatActionResult(action: string, result: BrowserResult): string {
     return JSON.stringify({
       action,
       ok: false,
-      error: withMismatchHint(result.error),
+      ...withAskInstruction(result.error),
       ...(result.data !== undefined ? { data: result.data } : {}),
     });
   }
