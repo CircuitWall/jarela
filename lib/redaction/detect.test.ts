@@ -275,3 +275,18 @@ describe("detection coverage and usability", () => {
     expect(masked(text)).toEqual([]);
   });
 });
+
+describe("app file refs are not treated as secrets", () => {
+  it("does not match inside a Jarela file URL", () => {
+    // The screenshot tool returns this exact shape. Masking the uuid made
+    // the model unable to reference the file it had just produced.
+    const text = "![browser screenshot](/api/v1/files/browser-8f14e45f-ceea-467f-a1b2-9d3c4e5f6a7b.png)";
+    expect(detectMatches(text, DEFAULT_REDACTION_CONFIG)).toEqual([]);
+  });
+
+  it("still matches the same value outside an app file path", () => {
+    const value = "8f14e45f-ceea-467f-a1b2-9d3c4e5f6a7b";
+    const matches = detectMatches(`token=${value}`, DEFAULT_REDACTION_CONFIG);
+    expect(matches.length).toBeGreaterThan(0);
+  });
+});
