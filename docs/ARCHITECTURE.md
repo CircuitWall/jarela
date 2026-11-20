@@ -719,6 +719,15 @@ allowlist for `runtime:` targets); `GET /api/v1/dependencies/optional` exposes
 it with live state and `lib/dependencies/optional-status.ts` groups it for the
 Tools → Packages UI.
 
+Enabling is the trigger, not a separate chore: `lib/dependencies/ensure.ts`
+installs a target's missing dependencies (single-flight, five-minute failure
+cooldown, cached outcome for progress reporting). The agent-config save, the
+`update_agent_tools` proposal, and the *Jarela Local* embedding toggle all call
+it fire-and-forget, so an enabled tool is never left permanently
+`dependency_missing`. Local embeddings chain the two steps:
+`lib/embeddings/ensure-local.ts` installs the runtime, then downloads the
+model.
+
 ### Output validator (anti-fabrication)
 
 `lib/agents/output-validator` post-checks every assistant turn before the

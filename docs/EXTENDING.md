@@ -892,6 +892,15 @@ through `POST /api/v1/dependencies/install` with `runtime:<package>`. Never add
 such a package to `dependencies` or `optionalDependencies` — npm installs both
 by default. See [ADR-0122](adr/0122-on-demand-heavy-runtimes.md).
 
+**Enabling obtains dependencies.** Prefer `ensureTarget` /
+`ensureNewlyEnabledTools` (`lib/dependencies/ensure.ts`,
+`ensure-tools.ts`) at the point where a capability is turned on, so the user's
+enable action installs what it needs instead of leaving the tool
+`dependency_missing`. Keep the enable endpoint fast: the ensure call is
+fire-and-forget, single-flight, and cools down for five minutes after a
+failure. Report progress from `getEnsureOutcome(target)` rather than awaiting
+a multi-hundred-megabyte install.
+
 **Only basic tools are bound to the model each turn.** Everything else an
 agent may run is reached through the `invoke_tool` proxy, so a new tool does
 not need to be in the agent's pinned list to be reachable — it needs a

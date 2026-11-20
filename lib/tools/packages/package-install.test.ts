@@ -57,12 +57,16 @@ const {
   _pendingDirForTest,
   _resetPackageInstallStore,
 } = await import("./package-install");
+const { PackageInstallError } = await import("./package-install");
+const { _setRegistryProbeForTests } = await import("./package-registry");
 
 beforeEach(() => {
   _resetPackageInstallStore();
+  _setRegistryProbeForTests(null);
 });
 
 afterAll(() => {
+  _setRegistryProbeForTests(null);
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
@@ -84,8 +88,41 @@ describe("beginInstall trust gating", () => {
   });
 });
 
-describe("pending install lifecycle", () => {
-  it("lists, denies, and removes pending records", async () => {
+describe("registry pre-check", () => {
+  it("rejects a package the registry reports as missing, before it can be queued", async () => {
+    _setRegistryProbeForTests(async () => "missing");
+
+    const error = await beginInstall({ spec: "@huggingface/transformer" }).catch((err) => err);
+
+    expect(error).toBeInstanceOf(PackageInstallError);
+    expect(error).toMatchObject({ code: "not_found", spec: "@huggingface/transformer" });
+    expect(error.suggestion).toBe("@huggingface/transformers");
+    expect(error.message).toContain('Did you mean "@huggingface/transformers"');
+    expect(error.message).toContain("Optional packages");
+    // A typo must never create a dead approval record.
+    expect(listPendingInstalls()).toEqual([]);
+  });
+
+  it("still queues a not-found package when the registry cannot be reached", async () => {
+    _setRegistryProbeForTests(async () => "unknown");
+
+    const outcome = await beginInstall({ spec: "@untrusted/offline-pkg" });
+    expect(outcome.status).toBe("pending");
+    expect(listPendingInstalls().map((p) => p.spec)).toEqual(["@untrusted/offline-pkg"]);
+  });
+
+  it("drops a pending record whose package turns out not to exist", async () => {
+    _setRegistryProbeForTests(async () => "unknown");
+    const outcome = await beginInstall({ spec: "@untrusted/typo-pkg" });
+    if (outcome.status !== "pending") throw new Error("expected a pending install");
+
+    _setRegistryProbeForTests(async () => "missing");
+    await expect(approvePackageInstall(outcome.pending.id)).rejects.toMatchObject({ code: "not_found" });
+    expect(listPendingInstalls()).toEqual([]);
+  });
+});
+
+describe("pending install lifecycle", () => {  it("lists, denies, and removes pending records", async () => {
     const a = await beginInstall({ spec: "@untrusted/a" });
     const b = await beginInstall({ spec: "@untrusted/b" });
     expect(a.status).toBe("pending");

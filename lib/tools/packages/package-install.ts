@@ -45,6 +45,13 @@ import { randomUUID } from "node:crypto";
 import { getPackagesDir, reloadLangChainPackages } from "./langchain-packages";
 import { reloadDefaultPackages } from "./default-packages";
 import { isPackageAllowed, type PackageAllowDecision } from "./package-allowlist";
+import {
+  classifyInstallFailure,
+  probePackageExists,
+  suggestPackageName,
+  type InstallFailureCode,
+} from "./package-registry";
+import { findOptionalPackage } from "@/lib/dependencies/optional-catalog";
 
 export interface IntrospectedTool {
   export: string;
@@ -73,6 +80,63 @@ export interface PendingInstall {
 export type InstallOutcome =
   | { status: "installed"; result: PackageInstallResult }
   | { status: "pending"; pending: PendingInstall; allowDecision: PackageAllowDecision };
+
+/**
+ * A failed install with a cause the caller can act on and a status the route
+ * can map. Never carries raw npm output as the primary message: the failure
+ * the user sees is the *reason* plus the fix (`@huggingface/transformer` should
+ * have been `@huggingface/transformers`, and that one is a one-click install).
+ */
+export class PackageInstallError extends Error {
+  readonly code: InstallFailureCode;
+  readonly spec: string;
+  readonly suggestion: string | null;
+
+  constructor(code: InstallFailureCode, spec: string, detail = "",
+               suggestion: string | null = suggestPackageName(spec)) {
+    super(describeInstallFailure(code, spec, detail, suggestion));
+    this.name = "PackageInstallError";
+    this.code = code;
+    this.spec = spec;
+    this.suggestion = suggestion;
+  }
+}
+
+function describeInstallFailure(
+  code: InstallFailureCode,
+  spec: string,
+  detail: string,
+  suggestion: string | null,
+): string {
+  const oneClick = suggestion && findOptionalPackage(suggestion)
+    ? ` "${suggestion}" is optional and installs in one click from Settings → Tools → Packages → Optional packages.`
+    : "";
+  switch (code) {
+    case "not_found":
+      return `Package "${spec}" was not found on the npm registry.` +
+        (suggestion ? ` Did you mean "${suggestion}"?` : "") + oneClick;
+    case "forbidden":
+      return `The registry denied access to "${spec}" (401/403). Check the credentials in your .npmrc.`;
+    case "peer_conflict":
+      return `"${spec}" has an unresolvable peer dependency with the packages already installed.`;
+    case "network":
+      return `Could not reach the npm registry while installing "${spec}". Check your connection or proxy, then retry.`;
+    default:
+      return `Installing "${spec}" failed${detail ? `: ${detail.slice(0, 300)}` : ""}`;
+  }
+}
+
+/** Definitive 404s are rejected before they reach npm (best-effort, offline-safe). */
+async function assertPackageExists(spec: string): Promise<void> {
+  if (await probePackageExists(spec) !== "missing") return;
+  throw new PackageInstallError("not_found", spec);
+}
+
+function toInstallError(err: unknown, spec: string): PackageInstallError {
+  if (err instanceof PackageInstallError) return err;
+  const message = err instanceof Error ? err.message : String(err);
+  return new PackageInstallError(classifyInstallFailure(message), spec, message);
+}
 
 function pendingDir(): string {
   return join(getPackagesDir(), "pending");
@@ -112,6 +176,7 @@ export async function beginInstall(input: {
 }): Promise<InstallOutcome> {
   const spec = input.spec.trim();
   if (!spec) throw new Error("spec is required");
+  await assertPackageExists(spec);
 
   const decision = isPackageAllowed(spec);
   if (!decision.allowed) {
@@ -123,13 +188,24 @@ export async function beginInstall(input: {
   return { status: "installed", result };
 }
 
-/** Approve a previously-pending install. Throws if `id` is unknown. */
+/**
+ * Approve a previously-pending install. Throws if `id` is unknown, or a
+ * `PackageInstallError` when the package cannot be installed — in which case
+ * the dead pending record is removed instead of lingering in the queue.
+ */
 export async function approvePackageInstall(id: string): Promise<PackageInstallResult> {
   const pending = readPending(id);
   if (!pending) throw new Error(`unknown approval id: ${id}`);
-  const result = await runInstall(pending.spec, pending.version);
-  deletePending(id);
-  return result;
+  try {
+    await assertPackageExists(pending.spec);
+    const result = await runInstall(pending.spec, pending.version);
+    deletePending(id);
+    return result;
+  } catch (err) {
+    const failure = toInstallError(err, pending.spec);
+    if (failure.code === "not_found") deletePending(id);
+    throw failure;
+  }
 }
 
 /** Remove an operator-installed package and refresh any saved manifests. */
@@ -213,8 +289,12 @@ async function runInstall(spec: string, version: string | null): Promise<Package
     // Some older LangChain packages have incompatible peer ranges. Preserve
     // the compatibility path, but do not suppress peer installation for every
     // package by default.
-    if (!isPeerResolutionFailure(err)) throw err;
-    await runNpm(["install", "--no-fund", "--no-audit", "--legacy-peer-deps", "--save", npmSpec], packagesDir);
+    if (!isPeerResolutionFailure(err)) throw toInstallError(err, spec);
+    try {
+      await runNpm(["install", "--no-fund", "--no-audit", "--legacy-peer-deps", "--save", npmSpec], packagesDir);
+    } catch (retryErr) {
+      throw toInstallError(retryErr, spec);
+    }
   }
 
   // The npm spec may include a version range. The *package name* we

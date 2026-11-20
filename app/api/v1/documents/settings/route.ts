@@ -14,6 +14,7 @@ import { validateBody, errorResponse } from "@/lib/api/responses";
 import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID, LOCAL_EMBEDDING_PROVIDER_NAME } from "@/lib/embeddings/constants";
 import { embedLocally } from "@/lib/embeddings/local";
 import { getLocalModelStatus, startLocalModelDownload } from "@/lib/embeddings/local-model";
+import { ensureLocalEmbeddings, getLocalEmbeddingsReadiness } from "@/lib/embeddings/ensure-local";
 import { getReembedStatus, reembedStaleVectors } from "@/lib/embeddings";
 
 const PutSchema = z.object({
@@ -109,6 +110,7 @@ export async function GET() {
   return NextResponse.json({
     embedding_model_config: selected,
     embedding_probe: await probeEmbeddingModelConfig(selected),
+    local_embeddings: getLocalEmbeddingsReadiness(),
     reembed: getReembedStatus(),
   });
 }
@@ -123,11 +125,16 @@ export async function PUT(req: NextRequest) {
   const selected = name === LOCAL_EMBEDDING_CONFIG_NAME
     ? (setLocalEmbeddingsEnabled(true), LOCAL_EMBEDDING_CONFIG_NAME)
     : (setLocalEmbeddingsEnabled(false), setEmbeddingModelConfigName(name));
+  // Enabling Jarela Local fetches what it needs: the on-demand inference
+  // runtime (~426 MB, ADR-0122) then the model assets (ADR-0101). Both run in
+  // the background so the request stays fast; GET reports progress.
+  if (selected === LOCAL_EMBEDDING_CONFIG_NAME) void ensureLocalEmbeddings();
   // Memory and chat vectors from the previous model are rewritten in the background.
   void reembedStaleVectors();
   return NextResponse.json({
     embedding_model_config: selected,
     embedding_probe: await probeEmbeddingModelConfig(selected, { forceDownload: true }),
+    local_embeddings: getLocalEmbeddingsReadiness(),
     reembed: getReembedStatus(),
   });
 }
