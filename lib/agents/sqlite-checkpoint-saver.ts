@@ -12,6 +12,7 @@ import {
   type PendingWrite,
   type SerializerProtocol,
 } from "@langchain/langgraph-checkpoint";
+import { applyConnectionPragmas } from "@/lib/db/pragmas";
 
 // In-tree LangGraph checkpoint saver backed by node:sqlite.
 //
@@ -105,7 +106,7 @@ export class NodeSqliteSaver extends BaseCheckpointSaver {
 
   protected setup(): void {
     if (this.isSetup) return;
-    this.db.exec("PRAGMA journal_mode=WAL");
+    applyConnectionPragmas(this.db);
     this.db.exec(`
 CREATE TABLE IF NOT EXISTS checkpoints (
   thread_id TEXT NOT NULL,

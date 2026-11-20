@@ -38,10 +38,16 @@ node:sqlite DatabaseSync         @appthreat/sqlite3 read workers
 
 ### Key Principles
 
-1. **WAL Mode is Mandatory**
+1. **WAL Mode and One Pragma Profile**
    - Write-Ahead Logging enables concurrent reads + writes
-   - Synchronous = OFF (app crashes won't corrupt DB, SQLite is crash-safe)
-   - Foreign keys enforced (maintain referential integrity)
+   - Every long-lived connection is configured by `applyConnectionPragmas()`
+     ([pragmas.ts](./pragmas.ts), ADR-0124): WAL, `synchronous = NORMAL`
+     (crash-safe — a process crash loses nothing, only power loss can roll back
+     recent commits), `busy_timeout = 5000`, a 64 MiB page cache, a 32 MiB WAL
+     size limit, and foreign keys enforced
+   - Never set connection pragmas ad hoc. SQLite's defaults (`synchronous =
+     FULL`, `busy_timeout = 0`, 2 MiB cache) are what turned a one-row
+     `UPDATE` into a 500 ms event-loop stall on a 3 GB database
 
 2. **Migrations are Versioned and Bounded**
    - Record completion atomically in `jarela_migrations`.
