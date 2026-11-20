@@ -18,6 +18,7 @@ import {
   DEFAULT_COMMAND_TIMEOUT_MS,
   MAX_COMMAND_TIMEOUT_MS,
   enqueueCommand,
+  extensionMismatchHint,
   type BrowserCommandPayload,
   type BrowserResult,
 } from "@/lib/api/browser-control";
@@ -43,9 +44,17 @@ async function run(
   return promise;
 }
 
+// A stale service worker and a broken command produce the same sentence
+// from the extension. When the extension reports an older wire contract,
+// say so — that is the difference between "reload it" and "debug it".
+function withMismatchHint(error: string): string {
+  const hint = extensionMismatchHint();
+  return hint ? `${error} (${hint})` : error;
+}
+
 function stringifyResult(action: string, result: BrowserResult): string {
   if (!result.ok) {
-    return JSON.stringify({ action, ok: false, error: result.error });
+    return JSON.stringify({ action, ok: false, error: withMismatchHint(result.error) });
   }
   return JSON.stringify({ action, ok: true, data: result.data });
 }
@@ -348,7 +357,7 @@ function formatActionResult(action: string, result: BrowserResult): string {
     return JSON.stringify({
       action,
       ok: false,
-      error: result.error,
+      error: withMismatchHint(result.error),
       ...(result.data !== undefined ? { data: result.data } : {}),
     });
   }
@@ -882,8 +891,10 @@ export const browserSnapshotTool = withStreamDefault(tool(
         action: "browser_snapshot",
         ok: false,
         error:
-          "the extension returned no page structure or text for this tab. " +
-          "Reload the extension (chrome://extensions → reload) so its service worker runs current code, then retry.",
+          withMismatchHint(
+            "the extension returned no page structure or text for this tab. " +
+            "Reload the extension (chrome://extensions → reload) so its service worker runs current code, then retry.",
+          ),
         data: rest,
       });
     }

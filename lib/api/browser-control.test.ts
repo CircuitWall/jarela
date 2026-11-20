@@ -16,6 +16,9 @@ import {
   _resetExtensionStatus,
   _markExtensionSeen,
   _queueDepth,
+  recordExtensionHandshake,
+  extensionMismatchHint,
+  BROWSER_PROTOCOL_VERSION,
   MAX_QUEUE_DEPTH,
   DEFAULT_COMMAND_TIMEOUT_MS,
   MAX_COMMAND_TIMEOUT_MS,
@@ -481,5 +484,43 @@ describe("handleBrowserStatus HTTP handler", () => {
     const body = (await res.json()) as ExtensionStatus;
     expect(body.connected).toBe(false);
     expect(body.lastSeenMs).toBe(-1);
+  });
+});
+
+describe("extension protocol handshake", () => {
+  // The file-level beforeEach marks the extension as seen; a handshake test
+  // needs a clean tracker to tell "never polled" from "old build".
+  beforeEach(() => { _resetExtensionStatus(); });
+  it("records the protocol each poll reports", async () => {
+    const res = await handleBrowserPoll(loopbackReq("/poll", { wait_ms: 50, protocol: 4, version: "0.3.1" }));
+    expect(res.status).toBe(200);
+    const status = getExtensionStatus();
+    expect(status.protocol).toBe(4);
+    expect(status.version).toBe("0.3.1");
+    expect(status.protocol_expected).toBe(BROWSER_PROTOCOL_VERSION);
+    expect(status.protocol_mismatch).toBe(4 !== BROWSER_PROTOCOL_VERSION);
+  });
+
+  it("treats a polling extension that reports nothing as an older build", async () => {
+    const res = await handleBrowserPoll(new Request("http://localhost:4312/poll", {
+      method: "POST",
+      headers: { "content-type": "application/json", host: "localhost:4312" },
+      body: JSON.stringify({ wait_ms: 20 }),
+    }));
+    expect(res.status).toBe(200);
+    const status = getExtensionStatus();
+    expect(status.protocol).toBeNull();
+    expect(status.protocol_mismatch).toBe(true);
+    expect(extensionMismatchHint()).toMatch(/no protocol/);
+    expect(extensionMismatchHint()).toMatch(/reload it/);
+  });
+
+  it("says nothing when no extension has polled at all", () => {
+    expect(extensionMismatchHint()).toBeNull();
+  });
+
+  it("says nothing when the protocol matches", async () => {
+    await handleBrowserPoll(loopbackReq("/poll", { wait_ms: 20, protocol: BROWSER_PROTOCOL_VERSION, version: "0.3.0" }));
+    expect(extensionMismatchHint()).toBeNull();
   });
 });

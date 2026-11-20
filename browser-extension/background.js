@@ -65,6 +65,12 @@ async function ensureContextMenus() {
 // the user saves new values via the options page.
 let currentConfig = { ...DEFAULT_CONFIG };
 
+// Bump together with BROWSER_PROTOCOL_VERSION in lib/api/browser-control.ts.
+// The service worker reports it on every poll so the app can tell a stale
+// worker (which answers with the code it loaded at install time) from a
+// genuine defect instead of guessing from per-command errors.
+const BROWSER_PROTOCOL_VERSION = 3;
+
 async function loadConfig() {
   try {
     const stored = await chrome.storage.local.get(STORAGE_KEY);
@@ -1487,7 +1493,7 @@ async function pollOnceForCommand() {
     const res = await fetch(browserPollUrl(currentConfig), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ wait_ms: 25_000 }),
+      body: JSON.stringify({ wait_ms: 25_000, protocol: BROWSER_PROTOCOL_VERSION, version: chrome.runtime.getManifest().version }),
       signal: ctrl.signal,
     });
     clearTimeout(t);
@@ -1638,8 +1644,7 @@ const chromeDeps = {
   reportProgress: (cmdId, phase) => postCommandProgress(cmdId, phase),
 };
 
-async function browserPollLoop() {
-  if (browserPollLoopActive) return;
+async function browserPollLoop() {  if (browserPollLoopActive) return;
   browserPollLoopActive = true;
   try {
     while (true) {
