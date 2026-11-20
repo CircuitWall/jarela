@@ -66,6 +66,14 @@ async function driveTool<T>(
 }
 
 describe("browser_navigate", () => {
+  it("refuses to navigate the Jarela app itself unless explicitly allowed", async () => {
+    const raw = await browserNavigateTool.invoke({ url: "http://localhost:4312/?tab=tools" });
+    const parsed = JSON.parse(raw);
+
+    expect(parsed).toMatchObject({ ok: false, error_code: "app_self_target", retryable: false });
+    expect(await pollNextCommand(50)).toBeNull();
+  });
+
   it("enqueues a navigate command and surfaces the extension result", async () => {
     const p = browserNavigateTool.invoke({ url: "https://example.com" });
     const { parsed } = await driveTool(p, (cmd) => {
@@ -144,8 +152,7 @@ describe("browser_navigate", () => {
     expect(String((parsed as Record<string, unknown>).next_step)).toContain("Do not retry");
   });
 
-  it("reports an extension that never picked the command up", async () => {
-    const p = browserNavigateTool.invoke({ url: "https://example.com" });
+  it("reports an extension that never picked the command up", async () => {    const p = browserNavigateTool.invoke({ url: "https://example.com" });
     const { parsed } = await driveTool(p, () => ({
       ok: false,
       error: "command timed out after 30000ms before the browser extension picked it up. Open Chrome, click the Jarela toolbar icon to wake the extension, then retry.",

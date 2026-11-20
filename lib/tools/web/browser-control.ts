@@ -23,6 +23,7 @@ import {
   type BrowserResult,
 } from "@/lib/api/browser-control";
 import { writeBinaryFile, writeTextFile } from "@/lib/files";
+import { isAppOrigin } from "@/lib/api/app-origin";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { withStreamDefault } from "../support/tool-metadata";
 
@@ -82,6 +83,17 @@ const AWAITING_APPROVAL_PATTERN = /picked it up .*did not return a result/i;
 const EXTENSION_ASLEEP_PATTERN = /before the browser extension picked it up|browser extension is not connected/i;
 
 function withAskInstruction(error: string): Record<string, unknown> {
+  if (/the Jarela app itself/i.test(error)) {
+    return {
+      error_code: "app_self_target",
+      error: withMismatchHint(error),
+      ask_user: true,
+      retryable: false,
+      next_step:
+        "This tab is the app the user is talking to you in. Target another tab, or pass allow_app_tab only when the " +
+        "user explicitly asked you to drive the Jarela app itself. Do not retry the same call unchanged.",
+    };
+  }
   if (AWAITING_APPROVAL_PATTERN.test(error)) {
     return {
       error_code: "extension_approval_pending",
@@ -497,6 +509,16 @@ export const browserNavigateTool = withStreamDefault(tool(
     }
     if (url && to) {
       return JSON.stringify({ action: "browser_navigate", ok: false, error: "provide either `url` or `to`, not both." });
+    }
+    // Refuse before dispatching when the target is the app itself: the trip
+    // through the extension only discovers this on the current tab, and an
+    // agent that navigates the conversation tab closes the chat it is in.
+    if (url && !allow_app_tab && isAppOrigin(url)) {
+      return JSON.stringify({
+        action: "browser_navigate",
+        ok: false,
+        ...withAskInstruction("this url is the Jarela app itself"),
+      });
     }
     const result = await run(
       { type: "navigate", ...(url ? { url } : {}), ...(to ? { to } : {}), wait_for_selector, allow_app_tab, auto_snapshot: true },
