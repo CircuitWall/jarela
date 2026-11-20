@@ -1623,6 +1623,10 @@ const chromeDeps = {
   executeScript: (opts) => chrome.scripting.executeScript(opts),
   captureVisibleTab: captureVisibleTabDep,
   waitTabLoaded,
+  getTab: (id) => chrome.tabs.get(id),
+  goBack: (id) => chrome.tabs.goBack(id),
+  goForward: (id) => chrome.tabs.goForward(id),
+  reloadTab: (id) => chrome.tabs.reload(id),
   cropPngBase64: cropBase64Image,
   reportProgress: (cmdId, phase) => postCommandProgress(cmdId, phase),
 };

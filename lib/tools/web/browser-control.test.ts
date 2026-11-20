@@ -10,6 +10,9 @@ import {
   browserSnapshotTool,
   browserTabsTool,
   browserActivateTabTool,
+  browserBatchTool,
+  browserWaitTool,
+  browserPressTool,
   resolveLocator,
   diffInteractive,
   _resetSnapshotCache,
@@ -127,11 +130,10 @@ describe("browser_fill", () => {
 });
 
 describe("browser_fill_many", () => {
-  it("enqueues a fill_many command with resolved selectors", async () => {
-    await seedSnapshotCache();
+  it("passes each field locator through for live resolution", async () => {
     const p = browserFillManyTool.invoke({
       fields: [
-        { handle: 0, value: "a@example.com" },
+        { ref: 0, value: "a@example.com" },
         { role: "textbox", name: "Password", value: "secret" },
       ],
       submit_selector: "button[type=submit]",
@@ -140,8 +142,8 @@ describe("browser_fill_many", () => {
       expect(cmd.type).toBe("fill_many");
       if (cmd.type === "fill_many") {
         expect(cmd.fields).toEqual([
-          { selector: "input[name=email]", value: "a@example.com" },
-          { selector: "input[name=password]", value: "secret" },
+          { ref: 0, value: "a@example.com" },
+          { role: "textbox", name: "Password", value: "secret" },
         ]);
         expect(cmd.submit_selector).toBe("button[type=submit]");
         expect(cmd.auto_snapshot).toBe(true);
@@ -321,19 +323,25 @@ async function seedSnapshotCache() {
 describe("resolveLocator", () => {
   it("returns the selector verbatim when provided", () => {
     const r = resolveLocator({ selector: "#go" });
-    expect(r).toEqual({ ok: true, selector: "#go" });
+    expect(r).toEqual({ ok: true, locator: { selector: "#go" } });
   });
 
   it("errors with a clear message when nothing is provided", () => {
     const r = resolveLocator({});
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/selector.*handle.*role/);
+    if (!r.ok) expect(r.error).toMatch(/selector.*ref.*role/);
   });
 
-  it("rejects handle when no snapshot has been taken", () => {
-    const r = resolveLocator({ handle: 2 });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/no recent snapshot/);
+  it("passes a ref through without consulting any snapshot", () => {
+    // The regression this guards: a handle used to be converted into a CSS
+    // string server-side, which then went stale before it was used.
+    const r = resolveLocator({ ref: 42 });
+    expect(r).toEqual({ ok: true, locator: { ref: 42 } });
+  });
+
+  it("still accepts the legacy `handle` alias as a ref", () => {
+    const r = resolveLocator({ handle: 7 });
+    expect(r).toEqual({ ok: true, locator: { ref: 7 } });
   });
 
   it("rejects role alone (must pair with name)", () => {
@@ -342,58 +350,15 @@ describe("resolveLocator", () => {
     if (!r.ok) expect(r.error).toMatch(/role.*name.*together/);
   });
 
-  it("resolves handle against the seeded snapshot", async () => {
-    await seedSnapshotCache();
-    const r = resolveLocator({ handle: 2 });
-    expect(r).toEqual({ ok: true, selector: "button[type=submit]" });
+  it("passes role + name through for live resolution", () => {
+    const r = resolveLocator({ role: "button", name: "Sign in" });
+    expect(r).toEqual({ ok: true, locator: { role: "button", name: "Sign in" } });
   });
 
-  it("reports an out-of-range handle with the snapshot size", async () => {
-    await seedSnapshotCache();
-    const r = resolveLocator({ handle: 99 });
+  it("rejects two locator styles at once", () => {
+    const r = resolveLocator({ selector: "#a", ref: 1 });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/handle 99 is not in the last snapshot \(4 items\)/);
-  });
-
-  it("resolves role + name (case-insensitive exact match)", async () => {
-    await seedSnapshotCache();
-    const r = resolveLocator({ role: "button", name: "sign in" });
-    expect(r).toEqual({ ok: true, selector: "button[type=submit]" });
-  });
-
-  it("falls back to substring matching when no exact match", async () => {
-    await seedSnapshotCache();
-    const r = resolveLocator({ role: "textbox", name: "pass" });
-    expect(r).toEqual({ ok: true, selector: "input[name=password]" });
-  });
-
-  it("flags ambiguous role+name matches with candidate handles", async () => {
-    const p = browserSnapshotTool.invoke({});
-    await driveTool(p, () => ({
-      ok: true,
-      data: {
-        url: "https://example.com",
-        interactive: [
-          { idx: 0, role: "button", name: "Edit", selector: "#a" },
-          { idx: 1, role: "button", name: "Edit", selector: "#b" },
-        ],
-      },
-    }));
-    const r = resolveLocator({ role: "button", name: "Edit" });
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.error).toMatch(/2 buttons match/);
-      expect(r.error).toMatch(/handle 0/);
-      expect(r.error).toMatch(/handle 1/);
-      expect(r.error).toMatch(/browser_snapshot/);
-    }
-  });
-
-  it("suggests refreshing the snapshot when role+name no longer matches", async () => {
-    await seedSnapshotCache();
-    const r = resolveLocator({ role: "button", name: "Continue" });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/browser_snapshot/);
+    if (!r.ok) expect(r.error).toMatch(/exactly one/);
   });
 });
 
@@ -452,10 +417,41 @@ describe("diffInteractive", () => {
 });
 
 describe("browser_snapshot", () => {
-  it("populates the cache so subsequent locator lookups succeed", async () => {
-    await seedSnapshotCache();
-    const r = resolveLocator({ handle: 0 });
-    expect(r).toEqual({ ok: true, selector: "input[name=email]" });
+  it("renders the tree and keeps refs for later actions", async () => {
+    const snapshot = {
+      url: "https://example.com/login",
+      tab_id: 7,
+      filter: "interactive",
+      tree: [
+        { depth: 0, role: "button", name: "Sign in", ref: 5 },
+        { depth: 0, role: "link", name: "Forgot?", ref: 6 },
+      ],
+      text: "Sign in Forgot?",
+      interactive: [
+        { idx: 0, ref: 5, role: "button", name: "Sign in", selector: "button[type=submit]" },
+        { idx: 1, ref: 6, role: "link", name: "Forgot?", selector: "a.forgot" },
+      ],
+    };
+    const p = browserSnapshotTool.invoke({ include_inventory: true });
+    const { parsed } = await driveTool(p, () => ({ ok: true, data: snapshot }));
+    const data = parsed.data as Record<string, unknown>;
+    expect(parsed.ok).toBe(true);
+    expect(data.tree).toContain('button "Sign in" [ref 5]');
+    expect(data.text).toContain("Forgot?");
+    expect(data.interactive).toHaveLength(2);
+    expect((data.cache as Record<string, unknown>).hit).toBe(false);
+    // The cache is now keyed by tab, so a ref from this snapshot resolves
+    // with no extra lookup anywhere.
+    expect(resolveLocator({ ref: 5 })).toEqual({ ok: true, locator: { ref: 5 } });
+  });
+
+  it("omits the flat inventory unless it was asked for", async () => {
+    const p = browserSnapshotTool.invoke({});
+    const { parsed } = await driveTool(p, () => ({
+      ok: true,
+      data: { url: "https://x", tab_id: 1, tree: [{ depth: 0, role: "button", name: "Go", ref: 1 }], interactive: [] },
+    }));
+    expect((parsed.data as Record<string, unknown>).interactive).toBeUndefined();
   });
 
   it("reuses the cached page map by default", async () => {
@@ -464,7 +460,6 @@ describe("browser_snapshot", () => {
     const parsed = JSON.parse(out);
     expect(parsed.ok).toBe(true);
     expect(parsed.data.cache.hit).toBe(true);
-    expect(parsed.data.interactive).toEqual(fakeSnapshot.interactive);
     const cmd = await pollNextCommand(50);
     expect(cmd).toBeNull();
   });
@@ -477,18 +472,18 @@ describe("browser_snapshot", () => {
       return { ok: true, data: { ...fakeSnapshot, fingerprint: "fresh" } };
     });
     expect(parsed.ok).toBe(true);
-    expect((parsed.data as Record<string, unknown>).cache).toBeUndefined();
+    expect((parsed.data as Record<string, unknown>).cache).toMatchObject({ hit: false });
   });
 });
 
-describe("browser_click with handle / role+name", () => {
-  it("translates a numeric handle into the cached selector before enqueueing", async () => {
-    await seedSnapshotCache();
-    const p = browserClickTool.invoke({ handle: 2 });
+describe("browser_click with ref / role+name", () => {
+  it("sends a ref to the extension instead of a resolved selector", async () => {
+    const p = browserClickTool.invoke({ ref: 2 });
     const { parsed } = await driveTool(p, (cmd) => {
       expect(cmd.type).toBe("click");
       if (cmd.type === "click") {
-        expect(cmd.selector).toBe("button[type=submit]");
+        expect(cmd.ref).toBe(2);
+        expect(cmd.selector).toBeUndefined();
         expect(cmd.auto_snapshot).toBe(true);
       }
       return { ok: true, data: { matched: true } };
@@ -496,11 +491,13 @@ describe("browser_click with handle / role+name", () => {
     expect(parsed.ok).toBe(true);
   });
 
-  it("translates role+name into the cached selector", async () => {
-    await seedSnapshotCache();
+  it("keeps role + name intact for the page to resolve", async () => {
     const p = browserClickTool.invoke({ role: "link", name: "Forgot?" });
     const { parsed } = await driveTool(p, (cmd) => {
-      if (cmd.type === "click") expect(cmd.selector).toBe("a.forgot");
+      if (cmd.type === "click") {
+        expect(cmd.role).toBe("link");
+        expect(cmd.name).toBe("Forgot?");
+      }
       return { ok: true, data: { matched: true } };
     });
     expect(parsed.ok).toBe(true);
@@ -510,14 +507,14 @@ describe("browser_click with handle / role+name", () => {
     const out = await browserClickTool.invoke({});
     const parsed = JSON.parse(out);
     expect(parsed.ok).toBe(false);
-    expect(parsed.error).toMatch(/selector.*handle.*role/);
+    expect(parsed.error).toMatch(/selector.*ref.*role/);
   });
 });
 
 describe("auto_snapshot piggyback", () => {
   it("updates the cache from a click result and emits a diff", async () => {
     await seedSnapshotCache();
-    const p = browserClickTool.invoke({ handle: 2 });
+    const p = browserClickTool.invoke({ ref: 2 });
     const { parsed } = await driveTool(p, () => ({
       ok: true,
       data: {
@@ -547,10 +544,10 @@ describe("auto_snapshot piggyback", () => {
     expect(body.diff.baseline).toBe("diff");
     expect(body.diff.added.map((i) => i.name)).toEqual(["Try again"]);
     expect(body.hint).toMatch(/diff\.added/);
-    // The cache was refreshed \u2014 next handle lookup should resolve the
-    // new entry.
-    const r = resolveLocator({ handle: 4 });
-    expect(r).toEqual({ ok: true, selector: "button.retry" });
+    // The cache was refreshed — the new control carries the ref the next
+    // action can use with no further lookup.
+    expect(body.diff.added[0]).toMatchObject({ ref: 4, name: "Try again" });
+    expect(resolveLocator({ handle: 4 })).toEqual({ ok: true, locator: { ref: 4 } });
   });
 
   it("falls through unchanged when the extension returns no snapshot", async () => {
@@ -564,5 +561,104 @@ describe("auto_snapshot piggyback", () => {
     // No "page"/"diff" keys when no snapshot was attached.
     expect((parsed as Record<string, unknown>).page).toBeUndefined();
     expect((parsed as Record<string, unknown>).diff).toBeUndefined();
+  });
+});
+describe("browser_batch / browser_wait / browser_press", () => {
+  it("enqueues the whole step list as one batch command", async () => {
+    const p = browserBatchTool.invoke({
+      steps: [
+        { action: "click", ref: 3 },
+        { action: "fill", ref: 4, value: "hello" },
+        { action: "press", key: "Enter", expect: { selector: "#result" } },
+      ],
+    });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("batch");
+      if (cmd.type === "batch") {
+        expect(cmd.steps).toHaveLength(3);
+        expect(cmd.steps[2].expect).toEqual({ selector: "#result" });
+        expect(cmd.auto_snapshot).toBe(true);
+        expect(cmd.timeout_ms).toBeGreaterThan(20_000);
+      }
+      return { ok: true, data: { steps: [{ ok: true }, { ok: true }, { ok: true }], halted_at: null } };
+    });
+    expect(parsed.action).toBe("browser_batch");
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("keeps per-step detail when the batch halted", async () => {
+    const p = browserBatchTool.invoke({ steps: [{ action: "click", ref: 1 }, { action: "click", ref: 2 }] });
+    const { parsed } = await driveTool(p, () => ({
+      ok: false,
+      error: "step 1 (click): no element matched ref 2",
+      data: { halted_at: 1, steps: [{ index: 0, action: "click", ok: true }, { index: 1, action: "click", ok: false, error: "no element matched ref 2" }] },
+    }));
+    expect(parsed.ok).toBe(false);
+    const data = (parsed as unknown as { data: { halted_at: number; steps: unknown[] } }).data;
+    expect(data.halted_at).toBe(1);
+    expect(data.steps).toHaveLength(2);
+  });
+
+  it("enqueues a wait with its condition", async () => {
+    const p = browserWaitTool.invoke({ for: "text", text: "Saved", timeout_ms: 4_000 });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("wait");
+      if (cmd.type === "wait") {
+        expect(cmd.for).toBe("text");
+        expect(cmd.text).toBe("Saved");
+      }
+      return { ok: true, data: { matched: true, for: "text", waited_ms: 120 } };
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("presses to the focused element when no locator is given", async () => {
+    const p = browserPressTool.invoke({ key: "Escape" });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("press");
+      if (cmd.type === "press") {
+        expect(cmd.key).toBe("Escape");
+        expect(cmd.ref).toBeUndefined();
+        expect(cmd.selector).toBeUndefined();
+      }
+      return { ok: true, data: { matched: true, via: "focus" } };
+    });
+    expect(parsed.ok).toBe(true);
+  });
+});
+
+describe("browser_navigate history and ref capture", () => {
+  it("supports reload without a URL", async () => {
+    const p = browserNavigateTool.invoke({ to: "reload" });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("navigate");
+      if (cmd.type === "navigate") {
+        expect(cmd.to).toBe("reload");
+        expect(cmd.url).toBeUndefined();
+      }
+      return { ok: true, data: { tab_id: 3, url: "https://example.com" } };
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("refuses to send both a URL and a history move", async () => {
+    const out = await browserNavigateTool.invoke({ url: "https://example.com", to: "back" });
+    const parsed = JSON.parse(out);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toMatch(/not both/);
+    expect(await pollNextCommand(50)).toBeNull();
+  });
+
+  it("crops a screenshot to a ref", async () => {
+    const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64");
+    const p = browserScreenshotTool.invoke({ ref: 9 });
+    const { parsed } = await driveTool(p, (cmd) => {
+      if (cmd.type === "screenshot") {
+        expect(cmd.ref).toBe(9);
+        expect(cmd.selector).toBeUndefined();
+      }
+      return { ok: true, data: { base64: tinyPng, media_type: "image/png", cropped: true } };
+    });
+    expect(parsed.ok).toBe(true);
   });
 });

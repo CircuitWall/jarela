@@ -65,6 +65,14 @@ export function initBrowserCommandLogSchema(): void {
 export function sanitizeBrowserCommandPayload(payload: BrowserCommandPayload): SanitizedBrowserCommand {
   switch (payload.type) {
     case "navigate": {
+      if (!payload.url) {
+        return {
+          host: null,
+          summary: truncate(`Navigate ${payload.to ?? "history"}`),
+          retryable: false,
+          retry_payload: null,
+        };
+      }
       const host = hostFromUrl(payload.url);
       const retryable = isRetryableUrl(payload.url);
       return {
@@ -77,21 +85,42 @@ export function sanitizeBrowserCommandPayload(payload: BrowserCommandPayload): S
     case "click":
       return {
         host: null,
-        summary: truncate(`Click ${payload.selector}`),
+        summary: truncate(`Click ${describeLocator(payload)}`),
+        retryable: true,
+        retry_payload: payload,
+      };
+    case "press":
+      return {
+        host: null,
+        summary: truncate(`Press ${payload.key} on ${describeLocator(payload)}`),
         retryable: true,
         retry_payload: payload,
       };
     case "fill":
       return {
         host: null,
-        summary: truncate(`Fill ${payload.selector}${payload.submit ? " and submit" : ""}`),
+        summary: truncate(`Fill ${describeLocator(payload)}${payload.submit ? " and submit" : ""}`),
         retryable: false,
         retry_payload: null,
       };
     case "fill_many":
       return {
         host: null,
-        summary: truncate(`Fill ${payload.fields.length} fields${payload.submit_selector ? " and submit" : ""}`),
+        summary: truncate(`Fill ${payload.fields.length} fields${payload.submit_selector || typeof payload.submit_ref === "number" ? " and submit" : ""}`),
+        retryable: false,
+        retry_payload: null,
+      };
+    case "wait":
+      return {
+        host: null,
+        summary: truncate(`Wait for ${payload.for}${payload.selector ? ` ${payload.selector}` : ""}${payload.text ? ` "${payload.text}"` : ""}`),
+        retryable: true,
+        retry_payload: payload,
+      };
+    case "batch":
+      return {
+        host: null,
+        summary: truncate(`Batch ${payload.steps.length} steps: ${payload.steps.map((step) => step.action).join(" → ")}`),
         retryable: false,
         retry_payload: null,
       };
@@ -266,16 +295,37 @@ function classifySanitizedRisk(payload: BrowserCommandPayload): { level: string 
   if (payload.type === "screenshot") reasons.push("captures visible page pixels");
   if (payload.type === "extract" && !payload.selector) reasons.push("reads the whole page");
   if (payload.type === "extract" && payload.format && payload.format !== "text") reasons.push("reads page markup");
-  if (payload.type === "fill" && /pass|token|secret|otp|card|cvv|cvc|iban|ssn|personnummer/i.test(payload.selector)) {
+  if (payload.type === "fill" && SENSITIVE_FIELD_RE.test(`${payload.selector ?? ""} ${payload.name ?? ""}`)) {
     reasons.push("sensitive field selector");
   }
   if (payload.type === "fill_many") {
     if (payload.fields.length >= 5) reasons.push("batch form fill");
-    if (payload.fields.some((field) => /pass|token|secret|otp|card|cvv|cvc|iban|ssn|personnummer|email|phone|address/i.test(field.selector))) {
+    if (payload.fields.some((field) => SENSITIVE_FIELD_RE.test(`${field.selector ?? ""} ${field.name ?? ""}`))) {
       reasons.push("sensitive field in batch fill");
     }
   }
+  if (payload.type === "batch") {
+    if (payload.steps.some((step) => step.action === "fill" || step.action === "fill_many")) {
+      reasons.push("batch writes form state");
+    }
+    if (payload.steps.some((step) => step.action === "navigate")) reasons.push("batch navigates");
+  }
   return reasons.length > 0 ? { level: "sensitive", reasons: Array.from(new Set(reasons)) } : { level: null, reasons: [] };
+}
+
+const SENSITIVE_FIELD_RE = /pass|token|secret|otp|card|cvv|cvc|iban|ssn|personnummer|email|phone|address/i;
+
+/**
+ * Human-readable target for the ledger and retry UI. Locators are kept
+ * opaque-ish on purpose: the ledger stores the selector or an accessible
+ * name, never resolved page content.
+ */
+function describeLocator(locator: { selector?: string; ref?: number; role?: string; name?: string }): string {
+  if (locator.selector) return locator.selector;
+  if (locator.role && locator.name) return `${locator.role} "${locator.name}"`;
+  if (locator.role) return locator.role;
+  if (typeof locator.ref === "number") return `ref ${locator.ref}`;
+  return "target";
 }
 
 function hostFromUrl(value: string): string | null {

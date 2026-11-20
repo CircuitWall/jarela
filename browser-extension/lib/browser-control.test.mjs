@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { dispatchCommand, pageClickFn, pageFillFn, pageFillManyFn, pageScrollFn, pageExtractFn, pageSnapshotFn, pageWaitForDomIdleFn } from "./browser-control.mjs";
+import { dispatchCommand, pageActFn, pageScrollFn, pageExtractFn, pageSnapshotFn, pageWaitFn, pageWaitForDomIdleFn } from "./browser-control.mjs";
 
 // Provide DOM globals the page-functions touch when invoked in Node.
 // They run inside the page (via chrome.scripting.executeScript) in
@@ -114,7 +114,7 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
     expect(r.error).toMatch(/no element matched/);
   });
 
-  it("fill passes selector/value/submit through to the page function", async () => {
+  it("fill passes the locator and value through to the page function", async () => {
     const { deps } = makeDeps();
     await dispatchCommand(deps, {
       type: "fill",
@@ -124,7 +124,8 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
     });
     const [opts] = deps.executeScript.mock.calls[0];
     expect(opts.target).toEqual({ tabId: 7 });
-    expect(opts.args).toEqual(["input", "hi", true]);
+    expect(opts.args[0]).toBe("fill");
+    expect(opts.args[1]).toMatchObject({ selector: "input", value: "hi", submit: true });
   });
 
   it("fill_many fills all fields in one page execution", async () => {
@@ -142,18 +143,17 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
     expect(r.ok).toBe(true);
     const [opts] = deps.executeScript.mock.calls[0];
     expect(opts.target).toEqual({ tabId: 7 });
-    expect(opts.args).toEqual([
-      [
-        { selector: "input[name=email]", value: "a@example.com" },
-        { selector: "input[name=name]", value: "A" },
-      ],
-      "button[type=submit]",
+    expect(opts.args[0]).toBe("fill_many");
+    expect(opts.args[1].fields).toEqual([
+      { selector: "input[name=email]", value: "a@example.com" },
+      { selector: "input[name=name]", value: "A" },
     ]);
+    expect(opts.args[1].submit_selector).toBe("button[type=submit]");
   });
 
   it("fill_many reports partial field misses", async () => {
     const { deps } = makeDeps({
-      executeScript: vi.fn().mockResolvedValue([{ result: { matched: true, matched_count: 1, total: 2, fields: [{ matched: true }, { selector: "#missing", matched: false }] } }]),
+      executeScript: vi.fn().mockResolvedValue([{ result: { matched: false, matched_count: 1, total: 2, fields: [{ matched: true }, { selector: "#missing", matched: false }] } }]),
     });
     const r = await dispatchCommand(deps, {
       type: "fill_many",
@@ -194,11 +194,12 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
     const { deps } = makeDeps({
       executeScript: vi.fn().mockResolvedValue([{ result: fakeSnap }]),
     });
-    const r = await dispatchCommand(deps, { type: "snapshot", max_items: 25, include_hidden: true });
+    const r = await dispatchCommand(deps, { type: "snapshot", max_items: 25, include_hidden: true, filter: "text", depth: 4 });
     expect(r.ok).toBe(true);
-    expect(r.data).toEqual(fakeSnap);
+    expect(r.data).toMatchObject(fakeSnap);
+    expect(r.data.tab_id).toBe(7);
     const [opts] = deps.executeScript.mock.calls[0];
-    expect(opts.args).toEqual([{ max_items: 25, include_hidden: true }]);
+    expect(opts.args[0]).toMatchObject({ max_items: 25, include_hidden: true, filter: "text", depth: 4 });
   });
 
   it("page snapshot includes a stable fingerprint", () => {
@@ -206,9 +207,10 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
       tagName: "BUTTON",
       textContent: "Save",
       innerText: "Save",
-      getAttribute: (name) => name === "role" ? null : name === "aria-hidden" ? null : null,
+      getAttribute: () => null,
       previousElementSibling: null,
       parentElement: null,
+      children: [],
     });
     globalThis.location = { href: "https://example.com" };
     globalThis.window = {
@@ -219,6 +221,7 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
     };
     globalThis.document = {
       title: "Example",
+      body: { nodeType: 1, innerText: "Save", children: [button], hidden: false, getAttribute: () => null, getBoundingClientRect: () => ({ width: 10, height: 10 }) },
       documentElement: { scrollHeight: 1000 },
       getElementById: () => null,
       querySelector: () => null,
@@ -338,6 +341,7 @@ describe("dispatchCommand — screenshot", () => {
 function makeFakeElement(extra = {}) {
   const events = [];
   return {
+    nodeType: 1,
     tagName: "DIV",
     isContentEditable: false,
     value: "",
@@ -357,26 +361,62 @@ function makeFakeElement(extra = {}) {
   };
 }
 
-describe("pageClickFn (pure)", () => {
-  it("returns matched=false when nothing is found", () => {
+describe("pageActFn (pure)", () => {
+  it("returns no_match when the selector matches nothing", () => {
     globalThis.document = { querySelector: () => null };
-    expect(pageClickFn("#missing")).toEqual({ matched: false });
+    const r = pageActFn("click", { selector: "#missing" });
+    expect(r.matched).toBe(false);
+    expect(r.reason).toBe("no_match");
   });
 
-  it("scrolls into view and clicks the element", () => {
+  it("clicks the element found by selector", () => {
     const el = makeFakeElement();
     globalThis.document = { querySelector: () => el };
-    const r = pageClickFn("#go");
-    expect(r).toEqual({ matched: true, tag: "DIV" });
-    expect(el._events.map((e) => e.type)).toEqual(["scroll", "click"]);
+    const r = pageActFn("click", { selector: "#go" });
+    expect(r).toMatchObject({ matched: true, tag: "DIV", via: "selector" });
+    const types = el._events.map((e) => e.type);
+    expect(types).toContain("scroll");
+    expect(types).toContain("click");
   });
-});
 
-describe("pageFillFn (pure)", () => {
+  it("resolves a ref against the page registry", () => {
+    const el = makeFakeElement({ isConnected: true });
+    globalThis.__jarelaAgentNodes = new Map([[42, { node: el, role: "button", name: "Save" }]]);
+    globalThis.document = { querySelector: () => null };
+    const r = pageActFn("click", { ref: 42 });
+    expect(r).toMatchObject({ matched: true, via: "ref" });
+    expect(el._events.map((e) => e.type)).toContain("click");
+  });
+
+  it("reports a stale ref together with what it used to be", () => {
+    const el = makeFakeElement({ isConnected: false });
+    globalThis.__jarelaAgentNodes = new Map([[43, { node: el, role: "button", name: "Save" }]]);
+    globalThis.document = { querySelector: () => null };
+    const r = pageActFn("click", { ref: 43 });
+    expect(r.matched).toBe(false);
+    expect(r.reason).toBe("stale_ref");
+    expect(r.stale).toEqual({ role: "button", name: "Save" });
+  });
+
+  it("asks for a snapshot when no locator is supplied", () => {
+    globalThis.document = { querySelector: () => null };
+    const r = pageActFn("click", {});
+    expect(r.matched).toBe(false);
+    expect(r.reason).toBe("needs_snapshot");
+  });
+
+  it("falls back to the selector when the ref is stale", () => {
+    const fallback = makeFakeElement();
+    globalThis.__jarelaAgentNodes = new Map();
+    globalThis.document = { querySelector: () => fallback };
+    const r = pageActFn("click", { ref: 999, selector: "#fallback" });
+    expect(r).toMatchObject({ matched: true, via: "selector" });
+  });
+
   it("sets the value and dispatches input + change", () => {
-    const el = makeFakeElement({ value: "" });
+    const el = makeFakeElement({ tagName: "INPUT", value: "" });
     globalThis.document = { querySelector: () => el };
-    const r = pageFillFn("input", "hi", false);
+    const r = pageActFn("fill", { selector: "input", value: "hi" });
     expect(r.matched).toBe(true);
     expect(el.value).toBe("hi");
     const types = el._events.map((e) => e.type);
@@ -385,35 +425,62 @@ describe("pageFillFn (pure)", () => {
   });
 
   it("dispatches an Enter keydown when submit=true and no form is present", () => {
-    const el = makeFakeElement({ value: "" });
+    const el = makeFakeElement({ tagName: "INPUT", value: "" });
     globalThis.document = { querySelector: () => el };
-    pageFillFn("input", "hi", true);
-    const types = el._events.map((e) => e.type);
-    expect(types).toContain("keydown");
+    pageActFn("fill", { selector: "input", value: "hi", submit: true });
+    expect(el._events.map((e) => e.type)).toContain("keydown");
   });
 
-  it("returns matched=false on missing element", () => {
-    globalThis.document = { querySelector: () => null };
-    expect(pageFillFn("input", "hi", false)).toEqual({ matched: false });
+  it("selects a native option by visible text", () => {
+    const el = makeFakeElement({
+      tagName: "SELECT",
+      value: "",
+      options: [
+        { value: "a", textContent: "Alpha" },
+        { value: "b", textContent: "Beta" },
+      ],
+    });
+    globalThis.document = { querySelector: () => el };
+    const r = pageActFn("fill", { selector: "select", value: "Beta" });
+    expect(r.matched).toBe(true);
+    expect(el.value).toBe("b");
   });
-});
 
-describe("pageFillManyFn (pure)", () => {
-  it("fills each field and clicks the submit selector", () => {
+  it("reports the available options when a select value does not match", () => {
+    const el = makeFakeElement({ tagName: "SELECT", value: "", options: [{ value: "a", textContent: "Alpha" }] });
+    globalThis.document = { querySelector: () => el };
+    const r = pageActFn("fill", { selector: "select", value: "Nope" });
+    expect(r.matched).toBe(false);
+    expect(r.reason).toBe("option_not_found");
+    expect(r.options).toEqual([{ value: "a", label: "Alpha" }]);
+  });
+
+  it("presses a key on the resolved element", () => {
+    const el = makeFakeElement({ tagName: "INPUT" });
+    globalThis.document = { querySelector: () => el };
+    const r = pageActFn("press", { selector: "input", key: "Escape" });
+    expect(r.matched).toBe(true);
+    expect(el._events.some((e) => e.type === "keydown" && e.key === "Escape")).toBe(true);
+  });
+
+  it("fills several fields and clicks the submit ref in one pass", () => {
     const email = makeFakeElement({ tagName: "INPUT", value: "" });
     const name = makeFakeElement({ tagName: "INPUT", value: "" });
-    const submit = makeFakeElement({ tagName: "BUTTON" });
+    const submit = makeFakeElement({ tagName: "BUTTON", isConnected: true });
+    globalThis.__jarelaAgentNodes = new Map([[7, { node: submit, role: "button", name: "Send" }]]);
     globalThis.document = {
       querySelector: (selector) => ({
         "input[name=email]": email,
         "input[name=name]": name,
-        "button[type=submit]": submit,
       })[selector] ?? null,
     };
-    const r = pageFillManyFn([
-      { selector: "input[name=email]", value: "a@example.com" },
-      { selector: "input[name=name]", value: "Ada" },
-    ], "button[type=submit]");
+    const r = pageActFn("fill_many", {
+      fields: [
+        { selector: "input[name=email]", value: "a@example.com" },
+        { selector: "input[name=name]", value: "Ada" },
+      ],
+      submit_ref: 7,
+    });
     expect(r.matched).toBe(true);
     expect(r.matched_count).toBe(2);
     expect(email.value).toBe("a@example.com");
@@ -424,7 +491,7 @@ describe("pageFillManyFn (pure)", () => {
   it("does not include raw values in per-field results", () => {
     const el = makeFakeElement({ tagName: "INPUT", value: "" });
     globalThis.document = { querySelector: () => el };
-    const r = pageFillManyFn([{ selector: "input", value: "secret" }], null);
+    const r = pageActFn("fill_many", { fields: [{ selector: "input", value: "secret" }] });
     expect(JSON.stringify(r.fields)).not.toContain("secret");
   });
 });
@@ -598,5 +665,273 @@ describe("pageWaitForDomIdleFn (pure)", () => {
     const r = await promise;
     expect(r.idle).toBe(false);
     vi.useRealTimers();
+  });
+});
+
+// --------------------------------------------------------------------- //
+// ADR-0123 behaviour: live resolution, one-shot recovery, batching,     //
+// wait, press, and capture of a non-active target.                      //
+// --------------------------------------------------------------------- //
+
+function isFn(func, name) {
+  return typeof func === "function" && func.name === name;
+}
+
+describe("dispatchCommand — live locator resolution", () => {
+  it("resolves role + name through one snapshot, then acts on the ref", async () => {
+    const snap = { url: "https://x", interactive: [{ idx: 0, ref: 11, role: "button", name: "Save", selector: "#save" }] };
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockImplementation((opts) => {
+        if (isFn(opts.func, "pageSnapshotFn")) return Promise.resolve([{ result: snap }]);
+        return Promise.resolve([{ result: { matched: true, tag: "BUTTON", via: "ref" } }]);
+      }),
+    });
+    const r = await dispatchCommand(deps, { type: "click", role: "button", name: "Save" });
+    expect(r.ok).toBe(true);
+    const actCall = deps.executeScript.mock.calls.find(([opts]) => isFn(opts.func, "pageActFn"));
+    expect(actCall[0].args[1]).toMatchObject({ ref: 11, role: "button", name: "Save" });
+  });
+
+  it("refreshes once and retries when a ref went stale", async () => {
+    const snap = { url: "https://x", interactive: [{ idx: 0, ref: 22, role: "button", name: "Save", selector: "#save" }] };
+    let actCalls = 0;
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockImplementation((opts) => {
+        if (isFn(opts.func, "pageSnapshotFn")) return Promise.resolve([{ result: snap }]);
+        actCalls += 1;
+        if (actCalls === 1) {
+          return Promise.resolve([{ result: { matched: false, action: "click", reason: "stale_ref", stale: { role: "button", name: "Save" } } }]);
+        }
+        return Promise.resolve([{ result: { matched: true, tag: "BUTTON", via: "ref" } }]);
+      }),
+    });
+    const r = await dispatchCommand(deps, { type: "click", ref: 5 });
+    expect(r.ok).toBe(true);
+    expect(r.data.recovered).toBe(true);
+    const calls = deps.executeScript.mock.calls.filter(([opts]) => isFn(opts.func, "pageActFn"));
+    expect(calls).toHaveLength(2);
+    expect(calls[1][0].args[1]).toMatchObject({ ref: 22 });
+  });
+
+  it("reports candidates instead of guessing when a name matches nothing", async () => {
+    const snap = { url: "https://x", interactive: [{ idx: 0, ref: 31, role: "button", name: "Cancel", selector: "#cancel" }] };
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockImplementation((opts) => {
+        if (isFn(opts.func, "pageSnapshotFn")) return Promise.resolve([{ result: snap }]);
+        return Promise.resolve([{ result: { matched: false, action: "click", reason: "no_match" } }]);
+      }),
+    });
+    const r = await dispatchCommand(deps, { type: "click", role: "button", name: "Save" });
+    expect(r.ok).toBe(false);
+    expect(r.data.candidates[0]).toMatchObject({ ref: 31, name: "Cancel" });
+  });
+});
+
+describe("dispatchCommand — press and wait", () => {
+  it("presses a key through the action runtime", async () => {
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockResolvedValue([{ result: { matched: true, tag: "INPUT", via: "selector" } }]),
+    });
+    const r = await dispatchCommand(deps, { type: "press", selector: "input", key: "Escape" });
+    expect(r.ok).toBe(true);
+    const [opts] = deps.executeScript.mock.calls[0];
+    expect(opts.args).toEqual(["press", { selector: "input", key: "Escape" }]);
+  });
+
+  it("surfaces a wait timeout with the observed duration", async () => {
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockResolvedValue([{ result: { matched: false, for: "selector", waited_ms: 900, reason: "timeout" } }]),
+    });
+    const r = await dispatchCommand(deps, { type: "wait", for: "selector", selector: "#never", timeout_ms: 900 });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/timed out after 900ms/);
+    expect(r.data.waited_ms).toBe(900);
+  });
+});
+
+describe("dispatchCommand — batch", () => {
+  const baseDeps = (responder) => makeDeps({
+    executeScript: vi.fn().mockImplementation((opts) => {
+      if (isFn(opts.func, "pageWaitForDomIdleFn")) return Promise.resolve([{ result: { idle: true } }]);
+      if (isFn(opts.func, "pageSnapshotFn")) return Promise.resolve([{ result: { url: "https://x", interactive: [] } }]);
+      return Promise.resolve([{ result: responder(opts) }]);
+    }),
+  });
+
+  it("runs every step in one command and reports them all", async () => {
+    const { deps, calls } = baseDeps(() => ({ matched: true, tag: "BUTTON", via: "ref" }));
+    const r = await dispatchCommand(deps, {
+      type: "batch",
+      steps: [
+        { action: "click", ref: 1 },
+        { action: "fill", ref: 2, value: "hi" },
+        { action: "press", key: "Enter" },
+      ],
+      auto_snapshot: true,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.data.halted_at).toBeNull();
+    expect(r.data.steps.map((s) => s.ok)).toEqual([true, true, true]);
+    expect(r.data.snapshot).toBeDefined();
+    const acts = deps.executeScript.mock.calls.filter(([opts]) => isFn(opts.func, "pageActFn"));
+    expect(acts).toHaveLength(3);
+  });
+
+  it("halts at the first failure and marks the rest as not executed", async () => {
+    const { deps } = baseDeps((opts) => {
+      const payload = opts.args[1];
+      return payload.ref === 2
+        ? { matched: false, action: "fill", reason: "no_match" }
+        : { matched: true, tag: "BUTTON", via: "ref" };
+    });
+    const r = await dispatchCommand(deps, {
+      type: "batch",
+      steps: [
+        { action: "click", ref: 1 },
+        { action: "fill", ref: 2, value: "hi" },
+        { action: "click", ref: 3 },
+      ],
+      auto_snapshot: true,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/step 1 \(fill\)/);
+    expect(r.data.halted_at).toBe(1);
+    expect(r.data.steps[2]).toMatchObject({ ok: false, skipped: true, error: "Not executed: an earlier action in this step list failed." });
+  });
+
+  it("fails the step whose expectation was not met", async () => {
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockImplementation((opts) => {
+        if (isFn(opts.func, "pageWaitForDomIdleFn")) return Promise.resolve([{ result: { idle: true } }]);
+        if (isFn(opts.func, "pageSnapshotFn")) return Promise.resolve([{ result: { url: "https://x", interactive: [] } }]);
+        if (isFn(opts.func, "pageWaitFn")) return Promise.resolve([{ result: { matched: false, for: "text", waited_ms: 400 } }]);
+        return Promise.resolve([{ result: { matched: true, tag: "BUTTON", via: "ref" } }]);
+      }),
+    });
+    const r = await dispatchCommand(deps, {
+      type: "batch",
+      steps: [{ action: "click", ref: 1, expect: { text: "Saved", timeout_ms: 400 } }],
+      auto_snapshot: true,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.data.steps[0].error).toBe("expectation not met");
+    expect(r.data.steps[0].waited_ms).toBe(400);
+  });
+});
+
+describe("dispatchCommand — capture of a non-active target", () => {
+  it("activates the target for capture and restores the previous tab", async () => {
+    const { deps } = makeDeps({
+      resolveTargetTab: vi.fn().mockResolvedValue({
+        tab: { id: 9, windowId: 1, active: false, url: "https://example.com" },
+        source: "pinned",
+      }),
+      queryTabs: vi.fn().mockResolvedValue([{ id: 7, windowId: 1, active: true }]),
+    });
+    const r = await dispatchCommand(deps, { type: "screenshot", format: "png" });
+    expect(r.ok).toBe(true);
+    expect(deps.activateTab).toHaveBeenNthCalledWith(1, 9);
+    expect(deps.activateTab).toHaveBeenNthCalledWith(2, 7);
+    expect(r.data.activated_for_capture).toBe(true);
+    expect(deps.captureVisibleTab).toHaveBeenCalledWith(1, { format: "png" });
+  });
+
+  it("does not activate anything when the target is already active", async () => {
+    const { deps } = makeDeps({
+      resolveTargetTab: vi.fn().mockResolvedValue({ tab: { id: 9, windowId: 1, active: true, url: "https://example.com" } }),
+    });
+    const r = await dispatchCommand(deps, { type: "screenshot", format: "png" });
+    expect(r.ok).toBe(true);
+    expect(deps.activateTab).not.toHaveBeenCalled();
+    expect(r.data.activated_for_capture).toBe(false);
+  });
+});
+
+describe("pageSnapshotFn — tree and text", () => {
+  it("returns an indented tree with refs and a text excerpt", () => {
+    const button = makeFakeElement({ tagName: "BUTTON", textContent: "Sign in", innerText: "Sign in", getAttribute: () => null, children: [], isConnected: true });
+    const heading = makeFakeElement({ tagName: "H1", textContent: "Welcome", innerText: "Welcome", getAttribute: () => null, children: [] });
+    const body = {
+      nodeType: 1,
+      tagName: "BODY",
+      hidden: false,
+      innerText: "Welcome\nSign in",
+      children: [heading, button],
+      getAttribute: () => null,
+      getBoundingClientRect: () => ({ width: 100, height: 100 }),
+    };
+    globalThis.location = { href: "https://example.com/login" };
+    globalThis.window = {
+      innerWidth: 1000,
+      innerHeight: 800,
+      scrollY: 0,
+      getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+    };
+    globalThis.document = {
+      title: "Login",
+      body,
+      documentElement: { scrollHeight: 900 },
+      getElementById: () => null,
+      querySelector: () => null,
+      querySelectorAll: (selector) => (selector.includes("button") ? [button] : []),
+    };
+    const snap = pageSnapshotFn({ filter: "text", max_chars: 200 });
+    expect(snap.text).toContain("Welcome");
+    const roles = snap.tree.map((node) => node.role);
+    expect(roles).toContain("h1");
+    expect(roles).toContain("button");
+    const refs = snap.tree.filter((node) => typeof node.ref === "number");
+    expect(refs).toHaveLength(1);
+    expect(refs[0].name).toBe("Sign in");
+  });
+
+  it("keeps a ref stable across repeated snapshots", () => {
+    const button = makeFakeElement({ tagName: "BUTTON", textContent: "Go", innerText: "Go", getAttribute: () => null, children: [], isConnected: true });
+    const body = { nodeType: 1, tagName: "BODY", hidden: false, innerText: "Go", children: [button], getAttribute: () => null, getBoundingClientRect: () => ({ width: 10, height: 10 }) };
+    globalThis.location = { href: "https://example.com" };
+    globalThis.window = { innerWidth: 800, innerHeight: 600, scrollY: 0, getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }) };
+    globalThis.document = {
+      title: "x",
+      body,
+      documentElement: { scrollHeight: 600 },
+      getElementById: () => null,
+      querySelector: () => null,
+      querySelectorAll: (selector) => (selector.includes("button") ? [button] : []),
+    };
+    const first = pageSnapshotFn({});
+    const second = pageSnapshotFn({});
+    expect(first.interactive[0].ref).toBe(second.interactive[0].ref);
+  });
+});
+
+describe("round-trip budget", () => {
+  it("collapses a five-step login flow into one command", async () => {
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockImplementation((opts) => {
+        if (isFn(opts.func, "pageWaitForDomIdleFn")) return Promise.resolve([{ result: { idle: true } }]);
+        if (isFn(opts.func, "pageSnapshotFn")) return Promise.resolve([{ result: { url: "https://x", tab_id: 7, interactive: [] } }]);
+        if (isFn(opts.func, "pageWaitFn")) return Promise.resolve([{ result: { matched: true, waited_ms: 40 } }]);
+        return Promise.resolve([{ result: { matched: true, tag: "INPUT", via: "ref" } }]);
+      }),
+    });
+    // The same flow used to be five separate tool calls, each costing a
+    // model turn plus a poll/result cycle.
+    const r = await dispatchCommand(deps, {
+      type: "batch",
+      steps: [
+        { action: "fill", ref: 1, value: "user@example.com" },
+        { action: "fill", ref: 2, value: "hunter2" },
+        { action: "press", ref: 3, key: "Enter" },
+        { action: "wait", for: "url", url: "/dashboard" },
+        { action: "click", ref: 4, expect: { selector: "#welcome" } },
+      ],
+      auto_snapshot: true,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.data.halted_at).toBeNull();
+    // Four page actions, one snapshot settle, one final snapshot.
+    const actions = deps.executeScript.mock.calls.filter(([opts]) => isFn(opts.func, "pageActFn"));
+    expect(actions).toHaveLength(4);
+    expect(r.data.snapshot.tab_id).toBe(7);
   });
 });
