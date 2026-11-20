@@ -62,7 +62,7 @@ export const POLL_WAIT_MS = 25_000;
 //
 // Slightly larger than POLL_WAIT_MS so a healthy extension that's mid
 // long-poll-recycle doesn't get flagged as offline.
-export const EXTENSION_LIVENESS_WINDOW_MS = 35_000;
+export const EXTENSION_LIVENESS_WINDOW_MS = 75_000;
 
 // --------------------------------------------------------------------- //
 // Command / result type contracts (shared with the extension via JSON)  //
@@ -454,7 +454,18 @@ function removeEntry(cmdId: string): void {
  * Enqueue a browser command and return a promise that resolves with the
  * extension's outcome (or rejects with an error). Caller decides the
  * per-command timeout; clamped to MAX_COMMAND_TIMEOUT_MS on the high end.
- */
+ */// How long a command waits for a known extension to come back before failing.
+export const EXTENSION_RECONNECT_GRACE_MS = 20_000;
+
+async function waitForExtensionConnection(ms: number): Promise<boolean> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (getExtensionStatus().connected) return true;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return getExtensionStatus().connected;
+}
+
 export function enqueueCommand(
   payload: BrowserCommandPayload,
   opts?: { timeout_ms?: number },
@@ -479,8 +490,29 @@ export function enqueueCommand(
     const cmd_id = randomUUID();
     const seenHint =
       status.lastSeenMs < 0
-        ? "no poll has ever arrived on this server"
+        ? "no poll has arrived on this server since it started"
         : `last poll was ${Math.round(status.lastSeenMs / 1000)}s ago`;
+    // A restart, a suspended MV3 worker, or one missed alarm cycle all look
+    // "disconnected" for a few seconds. Failing instantly here is what made a
+    // recoverable channel hand the user a "click the toolbar icon" errand.
+    if (status.lastSeenMs >= 0) {
+      return {
+        cmd_id,
+        promise: (async () => {
+          if (await waitForExtensionConnection(EXTENSION_RECONNECT_GRACE_MS)) {
+            return enqueueCommand(payload, opts).promise;
+          }
+          return {
+            cmd_id,
+            ok: false as const,
+            error:
+              `Jarela browser extension did not reconnect within ${Math.round(EXTENSION_RECONNECT_GRACE_MS / 1000)}s ` +
+              `(${seenHint}). Ask the user to open the browser, click the Jarela toolbar icon to wake the extension, ` +
+              `then retry once.`,
+          };
+        })(),
+      };
+    }
     return {
       cmd_id,
       promise: Promise.resolve({
@@ -488,7 +520,7 @@ export function enqueueCommand(
         ok: false,
         error:
           `Jarela browser extension is not connected (${seenHint}). ` +
-          `Open Chrome, click the Jarela toolbar icon to wake the extension, ` +
+          `If the browser is open, click the Jarela toolbar icon to wake the extension, ` +
           `then retry the command.`,
       }),
     };
