@@ -713,7 +713,11 @@ call time by `lib/dependencies/runtime-package.ts` from
 `$JARELA_PACKAGES_DIR`, degrade with an actionable error when absent, and are
 installed through `POST /api/v1/dependencies/install` with
 `runtime:<package>`. Measured effect: a development install dropped from
-1,639 MB to 992 MB.
+1,639 MB to 992 MB. `lib/dependencies/optional-catalog.ts` is the curated,
+category-grouped source of truth for what is installable that way (and the
+allowlist for `runtime:` targets); `GET /api/v1/dependencies/optional` exposes
+it with live state and `lib/dependencies/optional-status.ts` groups it for the
+Tools → Packages UI.
 
 ### Output validator (anti-fabrication)
 

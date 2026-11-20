@@ -272,7 +272,20 @@ the command is returned), `manual` (operator-owned prerequisite), or `failed`.
 The response always includes the plan before (`plan`) and after (`result`) the
 attempt.
 
+Only packages in the optional catalogue may be installed through a `runtime:`
+target; any other id returns `404`.
+
 - **Source:** [`app/api/v1/dependencies/install/route.ts`](../app/api/v1/dependencies/install/route.ts)
+
+### `GET /api/v1/dependencies/optional`
+
+The optional-package catalogue with live state, grouped by category
+(`embeddings`, `agent-runtimes`, `messaging`, `connectors`). Each entry
+carries what installing it enables, what keeps working without it, an
+approximate `sizeMb`, and the `runtime:<package>` target to pass to the install
+route. Query: `?category=<id>` narrows to one category.
+
+- **Source:** [`app/api/v1/dependencies/optional/route.ts`](../app/api/v1/dependencies/optional/route.ts)
 
 ---
 
