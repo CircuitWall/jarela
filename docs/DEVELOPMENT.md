@@ -391,6 +391,34 @@ whole-table scan (460 ms for 11k rows, and it grows with history). It runs on
 the read pool now, and a failed scan skips the tick rather than deleting files
 whose references it could not read.
 
+Deleting a thread also removes its attachments immediately. That path used one
+`LIKE '%name%'` scan per file name — 280-350 ms each on 11k messages, so a
+thread with 20 attachments blocked the loop for ~5 s. It now reads the stored
+text once and matches every name in one pass (4744 ms → 415 ms measured for 20
+names, and the cost no longer grows with the attachment count).
+
+### SQLite connection profile
+
+Every long-lived connection is configured by `applyConnectionPragmas()` in
+[lib/db/pragmas.ts](../lib/db/pragmas.ts) (ADR-0124): WAL,
+`synchronous = NORMAL`, `busy_timeout = 5000`, a 64 MiB page cache and a 32 MiB
+WAL size limit. Measured on the 3 GB database, 3000 autocommit single-row
+updates each:
+
+| | SQLite default | Profile |
+|---|---|---|
+| `UPDATE` p50 / max, idle machine | 2.1 ms / 13 ms (`synchronous=FULL`) | 0.02 ms / 9 ms (`NORMAL`) |
+| `UPDATE` max, 16 CPU-burning processes on 12 cores | 82 ms | 0.5 ms |
+
+The 500 ms spikes in the logs came from the flush a commit pays: with `FULL`
+every commit fsyncs the WAL, and a commit that also trips the autocheckpoint
+fsyncs the database file — 411 ms measured once on a file with pending dirty
+pages, 1.9 ms on the same call once clean. `NORMAL` still syncs at checkpoints
+(WAL mode requires it) but no longer ties a flush to every write.
+
+WAL + `NORMAL` is crash-safe: a process crash loses nothing, only a power loss
+or OS crash can roll back the most recent commits.
+
 ### Document retrieval costs
 
 The watchdog exists because of a measured failure mode: on a live install
