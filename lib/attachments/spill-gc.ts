@@ -1,6 +1,7 @@
 import { promises as fsp, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { getDb } from "@/lib/db";
+import { readAppRows } from "@/lib/db/read-pool";
 import { decryptIfNeeded } from "@/lib/crypto/envelope";
 import { FILES_DIR, isSafeFileName } from "@/lib/files";
 
@@ -17,7 +18,18 @@ export interface SpillGcResult {
 export async function runSpillFileGc(opts: { retentionMs?: number; now?: number } = {}): Promise<SpillGcResult> {
   const now = opts.now ?? Date.now();
   const retentionMs = opts.retentionMs ?? getRetentionMs();
-  const referenced = collectReferencedFileNamesFromMessages();
+  let referenced: Set<string>;
+  try {
+    referenced = await collectReferencedFileNamesFromMessages();
+  } catch (error) {
+    // Without the reference set nothing may be deleted, and this is the one
+    // place that must never guess: skip the tick and retry on the next one.
+    console.warn(
+      "[files] spill GC skipped this tick: could not read message references, no files deleted.",
+      error,
+    );
+    return { scanned: 0, referenced: 0, removed: 0, removed_bytes: 0 };
+  }
   let scanned = 0;
   let removed = 0;
   let removedBytes = 0;
@@ -103,11 +115,14 @@ function collectFileLinks(value: string, out: Set<string>): void {
   }
 }
 
-function collectReferencedFileNamesFromMessages(): Set<string> {
+async function collectReferencedFileNamesFromMessages(): Promise<Set<string>> {
   const out = new Set<string>();
-  const rows = getDb()
-    .prepare("SELECT content, tool_events, metadata FROM messages")
-    .all() as Array<{ content?: string | null; tool_events?: string | null; metadata?: string | null }>;
+  // Whole-table scan that grows with the message log (measured 460ms for
+  // 11k rows). On the synchronous writer it froze every handler for that
+  // long, so this read runs on the worker pool.
+  const rows = await readAppRows<{ content?: string | null; tool_events?: string | null; metadata?: string | null }>(
+    "SELECT content, tool_events, metadata FROM messages",
+  );
   for (const row of rows) {
     collectFileRefNames(row.content, out);
     collectFileRefNames(row.tool_events, out);
