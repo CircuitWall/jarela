@@ -11,6 +11,7 @@ import { applyProxyConfigFromDb } from "@/lib/proxy/dispatcher"; // env-var disp
 import { runEnvSyncOnce } from "@/lib/env/sync";
 import { clearStatementCache } from "./statement-cache";
 import { instrumentDatabase } from "./timing";
+import { applyConnectionPragmas } from "./pragmas";
 
 export const DB_PATH = join(getDataDir(), "jarela.db");
 
@@ -30,8 +31,7 @@ export function getDb(): DatabaseSync {
     }
     const db = new DatabaseSync(DB_PATH);
     try {
-      db.exec("PRAGMA journal_mode = WAL");
-      db.exec("PRAGMA foreign_keys = ON");
+      applyConnectionPragmas(db);
       runMigrations(db);
       if (isMasterKeyLocked()) {
         onMasterKeyUnlocked(() => {
