@@ -335,6 +335,16 @@ update.
    update tool descriptions, recovery hints, the extension README, and the C4
    flows in `docs/ARCHITECTURE.md`.
 
+### Implementation status
+
+Landed with this ADR: D1–D5 and the prompt/doc updates. Navigation is
+scheme-checked and reports a crashed or discarded tab instead of timing out;
+capture of a non-active target briefly activates and then restores the user's
+tab; `press` covers keyboard-only controls. Still open: D6 (dialogs), D7
+(trusted input via CDP), D8 (CDP transport, iframe and console/network reads),
+D9 (images in tool results), ledger finalization for abandoned `running` rows,
+and the remaining observation work in step 3.
+
 ## More Information
 
 * Anthropic, [Browser use tool](https://docs.claude.com/en/docs/agents-and-tools/tool-use/browser-use-tool)

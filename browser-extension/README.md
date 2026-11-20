@@ -120,20 +120,24 @@ through tools registered in the Jarela toolbelt:
 | ---------------------- | ----------------------------------------------------------------- |
 | `browser_tabs`         | List open tabs, target markers, and URL/title metadata where permissions allow. |
 | `browser_activate_tab` | Focus a tab by id from `browser_tabs`.                            |
-| `browser_navigate`     | Open a URL (and optionally wait for a selector before resolving). |
-| `browser_snapshot`     | Return a structured page inventory of headings, landmarks, and controls. |
-| `browser_click`        | Click a selector, snapshot handle, or role/name locator.          |
-| `browser_fill`         | Type into one input / textarea / contenteditable, optionally submit. |
-| `browser_fill_many`    | Fill up to 25 fields in one browser round-trip, then optionally click a submit selector. |
-| `browser_scroll`       | Scroll to `top`, `bottom`, or into-view of a selector.            |
-| `browser_screenshot`   | Capture the viewport (or a selector); stored under `~/.jarela/files/`. |
+| `browser_navigate`     | Open a URL, or move with `back` / `forward` / `reload` (http/https only), and optionally wait for a selector. |
+| `browser_snapshot`     | Return an indented accessibility tree (role, accessible name, durable `ref`) plus a text excerpt; `filter`, `depth`, `ref` scope it. |
+| `browser_click`        | Click by `ref`, `role` + `name`, or selector — resolved against the live DOM. |
+| `browser_press`        | Press a key or chord (`Escape`, `Enter`, `Control+a`); without a locator it goes to the focused element. |
+| `browser_fill`         | Type into one input / textarea / contenteditable, or choose a `<select>` option, optionally submit. |
+| `browser_fill_many`    | Fill up to 25 fields in one browser round-trip, then optionally click a submit ref. |
+| `browser_scroll`       | Scroll to `top`, `bottom`, or into-view of a locator.             |
+| `browser_wait`         | Wait for a `selector`, `text`, `url`, `idle`, or `time` before the next step. |
+| `browser_batch`        | Run an ordered step list with per-step expectations in one round trip; stops at the first failure. |
+| `browser_screenshot`   | Capture the viewport (or one element by `ref`/selector); a background target is briefly activated and restored. |
 | `browser_extract`      | Return `text` / `html` / `outerHTML` of a selector (default: `<body>`). |
 
-ADR-0123 records the planned redesign of this surface: live-DOM locator
-resolution instead of shipped CSS, a text-bearing accessibility tree, a batch
-command with per-step expectations, explicit waits, tab lifecycle, and an
-opt-in CDP layer for dialogs, trusted input and background capture. Tools listed
-above describe what ships today.
+ADR-0123 shipped the first two phases of this surface: locators resolve in the
+live page against a per-tab node registry (a `ref` survives re-renders and is
+retried once when it goes stale), snapshots return a text-bearing
+accessibility tree, and `browser_batch` collapses a multi-step flow into one
+execute → observe round trip. Dialogs, trusted input and cross-frame reads still
+require the opt-in CDP layer described in the ADR and are not shipped yet.
 
 For large pages, agents should use `browser_snapshot` to understand page
 structure, then `browser_extract` for the actual page text or HTML. Small
@@ -149,14 +153,14 @@ Screenshots are sidecars, not the primary reading channel. Use
 or visual confirmation matter; use text/HTML extraction as the source of truth
 for reading long content.
 
-Complex pages can be expensive to rediscover. `browser_snapshot` now reuses a
-recent in-process page map by default and returns `data.cache.hit: true` when it
-did so. The snapshot includes a lightweight `fingerprint` so agents can tell
-whether two observations describe the same control structure. Pass
-`force_refresh: true` when the page has changed, after a long delay, or when a
-handle/name lookup looks stale. State-changing browser tools still request a
-fresh auto-snapshot after they act, so ordinary navigation and form workflows
-refresh the cache naturally.
+Complex pages can be expensive to rediscover. `browser_snapshot` reuses a
+recent page map **per tab** by default and returns `data.cache.hit: true` when it
+did so; because refs are durable per node, a reused map is still safe to act on.
+The snapshot includes a lightweight `fingerprint` so agents can tell whether two
+observations describe the same control structure. Pass `force_refresh: true`
+after switching tabs, after a long delay, or when a ref lookup looks stale.
+State-changing browser tools still request a fresh auto-snapshot after they act,
+so ordinary navigation and form workflows refresh the cache naturally.
 
 The service worker long-polls `/api/v1/extension/browser/poll` whenever
 the local Jarela server is reachable. Commands target the pinned tab when
