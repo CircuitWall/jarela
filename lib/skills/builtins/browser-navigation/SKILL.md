@@ -30,8 +30,9 @@ whose outcome is unknown; inspect for its receipt first.
 
 ## Operating Model
 
-- Treat the user's real browser as the runtime. Use `browser_tabs` to understand open tabs before switching context, and `browser_activate_tab` only when the task requires focusing a different tab.
+- Treat the user's real browser as the runtime. Use `browser_tabs` to understand open tabs before switching context, and address a tab with its `tab_ref` (not the raw numeric id) when calling `browser_activate_tab`.
 - Respect an intentional pinned tab. If no pin is set, the side panel/current foreground tab is the normal target.
+- Never steer the tab that is running this conversation. `browser_navigate` refuses to navigate the Jarela app tab unless `allow_app_tab` is set, because doing so closes the chat the user is watching; open a different tab instead.
 - `browser_snapshot` returns an accessibility tree: role, accessible name, and a durable `ref` per control, plus a text excerpt. That single call is enough to understand a page and decide the next action.
 - Address controls by `ref` first, `role` + `name` second, CSS `selector` last. Refs are resolved in the live page, survive re-renders, and are retried once automatically when they go stale — so do not re-snapshot between steps out of caution.
 - Reach for `browser_batch` for any multi-step flow (click → type → submit → wait). One batch is one browser round trip and it stops at the first failure, so a desynced page cannot silently absorb the rest of your plan.
@@ -131,6 +132,9 @@ Update memory after the task succeeds if the hint would save future exploration.
 ## Failure Recovery
 
 - If a ref is rejected as stale, the extension already refreshed the page map and retried once. If it still fails, read the returned `candidates`, call `browser_snapshot({ force_refresh: true })`, and act on the new ref; stop if the same target fails twice.
+- If an action reports that the page script returned nothing, the extension is running stale code: ask the user to reload it from `chrome://extensions`, then retry once. Do not hunt for a selector bug.
+- If a screenshot is refused for host access, the tab cannot be captured until the user grants host access for that site in the extension options. Say which site and stop; do not retry the same capture.
+- If navigation is refused because the tab is the Jarela app itself, target another tab or ask the user before passing `allow_app_tab`.
 - If an action reports `no_match`, the locator no longer describes the page. Re-read it (`filter: "text"` when labels matter) and pick a target by role + name instead of retrying the same selector.
 - If a select reports `option_not_found`, the reply lists the available options; choose one of those values instead of guessing again.
 - If a wait times out, report which condition failed and what was on screen. Do not retry the same wait more than once without changing the page state first.

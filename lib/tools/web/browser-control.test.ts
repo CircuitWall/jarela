@@ -662,3 +662,52 @@ describe("browser_navigate history and ref capture", () => {
     expect(parsed.ok).toBe(true);
   });
 });
+
+describe("browser_tabs tab_ref and metadata hint", () => {
+  const tabsData = {
+    tabs: [
+      { tab_id: 88509162, window_id: 1, active: true, url: "http://127.0.0.1:4312/", host: "127.0.0.1", usable: true, title: "Jarela" },
+      { tab_id: 88509170, window_id: 1, active: false, url: "", host: "", usable: false, title: "" },
+    ],
+  };
+
+  it("adds a small symbolic tab_ref and keeps the numeric id", async () => {
+    const p = browserTabsTool.invoke({});
+    const { parsed } = await driveTool(p, () => ({ ok: true, data: tabsData }));
+    const data = parsed.data as { tabs: Array<Record<string, unknown>>; metadata_hint?: string };
+    expect(data.tabs[0].tab_ref).toBe(1);
+    expect(data.tabs[0].tab_id).toBe(88509162);
+    expect(data.tabs[1].tab_ref).toBe(2);
+    expect(data.metadata_hint).toMatch(/Grant host access/);
+  });
+
+  it("activates by tab_ref without exposing the numeric id", async () => {
+    const p1 = browserTabsTool.invoke({});
+    await driveTool(p1, () => ({ ok: true, data: tabsData }));
+    const p2 = browserActivateTabTool.invoke({ tab_ref: 2 });
+    const { parsed } = await driveTool(p2, (cmd) => {
+      expect(cmd.type).toBe("activate_tab");
+      if (cmd.type === "activate_tab") expect(cmd.tab_id).toBe(88509170);
+      return { ok: true, data: { tab_id: 88509170, focused: true } };
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("rejects a tab_ref that is not in the last inventory", async () => {
+    const out = await browserActivateTabTool.invoke({ tab_ref: 99 });
+    const parsed = JSON.parse(out);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toMatch(/not in the last tab inventory|call browser_tabs first/);
+    expect(await pollNextCommand(50)).toBeNull();
+  });
+});
+
+describe("browser_snapshot refuses an empty payload", () => {
+  it("reports a reload hint instead of a successful empty result", async () => {
+    const p = browserSnapshotTool.invoke({ force_refresh: true });
+    const { parsed } = await driveTool(p, () => ({ ok: true, data: { tab_id: 7 } }));
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toMatch(/returned no page structure/);
+    expect(parsed.error).toMatch(/Reload the extension/);
+  });
+});
