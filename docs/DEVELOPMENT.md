@@ -370,7 +370,26 @@ blocking:
   is read.
 
 When a stall is reported, the label and the slow-statement lines name the work;
-a stall with no label means the blocking code is not instrumented yet.
+a stall with no label means the blocking code is not instrumented yet. The
+report only names work recorded inside the current window (two sample
+intervals), and what it names is cleared once reported: a stall must not be
+blamed on a statement that finished minutes earlier.
+
+### Request-path writes
+
+`access_whitelist.last_seen_at` is display data, but the auth check that runs
+on every tailnet request wrote it, and every write takes the WAL write lock and
+fsyncs: `UPDATE access_whitelist SET last_seen_at=? WHERE identity=?` was
+measured at 500 ms for a single row — a 500 ms loop stall for a timestamp
+nobody waits on. `touchLastSeen` records at most one write per identity per
+five minutes ([lib/stores/access.ts](../lib/stores/access.ts)).
+
+### Attachment spill GC
+
+`runSpillFileGc` reads every message to find referenced spill files: a
+whole-table scan (460 ms for 11k rows, and it grows with history). It runs on
+the read pool now, and a failed scan skips the tick rather than deleting files
+whose references it could not read.
 
 ### Document retrieval costs
 
