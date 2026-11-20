@@ -129,6 +129,12 @@ through tools registered in the Jarela toolbelt:
 | `browser_screenshot`   | Capture the viewport (or a selector); stored under `~/.jarela/files/`. |
 | `browser_extract`      | Return `text` / `html` / `outerHTML` of a selector (default: `<body>`). |
 
+ADR-0123 records the planned redesign of this surface: live-DOM locator
+resolution instead of shipped CSS, a text-bearing accessibility tree, a batch
+command with per-step expectations, explicit waits, tab lifecycle, and an
+opt-in CDP layer for dialogs, trusted input and background capture. Tools listed
+above describe what ships today.
+
 For large pages, agents should use `browser_snapshot` to understand page
 structure, then `browser_extract` for the actual page text or HTML. Small
 extracts stay inline. Large or truncated extracts are reduced into a local

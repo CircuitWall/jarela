@@ -47,7 +47,7 @@ C4Container
     System_Ext(mailproviders, "Mail Providers", "Gmail, Microsoft Graph, and iCloud Mail (remote document indexing)")
     System_Ext(whatsapp, "WhatsApp Web", "Baileys-paired endpoint")
     System_Ext(usershell, "User shell rc / Windows User env", "Credential/env source for general subprocess tools; deliberately excluded from checked skill execution")
-    System_Ext(browserext, "Jarela Browser Extension", "Chrome MV3 — element picker, posts captures to localhost (ADR-0018)")
+    System_Ext(browserext, "Jarela Browser Extension", "Chrome MV3 — element picker + agent-driven tab control through scripting, with opt-in CDP for dialogs, trusted input and background capture (ADR-0018, ADR-0123)")
     System_Ext(skillowner, "Skill Process Owner", "Transient Windows Job / Linux delegated cgroup broker; full-trust, not a sandbox (Unreleased)")
 
     Rel(user, ui, "HTTPS")
@@ -112,6 +112,7 @@ C4Container
     Rel(providers, proxy, "outbound via GlobalDispatcher")
     Rel(routes, proxy, "outbound via GlobalDispatcher")
     Rel(browserext, routes, "POST /api/v1/page-capture (loopback)")
+    Rel(browserext, routes, "long-poll /api/v1/extension/browser/poll + result POST (loopback, ADR-0123)")
 ```
 
 ## Module map
@@ -860,6 +861,48 @@ sequenceDiagram
     BUS-->>UI: SSE: thread_message_added
     UI->>UI: dispatch jarela:thread-updated → re-fetch messages (image renders inline)
 ```
+
+## Key Flow — Agent-driven browser command (ADR-0123)
+
+```mermaid
+sequenceDiagram
+    participant AG as Agent (LangGraph)
+    participant TL as lib/tools/web/browser-control
+    participant Q as Command queue (lib/api/browser-control)
+    participant SW as Extension service worker
+    participant EX as Dispatcher (lib/browser-control.mjs)
+    participant PG as Target tab
+    participant DB as browser_command_log
+
+    AG->>TL: browser_batch / browser_click / browser_snapshot
+    TL->>TL: resolve intent to refs (per tab), not CSS
+    TL->>Q: enqueueCommand({ type, steps?, expect? })
+    Q->>DB: create row (sanitized, transport=scripting|cdp)
+    SW->>Q: long-poll /api/v1/extension/browser/poll (25s)
+    Q-->>SW: next command
+    SW->>EX: dispatchCommand(deps, command)
+    alt approval required (unseen target, consequence class)
+        EX->>PG: overlay modal — approve once / always / deny
+        PG-->>EX: decision → stop batch when denied
+    end
+    alt scripting transport
+        EX->>PG: scripting.executeScript(page fn)
+    else CDP granted for this site
+        EX->>PG: debugger.attach → Input.* / Page.captureScreenshot / frame reads
+        EX->>EX: detach in finally
+    end
+    EX->>PG: settle (DOM idle) → accessibility tree + refs
+    EX-->>SW: { ok, data, snapshot | error, candidates }
+    SW->>Q: POST /result
+    Q->>DB: finalize row (terminal state, phase, transport)
+    Q-->>TL: BrowserResult
+    TL->>AG: page summary + diff + refs (+ image part per ADR-0123 D9)
+```
+
+The extension is the only executor; there is no Jarela-owned browser process.
+A command that cannot be expressed through `scripting` degrades until the user
+grants CDP for that site, and a command whose target the user cannot see still
+routes through the approval gate before any DOM write.
 
 ## Non-Functional Requirements
 
