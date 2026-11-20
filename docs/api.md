@@ -250,8 +250,10 @@ Query parameters:
 ### `GET /api/v1/dependencies?target=<kind>:<id>`
 
 Read-only dependency plan for one enabling target. Targets are
-`tool:<name>`, `integration:<id>`, `package:<id>`, `manifest:<name>`, and
-`mcp:<name>`. Returns `{ target, status, dependencies, missing, steps, manual }`
+`tool:<name>`, `integration:<id>`, `package:<id>`, `manifest:<name>`,
+`mcp:<name>`, and `runtime:<npm-package>` (heavy on-demand runtimes such as
+`@huggingface/transformers`, ADR-0122). Returns
+`{ target, status, dependencies, missing, steps, manual }`
 where `status` is `ready | unverified | install_required | manual`, and each
 step carries the exact `command`, `cwd`, `publisher`, and `allowlisted`
 decision. Unknown targets return `404`.

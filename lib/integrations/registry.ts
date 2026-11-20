@@ -19,6 +19,7 @@ import { openaiCodexManifest } from "@/lib/integrations/openai-codex/manifest";
 import { outlookManifest } from "@/lib/integrations/outlook/manifest";
 import type { IntegrationManifest } from "@/lib/integrations/manifest";
 import { validateManifest } from "@/lib/integrations/manifest";
+import { registerIntegrationDependencies } from "@/lib/dependencies/integration-declaration";
 
 const RAW: IntegrationManifest[] = [
   atlassianManifest,
@@ -36,6 +37,12 @@ const RAW: IntegrationManifest[] = [
 // Validate at module load. A bad manifest is a build-time bug we want to
 // surface immediately, not a runtime surprise the agent papers over.
 const MANIFESTS: IntegrationManifest[] = RAW.map((m) => validateManifest(m));
+
+// Publish dependency declarations for the tool catalog without making it
+// import this module (see lib/dependencies/integration-declaration.ts).
+for (const manifest of MANIFESTS) {
+  registerIntegrationDependencies(manifest.id, manifest.dependencies);
+}
 
 export function listManifests(): IntegrationManifest[] {
   return MANIFESTS.slice();

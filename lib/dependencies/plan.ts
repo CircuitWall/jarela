@@ -27,9 +27,9 @@ import {
   probeDependencies,
   summarizeDependencies,
 } from "./probe";
-import type { DependencySpec, DependencyStatus } from "./schema";
+import { DependencySpecSchema, type DependencySpec, type DependencyStatus } from "./schema";
 
-export const DEPENDENCY_TARGET_KINDS = ["tool", "integration", "package", "manifest", "mcp"] as const;
+export const DEPENDENCY_TARGET_KINDS = ["tool", "integration", "package", "manifest", "mcp", "runtime"] as const;
 export type DependencyTargetKind = (typeof DEPENDENCY_TARGET_KINDS)[number];
 
 export interface DependencyTarget {
@@ -127,6 +127,17 @@ export function specsForTarget(target: DependencyTarget): DependencySpec[] | nul
     case "mcp": {
       const server = getMcpServer(target.id);
       return server ? mcpDependencies(target.id) : null;
+    }
+    case "runtime": {
+      // On-demand runtimes that belong to no single tool or integration
+      // (ADR-0122), e.g. `runtime:@huggingface/transformers` for local
+      // embeddings. The id is a plain npm package name.
+      try {
+        DependencySpecSchema.parse({ kind: "node-package", id: target.id });
+      } catch {
+        return null;
+      }
+      return [{ kind: "node-package", id: target.id, scope: "managed" }];
     }
   }
 }

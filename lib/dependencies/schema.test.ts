@@ -32,6 +32,10 @@ describe("DependencySpecSchema", () => {
     expect(() => DependencySpecSchema.parse({ kind: "executable", id: "" })).toThrow();
     expect(() => DependencySpecSchema.parse({ kind: "executable", id: "rm -rf /" })).toThrow(/package or binary name/);
     expect(() => DependencySpecSchema.parse({ kind: "node-package", id: "pkg;curl evil" })).toThrow();
+    expect(() => DependencySpecSchema.parse({ kind: "node-package", id: "../evil" })).toThrow(/traversal/);
+    expect(() => DependencySpecSchema.parse({ kind: "node-package", id: "/abs/path" })).toThrow(/traversal/);
+    expect(() => DependencySpecSchema.parse({ kind: "executable", id: "a/../b" })).toThrow(/traversal/);
+    expect(() => DependencySpecSchema.parse({ kind: "node-package", id: "pkg\\evil" })).toThrow();
   });
 
   it("treats declarations as an optional list", () => {

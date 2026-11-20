@@ -872,6 +872,26 @@ A required dependency that is definitively missing marks the tool
 that could not decide reports `unverified`, which never hides the tool. See
 [ADR-0121](adr/0121-optional-tool-and-integration-dependencies.md).
 
+**On-demand runtimes.** Packages too large to ship with every install (the
+embedding stack, the Copilot SDK) are not dependencies at all. Resolve them
+through `lib/dependencies/runtime-package.ts` instead of a bare `import`/`require`:
+
+```ts
+import { requireRuntimePackage } from "@/lib/dependencies/runtime-package";
+
+const runtime = requireRuntimePackage<{ pipeline: unknown }>(
+  "@huggingface/transformers",
+  "Local embeddings",
+);
+```
+
+The loader uses `createRequire` from `$JARELA_PACKAGES_DIR`, so a missing
+package is a runtime state (with an actionable error) rather than a build
+failure, and the feature becomes available the moment the operator installs it
+through `POST /api/v1/dependencies/install` with `runtime:<package>`. Never add
+such a package to `dependencies` or `optionalDependencies` — npm installs both
+by default. See [ADR-0122](adr/0122-on-demand-heavy-runtimes.md).
+
 **Only basic tools are bound to the model each turn.** Everything else an
 agent may run is reached through the `invoke_tool` proxy, so a new tool does
 not need to be in the agent's pinned list to be reachable — it needs a

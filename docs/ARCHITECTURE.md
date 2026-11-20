@@ -705,6 +705,16 @@ Gating reuses the three existing layers: catalog `dependencies` plus
 `executeTool` refusal for stale agent configs. Nothing installs during a probe;
 installs stay behind the `package-install.ts` trust model.
 
+**On-demand runtimes (ADR-0122).** Two features are deliberately *not*
+installed with the app: local embeddings
+(`@huggingface/transformers` + ONNX runtimes, ~426 MB) and the Copilot delegate
+(`@microsoft/copilot-sdk` + platform package, ~206 MB). They are resolved at
+call time by `lib/dependencies/runtime-package.ts` from
+`$JARELA_PACKAGES_DIR`, degrade with an actionable error when absent, and are
+installed through `POST /api/v1/dependencies/install` with
+`runtime:<package>`. Measured effect: a development install dropped from
+1,639 MB to 992 MB.
+
 ### Output validator (anti-fabrication)
 
 `lib/agents/output-validator` post-checks every assistant turn before the

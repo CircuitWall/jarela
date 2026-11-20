@@ -12,8 +12,12 @@ const localModelPresent = existsSync(join(
   "onnx",
   "model_quantized.onnx",
 ));
+// ADR-0122: the inference runtime is an on-demand install, so this
+// end-to-end check also requires it to be present.
+const { isRuntimePackageInstalled } = await import("@/lib/dependencies/runtime-package");
+const runtimePresent = isRuntimePackageInstalled("@huggingface/transformers");
 
-describe.skipIf(!localModelPresent)("bundled local embedding model", () => {
+describe.skipIf(!localModelPresent || !runtimePresent)("bundled local embedding model", () => {
   it("embeds long local text without truncating later token windows", async () => {
     const text = Array.from({ length: 900 }, (_, index) => `section${index} contains searchable local documentation`).join(" ");
     const [vector] = await embedLocally([text], "passage");

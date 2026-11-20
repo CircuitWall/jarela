@@ -3,13 +3,15 @@
 // The SDK carries a native runtime: in-process hosting loads it through a C
 // ABI (FFI) into this process, which gives up crash isolation and pulls a
 // platform binary into the Next server. We therefore use the spawned stdio
-// transport so the runtime lives in its own child process, and we import the
-// package dynamically so unit tests never load it. Everything the delegate
-// tool needs is expressed by the interfaces below, and tests inject a fake
-// runtime through `_setCopilotRuntimeFactoryForTests`.
+// transport so the runtime lives in its own child process, and we resolve the
+// package at call time (ADR-0122) so it is an on-demand install and unit
+// tests never load it. Everything the delegate tool needs is expressed by the
+// interfaces below, and tests inject a fake runtime through
+// `_setCopilotRuntimeFactoryForTests`.
+
+import { requireRuntimePackage } from "@/lib/dependencies/runtime-package";
 
 export type CopilotPermissionVerdict = "approve" | "deny";
-
 export interface CopilotPermissionPrompt {
   /** Runtime prompt kind: commands, write, read, mcp, url, memory, path, ... */
   kind: string;
@@ -142,6 +144,18 @@ interface MinimalClient {
   resumeSession(sessionId: string, options: Record<string, unknown>): Promise<MinimalSession>;
 }
 
+/**
+ * The slice of `@microsoft/copilot-sdk` this adapter uses. Declared locally so
+ * the package stays an on-demand runtime (ADR-0122) and typechecking does not
+ * require it to be installed.
+ */
+interface CopilotSdkModule extends Record<string, unknown> {
+  CopilotClient: new (options: Record<string, unknown>) => MinimalClient;
+  RuntimeConnection: {
+    forSpawnedStdio(options: Record<string, unknown>): unknown;
+  };
+}
+
 function sessionConfig(options: CopilotSessionOptions): Record<string, unknown> {
   return {
     ...(options.model ? { model: options.model } : {}),
@@ -204,7 +218,13 @@ function wrapSession(session: MinimalSession, options: CopilotSessionOptions): C
 }
 
 async function createSdkRuntime(config: CopilotRuntimeConfig): Promise<CopilotRuntime> {
-  const sdk = await import("@microsoft/copilot-sdk");
+  // On-demand runtime package (ADR-0122): resolved from the packages dir so a
+  // missing Copilot runtime disables the delegate instead of shipping ~200 MB
+  // to every install.
+  const sdk = requireRuntimePackage<CopilotSdkModule>(
+    "@microsoft/copilot-sdk",
+    "The Copilot delegate",
+  );
   const client = new sdk.CopilotClient({
     mode: "coding-agent",
     // Spawned transport: the native runtime stays in its own process, so a

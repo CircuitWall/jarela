@@ -1,5 +1,6 @@
 import { LOCAL_EMBEDDING_DIMENSIONS, LOCAL_EMBEDDING_MODEL_ID } from "./constants";
 import { requireLocalModelRoot } from "./local-model";
+import { requireRuntimePackage } from "@/lib/dependencies/runtime-package";
 import { withBlockingWorkAsync } from "@/lib/diagnostics/event-loop";
 const MAX_CONTENT_TOKENS = 500;
 const TOKEN_WINDOW_OVERLAP = 32;
@@ -46,7 +47,13 @@ async function getFeatureExtractor(): Promise<FeatureExtractor> {
   // it before caching so a missing model is not memoised as a failure.
   const modelRoot = requireLocalModelRoot();
   const loading = (async () => {
-    const { env, pipeline } = await import("@huggingface/transformers");
+    // Resolved from the packages dir at call time (ADR-0122): the inference
+    // runtime is an on-demand install, not a build-time dependency.
+    const transformers = requireRuntimePackage<{
+      env: { localModelPath: string; allowRemoteModels: boolean; allowLocalModels: boolean };
+      pipeline: (task: string, model: string, options: { dtype: string }) => Promise<unknown>;
+    }>("@huggingface/transformers", "Local embeddings");
+    const { env, pipeline } = transformers;
     env.localModelPath = modelRoot;
     env.allowRemoteModels = false;
     env.allowLocalModels = true;

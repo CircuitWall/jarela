@@ -8,6 +8,13 @@ export const githubCopilotCliManifest: IntegrationManifest = {
   category: "infrastructure",
   dependencies: [
     {
+      kind: "node-package",
+      id: "@microsoft/copilot-sdk",
+      scope: "managed",
+      hint: "Install the Copilot runtime from Settings → Tools → Packages.",
+      docs_url: "https://www.npmjs.com/package/@microsoft/copilot-sdk",
+    },
+    {
       kind: "node-runtime",
       id: "node",
       version: "^24.15.0 || >=26.0.0",
