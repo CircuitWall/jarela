@@ -12,6 +12,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { registerLangChainPackage } from "../packages/langchain-package";
+import { parseVoiceDirectives } from "@/lib/voice/tone";
 import { withStreamDefault } from "../support/tool-metadata";
 import { writeBinaryFile } from "@/lib/files";
 import { geminiTts, resolveGoogleApiKey } from "@/lib/voice/gemini";
@@ -41,7 +42,11 @@ function resolveAgentVoice(config?: RunnableConfig): { model: string; voice: str
 
 export const generateVoiceTool = withStreamDefault(tool(
   async ({ text, style, speakers, autoplay }, config) => {
-    const trimmed = (text ?? "").trim();
+    // A reply-level `[[tone: …]]` marker is honoured here too, so an agent that
+    // carries the convention into a tool call does not get it read aloud.
+    const directives = parseVoiceDirectives(text ?? "");
+    const resolvedStyle = style?.trim() || directives.style || undefined;
+    const trimmed = directives.text.trim();
     if (!trimmed) throw new Error("text is required and must be non-empty");
     if (trimmed.length > MAX_TEXT_CHARS) {
       throw new Error(`text exceeds ${MAX_TEXT_CHARS} character cap`);
@@ -64,7 +69,7 @@ export const generateVoiceTool = withStreamDefault(tool(
       model,
       voiceName: voice,
       text: trimmed,
-      style: style?.trim() || undefined,
+      style: resolvedStyle,
       speakers: speakerList.length >= 2 ? speakerList : undefined,
     });
 
@@ -74,7 +79,7 @@ export const generateVoiceTool = withStreamDefault(tool(
     const url = autoplay ? `${baseUrl}?autoplay=1` : baseUrl;
 
     return JSON.stringify({
-      style: style ?? null,
+      style: resolvedStyle ?? null,
       speakers: speakerList.length >= 2 ? speakerList : null,
       autoplay: !!autoplay,
       bytes: wav.length,

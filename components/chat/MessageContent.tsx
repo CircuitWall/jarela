@@ -13,6 +13,7 @@ import { parseHref } from "@/lib/ui/navigate";
 import { isLikelyLocalFileHref, openLocalFile } from "@/lib/ui/local-file";
 import { pushToast } from "@/lib/ui/toasts";
 import { errorMessage } from "@/lib/utils/error";
+import { stripVoiceDirectives } from "@/lib/voice/tone";
 // Tracks which TTS clips have started auto-playing this session so a clip
 // only autoplays once. Re-renders of the same <audio> (message refetched,
 // scroll into view, list re-render) won't trigger a replay. Keyed by the
@@ -376,8 +377,11 @@ export const MarkdownContent = memo(function MarkdownContent({ text, streaming, 
   // left untouched (they'll show as plain `[3]` text) so an invented
   // number is visibly un-linked rather than silently mis-routed.
   const renderedText = useMemo(() => {
-    if (!sourceManifest || sourceManifest.size === 0) return text;
-    return text.replace(/(?<!\])\[(\d+)\]/g, (match, raw: string) => {
+    // Delivery directives (`[[tone: …]]`, `<sigh>`) steer speech only; they
+    // must never be visible in the bubble or selectable as transcript text.
+    const clean = stripVoiceDirectives(text);
+    if (!sourceManifest || sourceManifest.size === 0) return clean;
+    return clean.replace(/(?<!\])\[(\d+)\]/g, (match, raw: string) => {
       const entry = sourceManifest.get(parseInt(raw, 10));
       return entry ? `[${raw}](${entry.href})` : match;
     });

@@ -130,6 +130,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     harnessParts.capabilities,
     harnessParts.plan_first,
     harnessParts.presentation,
+    buildVoiceContext(agentCfg),
     harnessParts.citation,
     buildEnvContext(),
     harnessParts.self_config,
@@ -179,6 +180,22 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const agentStable = agentStableParts.filter(Boolean).join("\n\n");
   const dynamic = dynamicParts.filter(Boolean).join("\n\n");
   return `${sharedStable}\n\n${CACHE_SHARED_SPLIT_SENTINEL}\n\n${agentStable}\n\n${CACHE_SPLIT_SENTINEL}\n\n${dynamic}`;
+}
+
+/**
+ * Voice output controls (ADR-0123). Present only for agents whose owner turned
+ * voice on: it is the only place a model learns the reply-level tone marker,
+ * and it must stay in the agent-stable block so the cache survives turns.
+ */
+function buildVoiceContext(agentCfg: AgentConfigRow): string | null {
+  if (!agentCfg.voice_enabled) return null;
+  return [
+    "--- Spoken delivery ---",
+    "This agent's replies may be read aloud. Delivery controls are removed from the visible message before anyone sees it, so never describe, quote, or repeat them.",
+    "1. Optionally start a reply with `[[tone: <short delivery note>]]` — at most one, at the very beginning — to steer how it sounds, for example `[[tone: warm and reassuring]]` or `[[tone: brisk and matter-of-fact]]`.",
+    "2. Pace speech with punctuation. Do not write stage directions or pacing instructions in prose.",
+    "3. Omit the directive when the reply is code, tables, logs, or anything that is not meant to be heard.",
+  ].join("\n");
 }
 
 const TOOL_RECOVERY_HINTS: Record<string, string> = {

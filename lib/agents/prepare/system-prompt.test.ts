@@ -772,3 +772,30 @@ describe("buildToolReliabilityContext", () => {
     expect(buildToolReliabilityContext(["stale_lookup"], "stale lookup")).toBe("");
   });
 });
+
+describe("buildSystemPrompt spoken delivery", () => {
+  function promptFor(voiceEnabled: number) {
+    return buildSystemPrompt({
+      agentCfg: agentCfg({ voice_enabled: voiceEnabled }),
+      trimmedMessage: "hi", budget, recallCtx: "", warmSummaryCtx: "", factsCtx: "",
+      experienceMode: "full", delegateRosterLines: [],
+    });
+  }
+
+  it("teaches the tone directive only when voice is enabled", () => {
+    const enabled = promptFor(1);
+    expect(enabled.match(/--- Spoken delivery ---/g)).toHaveLength(1);
+    expect(enabled).toContain("`[[tone: <short delivery note>]]`");
+    expect(enabled).toContain("[[tone: warm and reassuring]]");
+    expect(enabled).not.toMatch(/\{\{|undefined|NaN|\[object Object\]/);
+    expect(promptFor(0)).not.toContain("Spoken delivery");
+    expect(promptFor(0)).not.toContain("[[tone:");
+  });
+
+  it("keeps the section in the cached agent-stable block", () => {
+    const prompt = promptFor(1);
+    const section = prompt.indexOf("--- Spoken delivery ---");
+    expect(section).toBeGreaterThan(prompt.indexOf(CACHE_SHARED_SPLIT_SENTINEL));
+    expect(section).toBeLessThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+  });
+});

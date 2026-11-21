@@ -12,10 +12,14 @@ import { errorResponse, notFoundResponse, validateBody } from "@/lib/api/respons
 import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 
 const MAX_TEXT = 5000;
+const MAX_STYLE = 200;
 
 const BodySchema = z.object({
   agent_id: z.string().min(1, "agent_id is required"),
   text: z.string().min(1, "text is required").max(MAX_TEXT, `text exceeds ${MAX_TEXT} characters`),
+  // Optional delivery direction (ADR-0123 tone directives). Picked by the
+  // agent from the reply's `[[tone: …]]` marker, never by the model at call time.
+  style: z.string().max(MAX_STYLE, `style exceeds ${MAX_STYLE} characters`).optional(),
   voice_name: z.string().optional(),
   model: z.string().optional(),
 });
@@ -43,7 +47,13 @@ export async function POST(req: NextRequest) {
   const voiceName = (parsed.voice_name?.trim() || agent.voice_name || "Kore");
 
   try {
-    const { wav } = await geminiTts({ apiKey, model, voiceName, text });
+    const { wav } = await geminiTts({
+      apiKey,
+      model,
+      voiceName,
+      text,
+      style: parsed.style?.trim() || undefined,
+    });
     return new NextResponse(new Uint8Array(wav), {
       status: 200,
       headers: {
