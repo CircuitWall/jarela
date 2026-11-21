@@ -105,18 +105,31 @@ found so far were single-sentence contradictions.
 
 8. **Validate.**
    ```powershell
-   npx vitest run lib/agents/prompt-registry.test.ts
-   npx vitest run lib/agents/prepare
+   npm run test:prompts
    npm run lint
    ```
+   `test:prompts` runs the assembled-prompt invariants plus the prompt-behaviour
+   contracts (see [Prompt evaluation](../../../docs/PROMPT_EVALUATION.md)). If
+   your change alters a decision a scenario depends on, update the scenario's
+   `promptAnchors` in `lib/agents/prompt-eval/scenarios.ts` in the same commit —
+   never delete an anchor, reword it.
+
+9. **Check behaviour when the change is behavioural.**
+   ```powershell
+   $env:JARELA_PROMPT_EVAL_MODE = "mock"; npm run test:prompt-eval   # harness plumbing
+   $env:JARELA_PROMPT_EVAL = "1"; npm run test:prompt-eval           # + provider key and model
+   ```
+   Or add the `prompt-eval` label to the PR to run it in CI. The report goes to
+   `.prompt-eval/report.md`.
 
 ## What this cannot check
 
 Static verification proves the text is coherent, not that models obey it.
 Behavioural claims — "the model will search instead of giving up", "Gemini can
 fill `args_json`" — need `npm run test:live:full` against a real key, ideally
-on more than one provider. Do not claim a prompt change works because the unit
-tests are green; say which part is verified and which is not.
+on more than one provider, or the live prompt evaluation above. Do not claim a
+prompt change works because the unit tests are green; say which part is
+verified and which is not.
 
 ## Quick Checks
 
@@ -125,5 +138,5 @@ npm run prompts:dump -- --changed
 npm run prompts:dump -- --since origin/main
 Get-Content .prompts/INDEX.md
 Select-String -Path .prompts/*.txt -Pattern 'undefined|NaN|\{\{'
-npx vitest run lib/agents/prompt-registry.test.ts
+npm run test:prompts
 ```

@@ -17,7 +17,10 @@ const narrow = args.includes("--changed") || since !== null;
 function changedFiles() {
   const cmd = since
     ? ["diff", "--name-only", `${since}...HEAD`]
-    : ["status", "--porcelain=1"];
+    // `-uall` lists individual untracked files instead of collapsing a new
+    // directory to a single entry, so a newly added prompt is found before it
+    // is staged.
+    : ["status", "--porcelain=1", "-uall"];
   const out = spawnSync("git", cmd, { encoding: "utf8" });
   if (out.status !== 0) return [];
   return out.stdout

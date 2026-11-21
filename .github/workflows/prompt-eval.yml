@@ -1,0 +1,136 @@
+name: Prompt evaluation
+
+# LLM-as-judge evaluation of agent behaviour. This is deliberately separate from
+# ci.yml: it spends provider tokens, needs a secret, and must never block a fork
+# pull request or a docs-only change.
+#
+# Deterministic prompt checks live in ci.yml ("Prompt guardrails") and run on
+# every prompt change. This workflow answers the question those checks cannot:
+# does a real model still pick the right tool and write an answer that makes
+# sense?
+#
+#   - workflow_dispatch: run on demand, optionally with a different model.
+#   - pull_request labelled `prompt-eval`: run for a prompt change under review.
+#   - weekly schedule: catch provider/model drift on main.
+#
+# Enable it by setting the ANTHROPIC_API_KEY secret and the
+# JARELA_PROMPT_EVAL_MODEL repository variable (see docs/PROMPT_EVALUATION.md).
+
+on:
+  workflow_dispatch:
+    inputs:
+      provider:
+        description: Provider name (anthropic, openai, gemini, deepseek)
+        required: false
+        default: ""
+      model:
+        description: Subject model id (defaults to the JARELA_PROMPT_EVAL_MODEL variable)
+        required: false
+        default: ""
+      judge_model:
+        description: Judge model id (defaults to the subject model)
+        required: false
+        default: ""
+      judge_provider:
+        description: Judge provider (defaults to the subject provider)
+        required: false
+        default: ""
+      min_score:
+        description: Minimum weighted judge score, 0-1
+        required: false
+        default: ""
+  pull_request:
+    types: [labeled, synchronize, reopened]
+    branches: ["**"]
+  schedule:
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: prompt-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evaluate:
+    name: LLM-as-judge evaluation
+    runs-on: ubuntu-26.04
+    # Forks never receive the secret, so they are excluded here rather than
+    # failing on a missing key. Scheduled runs cover main after merge.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(github.event.pull_request.labels.*.name, 'prompt-eval'))
+    timeout-minutes: 30
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      JARELA_PROMPT_EVAL: "1"
+      JARELA_PROMPT_EVAL_PROVIDER: ${{ inputs.provider || vars.JARELA_PROMPT_EVAL_PROVIDER || 'anthropic' }}
+      JARELA_PROMPT_EVAL_MODEL: ${{ inputs.model || vars.JARELA_PROMPT_EVAL_MODEL || '' }}
+      JARELA_PROMPT_EVAL_JUDGE_PROVIDER: ${{ inputs.judge_provider || vars.JARELA_PROMPT_EVAL_JUDGE_PROVIDER || inputs.provider || vars.JARELA_PROMPT_EVAL_PROVIDER || 'anthropic' }}
+      JARELA_PROMPT_EVAL_JUDGE_MODEL: ${{ inputs.judge_model || vars.JARELA_PROMPT_EVAL_JUDGE_MODEL || inputs.model || vars.JARELA_PROMPT_EVAL_MODEL || '' }}
+      JARELA_PROMPT_EVAL_MIN_SCORE: ${{ inputs.min_score || vars.JARELA_PROMPT_EVAL_MIN_SCORE || '0.7' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24.15.0"
+          check-latest: true
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
+
+      - name: Check provider credentials
+        id: preflight
+        run: |
+          key_for() {
+            case "$1" in
+              anthropic) printf '%s' "$ANTHROPIC_API_KEY" ;;
+              openai)    printf '%s' "$OPENAI_API_KEY" ;;
+              gemini)    printf '%s' "$GEMINI_API_KEY" ;;
+              deepseek)  printf '%s' "$DEEPSEEK_API_KEY" ;;
+              *)         printf '' ;;
+            esac
+          }
+
+          ready=true
+          skip() {
+            echo "::notice::Skipping prompt evaluation: $1"
+            ready=false
+          }
+
+          [ -n "$JARELA_PROMPT_EVAL_MODEL" ] || skip "JARELA_PROMPT_EVAL_MODEL is not configured"
+          [ -n "$(key_for "$JARELA_PROMPT_EVAL_PROVIDER")" ] \
+            || skip "no credentials for provider '$JARELA_PROMPT_EVAL_PROVIDER'"
+          [ -n "$JARELA_PROMPT_EVAL_JUDGE_MODEL" ] || skip "no judge model configured"
+          # A separate judge provider needs its own key; checking here keeps the
+          # failure at the preflight instead of midway through the suite.
+          [ -n "$(key_for "$JARELA_PROMPT_EVAL_JUDGE_PROVIDER")" ] \
+            || skip "no credentials for judge provider '$JARELA_PROMPT_EVAL_JUDGE_PROVIDER'"
+
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+
+      # Tool selection is scored by code inside the suite; only answer quality is
+      # judged by a model. The suite writes .prompt-eval/report.{json,md}.
+      - name: Run prompt evaluation
+        if: steps.preflight.outputs.ready == 'true'
+        run: npm run test:prompt-eval
+
+      - name: Upload evaluation report
+        if: always() && steps.preflight.outputs.ready == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: prompt-eval-report
+          path: .prompt-eval/
+          # Dot-directory: hidden files are excluded unless this is set.
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: warn

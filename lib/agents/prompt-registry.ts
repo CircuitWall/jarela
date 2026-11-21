@@ -29,6 +29,7 @@ import { RELEASE_DOCUMENTATION_GUIDANCE } from "@/lib/lifecycle/changesets";
 import { buildAdoptionPrompt } from "@/lib/stores/version-adoption";
 import { buildProposalResponseMessage } from "@/lib/proposals/response-message";
 import { buildAdvertisementMessages } from "@/lib/agents/advertisement-prompt";
+import { JUDGE_SYSTEM_PROMPT } from "@/lib/agents/prompt-eval/judge";
 
 export interface StaticPrompt {
   id: string;
@@ -37,6 +38,18 @@ export interface StaticPrompt {
   /** What this prompt is responsible for. */
   purpose: string;
   text: string;
+}
+
+/**
+ * File name for a rendered static prompt.
+ *
+ * Prompt ids are identifiers, not file names: harness ids contain `:` (for
+ * example `harness.builtin:default.capabilities`), which CI's artifact uploader
+ * rejects and Windows reads as an alternate-data-stream separator. Collapse
+ * anything outside a safe set, so the dump works on every platform.
+ */
+export function staticPromptArtifactName(id: string): string {
+  return `static.${id.replace(/[^A-Za-z0-9._-]+/g, "-")}.txt`;
 }
 
 /**
@@ -234,6 +247,12 @@ function listAgentPrompts(): StaticPrompt[] {
       source: "lib/agents/hallucination-classifier.ts",
       purpose: "Checks action evidence and citation markers in a single advisory model call.",
       text: HALLUCINATION_CLASSIFIER_PROMPT,
+    },
+    {
+      id: "audit.prompt-behaviour-judge",
+      source: "lib/agents/prompt-eval/judge.ts",
+      purpose: "Scores one agent transcript against a scenario rubric in CI; never decides tool selection.",
+      text: JUDGE_SYSTEM_PROMPT,
     },
     {
       id: "pricing.llm-extract",
