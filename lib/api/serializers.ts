@@ -4,6 +4,7 @@
 
 import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
+import { normalizeSttEngine } from "@/lib/voice/stt/types";
 import { getAgentTierProportions, getAgentToolCredentials, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import type { BridgeRow, BridgeRouteRow } from "@/lib/stores/bridges";
 import type { SkillRepoRow } from "@/lib/stores/skill-repos";
@@ -65,6 +66,7 @@ export function agentToResponse(a: AgentConfigRow) {
     voice_model: a.voice_model,
     voice_name: a.voice_name,
     voice_stt_model: a.voice_stt_model,
+    voice_stt_engine: normalizeSttEngine(a.voice_stt_engine),
     voice_auto_speak: !!a.voice_auto_speak,
     harness_id: a.harness_id,
     delegate_targets: parseDelegateTargets(a.delegate_targets),

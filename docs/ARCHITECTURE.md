@@ -18,7 +18,7 @@ C4Container
       Container(pricing, "Pricing and Model Updates", "lib/pricing + lib/stores/pricing + lib/stores/model-metadata", "Refreshes provider pricing, separate aggregator signals, and source-backed API model metadata")
       Container(embed, "Embeddings", "lib/embeddings", "Vector embedding generator for semantic memory recall")
       Container(docs, "Document RAG", "lib/documents (+ lib/documents/remote)", "Folder indexer + remote indexers for GitHub, Gmail, Outlook, iCloud, Jira, and Confluence; chunked + embedded into the documents tables; surfaced via documents_search (ADR-0024, ADR-0026, ADR-0029, ADR-0110)")
-      Container(voice, "Voice", "lib/voice", "Gemini STT (push-to-talk) + TTS for the generate_voice tool (ADR-0017)")
+      Container(voice, "Voice", "lib/voice", "Per-agent STT engines — Gemini multimodal, browser Web Speech API, or local Whisper tiny ONNX (ADR-0017, ADR-0123) — plus Gemini TTS for the generate_voice tool")
       Container(mcp, "MCP Adapter", "@langchain/mcp-adapters", "Discovers & invokes external MCP tool servers")
       Container(sched, "Scheduler", "cron-parser", "Runs scheduled tasks + polls event-driven watchers; persists in DB (ADR-0022, ADR-0025, ADR-0027)")
       Container(bridges, "Bridges", "lib/bridges", "Inbound transports (WhatsApp/Baileys) routed to agents")
@@ -92,7 +92,7 @@ C4Container
     Rel(providers, google, "HTTPS")
     Rel(providers, deepseek, "HTTPS")
     Rel(agents, deepseek, "HTTPS via web tools, only with separate DeepSeek Search & Fetch opt-in")
-    Rel(voice, google, "HTTPS (Gemini STT/TTS)")
+    Rel(voice, google, "HTTPS (Gemini STT/TTS); browser and Whisper engines skip it")
     Rel(embed, cohere, "HTTPS (embed)")
     Rel(mcp, mcps, "stdio / SSE")
     Rel(routes, mcpreg, "HTTPS (picker search)")
@@ -943,7 +943,8 @@ state. See [ADR-0106](adr/0106-on-demand-release-documentation.md).
 | Dependency | Purpose | Failure mode |
 |---|---|---|
 | Anthropic / OpenAI / Google / Cohere | LLM inference | Surface provider error to UI; allow model switch |
-| Google GenAI (Gemini) — STT + TTS endpoints | Push-to-talk voice input + `generate_voice` tool (ADR-0017) | Voice surface degrades to text-only; chat continues |
+| Google GenAI (Gemini) — STT + TTS endpoints | Gemini voice input engine (default) + `generate_voice` tool (ADR-0017, ADR-0123) | Gemini-engine input and all spoken replies degrade; the browser and Whisper input engines keep working |
+| Hugging Face model CDN (huggingface.co) | One-time hash-pinned download of the Whisper tiny model (ADR-0123) | Whisper input reports "not installed"; browser and Gemini engines keep working, chat continues |
 | MCP servers | External tools | Tool call returns error; agent can recover or skip |
 | External provider/tool `.cjs` files (~/.jarela/{providers,tools}/) | User-authored extensions, hot-loaded | Validation errors surfaced in `GET /api/v1/extensions` and the Extensions tab; loader skips invalid files (ADR-0013) |
 | User shell rc (`~/.zshrc`/`~/.bashrc`) on macOS/Linux, User-scope env on Windows | Source for credential env vars (ADR-0016); probed at boot + on demand | Probe failure surfaces a warning, app falls back to whatever is already in `process.env`; tools surface "not configured" via the existing env-then-DB resolver |

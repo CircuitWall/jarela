@@ -604,6 +604,7 @@ function ChatComposerControls({
         onStop={sse.stop}
         streaming={sse.streaming}
         voiceEnabled={!!agentConfig?.voice_enabled}
+        voiceSttEngine={agentConfig?.voice_stt_engine}
         agentId={agentId}
         onVoiceTranscript={handleVoiceTranscript}
         disabled={!agentId}

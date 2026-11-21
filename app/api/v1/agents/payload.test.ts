@@ -25,6 +25,7 @@ const baseRow: AgentConfigRow = {
   voice_model: "gemini-2.5-flash-preview-tts",
   voice_name: "Kore",
   voice_stt_model: "gemini-2.5-flash",
+  voice_stt_engine: "gemini",
   voice_auto_speak: 1,
   harness_id: null,
   delegate_targets: null,
