@@ -5423,6 +5423,394 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "3.7.0",
+      "previous_version": "3.6.0",
+      "date": "2026-11-21",
+      "hints": [],
+      "commits": [
+        "feat(chat): route idle compaction through the shared card",
+        "fix(agents): keep the user request in every prompt",
+        "fix(models): ignore capability numbers stamped by the old catalog",
+        "perf(files): avoid one full scan per attachment name",
+        "perf(db): pin one sqlite pragma profile for every connection",
+        "fix(access): pin last-seen writes to one per five minutes",
+        "fix(files): move the spill reference scan to the read pool",
+        "fix(diagnostics): exclude work recorded before the stall window",
+        "fix(attachments): expose the absolute path on every spooled ref",
+        "fix(browser): expose the absolute path of every written file",
+        "fix(browser): tolerate one missed poll before declaring the channel dead",
+        "build(deps): bump pymdown-extensions from 13.0 to 13.1 in the docs group",
+        "build(deps): bump the npm group with 19 updates",
+        "feat(browser): gate browser steps on a three-layer preflight",
+        "fix(browser): gate self-targeting with a known app origin",
+        "fix(browser): gate retries on an unanswered approval prompt",
+        "feat(browser): gate host access behind a one-time ask",
+        "feat(browser): detect a stale extension by protocol handshake",
+        "fix(redaction): keep app file refs out of masking",
+        "fix(browser): expose the real cause of browser failures",
+        "fix(browser): keep injected page functions self-contained",
+        "docs(browser): update skill and docs for batched control",
+        "feat(browser): run browser steps against the live page",
+        "docs(adr): document agent browser interaction redesign",
+        "feat(deps): add dependency install on enable"
+      ],
+      "prompts": [
+        {
+          "id": "static.agent.tool-usage-sop",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…"
+          ],
+          "removed_lines": [
+            "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…"
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.harness.builtin:default.self_config",
+          "source": "lib/agents/harness/presets.ts",
+          "change": "changed",
+          "added_lines": [
+            "Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness, allow_site."
+          ],
+          "removed_lines": [
+            "Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.skill.browser-navigation",
+          "source": "lib/skills/builtins/browser-navigation/SKILL.md",
+          "change": "changed",
+          "added_lines": [
+            "- Treat the user's real browser as the runtime. Use `browser_tabs` to understand open tabs before switching context, and address a tab with its `tab_ref` (not the raw numeric id) when calling `browser_activate_tab`.",
+            "- Never steer the tab that is running this conversation. `browser_navigate` refuses to navigate the Jarela app tab unless `allow_app_tab` is set, because doing so closes the chat the user is watching; open a different tab instead.",
+            "- `browser_snapshot` returns an accessibility tree: role, accessible name, and a durable `ref` per control, plus a text excerpt. That single call is enough to understand a page and decide the next action.",
+            "- Address controls by `ref` first, `role` + `name` second, CSS `selector` last. Refs are resolved in the live page, survive re-renders, and are retried once automatically when they go stale — so do not re-snapshot between steps out of caution.",
+            "- Reach for `browser_batch` for any multi-step flow (click → type → submit → wait). One batch is one browser round trip and it stops at the first failure, so a desynced page cannot silently absorb the rest of your plan.",
+            "- Use `browser_wait` (or an `expect` on a batch step) instead of re-reading the page in a loop when an action starts a request or a render.",
+            "- Use `browser_screenshot` only when visual layout, a canvas, a chart, or visual confirmation matters; the tree and extracted text stay the source of truth for reading.",
+            "- Reuse cached snapshots when `data.cache.hit` is true. Pass `force_refresh: true` only after switching tabs, after a long delay, or when the cached tree looks wrong.",
+            "- Call `browser_snapshot` (default `filter: \"interactive\"`; use `\"text\"` when you also need the copy) and keep the refs it returns.",
+            "4. Act in batches:",
+            "- Compose the shortest reliable step list and send it as one `browser_batch`: fill fields, click, press Enter, and attach an `expect` to the step whose effect matters.",
+            "- Use single tools (`browser_click`, `browser_fill`, `browser_fill_many`, `browser_press`) when the next action genuinely depends on what the previous one returns."
+          ],
+          "removed_lines": [
+            "- Treat the user's real browser as the runtime. Use `browser_tabs` to understand open tabs before switching context, and `browser_activate_tab` only when the task requires focusing a different tab.",
+            "- Prefer `browser_snapshot` for page structure and controls, `browser_extract` for text/HTML, and `browser_screenshot` only for visual layout, canvas, charts, or confirmation.",
+            "- Reuse cached snapshots when `data.cache.hit` is true. Pass `force_refresh: true` only after page state changes, long delays, or stale handle/name errors.",
+            "- Call `browser_snapshot` to get headings, landmarks, controls, selectors, handles, and fingerprint.",
+            "- Use handles or `role` + `name` for follow-up actions instead of rediscovering controls.",
+            "4. Act efficiently:",
+            "- Use `browser_click` for buttons/links.",
+            "- Use `browser_fill_many` for multi-field forms.",
+            "- Use `browser_fill` for one-off field edits.",
+            "- Use `browser_extract` for reading page content and `browser_screenshot` for visual evidence.",
+            "- Trust auto-snapshot diffs after navigation/click/fill.",
+            "- Use `browser_snapshot({ force_refresh: true })` when the page changed outside the agent's action, a modal appeared unexpectedly, or cached handles fail."
+          ],
+          "omitted_lines": 13
+        },
+        {
+          "id": "system.Enabled tools",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "You can execute the 111 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.",
+            "- Basic > Web > browser_batch: write/builtin/enabled reason=basic_default",
+            "- Basic > Web > browser_permission: read/builtin/enabled reason=basic_default",
+            "- Basic > Web > browser_press: write/builtin/enabled reason=basic_default",
+            "- Basic > Web > browser_wait: read/builtin/enabled reason=basic_default"
+          ],
+          "removed_lines": [
+            "You can execute the 107 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Self-configuration (with user approval)",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness, allow_site."
+          ],
+          "removed_lines": [
+            "Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Tool usage SOP",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…"
+          ],
+          "removed_lines": [
+            "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…"
+          ],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "browser_activate_tab",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Focus a browser tab. Pass `tab_ref` from the most recent `browser_tabs` (preferred) or a literal `tab_id`. This activates the tab and asks Chromium to focus its window. Use only when the user asked you to control browser focus or a workflow clearly needs a different open tab. This does not change the pinned target unless the user pins that tab separately.",
+          "previous_description": "Focus a browser tab by `tab_id` from `browser_tabs`. This activates the tab and asks Chromium to focus its window. Use only when the user asked you to control browser focus or a workflow clearly needs a different open tab. This does not change the pinned target unless the user pins that tab separately.",
+          "params_added": [
+            "tab_ref"
+          ],
+          "params_removed": [],
+          "params_changed": [
+            "tab_id"
+          ],
+          "required_added": [],
+          "required_removed": [
+            "tab_id"
+          ]
+        },
+        {
+          "name": "browser_batch",
+          "change": "added",
+          "description_changed": false,
+          "description": "Run an ordered list of browser steps in ONE extension round trip. This is the default for any multi-step flow: click → type → press Enter → expect results, or fill several fields and submit. Each step is `{ action, ...step fields, expect? }`. Steps run in order and stop at the first failure or unmet expectation; later steps are reported as not executed, so nothing runs against a page that has already diverged. Put an `expect` on the step whose effect you care about (`selector`, `text`, `url`, or `idle`) instead of adding a `wait` step. The response lists per-step status plus one diff of the p…",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "steps",
+            "stream",
+            "timeout_ms"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "steps"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "browser_click",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Click an element in the active tab. Identify the target with EXACTLY ONE of: `ref` (from the most recent snapshot or action diff), `role` + `name` (accessible-name lookup), or `selector` (CSS, last resort). Resolution happens against the live DOM and a stale or ambiguous target is retried once after refreshing the page map, so you do not need a `browser_snapshot` call between steps. The response includes a fresh diff so you can chain the next action directly.",
+          "previous_description": "Click an element in the active tab. Identify the target with EXACTLY ONE of: `selector` (CSS), `handle` (numeric `idx` from the most recent `browser_snapshot` or auto-snapshot diff), or `role` + `name` (accessible-name lookup against the last snapshot). The response includes a fresh diff so you can chain the next action without a separate snapshot call.",
+          "params_added": [
+            "ref"
+          ],
+          "params_removed": [
+            "handle"
+          ],
+          "params_changed": [
+            "selector"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "browser_fill",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Type `value` into the input/textarea/contenteditable (or choose an option in a `<select>`) in the active tab. Identify the target with EXACTLY ONE of: `ref`, `role` + `name`, or `selector`. For a select, pass the option's value or its visible text. When `submit` is true the enclosing form is submitted after typing. The response includes a fresh diff so you can chain the next action without a separate snapshot call.",
+          "previous_description": "Type `value` into the input/textarea/contenteditable in the active tab. Identify the target with EXACTLY ONE of: `selector` (CSS), `handle` (numeric `idx` from the most recent snapshot/diff), or `role` + `name`. When `submit` is true the form is submitted after typing (or Enter is dispatched on a bare input). The response includes a fresh diff so you can chain the next action without a separate snapshot call.",
+          "params_added": [
+            "ref"
+          ],
+          "params_removed": [
+            "handle"
+          ],
+          "params_changed": [
+            "name",
+            "role",
+            "selector"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "browser_fill_many",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Fill multiple fields in the active tab in one browser round-trip. Prefer this over repeated `browser_fill` calls for forms. Each field uses EXACTLY ONE locator: `ref`, `role` + `name`, or `selector`. Raw values are sent only to the local browser extension and are not included in command history. Use `submit_ref` (preferred) or `submit_selector` to submit after all fields are filled.",
+          "previous_description": "Fill multiple fields in the active tab in one browser round-trip. Use this for forms after a `browser_snapshot` or auto-snapshot diff. Each field uses EXACTLY ONE locator: `selector`, `handle`, or `role` + `name`; ambiguous role/name matches return an error instead of guessing. Raw values are sent only to the local browser extension and are not included in command history. Use `submit_selector` to click a submit button after all fields are filled.",
+          "params_added": [
+            "submit_ref"
+          ],
+          "params_removed": [],
+          "params_changed": [
+            "fields"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "browser_navigate",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Drive the user's browser: open `url`, or move through history with `to: \"back\" | \"forward\" | \"reload\"`. The Jarela browser extension must be installed and connected. Returns once the page reports loaded (or `wait_for_selector` resolves) and reports a tab crash or discard instead of timing out. The response includes a `diff` of the interactive controls on the new page — use the numeric `ref` from those entries on the next `browser_click`/`browser_fill` instead of calling `browser_snapshot` first. Only http and https URLs are accepted. Uses a 90s default timeout so approval prompts and slow nav…",
+          "previous_description": "Drive the user's browser: navigate the active tab to `url`. The Jarela browser extension must be installed and connected. Returns once the page reports loaded (or `wait_for_selector` resolves). The response includes a `diff` of the interactive controls on the new page — use the numeric `handle` from those entries (or `role`+`name`) on the next `browser_click`/`browser_fill` instead of calling `browser_snapshot` first. Fall back to `browser_screenshot` only when the visual layout itself matters. Uses a 90s default timeout so approval prompts and slow navigations have enough room; pass `timeout…",
+          "params_added": [
+            "allow_app_tab",
+            "to"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": [
+            "url"
+          ]
+        },
+        {
+          "name": "browser_permission",
+          "change": "added",
+          "description_changed": false,
+          "description": "Preflight every layer that can block a browser step, for one host: the extension channel, Jarela's Allowed sites list, and the browser's own host grant. Call this before the first browser action on a host and whenever a browser result returns an error_code — one of extension_offline, jarela_site_not_allowed or browser_host_grant_unverified. Read-only: it never grants anything itself, and each blocker carries the exact ask-user instruction.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "stream",
+            "url"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "url"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "browser_press",
+          "change": "added",
+          "description_changed": false,
+          "description": "Press a key or chord in the active tab: `key: \"Escape\"`, `\"Enter\"`, `\"Tab\"`, `\"ArrowDown\"`, or a chord such as `\"Control+a\"`. Without a locator the key goes to the focused element, which is how you dismiss a modal or a menu. With a locator the element is focused first. Use this instead of clicking when a control only reacts to the keyboard.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "key",
+            "name",
+            "ref",
+            "role",
+            "selector",
+            "stream",
+            "timeout_ms"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "key"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "browser_screenshot",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Take a screenshot of the active tab and store it as a local file. Returns a `/api/v1/files/<name>` URL and a ready-to-use `markdown` snippet. Without a locator the visible viewport is captured; with `ref` or `selector` only that element is cropped. A pinned or background target is briefly activated for the capture and the user's tab is restored afterwards. Screenshots are a visual fallback — use `browser_snapshot` for reading structure and text. `full_page` cannot be honoured from a viewport capture and says so.",
+          "previous_description": "Take a screenshot of the active tab and store it as a local file. Returns a `/api/v1/files/<name>` URL and a ready-to-use `markdown` snippet. Without `selector` the visible viewport is captured; with `selector` only that element is cropped. `full_page: true` captures the entire scrollable page when supported.",
+          "params_added": [
+            "name",
+            "ref",
+            "role"
+          ],
+          "params_removed": [],
+          "params_changed": [
+            "full_page",
+            "selector"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "browser_scroll",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Scroll the active tab. `to: top|bottom` scrolls the viewport. With `to: into-view` plus a locator (`ref`, `role` + `name`, or `selector`) scrolls that element into view.",
+          "previous_description": "Scroll the active tab. `to: top|bottom` scrolls the viewport. With `selector` and `to: into-view` scrolls the matching element into view.",
+          "params_added": [
+            "name",
+            "ref",
+            "role"
+          ],
+          "params_removed": [],
+          "params_changed": [
+            "selector"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "browser_snapshot",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Return the page as an indented accessibility tree — role, accessible name, and a durable `ref` for every control — plus a text excerpt. This is the primary read: it is enough to decide the next action in one call. `filter: \"interactive\"` (default) lists only controls; `\"text\"` adds text-bearing nodes; `\"all\"` also includes containers. `depth` caps nesting, `ref` scopes the read to one subtree. Repeated calls reuse a recent page map per tab; pass `force_refresh: true` after switching tabs, or when the cached tree looks stale. You usually do NOT need this after an action: navigate/click/fill al…",
+          "previous_description": "Return a compact, structured map of the active tab — URL, title, headings, landmarks, and a numbered list of every interactive control (links, buttons, inputs, selects, etc.) with `role`, accessible `name`, and a CSS `selector`. The numeric `idx` on each entry is a short-lived `handle` you can pass to `browser_click` / `browser_fill` instead of repeating the selector. Repeated calls reuse a recent same-process page map by default, which is cheaper than rediscovering complex pages every turn. Pass `force_refresh: true` when the page changed or the cached controls look stale. You usually do NOT…",
+          "params_added": [
+            "depth",
+            "filter",
+            "include_inventory",
+            "ref"
+          ],
+          "params_removed": [],
+          "params_changed": [
+            "force_refresh"
+          ],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "browser_tabs",
+          "change": "changed",
+          "description_changed": true,
+          "description": "List browser tabs known to the Jarela extension: a small `tab_ref`, tab id, window id, active/focused/pinned/foreground markers, title, URL/host when permissions allow, and whether the tab can be scripted. Use `tab_ref` with `browser_activate_tab`. The inventory is a snapshot in time: re-run this if a target tab was opened or closed since. Tabs whose title and URL were withheld need host access granted in the extension options.",
+          "previous_description": "List browser tabs known to the Jarela extension, including tab id, window id, active/focused/pinned/foreground markers, title, URL/host when permissions allow, and whether the tab can be scripted. Use this before switching tabs or when the current target is uncertain. Tab ids are browser-session scoped and should not be treated as durable identifiers.",
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        },
+        {
+          "name": "browser_wait",
+          "change": "added",
+          "description_changed": false,
+          "description": "Wait for a page condition before the next step: `for: \"selector\"` (element appears), `\"text\"` (visible text appears), `\"url\"` (location matches), `\"idle\"` (DOM quiet and document complete), `\"time\"` (fixed pause). Use this instead of re-snapshotting in a loop when an action starts a request or a render. `idle` is a DOM-quiet check, not a network-inspector claim.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "for",
+            "quiet_ms",
+            "selector",
+            "stream",
+            "text",
+            "timeout_ms",
+            "url"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [
+            "for"
+          ],
+          "required_removed": []
+        },
+        {
+          "name": "propose_config_change",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "kind",
+            "payload"
+          ],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }

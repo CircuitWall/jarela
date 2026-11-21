@@ -17,6 +17,126 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.7.0
+
+From 3.6.0 · 2026-11-21
+
+### Tools
+
+- `browser_activate_tab` — changed; description changed; params added: `tab_ref`; params changed: `tab_id`; no longer required: `tab_id`
+- `browser_batch` — added; params added: `async_run`, `deadline_ms`, `steps`, `stream`, `timeout_ms`; now required: `steps`
+- `browser_click` — changed; description changed; params added: `ref`; params removed: `handle`; params changed: `selector`
+- `browser_fill` — changed; description changed; params added: `ref`; params removed: `handle`; params changed: `name`, `role`, `selector`
+- `browser_fill_many` — changed; description changed; params added: `submit_ref`; params changed: `fields`
+- `browser_navigate` — changed; description changed; params added: `allow_app_tab`, `to`; no longer required: `url`
+- `browser_permission` — added; params added: `async_run`, `deadline_ms`, `stream`, `url`; now required: `url`
+- `browser_press` — added; params added: `async_run`, `deadline_ms`, `key`, `name`, `ref`, `role`, `selector`, `stream`, `timeout_ms`; now required: `key`
+- `browser_screenshot` — changed; description changed; params added: `name`, `ref`, `role`; params changed: `full_page`, `selector`
+- `browser_scroll` — changed; description changed; params added: `name`, `ref`, `role`; params changed: `selector`
+- `browser_snapshot` — changed; description changed; params added: `depth`, `filter`, `include_inventory`, `ref`; params changed: `force_refresh`
+- `browser_tabs` — changed; description changed
+- `browser_wait` — added; params added: `async_run`, `deadline_ms`, `for`, `quiet_ms`, `selector`, `stream`, `text`, `timeout_ms`, `url`; now required: `for`
+- `propose_config_change` — changed; params changed: `kind`, `payload`
+
+### Prompts
+
+- `static.agent.tool-usage-sop` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…
+    - 8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…
+    ```
+
+- `static.harness.builtin:default.self_config` — changed (`lib/agents/harness/presets.ts`)
+
+    ```diff
+    + Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness, allow_site.
+    - Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness.
+    ```
+
+- `static.skill.browser-navigation` — changed (`lib/skills/builtins/browser-navigation/SKILL.md`)
+
+    ```diff
+    + - Treat the user's real browser as the runtime. Use `browser_tabs` to understand open tabs before switching context, and address a tab with its `tab_ref` (not the raw numeric id) when calling `browser_activate_tab`.
+    + - Never steer the tab that is running this conversation. `browser_navigate` refuses to navigate the Jarela app tab unless `allow_app_tab` is set, because doing so closes the chat the user is watching; open a different tab instead.
+    + - `browser_snapshot` returns an accessibility tree: role, accessible name, and a durable `ref` per control, plus a text excerpt. That single call is enough to understand a page and decide the next action.
+    + - Address controls by `ref` first, `role` + `name` second, CSS `selector` last. Refs are resolved in the live page, survive re-renders, and are retried once automatically when they go stale — so do not re-snapshot between steps out of caution.
+    + - Reach for `browser_batch` for any multi-step flow (click → type → submit → wait). One batch is one browser round trip and it stops at the first failure, so a desynced page cannot silently absorb the rest of your plan.
+    + - Use `browser_wait` (or an `expect` on a batch step) instead of re-reading the page in a loop when an action starts a request or a render.
+    + - Use `browser_screenshot` only when visual layout, a canvas, a chart, or visual confirmation matters; the tree and extracted text stay the source of truth for reading.
+    + - Reuse cached snapshots when `data.cache.hit` is true. Pass `force_refresh: true` only after switching tabs, after a long delay, or when the cached tree looks wrong.
+    + - Call `browser_snapshot` (default `filter: "interactive"`; use `"text"` when you also need the copy) and keep the refs it returns.
+    + 4. Act in batches:
+    + - Compose the shortest reliable step list and send it as one `browser_batch`: fill fields, click, press Enter, and attach an `expect` to the step whose effect matters.
+    + - Use single tools (`browser_click`, `browser_fill`, `browser_fill_many`, `browser_press`) when the next action genuinely depends on what the previous one returns.
+    - - Treat the user's real browser as the runtime. Use `browser_tabs` to understand open tabs before switching context, and `browser_activate_tab` only when the task requires focusing a different tab.
+    - - Prefer `browser_snapshot` for page structure and controls, `browser_extract` for text/HTML, and `browser_screenshot` only for visual layout, canvas, charts, or confirmation.
+    - - Reuse cached snapshots when `data.cache.hit` is true. Pass `force_refresh: true` only after page state changes, long delays, or stale handle/name errors.
+    - - Call `browser_snapshot` to get headings, landmarks, controls, selectors, handles, and fingerprint.
+    - - Use handles or `role` + `name` for follow-up actions instead of rediscovering controls.
+    - 4. Act efficiently:
+    - - Use `browser_click` for buttons/links.
+    - - Use `browser_fill_many` for multi-field forms.
+    - - Use `browser_fill` for one-off field edits.
+    - - Use `browser_extract` for reading page content and `browser_screenshot` for visual evidence.
+    - - Trust auto-snapshot diffs after navigation/click/fill.
+    - - Use `browser_snapshot({ force_refresh: true })` when the page changed outside the agent's action, a modal appeared unexpectedly, or cached handles fail.
+    … 13 more line(s)
+    ```
+
+- `system.Enabled tools` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + You can execute the 111 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    + - Basic > Web > browser_batch: write/builtin/enabled reason=basic_default
+    + - Basic > Web > browser_permission: read/builtin/enabled reason=basic_default
+    + - Basic > Web > browser_press: write/builtin/enabled reason=basic_default
+    + - Basic > Web > browser_wait: read/builtin/enabled reason=basic_default
+    - You can execute the 107 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    ```
+
+- `system.Self-configuration (with user approval)` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness, allow_site.
+    - Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness.
+    ```
+
+- `system.Tool usage SOP` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…
+    - 8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing, integration_unconfigured, dependency_missing or dependency_manual. The first three are permission decisions; credentials_missing and integration_unconfigured mean the int…
+    ```
+
+### Commits
+
+- feat(chat): route idle compaction through the shared card
+- fix(agents): keep the user request in every prompt
+- fix(models): ignore capability numbers stamped by the old catalog
+- perf(files): avoid one full scan per attachment name
+- perf(db): pin one sqlite pragma profile for every connection
+- fix(access): pin last-seen writes to one per five minutes
+- fix(files): move the spill reference scan to the read pool
+- fix(diagnostics): exclude work recorded before the stall window
+- fix(attachments): expose the absolute path on every spooled ref
+- fix(browser): expose the absolute path of every written file
+- fix(browser): tolerate one missed poll before declaring the channel dead
+- build(deps): bump pymdown-extensions from 13.0 to 13.1 in the docs group
+- build(deps): bump the npm group with 19 updates
+- feat(browser): gate browser steps on a three-layer preflight
+- fix(browser): gate self-targeting with a known app origin
+- fix(browser): gate retries on an unanswered approval prompt
+- feat(browser): gate host access behind a one-time ask
+- feat(browser): detect a stale extension by protocol handshake
+- fix(redaction): keep app file refs out of masking
+- fix(browser): expose the real cause of browser failures
+- fix(browser): keep injected page functions self-contained
+- docs(browser): update skill and docs for batched control
+- feat(browser): run browser steps against the live page
+- docs(adr): document agent browser interaction redesign
+- feat(deps): add dependency install on enable
+
 ## 3.6.0
 
 From 3.5.6 · 2026-11-20
