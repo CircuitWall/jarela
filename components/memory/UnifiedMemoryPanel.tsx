@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/Select";
 import { TextInput } from "@/components/ui/TextField";
 import { PanelHeader } from "@/components/ui/PanelHeader";
 import { errorMessage } from "@/lib/utils/error";
+import { LocalFileAction } from "@/components/ui/LocalFileAction";
 import { MemoryPanel } from "./MemoryPanel";
 import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
 
@@ -17,6 +18,7 @@ interface DocumentGroup {
   id: string;
   channel: "Documents";
   path: string;
+  absPath: string;
   sourceLabel: string | null;
   score: number;
   match: PassageMatch;
@@ -57,6 +59,7 @@ function groupDocumentHits(hits: DocumentHit[], minSimilarity: number): Document
         id: `document:${hit.document_id}`,
         channel: "Documents",
         path: hit.rel_path,
+        absPath: hit.abs_path,
         sourceLabel: hit.source_label,
         score: hit.score,
         match,
@@ -178,7 +181,14 @@ export function UnifiedMemoryPanel() {
                 {result.channel === "Documents" ? (
                   <>
                     <div className="font-mono text-xs text-fg-muted truncate mb-1">
-                      {result.sourceLabel ? `${result.sourceLabel} / ` : ""}{result.path}
+                      {result.sourceLabel ? `${result.sourceLabel} / ` : ""}
+                      <LocalFileAction
+                        href={result.absPath}
+                        className="text-fg-muted hover:text-fg"
+                        title={result.absPath}
+                      >
+                        {result.path}
+                      </LocalFileAction>
                     </div>
                     {result.passages.map((passage) => (
                       <pre key={`${passage.document_id}:${passage.chunk_index}`} className="whitespace-pre-wrap text-fg-muted text-[11px] leading-relaxed font-sans line-clamp-5 mt-1.5">

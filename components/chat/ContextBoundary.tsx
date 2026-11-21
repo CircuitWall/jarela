@@ -11,6 +11,7 @@ import ReactMarkdown from "react-markdown";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
+import { MARKDOWN_COMPONENTS } from "@/components/ui/MarkdownAnchor";
 import type { SummaryTopicSegment, WarmChannelSummary } from "@/api/types";
 
 interface WarmSummaryCardProps {
@@ -94,7 +95,7 @@ export function WarmSummaryCard({
               expanded ? "" : "line-clamp-6",
             ].join(" ")}
           >
-            <ReactMarkdown>{stripWarmHeader(summary!)}</ReactMarkdown>
+            <ReactMarkdown components={MARKDOWN_COMPONENTS}>{stripWarmHeader(summary!)}</ReactMarkdown>
           </div>
         ) : !summary && committed ? (
           channelSummaries.length === 0 && (
@@ -184,14 +185,14 @@ function TopicSegmentRow({ topic }: { topic: SummaryTopicSegment }) {
       </MetaRow>
       {!open && topic.recap && (
         <div className="mt-1 ml-4 text-[11px] text-fg-muted line-clamp-2">
-          <ReactMarkdown>{topic.recap}</ReactMarkdown>
+          <ReactMarkdown components={MARKDOWN_COMPONENTS}>{topic.recap}</ReactMarkdown>
         </div>
       )}
       {open && (
         <div className="mt-1 ml-4 space-y-1.5">
           {topic.recap && (
             <div className="text-[11px] text-fg-muted">
-              <ReactMarkdown>{topic.recap}</ReactMarkdown>
+              <ReactMarkdown components={MARKDOWN_COMPONENTS}>{topic.recap}</ReactMarkdown>
             </div>
           )}
           {topic.facts.length > 0 && (

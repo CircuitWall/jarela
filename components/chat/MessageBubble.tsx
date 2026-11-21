@@ -19,6 +19,10 @@ import { errorMessage } from "@/lib/utils/error";
 import { parseStoredMessageContent, stripDeclaredReferencesFence } from "@/api/message-content";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownContent, ContentPartView } from "./MessageContent";
+import { ThreadScope } from "./ThreadScope";
+import { LocalFileAction } from "@/components/ui/LocalFileAction";
+import { LinkifiedText } from "@/components/ui/LinkifiedText";
+import { isLikelyLocalFileHref } from "@/lib/ui/local-file";
 import { USAGE_PROFILES } from "@/lib/agents/usage-profile";
 
 interface ExtractedRef {
@@ -66,7 +70,7 @@ function extractRefs(text: string): { body: string; refs: ExtractedRef[] } {
   let m: RegExpExecArray | null;
   while ((m = linkRe.exec(inner)) !== null) {
     const url = m[2].trim();
-    if (/^https?:\/\//.test(url)) refs.push({ title: m[1].trim(), url });
+    if (/^https?:\/\//.test(url) || isLikelyLocalFileHref(url)) refs.push({ title: m[1].trim(), url });
   }
   // Also catch bare-URL lines for resilience.
   if (refs.length === 0) {
@@ -717,26 +721,27 @@ function ReferencesPanel({ sources }: { sources: ReadonlyArray<{ n: number; labe
       {open && (
         <ol className="mt-1 space-y-0.5 pl-4 list-none">
           {sources.map((s) => {
-            const isAnchor = s.href.startsWith("#");
             const isMemory = s.href.startsWith("memory://");
+            // Web references leave the app in a new window; in-app routes and
+            // message anchors keep working in place; local files open in the
+            // OS default app.
+            const localFile = !isMemory && isLikelyLocalFileHref(s.href);
+            const external = !isMemory && !localFile && parseHref(s.href).external;
+            const linkClass = "text-sky-700 dark:text-sky-400 hover:underline truncate inline-block max-w-full align-middle";
             return (
               <li key={s.n} className="text-[11px] flex items-start gap-1.5">
                 <span className="text-fg-faint tabular-nums shrink-0 w-5 text-right">[{s.n}]</span>
-                {isAnchor || isMemory ? (
-                  <a
-                    href={isAnchor ? s.href : "#"}
-                    onClick={isMemory ? (e) => e.preventDefault() : undefined}
-                    className="text-sky-700 dark:text-sky-400 hover:underline truncate inline-block max-w-full align-middle"
-                    title={s.href}
-                  >
+                {localFile ? (
+                  <LocalFileAction href={s.href} className={linkClass} title={s.href}>
                     {s.label}
-                  </a>
+                  </LocalFileAction>
                 ) : (
                   <a
-                    href={s.href}
-                    target={s.href.startsWith("http") ? "_blank" : undefined}
-                    rel={s.href.startsWith("http") ? "noopener noreferrer" : undefined}
-                    className="text-sky-700 dark:text-sky-400 hover:underline truncate inline-block max-w-full align-middle"
+                    href={isMemory ? "#" : s.href}
+                    target={external ? "_blank" : undefined}
+                    rel={external ? "noopener noreferrer" : undefined}
+                    onClick={isMemory ? (e) => e.preventDefault() : undefined}
+                    className={linkClass}
                     title={s.href}
                   >
                     {s.label}
@@ -975,15 +980,25 @@ function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
         <ul className="mt-1 space-y-0.5 pl-4">
           {refs.map((r, i) => (
             <li key={`${i}-${r.url}`} className="text-[11px]">
-              <a
-                href={r.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sky-700 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 hover:underline truncate inline-block max-w-full align-middle"
-                title={r.url}
-              >
-                {r.title || r.url}
-              </a>
+              {isLikelyLocalFileHref(r.url) ? (
+                <LocalFileAction
+                  href={r.url}
+                  className="text-sky-700 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 hover:underline truncate inline-block max-w-full align-middle"
+                  title={r.url}
+                >
+                  {r.title || r.url}
+                </LocalFileAction>
+              ) : (
+                <a
+                  href={r.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sky-700 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 hover:underline truncate inline-block max-w-full align-middle"
+                  title={r.url}
+                >
+                  {r.title || r.url}
+                </a>
+              )}
             </li>
           ))}
         </ul>
@@ -1132,20 +1147,22 @@ export const MessageBubble = memo(function MessageBubble({ message, attachedActi
             </div>
           ) : null}
         </div>
-        <MessageStatusAndDiagnostics
-          isUser={isUser}
-          streaming={streaming}
-          transcriptStatus={transcriptStatus}
-          statusReason={statusReason}
-          message={message}
-          diagnosticsVisible={diagnosticsVisible}
-          routingDecision={routingDecision}
-          memoryRecall={memoryRecall}
-          showToolEvents={showToolEvents}
-          citations={citations}
-          redactionSummary={redactionSummary}
-          refs={refs}
-        />
+        <ThreadScope threadId={threadId}>
+          <MessageStatusAndDiagnostics
+            isUser={isUser}
+            streaming={streaming}
+            transcriptStatus={transcriptStatus}
+            statusReason={statusReason}
+            message={message}
+            diagnosticsVisible={diagnosticsVisible}
+            routingDecision={routingDecision}
+            memoryRecall={memoryRecall}
+            showToolEvents={showToolEvents}
+            citations={citations}
+            redactionSummary={redactionSummary}
+            refs={refs}
+          />
+        </ThreadScope>
       </div>
     </div>
   );
@@ -1599,7 +1616,7 @@ function MessageStatusAndDiagnostics({
         <span>{transcriptStatus === "in_progress" ? "Response in progress"
           : transcriptStatus === "interrupted" ? "Response interrupted"
             : "Response failed"}</span>
-        {statusReason && <span className="break-words">· {statusReason}</span>}
+        {statusReason && <span className="break-words">· <LinkifiedText text={statusReason} /></span>}
       </div>
     )}
     {isUser && "status" in message && (message.status === 'pending' || message.status === 'steering' || message.status === 'steering_uncertain') && (

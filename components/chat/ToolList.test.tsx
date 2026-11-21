@@ -233,7 +233,9 @@ describe("ToolList — live progress (ADR-0073)", () => {
     expect(screen.getByText("Started")).toBeTruthy();
     expect(screen.getByText("model sonnet · tools Read,Grep · permission dontAsk · 600s timeout · memory both")).toBeTruthy();
     expect(screen.getByText("Claude: inspecting files")).toBeTruthy();
-    expect(screen.getByText("Read: app/page.tsx")).toBeTruthy();
+    // The referenced file is now an open-file action rather than plain text.
+    expect(screen.getByRole("button", { name: "app/page.tsx" })).toBeTruthy();
+    expect(screen.getByText(/Read:/)).toBeTruthy();
     expect(screen.getByText("Claude questions")).toBeTruthy();
     expect(screen.getByText("Should this be global or workspace scoped?")).toBeTruthy();
   });
@@ -547,5 +549,28 @@ describe("ToolList — live progress (ADR-0073)", () => {
     expect(screen.getByText("web_search")).toBeTruthy();
     expect(screen.queryByText("invoke_tool")).toBeNull();
     expect(screen.getAllByText(/sek cny rate/).length).toBeGreaterThan(0);
+  });
+});
+
+describe("ToolList — reference values", () => {
+  it("opens a file path from a tool result with the OS default app", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    } as Response);
+    const events: ToolEvent[] = [
+      { id: "f1", phase: "call", name: "list_files", payload: { path: "src" } },
+      { id: "f1", phase: "result", name: "list_files", payload: { files: ["src/app/page.tsx"] } },
+    ];
+
+    render(<ToolList events={events} />);
+    fireEvent.click(screen.getByText("list_files"));
+    fireEvent.click(screen.getByRole("button", { name: /src\/app\/page\.tsx/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/local-file", expect.objectContaining({ method: "POST" })));
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      href: "src/app/page.tsx",
+    });
   });
 });

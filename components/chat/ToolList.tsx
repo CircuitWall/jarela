@@ -34,6 +34,9 @@ import { StructuredTurnCard } from "@/components/chat/StructuredTurnCard";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { ProviderLogo, brandSlugForToolName } from "@/components/models/ProviderLogo";
 import { api } from "@/api/client";
+import { LocalFileAction } from "@/components/ui/LocalFileAction";
+import { LinkifiedText } from "@/components/ui/LinkifiedText";
+import { isLocalFilePath } from "@/lib/ui/local-file";
 import type { CodexDelegateJobStatus } from "@/api/types";
 
 // Distinct lucide glyph per internal tool family so the chat transcript
@@ -798,7 +801,7 @@ function StepRow({ step }: { step: string }) {
           kind === "error" ? "text-rose-600 dark:text-rose-300/90" : "text-fg-faint"
         }`}
       >
-        {body}
+        <LinkifiedText text={body} />
       </span>
     </div>
   );
@@ -894,14 +897,14 @@ function DelegateTurnCards({
     askedSections.push({
       label: "Task",
       defaultOpen: true,
-      content: <p className="text-[11px] leading-[1.45] whitespace-pre-wrap break-words">{parentMessage}</p>,
+      content: <p className="text-[11px] leading-[1.45] whitespace-pre-wrap break-words"><LinkifiedText text={parentMessage} /></p>,
     });
   }
   if (launch) {
     askedSections.push({
       label: "Started",
       defaultOpen: true,
-      content: <span className="text-[11px]">{formatClaudeLaunchSummary(launch)}</span>,
+      content: <span className="text-[11px]"><LinkifiedText text={formatClaudeLaunchSummary(launch)} /></span>,
     });
   }
 
@@ -921,7 +924,7 @@ function DelegateTurnCards({
       content: (
         <ol className="list-decimal list-inside space-y-0.5 text-[11px] leading-[1.45]">
           {designQuestions.map((q, i) => (
-            <li key={i} className="break-words whitespace-pre-wrap">{q}</li>
+            <li key={i} className="break-words whitespace-pre-wrap"><LinkifiedText text={q} /></li>
           ))}
         </ol>
       ),
@@ -930,7 +933,7 @@ function DelegateTurnCards({
     replySections.push({
       label: "Result",
       defaultOpen: true,
-      content: <p className="text-[11px] leading-[1.45] whitespace-pre-wrap break-words">{resultText}</p>,
+      content: <p className="text-[11px] leading-[1.45] whitespace-pre-wrap break-words"><LinkifiedText text={resultText} /></p>,
     });
   }
   const replyChip = awaitingUserAnswers ? (
@@ -1090,7 +1093,7 @@ function DetailSection({
         </dl>
       ) : (
         <pre className={`text-[11px] font-mono whitespace-pre-wrap [overflow-wrap:anywhere] max-w-full ${toneClass}`}>
-          {formatPayload(value)}
+          <LinkifiedText text={formatPayload(value)} />
         </pre>
       )}
     </div>
@@ -1126,22 +1129,33 @@ const URL_RE = /^https?:\/\/[^\s]+$/i;
 // titled link list with snippet, primitive arrays join with commas,
 // nested objects render as an indented mini-grid, generic arrays of
 // objects collapse to a count to keep the panel scannable.
+function linkifyString(value: string): ReactNode | null {
+  if (URL_RE.test(value)) {
+    return (
+      <a
+        href={value}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="text-sky-500 hover:underline break-all"
+      >
+        {value}
+      </a>
+    );
+  }
+  if (isLocalFilePath(value)) {
+    return (
+      <LocalFileAction href={value} className="text-sky-500 break-all">
+        {value}
+      </LocalFileAction>
+    );
+  }
+  return null;
+}
+
 function renderKvValue(v: unknown): ReactNode {
   if (v == null) return <span className="text-fg-faint">{String(v)}</span>;
   if (typeof v === "string") {
-    if (URL_RE.test(v)) {
-      return (
-        <a
-          href={v}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-sky-500 hover:underline break-all"
-        >
-          {v}
-        </a>
-      );
-    }
-    return v;
+    return linkifyString(v) ?? v;
   }
   if (typeof v === "number" || typeof v === "boolean") return String(v);
 
@@ -1183,8 +1197,19 @@ function renderKvValue(v: unknown): ReactNode {
       );
     }
 
-    // Primitive arrays: comma-joined inline.
+    // Primitive arrays: comma-joined inline, except reference lists (URLs and
+    // file paths), which stay individually openable.
     if (v.every((it) => it == null || typeof it !== "object")) {
+      const linkable = v.length > 0 && v.every((it): it is string => typeof it === "string" && linkifyString(it) !== null);
+      if (linkable) {
+        return (
+          <ul className="space-y-0.5">
+            {v.map((it, i) => (
+              <li key={i} className="min-w-0">{linkifyString(it as string)}</li>
+            ))}
+          </ul>
+        );
+      }
       return v.map((it) => (it == null ? String(it) : String(it))).join(", ");
     }
 
