@@ -16,6 +16,7 @@ import { pushToast } from "@/lib/ui/toasts";
 import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/message-role";
 import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extension-turn-prompt";
 import { errorMessage } from "@/lib/utils/error";
+import { parseVoiceDirectives } from "@/lib/voice/tone";
 import { parseStoredMessageContent, stripDeclaredReferencesFence } from "@/api/message-content";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownContent, ContentPartView } from "./MessageContent";
@@ -1298,7 +1299,10 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
 
   const speak = useCallback(async () => {
     if (!voiceEnabled || !agentConfig || streaming) return;
-    if (!ttsAbleText.trim()) return;
+    // `[[tone: …]]` steers delivery and never reaches the visible message;
+    // it is extracted here and sent as the TTS style.
+    const { text: speakable, style } = parseVoiceDirectives(ttsAbleText);
+    if (!speakable.trim()) return;
     // Resume an existing buffer instead of re-fetching.
     if (audioRef.current && audioUrlRef.current) {
       if (audioState === "playing") {
@@ -1316,7 +1320,11 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
       const res = await fetch("/api/v1/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent_id: agentConfig.id, text: ttsAbleText }),
+        body: JSON.stringify({
+          agent_id: agentConfig.id,
+          text: speakable,
+          ...(style ? { style } : {}),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({} as { error?: string }));
