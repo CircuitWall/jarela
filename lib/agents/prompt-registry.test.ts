@@ -16,7 +16,7 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-prompt-verify-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
 const { buildSystemPrompt, CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL } = await import("./prepare/system-prompt");
-const { listStaticPrompts, promptsAffectedBy, SYSTEM_PROMPT_SOURCE_PREFIXES } = await import("./prompt-registry");
+const { listStaticPrompts, promptsAffectedBy, SYSTEM_PROMPT_SOURCE_PREFIXES, staticPromptArtifactName } = await import("./prompt-registry");
 const { getAllToolCatalogAsync, applyAgentPermissionsToCatalog } = await import("@/lib/tools");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import { getUsageStrategyProfile } from "./usage-strategy";
@@ -87,7 +87,7 @@ if (process.env.JARELA_PROMPT_DUMP === "1") {
   mkdirSync(outDir, { recursive: true });
   for (const v of variants) writeFileSync(join(outDir, `system-prompt.${v.id}.txt`), v.prompt, "utf8");
   for (const p of staticPrompts) {
-    writeFileSync(join(outDir, `static.${p.id}.txt`), `# ${p.source}\n# ${p.purpose}\n\n${p.text}`, "utf8");
+    writeFileSync(join(outDir, staticPromptArtifactName(p.id)), `# ${p.source}\n# ${p.purpose}\n\n${p.text}`, "utf8");
   }
   // Lets scripts/dump-prompts.mjs map changed files to artifacts without
   // importing TypeScript.
@@ -99,7 +99,7 @@ if (process.env.JARELA_PROMPT_DUMP === "1") {
       staticPrompts: staticPrompts.map((p) => ({
         id: p.id,
         source: p.source,
-        artifact: `static.${p.id}.txt`,
+        artifact: staticPromptArtifactName(p.id),
       })),
     }, null, 2),
     "utf8",
@@ -115,7 +115,7 @@ if (process.env.JARELA_PROMPT_DUMP === "1") {
       ...variants.map((v) => `- \`system-prompt.${v.id}.txt\` (${v.prompt.length} chars)`),
       "",
       "## Static prompts",
-      ...staticPrompts.map((p) => `- \`static.${p.id}.txt\` â€” ${p.purpose}`),
+      ...staticPrompts.map((p) => `- \`${staticPromptArtifactName(p.id)}\` â€” ${p.purpose}`),
     ].join("\n"),
     "utf8",
   );
@@ -396,10 +396,22 @@ describe("prompt registry coverage", () => {
       "lib/lifecycle/system-signals.ts",
       "lib/agents/retry-prompts.ts",
       "lib/agents/first-run-onboarding.ts",
+      "lib/agents/prompt-eval/judge.ts",
     ];
     for (const source of declaring) {
       expect(registered, `${source} declares a prompt but is not in prompt-registry.ts`).toContain(source);
     }
+  });
+
+  it("names prompt artifacts the release uploader accepts", () => {
+    // A `:` is legal in an id (harness ids use it) and illegal in an artifact
+    // path; that mismatch broke the CI artifact upload as soon as the step
+    // started including hidden files.
+    const names = staticPrompts.map((prompt) => staticPromptArtifactName(prompt.id));
+    for (const name of names) {
+      expect(name, `${name}: illegal artifact character`).not.toMatch(/[<>:"|?*\\/]/);
+    }
+    expect(new Set(names).size, "two prompt ids sanitise to the same artifact name").toBe(names.length);
   });
 
   it("uses source seq values, not timestamps, for conversation topic boundaries", () => {
@@ -625,8 +637,30 @@ describe("assembled agent system prompt", () => {
     }
   });
 
-  it("explains oversized tool result references", () => {
+  it("keeps the proxy instruction aligned with the invoke_tool contract", async () => {
+    // The tool prefers structured `args`; `args_json` is the fallback for
+    // providers that strip object schemas. A prompt that demands args_json
+    // sends models down the less reliable path.
+    const catalog = await getAllToolCatalogAsync();
+    const invoke = catalog.find((entry) => entry.name === "invoke_tool");
+    expect(invoke, "invoke_tool is not registered").toBeDefined();
+    expect(invoke!.description).toContain("Prefer args");
+
     for (const { id, prompt } of variants) {
+      const shared = prompt.split(CACHE_SHARED_SPLIT_SENTINEL)[0];
+      expect(shared, `${id}: proxy instruction still requires args_json`).not.toContain(
+        "call invoke_tool with the exact name and args_json",
+      );
+      expect(shared, `${id}: proxy instruction must prefer structured args`).toContain(
+        "pass the target's arguments in args",
+      );
+      expect(shared, `${id}: args_json must be described as the fallback`).toContain(
+        "pass the same object encoded as a string in args_json",
+      );
+    }
+  });
+
+  it("explains oversized tool result references", () => {    for (const { id, prompt } of variants) {
       expect(prompt, `${id}: prompt never explains truncated tool results`).toContain("truncated=true");
       expect(prompt, `${id}: prompt never explains result_ref`).toContain("result_ref");
       expect(prompt, `${id}: prompt never names the retrieval tool`).toContain("tool_result_get");

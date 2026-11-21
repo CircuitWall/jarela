@@ -135,6 +135,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:eval": "vitest run lib/agents/output-validator/eval.test.ts",
+    "test:prompts": "vitest run lib/agents/prompt-eval lib/agents/prompt-registry.test.ts",
+    "test:prompt-eval": "vitest run lib/agents/prompt-eval/live.test.ts --reporter=default",
     "test:hooks": "vitest run hooks",
     "test:hooks:watch": "vitest hooks",
     "lint:hooks": "eslint hooks",

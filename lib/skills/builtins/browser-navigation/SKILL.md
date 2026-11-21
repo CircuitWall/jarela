@@ -1,6 +1,6 @@
 ---
 name: browser-navigation
-description: "Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints."
+description: "Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints. Load it before the first browser_* tool call."
 ---
 
 # Browser Navigation

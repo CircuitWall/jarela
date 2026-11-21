@@ -85,6 +85,9 @@ lint_output.txt
 # assembled prompts (npm run prompts:dump)
 .prompts/
 
+# prompt evaluation reports (npm run test:prompt-eval)
+.prompt-eval/
+
 # Generated documentation changelog (copied from the root during docs builds).
 docs/CHANGELOG.md
 # Generated from Git history during documentation builds.

@@ -68,6 +68,7 @@ jobs:
       pkg_meta:          ${{ steps.filter.outputs.pkg_meta }}
       workflows:         ${{ steps.filter.outputs.workflows }}
       native_packages:   ${{ steps.filter.outputs.native_packages }}
+      prompts:           ${{ steps.filter.outputs.prompts }}
       release_meta_only: ${{ steps.release-meta.outputs.only }}
     steps:
       - uses: actions/checkout@v7
@@ -112,6 +113,29 @@ jobs:
               - 'scripts/package-native-linux.sh'
               - 'scripts/test-native-linux.sh'
               - '.github/workflows/ci.yml'
+            # Anything that can change the text a model receives, plus the
+            # harness that verifies it. Kept in sync with
+            # SYSTEM_PROMPT_SOURCE_PREFIXES in lib/agents/prompt-registry.ts by
+            # lib/agents/prompt-eval/ci-trigger.test.ts.
+            prompts:
+              - 'lib/agents/prepare/**'
+              - 'lib/agents/harness/**'
+              - 'lib/agents/adaptive-persona.ts'
+              - 'lib/agents/usage-strategy.ts'
+              - 'lib/agents/usage-profile.ts'
+              - 'lib/agents/prompt-variants.ts'
+              - 'lib/agents/prompt-registry.ts'
+              - 'lib/agents/delegate-catalog.ts'
+              - 'lib/agents/advertisement-contract.ts'
+              - 'lib/agents/advertisement-service.ts'
+              - 'lib/agents/prompt-eval/**'
+              - 'lib/skills/index.ts'
+              - 'lib/skills/frontmatter.ts'
+              - 'lib/skills/builtins/**'
+              - 'lib/tools/system/skills.ts'
+              - 'scripts/dump-prompts.mjs'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/prompt-eval.yml'
 
       - name: Detect release metadata-only change
         id: release-meta
@@ -130,6 +154,52 @@ jobs:
           fi
 
           node scripts/ci-release-metadata.mjs "$range"
+
+  prompt-guardrails:
+    # Deterministic behaviour gate. Runs only when something that can change the
+    # text a model receives (or the harness that verifies it) changed, so the
+    # expensive suites in `build` / `unit-coverage` are not duplicated.
+    name: Prompt guardrails
+    runs-on: ubuntu-26.04
+    needs: [changes]
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_validation) || (github.event_name == 'pull_request' && needs.changes.outputs.prompts == 'true') }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # `prompts:dump --since origin/main` needs the merge base, not a
+          # shallow single-commit checkout.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24.15.0"
+          check-latest: true
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
+
+      # Assembled-prompt invariants plus the scenario contracts: the decision a
+      # prompt must carry is still there, the expected tool is executable, and
+      # the wrong choice is still reachable so the check is falsifiable.
+      - name: Prompt contract suites
+        run: npm run test:prompts
+
+      - name: Render assembled prompts
+        run: npm run prompts:dump -- --since origin/main
+
+      - name: Upload assembled prompts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: assembled-prompts
+          path: .prompts/
+          # `.prompts/` is a dot-directory; upload-artifact excludes hidden
+          # files by default and would otherwise upload nothing.
+          include-hidden-files: true
+          retention-days: 14
 
   native-packages:
     name: Native Linux package smoke test

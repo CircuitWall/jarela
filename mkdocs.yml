@@ -70,6 +70,7 @@ nav:
       - JavaScript skill execution (proposed ADR): adr/0112-checked-javascript-skill-execution.md
       - API: api.md
       - API design standard: API_DESIGN_STANDARD.md
+      - Prompt evaluation: PROMPT_EVALUATION.md
   - Extending:
       - Extension surfaces: EXTENDING.md
       - Provider policy: PRICING_EXTRACTION_POLICY.md

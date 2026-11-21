@@ -436,6 +436,9 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("Missing execution support or authorization is an explicit blocker");
     expect(ctx).toContain("substitute shell execution for an unavailable checked runner");
     expect(ctx).toContain("1. Bound first.");
+    // A request that matches a skill must load it before acting; without this
+    // carve-out the numbered SOP outranks the skills section.
+    expect(ctx).toContain("unless the request matches a listed skill's Use when: criteria, in which case load that skill first with read_skill");
     expect(ctx).toContain("2. Otherwise look it up.");
     expect(ctx).toContain("3. Named target.");
     expect(ctx).toContain("4. Read the schema.");

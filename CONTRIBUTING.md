@@ -152,6 +152,8 @@ git push -u origin <type>/<slug>
    - typecheck (`tsc --noEmit`)
    - build (`next build`)
    - integration tests (`npm run test:live` against a built server)
+   - prompt guardrails (`npm run test:prompts`) when a prompt source changes;
+     see [Prompt evaluation](docs/PROMPT_EVALUATION.md)
 5. **Address the Copilot code review.** GitHub's automated Copilot review runs
    on every PR against `main`. Before merge, every finding it posts must be
    either fixed (verify the claim against the actual code first — Copilot can
