@@ -34,4 +34,12 @@ describe("MarkdownTextarea", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
     expect((container.querySelector(".jarela-rich") as HTMLElement).style.minHeight).toBe("5rem");
   });
+
+  it("opens preview links in a new window", () => {
+    render(<MarkdownTextarea value="See [the docs](https://example.com/docs)." onChange={() => undefined} />);
+
+    const link = screen.getByRole("link", { name: "the docs" });
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
 });

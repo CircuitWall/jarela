@@ -2,6 +2,7 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { MARKDOWN_COMPONENTS } from "./MarkdownAnchor";
 
 interface Props {
   value: string;
@@ -88,7 +89,7 @@ export function MarkdownTextarea({
               if (formatted !== null) {
                 return <pre className={`${fontClass} whitespace-pre-wrap text-xs leading-snug`}>{formatted}</pre>;
               }
-              return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS}>{value}</ReactMarkdown>;
+              return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>{value}</ReactMarkdown>;
             })()
           ) : (
             <span className="text-fg-faint italic">Nothing to preview</span>

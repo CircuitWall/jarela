@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AppProvider } from "@/contexts/AppContext";
 import { MessageBubble } from "./MessageBubble";
 import type { Message } from "@/api/types";
@@ -226,8 +226,7 @@ describe("MessageBubble transcript status", () => {
   });
 });
 
-describe("MessageBubble local file links", () => {
-  it("renders a local markdown link as an inline snippet instead of a localhost anchor", async () => {
+describe("MessageBubble local file links", () => {  it("renders a local markdown link as an inline snippet instead of a localhost anchor", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -423,5 +422,72 @@ describe("MessageBubble automation activity", () => {
     expect(screen.getByText("No matching messages.")).toBeTruthy();
     expect(screen.getByText("One mailbox was unavailable.")).toBeTruthy();
     expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+describe("MessageBubble references", () => {
+  it("opens web references in a new window and keeps in-app references in place", () => {
+    const message: Message = {
+      id: "references-1",
+      role: "assistant",
+      content: "Answer with references.",
+      created_at: "2026-08-16T12:00:00.000Z",
+      status: "confirmed",
+      metadata: {
+        citations: {
+          sources: [
+            { n: 1, label: "Web source", href: "https://example.com/page" },
+            { n: 2, label: "Capabilities", href: "/?tab=tools" },
+            { n: 3, label: "notes.md", href: "notes/plan.md" },
+          ],
+        },
+      },
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble message={message} showAvatar={false} threadId="thread-1" />
+      </AppProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /3 references/ }));
+
+    const web = screen.getByRole("link", { name: "Web source" });
+    expect(web.getAttribute("target")).toBe("_blank");
+    expect(web.getAttribute("rel")).toBe("noopener noreferrer");
+
+    const inApp = screen.getByRole("link", { name: "Capabilities" });
+    expect(inApp.getAttribute("target")).toBeNull();
+  });
+
+  it("opens a local file reference with the OS default app", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    } as Response);
+    const message: Message = {
+      id: "references-2",
+      role: "assistant",
+      content: "Answer with a file reference.",
+      created_at: "2026-08-16T12:00:00.000Z",
+      status: "confirmed",
+      metadata: {
+        citations: { sources: [{ n: 1, label: "notes.md", href: "notes/plan.md" }] },
+      },
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble message={message} showAvatar={false} threadId="thread-1" />
+      </AppProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /1 reference/ }));
+    fireEvent.click(screen.getByRole("button", { name: /notes\.md/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/local-file", expect.objectContaining({ method: "POST" })));
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      href: "notes/plan.md",
+      thread_id: "thread-1",
+    });
   });
 });

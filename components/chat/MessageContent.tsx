@@ -10,6 +10,7 @@ import { Check, Copy, Download, ExternalLink, FileText, Loader2, Paperclip } fro
 import type { ContentPart } from "@/api/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { parseHref } from "@/lib/ui/navigate";
+import { isLikelyLocalFileHref, openLocalFile } from "@/lib/ui/local-file";
 import { pushToast } from "@/lib/ui/toasts";
 import { errorMessage } from "@/lib/utils/error";
 // Tracks which TTS clips have started auto-playing this session so a clip
@@ -78,26 +79,6 @@ const MD_REHYPE_PLUGINS: import("unified").PluggableList = [
 ];
 
 
-function isLikelyLocalFileHref(href: string): boolean {
-  if (!href || href.startsWith("#")) return false;
-  if (/^(mailto|tel|javascript|data|blob):/i.test(href)) return false;
-  if (/^file:\/\//i.test(href)) return true;
-  if (/^[A-Za-z]:[\\/]/.test(href) || href.startsWith("~/") || href.startsWith("~\\")) return true;
-  if (/^https?:\/\//i.test(href)) {
-    try {
-      const url = new URL(href);
-      if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname)) return false;
-      return !/^\/(api|_next)(\/|$)/.test(url.pathname);
-    } catch {
-      return false;
-    }
-  }
-  if (href.startsWith("/")) return false;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return false;
-  return /(^\.\.?[\\/]|[\\/]|\.[A-Za-z0-9]{1,12}(?:[?#]|$))/.test(href);
-}
-
-
 interface LocalFilePreview {
   path: string;
   name: string;
@@ -116,13 +97,7 @@ function LocalFileLink({ href, threadId, children, className, title }: { href: s
 
   const openDefault = useCallback(async () => {
     setOpenError(null);
-    const res = await fetch("/api/v1/local-file", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ href, thread_id: threadId ?? undefined }),
-    });
-    const body = await res.json().catch(() => ({} as { error?: string }));
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    await openLocalFile(href, threadId);
     pushToast({
       kind: "success",
       source: "system",
@@ -277,7 +252,13 @@ function ResilientMarkdownImage({ src, alt }: { src?: string | Blob; alt?: strin
         alt={alt ?? "image"}
         loading="lazy"
         className="rounded-lg border border-border/50 cursor-zoom-in hover:border-fg-faint transition-colors"
-        onClick={() => setOpen(true)}
+        onClick={(event) => {
+          // Enlarging stays in-app even when the image sits inside a markdown
+          // link, which would otherwise also open a new window.
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(true);
+        }}
         onError={() => {
           if (retryNonce === 0) {
             setRetryNonce(1);

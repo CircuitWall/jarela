@@ -8,6 +8,7 @@ import type { AgentConfig } from "@/api/types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useSyncExternalStore } from "react";
+import { MarkdownAnchor } from "@/components/ui/MarkdownAnchor";
 import { AgentCardControls, type AgentCardSettings, type UpdateCardAgent } from "./AgentCardControls";
 
 interface Props {
@@ -65,7 +66,7 @@ function AgentMarkdown({ children }: { children: string }) {
         remarkPlugins={MD_REMARK_PLUGINS}
         skipHtml
         components={{
-          a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+          a: MarkdownAnchor,
           // Descriptions must not load remote images, including in the hidden mobile card.
           img: ({ alt }) => <span className="italic text-fg-faint">{alt}</span>,
         }}
