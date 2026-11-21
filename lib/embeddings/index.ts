@@ -628,7 +628,6 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
   const qVec = await embedQueryOne(query);
   const db = getDb();
   const scored: RecalledMemory[] = [];
-  if (qVec) void reembedStaleVectors(qVec.length);
 
   // Memory entries are small and few; messages are neither, so they come from
   // a scoped candidate query on the read pool (ADR-0119).
@@ -734,9 +733,13 @@ export async function searchMemory(query: string, opts: MemorySearchOptions = {}
       groups.set(key, { ...existing, score: s.score });
     }
   }
-  return Array.from(groups.values())
+  const results = Array.from(groups.values())
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+  // Kick maintenance after the ranking reads so a background re-embed can
+  // never rewrite a vector between the candidate scan and the score.
+  if (qVec) void reembedStaleVectors(qVec.length);
+  return results;
 }
 
 /**
