@@ -53,6 +53,7 @@ describe("configuration lifecycle edge cases", () => {
     const configured = upsertAgentConfig({
       ...base, is_default: true, never_reply: true, adaptive_persona_enabled: true,
       voice_enabled: true, voice_auto_speak: false, voice_model: " ", voice_name: " ", voice_stt_model: " ",
+      voice_stt_engine: "whisper",
       harness_id: "synthetic", delegate_targets: ["synthetic-other", base.id, "synthetic-other"],
       context_tier_proportions: { hot: -1, warm: 20, facts: 80 },
       anti_hallucination_model_config: " synthetic ", router_enabled: true,
@@ -61,6 +62,7 @@ describe("configuration lifecycle edge cases", () => {
     expect(configured).toMatchObject({
       is_default: 1, never_reply: 1, adaptive_persona_enabled: 1, voice_enabled: 1,
       voice_auto_speak: 0, anti_hallucination_model_config: "synthetic",
+      voice_stt_engine: "whisper",
     });
     expect(getDefaultAgentConfig()?.id).toBe(base.id);
     expect(getAgentTierProportions(configured)).toEqual({ hot: 0, warm: 20, facts: 80 });

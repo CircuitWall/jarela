@@ -7,6 +7,7 @@ import type { UsageStrategy } from "@/lib/agents/usage-strategy";
 import { DEFAULT_PERSONA_STYLE, USAGE_PROFILES, type UsageProfile } from "@/lib/agents/usage-profile";
 import { useAgentExternalData } from "./useAgentExternalData";
 import { useAgentToolHandlers } from "./useAgentToolHandlers";
+import { normalizeSttEngine, type SttEngine } from "@/lib/voice/stt/types";
 
 type TierOverride = { hot: number; warm: number; facts: number } | null;
 type AntiHallucMode = "" | "off" | "regex" | "model";
@@ -68,6 +69,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [voiceModel, setVoiceModel] = useState<string>(agent?.voice_model ?? "gemini-2.5-flash-preview-tts");
   const [voiceName, setVoiceName] = useState<string>(agent?.voice_name ?? "Kore");
   const [voiceSttModel, setVoiceSttModel] = useState<string>(agent?.voice_stt_model ?? "gemini-2.5-flash");
+  const [voiceSttEngine, setVoiceSttEngine] = useState<SttEngine>(normalizeSttEngine(agent?.voice_stt_engine));
   const [voiceAutoSpeak, setVoiceAutoSpeak] = useState<boolean>(agent?.voice_auto_speak ?? true);
   const [routerPolicy, setRouterPolicy] = useState<RouterPolicy>(agent?.router_policy ?? "");
   const [routerEnabled, setRouterEnabled] = useState<RouterEnabled>(agent?.router_enabled ?? null);
@@ -114,6 +116,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
     adaptiveExpressiveness, setAdaptiveExpressiveness, adaptiveVerbosity, setAdaptiveVerbosity,
     voiceEnabled, setVoiceEnabled, voiceModel, setVoiceModel,
     voiceName, setVoiceName, voiceSttModel, setVoiceSttModel,
+    voiceSttEngine, setVoiceSttEngine,
     voiceAutoSpeak, setVoiceAutoSpeak,
     routerPolicy, setRouterPolicy, routerEnabled, setRouterEnabled,
     usageStrategy, setUsageStrategy,
@@ -134,7 +137,7 @@ interface PayloadFields {
   adaptiveStrength: number; adaptiveEmpathy: number;
   adaptiveExpressiveness: number; adaptiveVerbosity: number;
   voiceEnabled: boolean; voiceModel: string; voiceName: string;
-  voiceSttModel: string; voiceAutoSpeak: boolean;
+  voiceSttModel: string; voiceSttEngine: SttEngine; voiceAutoSpeak: boolean;
   routerPolicy: RouterPolicy; routerEnabled: RouterEnabled;
   usageStrategy: UsageStrategyOverride;
 }
@@ -162,6 +165,7 @@ function buildAgentPayload(f: PayloadFields): AgentConfigIn {
     voice_model: f.voiceModel,
     voice_name: f.voiceName,
     voice_stt_model: f.voiceSttModel,
+    voice_stt_engine: f.voiceSttEngine,
     voice_auto_speak: f.voiceAutoSpeak,
     harness_id: f.harnessId || null,
     delegate_targets: f.delegateTargets,

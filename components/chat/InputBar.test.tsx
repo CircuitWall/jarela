@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InputBar } from "./InputBar";
 
@@ -123,5 +123,82 @@ describe("InputBar local ownership", () => {
     await waitFor(() => expect(onVoiceTranscript).toHaveBeenCalledWith("spoken turn"));
     expect(stopTrack).toHaveBeenCalled();
     expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+  });
+
+  it("uses the browser engine without a server round trip", async () => {
+    class FakeRecognition {
+      static instances: FakeRecognition[] = [];
+      continuous = false;
+      interimResults = false;
+      lang = "";
+      maxAlternatives = 1;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      constructor() {
+        FakeRecognition.instances.push(this);
+      }
+      start() { /* started */ }
+      stop() { this.onend?.(); }
+      abort() { this.onend?.(); }
+    }
+    FakeRecognition.instances = [];
+    vi.stubGlobal("SpeechRecognition", FakeRecognition);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const onVoiceTranscript = vi.fn();
+    renderComposer({ voiceEnabled: true, agentId: "agent-1", voiceSttEngine: "browser", onVoiceTranscript });
+
+    fireEvent.click(screen.getByRole("button", { name: "Record voice message" }));
+    await waitFor(() => expect(FakeRecognition.instances).toHaveLength(1));
+    const recognition = FakeRecognition.instances[0];
+    const interim = Object.assign([{ transcript: "spoken words" }], { isFinal: false });
+    act(() => {
+      recognition.onresult?.({ resultIndex: 0, results: [interim] });
+    });
+    expect(screen.getByText("spoken words")).toBeTruthy();
+    const final = Object.assign([{ transcript: " spoken words " }], { isFinal: true });
+    act(() => {
+      recognition.onresult?.({ resultIndex: 0, results: [final] });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+    await waitFor(() => expect(onVoiceTranscript).toHaveBeenCalledWith("spoken words"));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the transcript and clears capture state when the engine ends on its own", async () => {
+    class FakeRecognition {
+      static instances: FakeRecognition[] = [];
+      continuous = false;
+      interimResults = false;
+      lang = "";
+      maxAlternatives = 1;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      constructor() {
+        FakeRecognition.instances.push(this);
+      }
+      start() { /* started */ }
+      stop() { this.onend?.(); }
+      abort() { this.onend?.(); }
+    }
+    FakeRecognition.instances = [];
+    vi.stubGlobal("SpeechRecognition", FakeRecognition);
+    const onVoiceTranscript = vi.fn();
+    renderComposer({ voiceEnabled: true, agentId: "agent-1", voiceSttEngine: "browser", onVoiceTranscript });
+
+    fireEvent.click(screen.getByRole("button", { name: "Record voice message" }));
+    await waitFor(() => expect(FakeRecognition.instances).toHaveLength(1));
+    const recognition = FakeRecognition.instances[0];
+    const final = Object.assign([{ transcript: "ended by silence" }], { isFinal: true });
+    act(() => {
+      recognition.onresult?.({ resultIndex: 0, results: [final] });
+      // Safari ignores `continuous` and ends the session after one utterance.
+      recognition.onend?.();
+    });
+
+    await waitFor(() => expect(onVoiceTranscript).toHaveBeenCalledWith("ended by silence"));
+    expect(screen.getByRole("button", { name: "Record voice message" })).toBeTruthy();
   });
 });

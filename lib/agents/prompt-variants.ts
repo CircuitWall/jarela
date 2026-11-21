@@ -43,6 +43,7 @@ export function agentCfg(overrides: Partial<AgentConfigRow> = {}): AgentConfigRo
     voice_model: "",
     voice_name: "",
     voice_stt_model: "",
+    voice_stt_engine: "gemini",
     voice_auto_speak: 0,
     display_filters: null,
     harness_id: null,

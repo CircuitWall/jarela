@@ -32,6 +32,18 @@ const SCHEMA_MIGRATIONS: readonly Migration[] = [{
     db.exec("CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages\nWHEN old.transcript_status = 'completed'\nBEGIN\n  INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.rowid, substr(old.content, 1, 2000));\nEND;");
     db.exec("CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE OF content, transcript_status ON messages\nBEGIN\n  INSERT INTO messages_fts(messages_fts, rowid, content)\n    SELECT 'delete', old.rowid, substr(old.content, 1, 2000) WHERE old.transcript_status = 'completed';\n  INSERT INTO messages_fts(rowid, content)\n    SELECT new.rowid, substr(new.content, 1, 2000) WHERE new.transcript_status = 'completed';\nEND;");
   },
+}, {
+  // ADR-0123. Per-agent voice *input* engine: 'gemini' (the pre-existing
+  // behaviour, kept as the default so upgrades are a no-op), 'browser'
+  // (Web Speech API, no key/network from the server) or 'whisper' (local
+  // tiny ONNX model installed on demand).
+  id: "3.7.1-voice-stt-engine",
+  apply(db) {
+    const columns = db.prepare("SELECT name FROM pragma_table_info('agent_configs')").all();
+    if (!columns.some((column) => column.name === "voice_stt_engine")) {
+      db.exec("ALTER TABLE agent_configs ADD COLUMN voice_stt_engine TEXT NOT NULL DEFAULT 'gemini'");
+    }
+  },
 }];
 // Encryption commits as its own migration, separate from credential
 // reshaping below. Reshaping reads already-encrypted `memory_store` rows

@@ -1,6 +1,7 @@
 import type { UsageProfile } from "@/lib/agents/usage-profile";
 import type { ModelCapabilities } from "@/lib/providers/capabilities";
 import type { ModelMetadata } from "@/lib/stores/model-metadata";
+import type { SttEngine } from "@/lib/voice/stt/types";
 import type { DocumentSourceKind, DocumentSourceStats } from "./document-sources";
 export type { DocumentSourceIn, DocumentSourceKind, DocumentSourcePatch, DocumentSourceStats } from "./document-sources";
 
@@ -65,6 +66,8 @@ export interface AgentConfig {
   voice_model: string;
   voice_name: string;
   voice_stt_model: string;
+  /** ADR-0123 voice input engine. */
+  voice_stt_engine: SttEngine;
   voice_auto_speak: boolean;
   /**
    * Optional override for which behavioral harness wraps this agent's system
@@ -160,6 +163,7 @@ export interface AgentConfigIn {
   voice_model?: string;
   voice_name?: string;
   voice_stt_model?: string;
+  voice_stt_engine?: SttEngine;
   voice_auto_speak?: boolean;
   harness_id?: string | null;
   delegate_targets?: string[];

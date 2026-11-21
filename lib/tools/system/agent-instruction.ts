@@ -12,6 +12,7 @@ import {
   upsertAgentConfig,
 } from "@/lib/stores/agent-configs";
 import { applyInstructionEdits } from "@/lib/agents/instruction-edits";
+import { normalizeSttEngine } from "@/lib/voice/stt/types";
 import { systemSignalDiagnostics } from "@/lib/stores/system-signals";
 
 function agentIdFromConfig(config?: RunnableConfig): string | null {
@@ -103,6 +104,7 @@ export const readAgentConfigTool = tool(
       voice_model: cfg.voice_model,
       voice_name: cfg.voice_name,
       voice_stt_model: cfg.voice_stt_model,
+      voice_stt_engine: normalizeSttEngine(cfg.voice_stt_engine),
       voice_auto_speak: cfg.voice_auto_speak === 1,
     });
   },

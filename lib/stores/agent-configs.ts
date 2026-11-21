@@ -5,6 +5,7 @@ import { DEFAULT_PERSONA_STYLE } from "@/lib/agents/usage-profile";
 import { USAGE_STRATEGIES } from "@/lib/agents/usage-strategy";
 import type { UsageProfile } from "@/lib/agents/usage-profile";
 import { deleteAdvertisement, notifyAdvertisementSourceChanged } from "@/lib/stores/agent-advertisements";
+import { normalizeSttEngine, type SttEngine } from "@/lib/voice/stt/types";
 
 const now = () => new Date().toISOString();
 
@@ -44,6 +45,7 @@ export interface AgentConfigRow {
   voice_model: string;               // Gemini TTS model id
   voice_name: string;                // Gemini prebuilt voice name (Kore, Puck, …)
   voice_stt_model: string;           // Gemini multimodal model used for transcription
+  voice_stt_engine: string;          // ADR-0123: 'gemini' | 'browser' | 'whisper'
   voice_auto_speak: number;          // 1 = auto-play reply when user sent voice
   display_filters: string | null;    // JSON: Partial<DisplayFilters>; NULL = inherit defaults (ADR-0022)
   harness_id: string | null;         // ADR-0033: per-agent harness override; NULL = inherit global default
@@ -169,6 +171,8 @@ export interface UpsertAgentInput {
   voice_model?: string;
   voice_name?: string;
   voice_stt_model?: string;
+  /** ADR-0123 voice input engine; omit to keep the row's value. */
+  voice_stt_engine?: SttEngine;
   voice_auto_speak?: boolean;
   harness_id?: string | null;
   delegate_targets?: string[];
@@ -333,10 +337,14 @@ function resolveAgentConfigValues(input: UpsertAgentInput, existing: AgentConfig
   const warmSummaryLimit = Number.isFinite(requestedWarmSummaryLimit)
     ? Math.max(0, Math.floor(requestedWarmSummaryLimit))
     : existing?.warm_summary_limit ?? 50;
+  // ADR-0123: unknown values fall back to the pre-existing Gemini path rather
+  // than failing the whole upsert.
+  const sttEngine = normalizeSttEngine(input.voice_stt_engine ?? existing?.voice_stt_engine);
   return {
     created_at, mbti, strength, empathy, expressiveness, verbosity,
     harnessId, delegateTargets, tierProportions, antiHallucMode, antiHallucModel,
     citationStrictness, toolCredentials, routerPolicy, routerEnabled, usageStrategy, warmSummaryLimit,
+    sttEngine,
   };
 }
 
@@ -349,6 +357,7 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
     created_at, mbti, strength, empathy, expressiveness, verbosity,
     harnessId, delegateTargets, tierProportions, antiHallucMode, antiHallucModel,
     citationStrictness, toolCredentials, routerPolicy, routerEnabled, usageStrategy, warmSummaryLimit,
+    sttEngine,
   } = resolveAgentConfigValues(input, existing, t);
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
@@ -356,12 +365,12 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
          history_limit, history_window_hours, warm_summary_limit, never_reply,
          hot_turn_limit,
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
-         voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
+         voice_enabled, voice_model, voice_name, voice_stt_model, voice_stt_engine, voice_auto_speak,
          harness_id, delegate_targets, context_tier_proportions,
          anti_hallucination_mode, anti_hallucination_model_config, citation_strictness,
         tool_credentials, router_policy, router_enabled, usage_strategy, usage_profile, display_filters,
          created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -397,6 +406,7 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
       (input.voice_name ?? existing?.voice_name ?? "Kore").trim() || "Kore",
       (input.voice_stt_model ?? existing?.voice_stt_model ?? "gemini-2.5-flash").trim() ||
         "gemini-2.5-flash",
+      sttEngine,
       input.voice_auto_speak === undefined
         ? (existing?.voice_auto_speak ?? 1)
         : (input.voice_auto_speak ? 1 : 0),

@@ -75,6 +75,7 @@ describe("agentToResponse", () => {
     voice_model: null,
     voice_name: null,
     voice_stt_model: null,
+    voice_stt_engine: "browser",
     voice_auto_speak: 0,
     created_at: "2026-05-21T00:00:00Z",
     updated_at: "2026-05-21T00:00:00Z",
@@ -96,6 +97,12 @@ describe("agentToResponse", () => {
     expect(out.adaptive_persona_enabled).toBe(true);
     expect(out.voice_enabled).toBe(false);
     expect(out.voice_auto_speak).toBe(false);
+  });
+
+  it("normalizes the voice input engine and defaults unknown values to gemini", () => {
+    expect(agentToResponse(baseRow).voice_stt_engine).toBe("browser");
+    const legacy = agentToResponse({ ...baseRow, voice_stt_engine: "nonsense" } as unknown as AgentConfigRow);
+    expect(legacy.voice_stt_engine).toBe("gemini");
   });
 
   it("defaults citation_strictness to 'off' when column is unset", () => {

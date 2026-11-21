@@ -5,6 +5,9 @@ import { uploadBinaryFile, uploadImageFile } from "@/api/client";
 import type { ContentPart } from "@/api/types";
 import { downscaleImageFile } from "@/lib/attachments/downscale-image";
 import { errorMessage } from "@/lib/utils/error";
+import { startBrowserStt } from "@/lib/voice/stt/browser";
+import { transcribeOnServer } from "@/lib/voice/stt/server";
+import { normalizeSttEngine, type SttSession } from "@/lib/voice/stt/types";
 
 interface Props {
   attachments: ContentPart[];
@@ -18,12 +21,13 @@ interface Props {
   streaming: boolean;
   disabled?: boolean;
   placeholder?: string;
-  // Voice push-to-talk — only rendered when the active agent has
-  // voice_enabled. Tapping mic records via MediaRecorder; on stop the audio
-  // is POSTed to /api/v1/voice/transcribe and the transcript is handed back
-  // to the parent (which is responsible for submitting it and arming the
-  // auto-speak-on-reply flag).
+  // Voice input — rendered when the active agent has voice_enabled. The
+  // capture engine is picked per agent (ADR-0123): `browser` uses the Web
+  // Speech API, everything else records via MediaRecorder and posts to
+  // /api/v1/voice/transcribe. The transcript is handed back to the parent,
+  // which submits it and arms auto-speak-on-reply.
   voiceEnabled?: boolean;
+  voiceSttEngine?: string | null;
   agentId?: string | null;
   onVoiceTranscript?: (text: string) => void;
 }
@@ -77,13 +81,13 @@ function attachmentKey(a: ContentPart, i: number): string {
   return `${a.type}:${a.media_type}:${name}:${a.data.length}:${a.data.slice(0, 16)}`;
 }
 
-export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, onStop, streaming, disabled, placeholder, voiceEnabled, agentId, onVoiceTranscript }: Props) {
+export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, onStop, streaming, disabled, placeholder, voiceEnabled, voiceSttEngine, agentId, onVoiceTranscript }: Props) {
   // Text state is intentionally LOCAL. Lifting it to ChatView would re-render
   // the entire message list (every MessageBubble + ReactMarkdown pass) on
   // every keystroke, which is the root cause of typing feeling sluggish on
   // long threads. Parent only needs the text at submit/queue time.
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { recording, transcribing, voiceError, iosPwaFix, startRecording, stopRecording } = useVoiceRecording({ voiceEnabled, agentId, onVoiceTranscript });
+  const { recording, transcribing, partial, voiceError, iosPwaFix, startRecording, stopRecording } = useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTranscript });
 
   const { value, setValue, textareaRef, setHlIdx, suggestions, showSuggestions, activeIdx, applySuggestion, fireSubmit, handleKeyDown } = useComposerText({ streaming, disabled, attachments, onSubmit, onQueue });
 
@@ -201,6 +205,9 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
       {voiceError && (
         <p className="mt-1 text-[11px] text-rose-500" role="alert">{voiceError}</p>
       )}
+      {recording && partial && (
+        <p className="mt-1 text-[11px] text-fg-faint" aria-live="polite">{partial}</p>
+      )}
       {transcribing && !voiceError && (
         <p className="mt-1 text-[11px] text-fg-faint" aria-live="polite">Transcribing…</p>
       )}
@@ -208,20 +215,46 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
   );
 }
 
-function useVoiceRecording({ voiceEnabled, agentId, onVoiceTranscript }: {
+function useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTranscript }: {
   voiceEnabled: boolean | undefined;
   agentId: string | null | undefined;
+  voiceSttEngine: string | null | undefined;
   onVoiceTranscript: ((text: string) => void) | undefined;
 }) {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [partial, setPartial] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const sessionRef = useRef<SttSession | null>(null);
   const iosPwaFix = isIosStandalonePwa();
+  const engine = normalizeSttEngine(voiceSttEngine);
+
+  // Shared by the explicit stop path and the engine's own end-of-turn, so a
+  // transcript is accepted exactly one way regardless of how recording ended.
+  function accept(text: string) {
+    const trimmed = text.trim();
+    if (trimmed) onVoiceTranscript?.(trimmed);
+    else setVoiceError("No speech was detected.");
+  }
+
+  async function deliver(transcribe: () => Promise<string>) {
+    setTranscribing(true);
+    try {
+      accept(await transcribe());
+    } catch (err) {
+      setVoiceError(errorMessage(err));
+    } finally {
+      setTranscribing(false);
+      setPartial("");
+    }
+  }
 
   useEffect(() => {
     return () => {
+      sessionRef.current?.cancel();
+      sessionRef.current = null;
       const r = recorderRef.current;
       if (r && r.state !== "inactive") {
         try { r.stop(); } catch { /* ignore */ }
@@ -233,6 +266,27 @@ function useVoiceRecording({ voiceEnabled, agentId, onVoiceTranscript }: {
   async function startRecording() {
     if (!voiceEnabled || !agentId || recording || transcribing) return;
     setVoiceError(null);
+    if (engine === "browser") {
+      try {
+        sessionRef.current = startBrowserStt({
+          onPartial: setPartial,
+          onEnd: ({ text, error }) => {
+            // The engine ended the turn itself (silence, Safari's
+            // non-continuous mode, or an async error), so clear the capture
+            // state and keep whatever was heard.
+            sessionRef.current = null;
+            setRecording(false);
+            setPartial("");
+            if (error) setVoiceError(error);
+            else accept(text);
+          },
+        });
+        setRecording(true);
+      } catch (err) {
+        setVoiceError(errorMessage(err));
+      }
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // Prefer webm/opus when available — universally supported by Chromium
@@ -252,21 +306,7 @@ function useVoiceRecording({ voiceEnabled, agentId, onVoiceTranscript }: {
         chunksRef.current = [];
         if (blob.size === 0) { setRecording(false); return; }
         setRecording(false);
-        setTranscribing(true);
-        try {
-          const fd = new FormData();
-          fd.append("agent_id", agentId);
-          fd.append("audio", blob, `voice.${(rec.mimeType || "audio/webm").includes("mp4") ? "mp4" : "webm"}`);
-          const res = await fetch("/api/v1/voice/transcribe", { method: "POST", body: fd });
-          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
-          const { text } = (await res.json()) as { text: string };
-          const trimmed = text.trim();
-          if (trimmed) onVoiceTranscript?.(trimmed);
-        } catch (err) {
-          setVoiceError(errorMessage(err));
-        } finally {
-          setTranscribing(false);
-        }
+        await deliver(() => transcribeOnServer({ agentId, engine, blob }));
       };
       rec.start();
       recorderRef.current = rec;
@@ -278,13 +318,20 @@ function useVoiceRecording({ voiceEnabled, agentId, onVoiceTranscript }: {
   }
 
   function stopRecording() {
+    const session = sessionRef.current;
+    if (session) {
+      sessionRef.current = null;
+      setRecording(false);
+      void deliver(() => session.stop());
+      return;
+    }
     const r = recorderRef.current;
     if (r && r.state !== "inactive") {
       try { r.stop(); } catch { /* ignore */ }
     }
   }
 
-  return { recording, transcribing, voiceError, iosPwaFix, startRecording, stopRecording };
+  return { recording, transcribing, partial, voiceError, iosPwaFix, startRecording, stopRecording };
 }
 
 function useComposerText({ streaming, disabled, attachments, onSubmit, onQueue }: {
