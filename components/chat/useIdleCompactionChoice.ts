@@ -5,6 +5,10 @@ import type { Message } from "@/api/types";
 
 export const IDLE_COMPACTION_DELAY_MS = 3 * 60 * 60 * 1000;
 
+// Compacting a short exchange buys little and costs a model call, so the idle
+// prompt only appears once the hot window carries a meaningful backlog.
+export const IDLE_COMPACTION_MIN_HOT_MESSAGES = 10;
+
 interface IdleCandidate {
   key: string;
   lastActivityAt: number;
@@ -17,17 +21,21 @@ interface IdleCompactionState {
   warmSummaryComputedAt?: string | null;
 }
 
-function findIdleCandidate(messages: Message[]): IdleCandidate | null {
-  const foreground = messages.filter((message) =>
+function foregroundMessages(messages: Message[]): Message[] {
+  return messages.filter((message) =>
     message.category == null
     && Number.isSafeInteger(message.seq)
     && message.seq! > 0
     && (message.status == null || message.status === "confirmed")
     && message.transcript_status !== "in_progress"
     && !Object.hasOwn(message.metadata ?? {}, "automation_activity"),
-  ).sort((left, right) => left.seq! - right.seq!);
-  const latest = foreground[foreground.length - 1];
-  const latestUser = [...foreground].reverse().find((message) => message.role === "user");
+  );
+}
+
+function findIdleCandidate(foreground: Message[]): IdleCandidate | null {
+  const ordered = [...foreground].sort((left, right) => left.seq! - right.seq!);
+  const latest = ordered[ordered.length - 1];
+  const latestUser = [...ordered].reverse().find((message) => message.role === "user");
   if (!latest || !latestUser?.seq) return null;
 
   const lastActivityAt = Date.parse(latest.created_at);
@@ -46,17 +54,24 @@ export function useIdleCompactionChoice(
   enabled: boolean,
   compactionState: IdleCompactionState = {},
 ) {
-  const candidate = useMemo(() => findIdleCandidate(messages), [messages]);
+  const { hotSinceSeq, warmSummaryBeforeSeq, warmSummaryComputedAt } = compactionState;
+  const foreground = useMemo(() => foregroundMessages(messages), [messages]);
+  const candidate = useMemo(() => findIdleCandidate(foreground), [foreground]);
+  const hotMessageCount = useMemo(
+    () => foreground.filter((message) => hotSinceSeq == null || message.seq! >= hotSinceSeq).length,
+    [foreground, hotSinceSeq],
+  );
+  const hasEnoughHotContext = hotMessageCount >= IDLE_COMPACTION_MIN_HOT_MESSAGES;
   const [readyKey, setReadyKey] = useState<string | null>(null);
   const [resolvedKeys, setResolvedKeys] = useState<ReadonlySet<string>>(() => new Set());
   const choiceKey = threadId && candidate ? `${threadId}:${candidate.key}` : null;
   const lastActivityAt = candidate?.lastActivityAt;
-  const summaryComputedAt = Date.parse(compactionState.warmSummaryComputedAt ?? "");
-  const freshWarmSummary = compactionState.hotSinceSeq != null
-    && compactionState.warmSummaryBeforeSeq === compactionState.hotSinceSeq;
+  const summaryComputedAt = Date.parse(warmSummaryComputedAt ?? "");
+  const freshWarmSummary = hotSinceSeq != null
+    && warmSummaryBeforeSeq === hotSinceSeq;
   const boundaryCoversCandidate = candidate !== null
-    && compactionState.hotSinceSeq != null
-    && compactionState.hotSinceSeq >= candidate.boundarySeq;
+    && hotSinceSeq != null
+    && hotSinceSeq >= candidate.boundarySeq;
   const alreadyCompacted = Boolean(
     candidate
     && freshWarmSummary
@@ -68,12 +83,12 @@ export function useIdleCompactionChoice(
 
   useEffect(() => {
     setReadyKey(null);
-    if (!enabled || !choiceKey || lastActivityAt == null) return;
+    if (!enabled || !choiceKey || lastActivityAt == null || !hasEnoughHotContext) return;
 
     const delay = Math.max(0, lastActivityAt + IDLE_COMPACTION_DELAY_MS - Date.now());
     const timer = window.setTimeout(() => setReadyKey(choiceKey), delay);
     return () => window.clearTimeout(timer);
-  }, [choiceKey, enabled, lastActivityAt]);
+  }, [choiceKey, enabled, lastActivityAt, hasEnoughHotContext]);
 
   const resolve = useCallback(() => {
     if (!choiceKey) return;
@@ -89,9 +104,16 @@ export function useIdleCompactionChoice(
   }, [choiceKey]);
 
   return {
-    open: Boolean(choiceKey && readyKey === choiceKey && !resolvedKeys.has(choiceKey) && !alreadyCompacted),
+    open: Boolean(
+      choiceKey
+      && readyKey === choiceKey
+      && !resolvedKeys.has(choiceKey)
+      && !alreadyCompacted
+      && hasEnoughHotContext,
+    ),
     choiceKey,
     boundarySeq: candidate?.boundarySeq ?? null,
+    hotMessageCount,
     resolve,
   };
 }
