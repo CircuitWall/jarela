@@ -5,8 +5,9 @@ import { api } from "@/api/client";
 import type { IntegrationDefinition, PendingAction } from "@/api/types";
 import { pushToast } from "@/lib/ui/toasts";
 import { errorMessage } from "@/lib/utils/error";
-import { choiceProposalSchema, choiceResponseSchema } from "@/lib/proposals/choice";
-import { ChoiceFields, type ChoiceResponse } from "./ChoiceFields";
+import { choiceProposalSchema } from "@/lib/proposals/choice";
+import type { ChoiceResponse } from "./ChoiceFields";
+import { ChoiceRequestCard } from "./ChoiceRequestCard";
 import { ArtifactPreview } from "./ArtifactPreview";
 import { SkillExecutionPreview } from "./SkillExecutionPreview";
 import { AuthoringOperationPreview } from "./AuthoringOperationPreview";
@@ -501,9 +502,9 @@ export function ApprovalsBanner(props: ApprovalsBannerProps) {
                 const busy = busyIds.has(a.id);
                 const choice = a.kind === "ask_choice" ? choiceProposalSchema.safeParse(a.payload) : null;
                 const response = responses[a.id] ?? { selected_values: [] };
-                const validResponse = choice?.success
-                  ? choiceResponseSchema(choice.data).safeParse(response).success
-                  : a.kind === "execute_skill" || a.kind === "execute_workflow" || a.kind === "authoring_operation" ? reviewedExecutions[a.id] === true : a.kind !== "ask_choice";
+                const validResponse = a.kind === "execute_skill" || a.kind === "execute_workflow" || a.kind === "authoring_operation"
+                  ? reviewedExecutions[a.id] === true
+                  : a.kind !== "ask_choice";
                 return (
                   <div key={a.id} className="px-3 py-2.5 text-xs">
                     <div className="flex items-center gap-2 mb-1">
@@ -511,43 +512,50 @@ export function ApprovalsBanner(props: ApprovalsBannerProps) {
                       {a.reason && <span className="text-fg">{a.reason}</span>}
                     </div>
                     {choice?.success ? (
-                      <ChoiceFields
+                      <ChoiceRequestCard
                         proposal={choice.data}
                         response={response}
                         onChange={(value) => setResponses((previous) => ({ ...previous, [a.id]: value }))}
-                        disabled={busy}
+                        busy={busy}
+                        error={errors[a.id]}
+                        onSubmit={() => approve(a)}
+                        onDismiss={() => deny(a)}
                       />
-                    ) : a.kind === "authoring_operation" && typeof a.payload.operation_id === "string"
-                      && (a.payload.operation_type === "extension" || a.payload.operation_type === "contribution")
-                      ? <AuthoringOperationPreview id={a.payload.operation_id} type={a.payload.operation_type}
-                        onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
-                      : a.kind === "execute_workflow" && typeof a.payload.authorization_id === "string"
-                        ? <SkillExecutionPreview requestId={a.payload.authorization_id} workflow
-                          onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
-                        : a.kind === "execute_skill" && typeof a.payload.request_id === "string"
-                          ? <SkillExecutionPreview requestId={a.payload.request_id}
+                    ) : (
+                      <>
+                        {a.kind === "authoring_operation" && typeof a.payload.operation_id === "string"
+                          && (a.payload.operation_type === "extension" || a.payload.operation_type === "contribution")
+                          ? <AuthoringOperationPreview id={a.payload.operation_id} type={a.payload.operation_type}
                             onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
-                          : a.kind === "write_skill" || a.kind === "update_scheduled_task_prompt" || a.kind === "update_watcher_prompt"
-                            ? <ArtifactPreview payload={a.payload} />
-                            : <PayloadPreview payload={a.payload} />}
-                    {choice && !choice.success && <p role="alert">Invalid choice proposal. Dismiss it and request a new question.</p>}
-                    {errors[a.id] && <p role="alert" className="text-red-500">{errors[a.id]}</p>}
-                    <div className="flex gap-1.5 justify-end">
-                      <button
-                        onClick={() => deny(a)}
-                        disabled={busy}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-fg hover:border-fg-faint disabled:opacity-50"
-                      >
-                        <X size={11} /> {a.kind === "ask_choice" ? "Dismiss" : "Deny"}
-                      </button>
-                      <button
-                        onClick={() => approve(a)}
-                        disabled={busy || !validResponse}
-                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-50"
-                      >
-                        <Check size={11} /> {busy ? "Submitting…" : a.kind === "ask_choice" ? "Submit response" : "Approve"}
-                      </button>
-                    </div>
+                          : a.kind === "execute_workflow" && typeof a.payload.authorization_id === "string"
+                            ? <SkillExecutionPreview requestId={a.payload.authorization_id} workflow
+                              onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
+                            : a.kind === "execute_skill" && typeof a.payload.request_id === "string"
+                              ? <SkillExecutionPreview requestId={a.payload.request_id}
+                                onReviewed={(value) => setReviewedExecutions((previous) => ({ ...previous, [a.id]: value }))} />
+                              : a.kind === "write_skill" || a.kind === "update_scheduled_task_prompt" || a.kind === "update_watcher_prompt"
+                                ? <ArtifactPreview payload={a.payload} />
+                                : <PayloadPreview payload={a.payload} />}
+                        {choice && !choice.success && <p role="alert">Invalid choice proposal. Dismiss it and request a new question.</p>}
+                        {errors[a.id] && <p role="alert" className="text-red-500">{errors[a.id]}</p>}
+                        <div className="flex gap-1.5 justify-end">
+                          <button
+                            onClick={() => deny(a)}
+                            disabled={busy}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-fg hover:border-fg-faint disabled:opacity-50"
+                          >
+                            <X size={11} /> {a.kind === "ask_choice" ? "Dismiss" : "Deny"}
+                          </button>
+                          <button
+                            onClick={() => approve(a)}
+                            disabled={busy || !validResponse}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-50"
+                          >
+                            <Check size={11} /> {busy ? "Submitting…" : a.kind === "ask_choice" ? "Submit response" : "Approve"}
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 );
               })}

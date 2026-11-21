@@ -549,6 +549,50 @@ function ChatComposerControls({
 
   return (<>
     <div ref={controlsRef} className="chat-controls-overlay absolute inset-x-0 bottom-0 z-30">
+      <IdleCompactionChoice
+        key={idleCompaction.choiceKey}
+        open={idleCompaction.open}
+        busy={sse.streaming || sessionCompacting || thread.compactionPending || thread.warmSummaryPending}
+        hotMessageCount={idleCompaction.hotMessageCount}
+        onAnswer={async (answer) => {
+          if (answer === "keep") {
+            idleCompaction.resolve();
+            return true;
+          }
+          if (answer !== "compact" || idleCompaction.boundarySeq === null) return false;
+          const previousBoundarySeq = thread.hotSinceSeq;
+          const requestedBoundarySeq = idleCompaction.boundarySeq;
+          const applied = await thread.setContextPin(idleCompaction.boundarySeq);
+          if (!applied || !threadId) return false;
+
+          // The context-pin endpoint accepts the request before its background
+          // summary is ready. Keep the choice open until metadata confirms the
+          // boundary and summary committed, or the attempt settles without one.
+          const deadline = Date.now() + IDLE_COMPACTION_WAIT_MS;
+          while (Date.now() < deadline) {
+            await new Promise((resolve) => window.setTimeout(resolve, IDLE_COMPACTION_POLL_MS));
+            let metadata;
+            try {
+              metadata = await api.threads.metadata(threadId);
+            } catch {
+              continue;
+            }
+            if (currentThreadIdRef.current !== threadId) return false;
+            applyThreadMeta(thread.metaApplier, metadata);
+            const boundaryMoved = metadata.hot_since_seq !== previousBoundarySeq;
+            const requestedBoundaryAlreadyFresh = metadata.hot_since_seq === requestedBoundarySeq
+              && metadata.warm_summary_before_seq === metadata.hot_since_seq;
+            if (metadata.pending_hot_since_seq == null) {
+              if (boundaryMoved || requestedBoundaryAlreadyFresh) {
+                idleCompaction.resolve();
+                return true;
+              }
+              return false;
+            }
+          }
+          return false;
+        }}
+      />
       <ApprovalsBanner agentId={agentId} onResolved={handleProposalResolved} />
       <AuthErrorBanner authError={sse.authError} onDismiss={sse.dismissAuthError} />
 
@@ -562,7 +606,7 @@ function ChatComposerControls({
         voiceEnabled={!!agentConfig?.voice_enabled}
         agentId={agentId}
         onVoiceTranscript={handleVoiceTranscript}
-        disabled={!agentId || idleCompaction.open}
+        disabled={!agentId}
         placeholder={composerPlaceholder({
           compacting: sessionCompacting,
           sessionLoading: !!sessionLoading,
@@ -570,48 +614,5 @@ function ChatComposerControls({
         })}
       />
     </div>
-    <IdleCompactionChoice
-      key={idleCompaction.choiceKey}
-      open={idleCompaction.open}
-      busy={sse.streaming || sessionCompacting || thread.compactionPending || thread.warmSummaryPending}
-      onAnswer={async (answer) => {
-        if (answer === "keep") {
-          idleCompaction.resolve();
-          return true;
-        }
-        if (answer !== "compact" || idleCompaction.boundarySeq === null) return false;
-        const previousBoundarySeq = thread.hotSinceSeq;
-        const requestedBoundarySeq = idleCompaction.boundarySeq;
-        const applied = await thread.setContextPin(idleCompaction.boundarySeq);
-        if (!applied || !threadId) return false;
-
-        // The context-pin endpoint accepts the request before its background
-        // summary is ready. Keep the choice open until metadata confirms the
-        // boundary and summary committed, or the attempt settles without one.
-        const deadline = Date.now() + IDLE_COMPACTION_WAIT_MS;
-        while (Date.now() < deadline) {
-          await new Promise((resolve) => window.setTimeout(resolve, IDLE_COMPACTION_POLL_MS));
-          let metadata;
-          try {
-            metadata = await api.threads.metadata(threadId);
-          } catch {
-            continue;
-          }
-          if (currentThreadIdRef.current !== threadId) return false;
-          applyThreadMeta(thread.metaApplier, metadata);
-          const boundaryMoved = metadata.hot_since_seq !== previousBoundarySeq;
-          const requestedBoundaryAlreadyFresh = metadata.hot_since_seq === requestedBoundarySeq
-            && metadata.warm_summary_before_seq === metadata.hot_since_seq;
-          if (metadata.pending_hot_since_seq == null) {
-            if (boundaryMoved || requestedBoundaryAlreadyFresh) {
-              idleCompaction.resolve();
-              return true;
-            }
-            return false;
-          }
-        }
-        return false;
-      }}
-    />
   </>);
 }
