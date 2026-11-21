@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-11-21
+
+### Added
+
+- deps: Add dependency install on enable
+- browser: Run browser steps against the live page
+- browser: Detect a stale extension by protocol handshake
+- browser: Gate host access behind a one-time ask
+- browser: Gate browser steps on a three-layer preflight
+- chat: Route idle compaction through the shared card
+
+### Fixed
+
+- browser: Keep injected page functions self-contained
+- browser: Expose the real cause of browser failures
+- redaction: Keep app file refs out of masking
+- browser: Gate retries on an unanswered approval prompt
+- browser: Gate self-targeting with a known app origin
+- browser: Tolerate one missed poll before declaring the channel dead
+- browser: Expose the absolute path of every written file
+- attachments: Expose the absolute path on every spooled ref
+- diagnostics: Exclude work recorded before the stall window
+- files: Move the spill reference scan to the read pool
+- access: Pin last-seen writes to one per five minutes
+- db: Pin one sqlite pragma profile for every connection
+- files: Avoid one full scan per attachment name
+- models: Ignore capability numbers stamped by the old catalog
+- agents: Keep the user request in every prompt
+
+### Changed
+
+- adr: Document agent browser interaction redesign
+- browser: Update skill and docs for batched control
+- deps: Bump the npm group with 19 updates
+- deps: Bump pymdown-extensions from 13.0 to 13.1 in the docs group
+
 ## [3.6.0] - 2026-11-20
 
 ### Added
