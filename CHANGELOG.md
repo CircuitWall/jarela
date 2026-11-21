@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - browser: Gate host access behind a one-time ask
 - browser: Gate browser steps on a three-layer preflight
 - chat: Route idle compaction through the shared card
+- chat: Render references as openable links
 
 ### Fixed
 
@@ -35,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - files: Avoid one full scan per attachment name
 - models: Ignore capability numbers stamped by the old catalog
 - agents: Keep the user request in every prompt
+- recall: Prevent re-embedding from racing the ranking
 
 ### Changed
 
