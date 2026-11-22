@@ -99,3 +99,15 @@ Leaving Gemini as the only option also baked an engine-specific assumption
 * **Speech-to-speech (Gemini Live / OpenAI Realtime)** — best feel, but an
   order of magnitude more expensive and it removes the text transcript that
   every tool call, memory write and checkpoint depends on.
+
+## Browser support requirement
+
+Dictation and read-aloud must work in Chromium-based browsers and in Safari —
+desktop and iOS/iPadOS, including the Home Screen PWA. Every engine in this ADR
+is a *client* browser API or a server call, so platform quirks are part of the
+contract rather than an implementation detail. The quirks that have already
+broken this (iOS user-gesture arming, asynchronous voice lists, utterance
+garbage collection, `cancel()` semantics, a wedged `speaking` state, and the
+one-reader-per-turn rule) and the acceptance checks that guard them are
+recorded in
+[docs/VOICE_BROWSER_SUPPORT.md](../VOICE_BROWSER_SUPPORT.md).
