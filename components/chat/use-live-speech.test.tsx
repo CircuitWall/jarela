@@ -25,7 +25,7 @@ vi.mock("./live-speech", () => ({
 
 import { _resetAutoSpeak, requestLiveSpeech } from "./auto-speak";
 import { _resetLiveSpeech, useLiveSpeech } from "./use-live-speech";
-import { _resetVoiceConversation, consumeVoiceListen, getVoiceConversationState } from "./voice-conversation";
+import { _resetVoiceConversation, consumeVoiceListen, getVoiceConversationState, stopVoiceSpeech } from "./voice-conversation";
 
 const AGENT = { id: "agent-1", voice_enabled: true, voice_stt_engine: "browser" } as AgentConfig;
 
@@ -96,6 +96,20 @@ describe("useLiveSpeech", () => {
     );
     expect(mocks.queue.push).toHaveBeenCalledWith("Hello there.");
     expect(mocks.queue.cancel).not.toHaveBeenCalled();
+  });
+
+  it("does not start reading again after Stop", () => {
+    requestLiveSpeech();
+    const view = render(<Probe content="First answer. " streaming />);
+    expect(mocks.queue.push).toHaveBeenCalledWith("First answer.");
+    act(() => mocks.state.handlers?.onStart());
+
+    act(() => { stopVoiceSpeech(); });
+    expect(mocks.queue.cancel).toHaveBeenCalled();
+
+    // A steer replaces the live text; after Stop there must be no new reader.
+    view.rerender(<Probe content="Different answer. " streaming />);
+    expect(mocks.queue.push).not.toHaveBeenCalledWith("Different answer.");
   });
 
   it("starts a fresh reader when a steer replaces the reply", () => {

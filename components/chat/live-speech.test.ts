@@ -4,6 +4,7 @@ import { createLiveSpeechQueue, type LiveSpeechHandlers } from "./live-speech";
 
 const spoken: string[] = [];
 const utterances: FakeUtterance[] = [];
+const revokedUrls: string[] = [];
 let objectUrls = 0;
 const cancelSpy = vi.fn();
 
@@ -37,6 +38,8 @@ class FakeUtterance {
 afterEach(() => {
   spoken.length = 0;
   utterances.length = 0;
+  revokedUrls.length = 0;
+  objectUrls = 0;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   cancelSpy.mockClear();
@@ -96,7 +99,10 @@ function useGeminiAudio() {
     configurable: true,
     value: () => `blob:${++objectUrls}`,
   });
-  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: () => { /* noop */ } });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: (url: string) => { revokedUrls.push(url); },
+  });
 }
 
 describe("createLiveSpeechQueue", () => {
@@ -167,6 +173,37 @@ describe("createLiveSpeechQueue", () => {
 
     expect(spoken).not.toContain("Never spoken.");
     expect(h.onDrain).not.toHaveBeenCalled();
+  });
+
+  it("stops the clip that is playing and empties the pending slices", async () => {
+    useBrowserVoices();
+    const h = handlers();
+    const queue = createLiveSpeechQueue({ engine: "browser", agentId: "agent-1", handlers: h })!;
+
+    queue.push("First sentence.");   // starts playing
+    queue.push("Second sentence.");   // queued behind it
+    queue.push("Third sentence.");
+    queue.cancel();                   // Stop while the first clip is in flight
+    await wait(30);
+
+    expect(spoken).toEqual(["First sentence."]);
+    expect(cancelSpy).toHaveBeenCalled();
+    expect(h.onDrain).not.toHaveBeenCalled();
+    expect(h.onError).not.toHaveBeenCalled();
+  });
+
+  it("releases buffered audio for slices dropped by cancel", async () => {
+    useGeminiAudio();
+    const h = handlers();
+    const queue = createLiveSpeechQueue({ engine: "gemini", agentId: "agent-1", handlers: h })!;
+
+    queue.push("One.");
+    queue.push("Two.");
+    await wait(5);
+    queue.cancel();
+    await wait(30);
+
+    expect(revokedUrls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("plays synthesized clips in order for Gemini agents", async () => {

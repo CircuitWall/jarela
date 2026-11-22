@@ -54,6 +54,16 @@ function synthesize(agentId: string, text: string, style: string | null): Promis
   });
 }
 
+/** Releases audio already synthesized for clips that will never be played. */
+function releaseClips(clips: Clip[]): void {
+  for (const clip of clips) {
+    void clip.audio?.then(
+      (url) => URL.revokeObjectURL(url),
+      () => { /* the request failed; nothing to release */ },
+    );
+  }
+}
+
 /**
  * Returns null when this configuration cannot synthesize at all (no browser
  * voices and no Gemini agent), so the caller can stay silent instead of
@@ -199,7 +209,9 @@ export function createLiveSpeechQueue({ engine, agentId, browserVoice, handlers 
     },
     cancel() {
       cancelled = true;
-      queue.length = 0;
+      // Stop means silence now, not "finish what is buffered": drop every
+      // slice that has not started and release its synthesized audio.
+      releaseClips(queue.splice(0));
       stopActive?.();
       stopActive = null;
     },
