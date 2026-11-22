@@ -19,6 +19,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { parseVoiceDirectives } from "@/lib/voice/tone";
 import { isBrowserTtsAvailable, speakWithBrowser, type BrowserSpeechSession } from "@/lib/voice/tts/browser";
 import { resolveReplyTtsEngine } from "@/lib/voice/tts/engine";
+import { consumeAutoSpeak, subscribeAutoSpeak } from "./auto-speak";
 import { parseStoredMessageContent, stripDeclaredReferencesFence } from "@/api/message-content";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownContent, ContentPartView } from "./MessageContent";
@@ -1327,13 +1328,14 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
         return;
       }
       setAudioError(null);
+      setAudioState("loading");
       const session = speakWithBrowser(speakable, {
+        onStart: () => setAudioState("playing"),
         onEnd: () => { browserSpeechRef.current = null; setAudioState("idle"); },
         onError: (error) => { browserSpeechRef.current = null; setAudioError(error); setAudioState("error"); },
       });
       if (session) {
         browserSpeechRef.current = session;
-        setAudioState("playing");
         return;
       }
       // No speech synthesis in this browser: fall through to Gemini TTS.
@@ -1383,14 +1385,16 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
   }, [voiceEnabled, agentConfig, streaming, ttsAbleText, audioState, ttsEngine]);
 
   useEffect(() => {
-    if (!voiceEnabled || !messageId) return;
-    function onSpeak(e: Event) {
-      const detail = (e as CustomEvent<{ messageId?: string }>).detail;
-      if (detail?.messageId === messageId) void speak();
-    }
-    window.addEventListener("jarela:speak-message", onSpeak as EventListener);
-    return () => window.removeEventListener("jarela:speak-message", onSpeak as EventListener);
-  }, [voiceEnabled, messageId, speak]);
+    // Wait until the run has actually stopped streaming: a request that
+    // arrives during the finalize frame stays parked and is consumed here.
+    if (!voiceEnabled || !messageId || streaming) return;
+    if (consumeAutoSpeak(messageId)) void speak();
+    return subscribeAutoSpeak((id) => {
+      if (id !== messageId) return false;
+      void speak();
+      return true;
+    });
+  }, [voiceEnabled, messageId, streaming, speak]);
 
   return { voiceEnabled, ttsAbleText, audioState, audioError, speak };
 }
