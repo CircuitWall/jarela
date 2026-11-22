@@ -10,8 +10,31 @@ const TTL_MS = 30_000;
 const pending = new Map<string, number>();
 const listeners = new Set<(messageId: string) => boolean>();
 
+// Live reading: a voice turn asks for its reply to be spoken as it streams.
+// The live reader consumes the intent when the first words land; either way the
+// intent ends with the turn, so it can never leak into the next reply.
+let livePending = false;
+let liveSpoken = false;
+
+/** Called when a voice turn starts. */
+export function requestLiveSpeech(): void {
+  livePending = true;
+  liveSpoken = false;
+}
+
+/** True once for the turn that asked to be read live. */
+export function consumeLiveSpeech(): boolean {
+  if (!livePending) return false;
+  livePending = false;
+  liveSpoken = true;
+  return true;
+}
+
 export function requestAutoSpeak(messageId: string): void {
-  if (!messageId) return;
+  const alreadySpoken = liveSpoken;
+  livePending = false;
+  liveSpoken = false;
+  if (!messageId || alreadySpoken) return;
   const now = Date.now();
   pending.delete(messageId);
   for (const [id, at] of pending) {
@@ -46,4 +69,6 @@ export function consumeAutoSpeak(messageId: string): boolean {
 export function _resetAutoSpeak(): void {
   pending.clear();
   listeners.clear();
+  livePending = false;
+  liveSpoken = false;
 }

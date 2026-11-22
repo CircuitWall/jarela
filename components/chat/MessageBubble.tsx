@@ -18,6 +18,7 @@ import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extensi
 import { errorMessage } from "@/lib/utils/error";
 import { parseVoiceDirectives } from "@/lib/voice/tone";
 import { isBrowserTtsAvailable, speakWithBrowser, type BrowserSpeechSession } from "@/lib/voice/tts/browser";
+import { plainTextForTts } from "@/lib/voice/tts/text";
 import { resolveReplyTtsEngine } from "@/lib/voice/tts/engine";
 import { consumeAutoSpeak, subscribeAutoSpeak } from "./auto-speak";
 import {
@@ -38,37 +39,6 @@ import { USAGE_PROFILES } from "@/lib/agents/usage-profile";
 interface ExtractedRef {
   title: string;
   url: string;
-}
-
-// Best-effort plain-text projection of a (possibly structured) message body
-// for the TTS endpoint. Strips markdown noise, code fences, refs blocks,
-// and structured content parts so the spoken output doesn't read aloud
-// asterisks, backticks, or URLs. The string is also cropped to keep TTS
-// requests cheap — voices read about 150wpm so 5000 chars is several minutes.
-function plainTextForTts(content: unknown): string {
-  let text = "";
-  if (typeof content === "string") text = content;
-  else if (Array.isArray(content)) {
-    for (const part of content) {
-      if (part && typeof part === "object" && "type" in part) {
-        const p = part as { type: string; text?: string };
-        if (p.type === "text" && typeof p.text === "string") text += `${p.text}\n`;
-      }
-    }
-  }
-  text = text
-    .replace(/<refs>[\s\S]*?<\/refs>/gi, " ")
-    .replace(/```[\s\S]*?```/g, " [code] ")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
-    // A voice clip is the answer, not prose to read back. Drop local audio
-    // links entirely so the generic reader cannot say "Voice clip".
-    .replace(/\[[^\]]*\]\(\s*\/api\/v1\/files\/[^)]*\.(?:wav|mp3|ogg|webm|m4a)[^)]*\)/gi, " ")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[#>*_~]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text.length > 5000 ? text.slice(0, 5000) : text;
 }
 
 // Splits "<refs>…</refs>" off the end of a message, returning the parsed refs

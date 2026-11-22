@@ -13,8 +13,9 @@ Date: 2026-11-21
 > the auto-spoken reply ends — or the user presses Stop to interrupt it —
 > capture reopens, and 5 s of leading silence ends the loop. Only the
 > auto-speak path joins the loop; the manual Play button never opens the
-> microphone. Whisper remains recognition-only. Barge-in and
-> speech-to-speech stay out of scope.
+> microphone. Reading starts with the first complete sentence of a streaming
+> reply rather than after the last token. Whisper remains recognition-only.
+> Barge-in and speech-to-speech stay out of scope.
 
 Related: [ADR-0017](./0017-voice-via-gemini.md) (voice via Gemini — input path
 amended here), [ADR-0101](./0101-on-demand-local-embedding-model.md)

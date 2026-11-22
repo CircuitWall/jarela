@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _resetAutoSpeak,
   consumeAutoSpeak,
+  consumeLiveSpeech,
   requestAutoSpeak,
+  requestLiveSpeech,
   subscribeAutoSpeak,
 } from "./auto-speak";
 
@@ -49,5 +51,20 @@ describe("auto-speak handoff", () => {
     expect(consumeAutoSpeak("old")).toBe(false);
     expect(consumeAutoSpeak("fresh")).toBe(true);
     vi.useRealTimers();
+  });
+
+  it("does not read the reply twice when it was already spoken live", () => {
+    requestLiveSpeech();
+    expect(consumeLiveSpeech()).toBe(true);
+    requestAutoSpeak("msg-live");
+    expect(consumeAutoSpeak("msg-live")).toBe(false);
+  });
+
+  it("keeps the finalize request when the live reader never started", () => {
+    requestLiveSpeech();
+    requestAutoSpeak("msg-idle");
+    expect(consumeAutoSpeak("msg-idle")).toBe(true);
+    // The stale intent must not leak into the next reply.
+    expect(consumeLiveSpeech()).toBe(false);
   });
 });
