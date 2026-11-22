@@ -3,7 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { useChatSubmitHandlers } from "./useChatSubmitHandlers";
 import type { ChatQueueApi } from "./useChatQueue";
-import type { ContentPart, PendingAction } from "@/api/types";
+import type { AgentConfig, ContentPart, PendingAction } from "@/api/types";
 
 const action: PendingAction = {
   id: "proposal-example", agent_id: "agent-example", kind: "ask_choice",
@@ -12,7 +12,11 @@ const action: PendingAction = {
 };
 const hiddenOptions = { messageMetadata: { hidden_from_chat: true } };
 
-function setup(ready: boolean, attachments: ContentPart[] = [{ type: "text", text: "Unrelated composer attachment" }]) {
+function setup(
+  ready: boolean,
+  attachments: ContentPart[] = [{ type: "text", text: "Unrelated composer attachment" }],
+  agentConfig: AgentConfig | null = null,
+) {
   const queue: ChatQueueApi = {
     queue: [], queueRef: { current: [] }, drainQueueRef: { current: vi.fn() },
     isReady: () => ready, enqueue: vi.fn(), prepend: vi.fn(), removeQueued: vi.fn(), retry: vi.fn(),
@@ -21,7 +25,7 @@ function setup(ready: boolean, attachments: ContentPart[] = [{ type: "text", tex
     agentId: action.agent_id, queue, attachments,
     setAttachments: vi.fn(), launchRun: vi.fn().mockResolvedValue(undefined),
     steerRun: vi.fn(), stopStreaming: vi.fn(), streaming: !ready,
-    onCompact: vi.fn(), pendingAutoSpeakRef: { current: false }, agentConfig: null,
+    onCompact: vi.fn(), pendingAutoSpeakRef: { current: false }, agentConfig,
   };
   const hook = renderHook(() => useChatSubmitHandlers(params));
   return { ...hook, params, queue };
@@ -47,6 +51,28 @@ describe("chat steering", () => {
 
     expect(queue.prepend).toHaveBeenCalledWith("Focus on the API.", []);
     expect(params.stopStreaming).toHaveBeenCalledOnce();
+  });
+});
+
+describe("voice turns", () => {
+  const agentConfig = { voice_auto_speak: true } as AgentConfig;
+  const voiceOptions = { messageMetadata: { voice_input: true } };
+
+  it("marks the turn as spoken and arms auto-speak when idle", async () => {
+    const { result, params } = setup(true, [], agentConfig);
+    await act(async () => {
+      result.current.handleVoiceTranscript("  spoken turn  ");
+    });
+    expect(params.launchRun).toHaveBeenCalledWith("spoken turn", [], voiceOptions);
+    expect(params.pendingAutoSpeakRef.current).toBe(true);
+  });
+
+  it("carries the voice marker through the queue", async () => {
+    const { result, queue } = setup(false, [], agentConfig);
+    await act(async () => {
+      result.current.handleVoiceTranscript("spoken turn");
+    });
+    expect(queue.enqueue).toHaveBeenCalledWith("spoken turn", [], voiceOptions);
   });
 });
 

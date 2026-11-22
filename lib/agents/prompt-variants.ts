@@ -192,6 +192,17 @@ export async function buildVariants(): Promise<Variant[]> {
       }),
     },
     {
+      // Spoken user turn: the reply guidance is per-turn, so it lives in the
+      // dynamic block and gets its own assembled artifact.
+      id: "voice-input-turn",
+      prompt: buildSystemPrompt({
+        ...base,
+        agentCfg: agentCfg({ voice_enabled: 1 }),
+        experienceMode: "full",
+        voiceInput: true,
+      }),
+    },
+    {
       id: "pinned-tools-all-bound",
       prompt: buildSystemPrompt({
         ...base,

@@ -66,6 +66,8 @@ export interface SystemPromptContext {
   /** Whether chat-history and saved-fact recall are automatically injected this turn. */
   autoRecallEnabled?: boolean;
   autoFactsEnabled?: boolean;
+  /** True when the latest user turn arrived as speech (voice transcript). */
+  voiceInput?: boolean;
   /** Tool names available to this run. Used to retrieve compact historical
    *  reliability hints without raw arguments or error text. */
   allowedTools?: readonly string[];
@@ -163,6 +165,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
       })),
     ].join("\n") : "",
     personaCtx,
+    ctx.voiceInput ? buildVoiceInputContext() : "",
     buildToolPermissionContext(toolPermissionMap ?? []),
     buildToolReliabilityContext(allowedTools ?? [], trimmedMessage),
     buildSourceLinkContext(agentCfg, sourceManifest ?? [], deliveryChannel),
@@ -180,6 +183,22 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const agentStable = agentStableParts.filter(Boolean).join("\n\n");
   const dynamic = dynamicParts.filter(Boolean).join("\n\n");
   return `${sharedStable}\n\n${CACHE_SHARED_SPLIT_SENTINEL}\n\n${agentStable}\n\n${CACHE_SPLIT_SENTINEL}\n\n${dynamic}`;
+}
+
+/**
+ * Per-turn guidance for a spoken user message. The reply may be read aloud by
+ * TTS, so table/code-shaped output would be narrated literally. This is
+ * dynamic because it depends on how the latest turn arrived, not on the agent.
+ */
+function buildVoiceInputContext(): string {
+  return [
+    "--- Voice input ---",
+    "The user's latest message was spoken aloud, so answer for listening rather than reading.",
+    "1. Use short, natural sentences. Avoid tables, code blocks, logs, raw URLs, file paths, and long identifiers in the spoken reply.",
+    "2. Lead with the essential result in prose. If exact code, tabular data, or a link is genuinely needed, give a brief spoken summary first, then offer to show the full detail in text.",
+    "3. Write so the reply sounds right when spoken; avoid Markdown syntax a reader would pronounce (asterisks, backticks, brackets).",
+    "4. Keep the reply focused. Expand only when the user asks for more.",
+  ].join("\n");
 }
 
 /**

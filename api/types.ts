@@ -335,6 +335,8 @@ export interface RouteDecisionMetadata {
 export interface MessageMetadata {
   /** Hide this transcript row from the chat window without removing it from model history. */
   hidden_from_chat?: boolean;
+  /** The user turn arrived as a voice transcript, so the reply is shaped for listening. */
+  voice_input?: boolean;
   citations?: {
     /** Model config name used as the checker. */
     checker_model: string;

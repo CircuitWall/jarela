@@ -1099,6 +1099,7 @@ function createPreparedTurn(
     delegateRosterLines,
     sourceManifest,
     deliveryChannel: req.delivery_channel ?? null,
+    voiceInput: req.message_metadata?.voice_input === true,
     usageStrategyInstruction: usageProfile.promptInstruction,
     autoRecallEnabled,
     autoFactsEnabled,

@@ -98,7 +98,12 @@ const RunBody = z.object({
   message: z.string(),
   attachments: z.array(z.unknown()).optional(),
   stream_options: z.unknown().optional(),
-  message_metadata: z.strictObject({ hidden_from_chat: z.boolean() }).optional(),
+  message_metadata: z.strictObject({
+    hidden_from_chat: z.boolean().optional(),
+    // Set by the chat client when the turn was dictated, so the system prompt
+    // can shape the reply for listening (no tables/code read aloud).
+    voice_input: z.boolean().optional(),
+  }).optional(),
   // ADR-0096 — exact first-hot message seq; null clears the pin.
   hot_since_seq: z.number().int().positive().nullable().optional(),
   // ADR-0044 — automation channels the chat panel's filter toolbar has

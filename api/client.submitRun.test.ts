@@ -74,6 +74,25 @@ describe("submitRun", () => {
     expect(body.message_metadata).toEqual({ hidden_from_chat: true });
   });
 
+  it("forwards voice-input metadata with the run request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(submitRun(
+      "thread-1",
+      "spoken turn",
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { voice_input: true },
+    )).resolves.toEqual({ accepted: true });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { message_metadata?: Record<string, unknown> };
+    expect(body.message_metadata).toEqual({ voice_input: true });
+  });
+
   it("uploads inline images before submitting oversized run payloads", async () => {
     const refA: ContentPart = { type: "image_ref", media_type: "image/png", name: "a.png", sha256: "a" };
     const refB: ContentPart = { type: "image_ref", media_type: "image/jpeg", name: "b.jpg", sha256: "b" };
