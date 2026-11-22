@@ -22,7 +22,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { InvokeMessage, InvokeResult, ModelProvider, OpenAITool } from "@/lib/providers/types";
-import type { ObservedToolCall, ScenarioOutcome } from "./types";
+import type { JudgeVerdict, ObservedToolCall, ScenarioOutcome } from "./types";
 
 const mode = process.env.JARELA_PROMPT_EVAL_MODE === "mock" ? "mock" : "live";
 if (mode === "mock") process.env.JARELA_ENABLE_MOCK_PROVIDER = "1";
@@ -88,6 +88,7 @@ if (!runnable) {
 
 const { PROMPT_SCENARIOS } = await import("./scenarios");
 const { buildScenarioPrompt } = await import("./assemble");
+const { mapPool, resolveConcurrency } = await import("./concurrency");
 const { scoreToolSelection, evaluateJudgeSamples, aggregateOutcomes } = await import("./score");
 const { buildJudgeInput, buildJudgeMessages, parseJudgeVerdict } = await import("./judge");
 const { getProvider } = await import("@/lib/providers");
@@ -108,6 +109,9 @@ const reportDir = join(process.cwd(), ".prompt-eval");
  *  The documented flows are genuinely multi-step (search -> schema -> write ->
  *  verify), so the budget has to accommodate them. */
 const MAX_ROUNDS = 8;
+/** Scenario fan-out. The wait is provider round trips, so a small pool turns
+ *  the wall time into roughly the tail instead of the sum. */
+const concurrency = resolveConcurrency(process.env.JARELA_PROMPT_EVAL_CONCURRENCY);
 /** Result for a call the scenario did not describe; clearly synthetic. */
 const GENERIC_TOOL_RESULT = JSON.stringify({ ok: true, note: "synthetic evaluation result" });
 
@@ -150,25 +154,30 @@ async function evaluate(scenario: (typeof PROMPT_SCENARIOS)[number]): Promise<Sc
 
   const answer = turn.answer;
   const judgeMessages = buildJudgeMessages(buildJudgeInput(scenario, turn.calls, answer, turn.results));
-  const verdicts = [];
-  const judgeFailures: string[] = [];
-  for (let sample = 1; sample <= judgeSamples; sample++) {
-    const messages = mode === "mock"
-      ? [
-          judgeMessages[0],
-          {
-            role: "user" as const,
-            content: `${judgeMessages[1].content as string}\nMOCK:reply=${mockVerdict(scenario)}`,
-          },
-        ]
-      : judgeMessages;
-    const judged = await invokeJudge(config.judgeModel, messages, { api_key: config.judgeKey, temperature: 0 }, []);
-    try {
-      verdicts.push(parseJudgeVerdict(judged.text ?? ""));
-    } catch (error) {
-      judgeFailures.push(`judge sample ${sample}: ${(error as Error).message}`);
-    }
-  }
+  // Samples are independent, so they run together. The median still decides,
+  // and a malformed sample keeps its number in the failure text.
+  const judged = await Promise.all(
+    Array.from({ length: judgeSamples }, async (_, index): Promise<{ verdict?: Omit<JudgeVerdict, "score">; failure?: string }> => {
+      const sample = index + 1;
+      const messages = mode === "mock"
+        ? [
+            judgeMessages[0],
+            {
+              role: "user" as const,
+              content: `${judgeMessages[1].content as string}\nMOCK:reply=${mockVerdict(scenario)}`,
+            },
+          ]
+        : judgeMessages;
+      try {
+        const text = (await invokeJudge(config.judgeModel, messages, { api_key: config.judgeKey, temperature: 0 }, [])).text ?? "";
+        return { verdict: parseJudgeVerdict(text) };
+      } catch (error) {
+        return { failure: `judge sample ${sample}: ${(error as Error).message}` };
+      }
+    }),
+  );
+  const verdicts = judged.flatMap((entry) => entry.verdict ? [entry.verdict] : []);
+  const judgeFailures = judged.flatMap((entry) => entry.failure ? [entry.failure] : []);
 
   const scoring = evaluateJudgeSamples(scenario, verdicts, { minScore: minJudgeScore, floor: judgeFloor });
   const verdict: JudgeVerdict | null = verdicts.length > 0
@@ -418,23 +427,63 @@ afterAll(() => {
   if (runnable && outcomes.length > 0) writeReport(outcomes);
 });
 
-describe.skipIf(!runnable)("live prompt behaviour", () => {
-  it.each(activeScenarios.map((scenario) => [scenario.id, scenario] as const))(
-    "%s selects the right tool and produces a defensible answer",
-    async (_, scenario) => {
-      const outcome = await evaluate(scenario);
-      outcomes.push(outcome);
-      expect(
-        outcome.pass,
-        `${scenario.id} failed:\n- ${outcome.failures.join("\n- ")}\n` +
-          `observed calls: ${JSON.stringify(outcome.toolCalls)}\nanswer: ${outcome.answer.slice(0, 400)}`,
-      ).toBe(true);
-    },
-    180_000,
-  );
+/**
+ * Runs every scenario through the pool, indexing results by catalogue position
+ * so the report keeps a stable order. A provider failure becomes a failed
+ * scenario instead of losing the whole run's evidence.
+ */
+async function evaluateAll(): Promise<ScenarioOutcome[]> {
+  const results = new Array<ScenarioOutcome | undefined>(activeScenarios.length);
+  await mapPool(activeScenarios, concurrency, async (scenario, index) => {
+    const startedAt = Date.now();
+    try {
+      results[index] = await evaluate(scenario);
+    } catch (error) {
+      const message = (error as Error).message;
+      results[index] = {
+        scenario: scenario.id,
+        title: scenario.title,
+        request: scenario.request,
+        provider: config.provider,
+        model: config.model,
+        judgeModel: config.judgeModel,
+        toolCalls: [],
+        rounds: 0,
+        capped: false,
+        answer: "",
+        selection: { pass: false, reasons: [] },
+        judge: null,
+        judgeSamples: [],
+        pass: false,
+        failures: [`evaluation failed: ${message}`],
+        warnings: [],
+        error: message,
+      };
+    }
+    const outcome = results[index]!;
+    // A run of this length needs visible progress; the CI log streams these.
+    console.log(
+      `[prompt-eval] ${outcome.pass ? "pass" : "FAIL"} ${scenario.id} ` +
+        `(${Math.round((Date.now() - startedAt) / 1000)}s, ${outcome.rounds} round(s))`,
+    );
+  });
+  return results.filter((outcome): outcome is ScenarioOutcome => outcome !== undefined);
+}
 
-  it("reports an aggregate the gate can read", () => {
-    const summary = aggregateOutcomes(outcomes);
+describe.skipIf(!runnable)("live prompt behaviour", () => {
+  it("selects the right tools and produces defensible answers", async () => {
+    const results = await evaluateAll();
+    outcomes.push(...results);
+
+    const failures = results
+      .filter((outcome) => !outcome.pass)
+      .map(
+        (outcome) => `${outcome.scenario} failed:\n- ${outcome.failures.join("\n- ")}\n` +
+          `observed calls: ${JSON.stringify(outcome.toolCalls)}\nanswer: ${outcome.answer.slice(0, 400)}`,
+      );
+    expect(failures, "scenario failures").toEqual([]);
+
+    const summary = aggregateOutcomes(results);
     expect(summary.total).toBe(activeScenarios.length);
     expect(summary.failed, JSON.stringify(summary.failures)).toBe(0);
     expect(summary.toolSelectionAccuracy).toBe(1);
@@ -444,5 +493,5 @@ describe.skipIf(!runnable)("live prompt behaviour", () => {
       summary.meanJudgeScore,
       `suite mean judge score ${summary.meanJudgeScore.toFixed(2)} is below the ${minJudgeScore.toFixed(2)} target`,
     ).toBeGreaterThanOrEqual(minJudgeScore);
-  }, 30_000);
+  }, 25 * 60_000);
 });
