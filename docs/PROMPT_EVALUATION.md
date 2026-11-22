@@ -155,6 +155,7 @@ request. The gate is:
 | Wrong or missing tool selection | fail — decided by code, no judge involved |
 | Turn never converged within the round budget | fail |
 | A judge sample omits a declared criterion, including a shared one | fail |
+| A protected request value (`mustNotEcho`) appears in the reply or a tool argument | fail — decided by code |
 | Any judge sample reports a hard failure | fail |
 | Most judge samples say the answer does not make sense | fail |
 | Median judge score below `FLOOR` (0.5) | fail |
@@ -166,6 +167,10 @@ decides, so the same commit stops flipping on a single borderline sample.
 Pull-request runs use one sample for speed; schedule and dispatch runs keep the
 median of three. Borderline results stay visible as warnings instead of
 disappearing.
+
+Transient provider failures — connection resets, timeouts, rate limits, 5xx —
+are retried up to three times with a short backoff before a scenario is recorded
+as failed, so a network blip does not read as bad agent behaviour.
 
 ## CI wiring
 
