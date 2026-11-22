@@ -8,6 +8,7 @@ import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
 import { WorkflowStepRetryContext, workflowStepRetryMessage, type WorkflowStepRetryRequest } from "./workflow-step-retry";
 import { MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
+import { useLiveSpeech } from "./use-live-speech";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Dialog } from "@/components/ui/Dialog";
@@ -260,6 +261,8 @@ function LiveTurnActivity({
   showStreamingAvatar: boolean;
   streaming?: boolean;
 }) {
+  // Speak the reply from its first complete sentence while the rest streams.
+  useLiveSpeech({ content: streamingContent, streaming: !!streaming, agentConfig });
   const showThinking = !!thinkingContent && filters.thinking;
   const showTools = !!toolEvents && toolEvents.length > 0 && filters.tool_use;
   const hasTools = !!toolEvents?.length;

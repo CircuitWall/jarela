@@ -190,10 +190,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
 
         {(streaming || voiceSpeaking) && (
           <button
-            onClick={() => {
-              if (streaming) onStop();
-              if (voiceSpeaking) stopVoiceSpeech();
-            }}
+            onClick={() => { if (voiceSpeaking) stopVoiceSpeech(); else onStop(); }}
             className="glass-btn-stop shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors"
             title={voiceSpeaking
               ? "Stop reading and listen"

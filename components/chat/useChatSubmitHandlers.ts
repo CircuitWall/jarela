@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import type { ContentPart, PendingAction } from "@/api/types";
 import type { AgentConfig } from "@/api/types";
 import { type ChatQueueApi } from "./useChatQueue";
+import { requestLiveSpeech } from "./auto-speak";
 import { buildProposalResponseMessage } from "@/lib/proposals/response-message";
 import type { ChatRunOptions } from "./chat-helpers";
 
@@ -74,7 +75,11 @@ export function useChatSubmitHandlers({
   const handleVoiceTranscript = useCallback((text: string) => {
     const msg = text.trim();
     if (!msg || !agentId) return;
-    if (agentConfig?.voice_auto_speak !== false) pendingAutoSpeakRef.current = true;
+    if (agentConfig?.voice_auto_speak !== false) {
+      pendingAutoSpeakRef.current = true;
+      // Read this reply as it streams instead of waiting for the last token.
+      requestLiveSpeech();
+    }
     // Mark the turn as spoken so the system prompt shapes the reply for
     // listening instead of reading tables/code aloud.
     const options: ChatRunOptions = { messageMetadata: { voice_input: true } };
