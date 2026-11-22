@@ -1,13 +1,14 @@
 "use client";
-import { Mic, Paperclip, Send, Square, X } from "lucide-react";
+import { Mic, Paperclip, Send, Square, X, Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { uploadBinaryFile, uploadImageFile } from "@/api/client";
 import type { ContentPart } from "@/api/types";
 import { downscaleImageFile } from "@/lib/attachments/downscale-image";
 import { errorMessage } from "@/lib/utils/error";
-import { startBrowserStt } from "@/lib/voice/stt/browser";
-import { transcribeOnServer } from "@/lib/voice/stt/server";
-import { normalizeSttEngine, type SttSession } from "@/lib/voice/stt/types";
+import { normalizeSttEngine } from "@/lib/voice/stt/types";
+import { startBrowserCapture } from "./voice-browser-capture";
+import { startServerCapture } from "./voice-server-capture";
+import type { CaptureControls } from "./voice-capture-types";
 
 interface Props {
   attachments: ContentPart[];
@@ -24,8 +25,9 @@ interface Props {
   // Voice input — rendered when the active agent has voice_enabled. The
   // capture engine is picked per agent (ADR-0123): `browser` uses the Web
   // Speech API, everything else records via MediaRecorder and posts to
-  // /api/v1/voice/transcribe. The transcript is handed back to the parent,
-  // which submits it and arms auto-speak-on-reply.
+  // /api/v1/voice/transcribe. Capture is hands-free: a short silence pauses
+  // it, a longer silence ends the turn, and the transcript is handed back to
+  // the parent, which submits it and arms auto-speak-on-reply.
   voiceEnabled?: boolean;
   voiceSttEngine?: string | null;
   agentId?: string | null;
@@ -87,7 +89,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
   // every keystroke, which is the root cause of typing feeling sluggish on
   // long threads. Parent only needs the text at submit/queue time.
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { recording, transcribing, partial, voiceError, iosPwaFix, startRecording, stopRecording } = useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTranscript });
+  const { recording, paused, transcribing, partial, voiceError, iosPwaFix, autoEnd, startRecording, cancelRecording, finishRecording } = useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTranscript });
 
   const { value, setValue, textareaRef, setHlIdx, suggestions, showSuggestions, activeIdx, applySuggestion, fireSubmit, handleKeyDown } = useComposerText({ streaming, disabled, attachments, onSubmit, onQueue });
 
@@ -144,18 +146,31 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
         </button>
 
         {voiceEnabled && agentId && (
-          <button
-            onClick={recording ? stopRecording : startRecording}
-            disabled={disabled || streaming || transcribing}
-            className={`shrink-0 h-11 w-11 flex items-center justify-center rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${recording
-              ? "bg-rose-500 text-white animate-pulse"
-              : "text-fg-faint hover:text-fg hover:bg-surface-3"
-              }`}
-            title={recording ? "Stop recording" : transcribing ? "Transcribing…" : "Record voice message"}
-            aria-label={recording ? "Stop recording" : "Record voice message"}
-          >
-            {recording ? <Square size={14} /> : <Mic size={16} />}
-          </button>
+          <>
+            {recording && !autoEnd && (
+              <button
+                onClick={finishRecording}
+                disabled={transcribing}
+                className="shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-fg-faint hover:text-fg hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Finish recording now"
+                aria-label="Finish recording"
+              >
+                <Check size={16} />
+              </button>
+            )}
+            <button
+              onClick={recording ? cancelRecording : startRecording}
+              disabled={disabled || streaming || transcribing}
+              className={`shrink-0 h-11 w-11 flex items-center justify-center rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${recording
+                ? "bg-rose-500 text-white animate-pulse"
+                : "text-fg-faint hover:text-fg hover:bg-surface-3"
+                }`}
+              title={recording ? "Cancel voice input" : transcribing ? "Transcribing…" : "Record voice message"}
+              aria-label={recording ? "Cancel voice input" : "Record voice message"}
+            >
+              {recording ? <X size={16} /> : <Mic size={16} />}
+            </button>
+          </>
         )}
 
         <textarea
@@ -205,8 +220,12 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
       {voiceError && (
         <p className="mt-1 text-[11px] text-rose-500" role="alert">{voiceError}</p>
       )}
-      {recording && partial && (
-        <p className="mt-1 text-[11px] text-fg-faint" aria-live="polite">{partial}</p>
+      {recording && !voiceError && (
+        <p className="mt-1 text-[11px] text-fg-faint" aria-live="polite">
+          {paused
+            ? "Paused — keep talking to continue, or tap cancel."
+            : partial || "Listening…"}
+        </p>
       )}
       {transcribing && !voiceError && (
         <p className="mt-1 text-[11px] text-fg-faint" aria-live="polite">Transcribing…</p>
@@ -222,116 +241,78 @@ function useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTrans
   onVoiceTranscript: ((text: string) => void) | undefined;
 }) {
   const [recording, setRecording] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [autoEnd, setAutoEnd] = useState(true);
   const [transcribing, setTranscribing] = useState(false);
   const [partial, setPartial] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const sessionRef = useRef<SttSession | null>(null);
+  const controlsRef = useRef<CaptureControls | null>(null);
   const iosPwaFix = isIosStandalonePwa();
   const engine = normalizeSttEngine(voiceSttEngine);
 
-  // Shared by the explicit stop path and the engine's own end-of-turn, so a
-  // transcript is accepted exactly one way regardless of how recording ended.
+  useEffect(() => () => {
+    controlsRef.current?.cancel();
+    controlsRef.current = null;
+  }, []);
+
+  // Shared by every end-of-turn path (silence, manual finish, engine end) so
+  // a transcript is accepted exactly one way.
   function accept(text: string) {
     const trimmed = text.trim();
     if (trimmed) onVoiceTranscript?.(trimmed);
     else setVoiceError("No speech was detected.");
   }
 
-  async function deliver(transcribe: () => Promise<string>) {
-    setTranscribing(true);
-    try {
-      accept(await transcribe());
-    } catch (err) {
-      setVoiceError(errorMessage(err));
-    } finally {
-      setTranscribing(false);
-      setPartial("");
-    }
-  }
-
-  useEffect(() => {
-    return () => {
-      sessionRef.current?.cancel();
-      sessionRef.current = null;
-      const r = recorderRef.current;
-      if (r && r.state !== "inactive") {
-        try { r.stop(); } catch { /* ignore */ }
-      }
-      r?.stream?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
-
   async function startRecording() {
     if (!voiceEnabled || !agentId || recording || transcribing) return;
     setVoiceError(null);
-    if (engine === "browser") {
-      try {
-        sessionRef.current = startBrowserStt({
-          onPartial: setPartial,
-          onEnd: ({ text, error }) => {
-            // The engine ended the turn itself (silence, Safari's
-            // non-continuous mode, or an async error), so clear the capture
-            // state and keep whatever was heard.
-            sessionRef.current = null;
-            setRecording(false);
-            setPartial("");
-            if (error) setVoiceError(error);
-            else accept(text);
-          },
-        });
-        setRecording(true);
-      } catch (err) {
-        setVoiceError(errorMessage(err));
-      }
-      return;
-    }
+    setPartial("");
+    setPaused(false);
+    const handlers = {
+      onRecording: setRecording,
+      onPaused: setPaused,
+      onPartial: setPartial,
+      onAutoEnd: setAutoEnd,
+      onTranscribing: setTranscribing,
+      onTranscript: accept,
+      onError: (message: string) => setVoiceError(message),
+    };
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // Prefer webm/opus when available — universally supported by Chromium
-      // and Firefox. Safari only ships mp4/aac; the empty-string fallback
-      // lets the browser pick whatever it can encode.
-      const mime =
-        MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus"
-          : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
-            : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4"
-              : "";
-      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-      chunksRef.current = [];
-      rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-      rec.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
-        chunksRef.current = [];
-        if (blob.size === 0) { setRecording(false); return; }
-        setRecording(false);
-        await deliver(() => transcribeOnServer({ agentId, engine, blob }));
-      };
-      rec.start();
-      recorderRef.current = rec;
-      setRecording(true);
+      if (engine === "browser") {
+        setAutoEnd(true);
+        controlsRef.current = startBrowserCapture(handlers);
+      } else {
+        controlsRef.current = await startServerCapture({ ...handlers, agentId, engine });
+      }
     } catch (err) {
       setVoiceError(errorMessage(err));
       setRecording(false);
+      setPaused(false);
     }
   }
 
-  function stopRecording() {
-    const session = sessionRef.current;
-    if (session) {
-      sessionRef.current = null;
-      setRecording(false);
-      void deliver(() => session.stop());
-      return;
-    }
-    const r = recorderRef.current;
-    if (r && r.state !== "inactive") {
-      try { r.stop(); } catch { /* ignore */ }
-    }
+  function cancelRecording() {
+    controlsRef.current?.cancel();
+    controlsRef.current = null;
   }
 
-  return { recording, transcribing, partial, voiceError, iosPwaFix, startRecording, stopRecording };
+  function finishRecording() {
+    controlsRef.current?.finish();
+    controlsRef.current = null;
+  }
+
+  return {
+    recording,
+    paused,
+    transcribing,
+    partial,
+    voiceError,
+    iosPwaFix,
+    autoEnd,
+    startRecording,
+    cancelRecording,
+    finishRecording,
+  };
 }
 
 function useComposerText({ streaming, disabled, attachments, onSubmit, onQueue }: {

@@ -192,7 +192,7 @@ function buildVoiceContext(agentCfg: AgentConfigRow): string | null {
   return [
     "--- Spoken delivery ---",
     "This agent's replies may be read aloud. Delivery controls are removed from the visible message before anyone sees it, so never describe, quote, or repeat them.",
-    "1. Optionally start a reply with `[[tone: <short delivery note>]]` — at most one, at the very beginning — to steer how it sounds, for example `[[tone: warm and reassuring]]` or `[[tone: brisk and matter-of-fact]]`.",
+    "1. Optionally start a reply with `[[tone: <short delivery note>]]` — at most one, at the very beginning — to steer how it sounds when the speech engine supports delivery notes, for example `[[tone: warm and reassuring]]` or `[[tone: brisk and matter-of-fact]]`.",
     "2. Pace speech with punctuation. Do not write stage directions or pacing instructions in prose.",
     "3. Omit the directive when the reply is code, tables, logs, or anything that is not meant to be heard.",
   ].join("\n");

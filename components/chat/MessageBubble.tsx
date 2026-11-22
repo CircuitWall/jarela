@@ -17,6 +17,8 @@ import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/messa
 import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extension-turn-prompt";
 import { errorMessage } from "@/lib/utils/error";
 import { parseVoiceDirectives } from "@/lib/voice/tone";
+import { isBrowserTtsAvailable, speakWithBrowser, type BrowserSpeechSession } from "@/lib/voice/tts/browser";
+import { resolveReplyTtsEngine } from "@/lib/voice/tts/engine";
 import { parseStoredMessageContent, stripDeclaredReferencesFence } from "@/api/message-content";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownContent, ContentPartView } from "./MessageContent";
@@ -52,6 +54,9 @@ function plainTextForTts(content: unknown): string {
     .replace(/```[\s\S]*?```/g, " [code] ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    // A voice clip is the answer, not prose to read back. Drop local audio
+    // links entirely so the generic reader cannot say "Voice clip".
+    .replace(/\[[^\]]*\]\(\s*\/api\/v1\/files\/[^)]*\.(?:wav|mp3|ogg|webm|m4a)[^)]*\)/gi, " ")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
     .replace(/[#>*_~]+/g, " ")
     .replace(/\s+/g, " ")
@@ -1277,12 +1282,16 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
 }) {
   const voiceEnabled = !isUser && !!agentConfig?.voice_enabled;
   const ttsAbleText = !isUser ? plainTextForTts(message.content) : "";
+  const ttsEngine = resolveReplyTtsEngine(agentConfig?.voice_stt_engine);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+  const browserSpeechRef = useRef<BrowserSpeechSession | null>(null);
   const [audioState, setAudioState] = useState<"idle" | "loading" | "playing" | "paused" | "error">("idle");
   const [audioError, setAudioError] = useState<string | null>(null);
 
   const releaseAudio = useCallback(() => {
+    browserSpeechRef.current?.cancel();
+    browserSpeechRef.current = null;
     const a = audioRef.current;
     if (a) {
       try { a.pause(); } catch { /* ignore */ }
@@ -1300,9 +1309,36 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
   const speak = useCallback(async () => {
     if (!voiceEnabled || !agentConfig || streaming) return;
     // `[[tone: …]]` steers delivery and never reaches the visible message;
-    // it is extracted here and sent as the TTS style.
+    // it is extracted here and sent as the TTS style. Browser voices cannot
+    // express it, so it is ignored on that path.
     const { text: speakable, style } = parseVoiceDirectives(ttsAbleText);
     if (!speakable.trim()) return;
+
+    // Browser/Whisper agents speak through the OS voices: no key, no network.
+    if (ttsEngine === "browser" && isBrowserTtsAvailable()) {
+      if (browserSpeechRef.current) {
+        if (audioState === "playing") {
+          browserSpeechRef.current.pause();
+          setAudioState("paused");
+        } else {
+          browserSpeechRef.current.resume();
+          setAudioState("playing");
+        }
+        return;
+      }
+      setAudioError(null);
+      const session = speakWithBrowser(speakable, {
+        onEnd: () => { browserSpeechRef.current = null; setAudioState("idle"); },
+        onError: (error) => { browserSpeechRef.current = null; setAudioError(error); setAudioState("error"); },
+      });
+      if (session) {
+        browserSpeechRef.current = session;
+        setAudioState("playing");
+        return;
+      }
+      // No speech synthesis in this browser: fall through to Gemini TTS.
+    }
+
     // Resume an existing buffer instead of re-fetching.
     if (audioRef.current && audioUrlRef.current) {
       if (audioState === "playing") {
@@ -1344,7 +1380,7 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
       setAudioError(errorMessage(err));
       setAudioState("error");
     }
-  }, [voiceEnabled, agentConfig, streaming, ttsAbleText, audioState]);
+  }, [voiceEnabled, agentConfig, streaming, ttsAbleText, audioState, ttsEngine]);
 
   useEffect(() => {
     if (!voiceEnabled || !messageId) return;
