@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Select } from "@/components/ui/Select";
 import { GEMINI_STT_MODELS, GEMINI_TTS_MODELS, GEMINI_VOICES } from "@/lib/voice/constants";
+import { isBrowserVoiceMissing, listBrowserVoices, type BrowserVoiceOption } from "@/lib/voice/tts/browser-voice";
 import { STT_ENGINES, sttEngineLabel, type SttEngine } from "@/lib/voice/stt/types";
 import { replyTtsEngineLabel, resolveReplyTtsEngine, type ReplyTtsEngine } from "@/lib/voice/tts/engine";
 import { useAppContext } from "@/contexts/AppContext";
@@ -103,10 +104,14 @@ function VoicePickers({ form, ttsEngine }: { form: AgentEditorForm; ttsEngine: R
           </label>
         </>
       ) : (
-        <p className="text-[11px] text-fg-faint">
-          Spoken replies use {replyTtsEngineLabel(ttsEngine)}. Switch the speech engine to Gemini
-          to choose a Gemini voice and TTS model. The agent&apos;s generate_voice tool always uses Gemini.
-        </p>
+        <>
+          <BrowserVoicePicker form={form} />
+          <p className="text-[11px] text-fg-faint">
+            Spoken replies use {replyTtsEngineLabel(ttsEngine)} — pick one of this device&apos;s voices
+            above, or keep the device default. Switch the speech engine to Gemini to choose a Gemini
+            voice and TTS model. The agent&apos;s generate_voice tool always uses Gemini.
+          </p>
+        </>
       )}
       <label className="flex items-center gap-2 cursor-pointer select-none">
         <input
@@ -119,6 +124,55 @@ function VoicePickers({ form, ttsEngine }: { form: AgentEditorForm; ttsEngine: R
         <span className="text-xs text-fg-subtle">Auto-speak reply when I send a voice message</span>
       </label>
     </>
+  );
+}
+
+/** Device voices for the Browser/Whisper reply path (ADR-0124). */
+function useDeviceVoices(): BrowserVoiceOption[] {
+  const [voices, setVoices] = useState<BrowserVoiceOption[]>(() => listBrowserVoices());
+  useEffect(() => {
+    const synth = typeof window === "undefined" ? null : window.speechSynthesis;
+    if (!synth) return;
+    const refresh = () => setVoices(listBrowserVoices());
+    refresh();
+    // Chrome/Edge fill the list after `voiceschanged`, sometimes seconds later.
+    const previous = synth.onvoiceschanged;
+    synth.onvoiceschanged = refresh;
+    return () => { synth.onvoiceschanged = previous; };
+  }, []);
+  return voices;
+}
+
+function BrowserVoicePicker({ form }: { form: AgentEditorForm }) {
+  const voices = useDeviceVoices();
+  const missing = isBrowserVoiceMissing(form.voiceBrowserVoice);
+  return (
+    <label className="block">
+      <span className="text-xs text-fg-subtle mb-1 block">Device voice</span>
+      <Select
+        value={form.voiceBrowserVoice}
+        onChange={(e) => form.setVoiceBrowserVoice(e.target.value)}
+        disabled={!form.voiceEnabled}
+      >
+        <option value="">Device default</option>
+        {voices.map((voice) => (
+          <option key={voice.key} value={voice.key}>{voice.label}</option>
+        ))}
+        {missing && (
+          <option value={form.voiceBrowserVoice}>{form.voiceBrowserVoice} — not installed here</option>
+        )}
+      </Select>
+      {missing && (
+        <span className="mt-1 block text-[11px] text-amber-700 dark:text-amber-300">
+          This device does not have that voice, so replies use the device default.
+        </span>
+      )}
+      {!missing && voices.length === 0 && (
+        <span className="mt-1 block text-[11px] text-fg-faint">
+          No device voices are loaded yet; they appear here once the browser reports them.
+        </span>
+      )}
+    </label>
   );
 }
 

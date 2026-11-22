@@ -47,6 +47,7 @@ export interface AgentConfigRow {
   voice_stt_model: string;           // Gemini multimodal model used for transcription
   voice_stt_engine: string;          // ADR-0123: 'gemini' | 'browser' | 'whisper'
   voice_auto_speak: number;          // 1 = auto-play reply when user sent voice
+  voice_browser_voice: string;       // ADR-0124: device voice key; '' = device default
   display_filters: string | null;    // JSON: Partial<DisplayFilters>; NULL = inherit defaults (ADR-0022)
   harness_id: string | null;         // ADR-0033: per-agent harness override; NULL = inherit global default
   delegate_targets: string | null;   // JSON string[] of agent ids this agent may delegate to; NULL/'[]' = none
@@ -174,6 +175,8 @@ export interface UpsertAgentInput {
   /** ADR-0123 voice input engine; omit to keep the row's value. */
   voice_stt_engine?: SttEngine;
   voice_auto_speak?: boolean;
+  /** ADR-0124 device voice key; '' (or omit) = the device default. */
+  voice_browser_voice?: string;
   harness_id?: string | null;
   delegate_targets?: string[];
   // ADR-0043. Pass `null` to clear the override and inherit from the model.
@@ -365,12 +368,12 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
          history_limit, history_window_hours, warm_summary_limit, never_reply,
          hot_turn_limit,
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
-         voice_enabled, voice_model, voice_name, voice_stt_model, voice_stt_engine, voice_auto_speak,
+         voice_enabled, voice_model, voice_name, voice_stt_model, voice_stt_engine, voice_auto_speak, voice_browser_voice,
          harness_id, delegate_targets, context_tier_proportions,
          anti_hallucination_mode, anti_hallucination_model_config, citation_strictness,
         tool_credentials, router_policy, router_enabled, usage_strategy, usage_profile, display_filters,
          created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -410,6 +413,7 @@ function upsertAgentConfigTransaction(input: UpsertAgentInput): AgentConfigRow {
       input.voice_auto_speak === undefined
         ? (existing?.voice_auto_speak ?? 1)
         : (input.voice_auto_speak ? 1 : 0),
+      (input.voice_browser_voice ?? existing?.voice_browser_voice ?? "").trim().slice(0, 200),
       harnessId,
       delegateTargets,
       tierProportions,

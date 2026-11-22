@@ -8,6 +8,9 @@
 // (paused synth, no output device, browser quirk). A short watchdog turns
 // that silence into a visible error instead of a stuck "playing" state.
 
+import { resolveBrowserVoice } from "./browser-voice";
+import { browserProsody } from "./prosody";
+
 const START_TIMEOUT_MS = 2_000;
 
 export interface BrowserSpeechHandlers {
@@ -30,6 +33,10 @@ export interface BrowserSpeechOptions {
    * watchdog and reports a failure for audio the user actually hears.
    */
   replace?: boolean;
+  /** Stored voice key (see browser-voice.ts). Empty = the device default. */
+  voice?: string | null;
+  /** `[[tone: …]]` note, approximated as rate/pitch/volume. */
+  style?: string | null;
 }
 
 export function isBrowserTtsAvailable(): boolean {
@@ -46,10 +53,16 @@ export function speakWithBrowser(
   if (!isBrowserTtsAvailable()) return null;
   const synth = window.speechSynthesis;
   const utterance = new window.SpeechSynthesisUtterance(text);
-  utterance.lang = document.documentElement?.lang || navigator.language || "en-US";
-  utterance.rate = 1;
-  utterance.pitch = 1;
-  utterance.volume = 1;
+  const selected = resolveBrowserVoice(options.voice);
+  if (selected) utterance.voice = selected;
+  utterance.lang = (selected?.lang || "").trim()
+    || document.documentElement?.lang
+    || navigator.language
+    || "en-US";
+  const prosody = browserProsody(options.style);
+  utterance.rate = prosody.rate;
+  utterance.pitch = prosody.pitch;
+  utterance.volume = prosody.volume;
 
   let started = false;
   let settled = false;

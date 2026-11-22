@@ -54,6 +54,7 @@ describe("configuration lifecycle edge cases", () => {
       ...base, is_default: true, never_reply: true, adaptive_persona_enabled: true,
       voice_enabled: true, voice_auto_speak: false, voice_model: " ", voice_name: " ", voice_stt_model: " ",
       voice_stt_engine: "whisper",
+      voice_browser_voice: "  Microsoft Hazel - English (United Kingdom)  ",
       harness_id: "synthetic", delegate_targets: ["synthetic-other", base.id, "synthetic-other"],
       context_tier_proportions: { hot: -1, warm: 20, facts: 80 },
       anti_hallucination_model_config: " synthetic ", router_enabled: true,
@@ -63,11 +64,14 @@ describe("configuration lifecycle edge cases", () => {
       is_default: 1, never_reply: 1, adaptive_persona_enabled: 1, voice_enabled: 1,
       voice_auto_speak: 0, anti_hallucination_model_config: "synthetic",
       voice_stt_engine: "whisper",
+      voice_browser_voice: "Microsoft Hazel - English (United Kingdom)",
     });
     expect(getDefaultAgentConfig()?.id).toBe(base.id);
     expect(getAgentTierProportions(configured)).toEqual({ hot: 0, warm: 20, facts: 80 });
     expect(parseDelegateTargets(configured.delegate_targets)).toEqual(["synthetic-other"]);
     expect(getAgentToolCredentials(configured)).toEqual({ synthetic: "synthetic-id" });
+    // ADR-0124: an omitted device voice keeps the stored one.
+    expect(configured.voice_browser_voice).toBe("Microsoft Hazel - English (United Kingdom)");
     const cleared = upsertAgentConfig({
       ...base, never_reply: false, adaptive_persona_enabled: false, voice_enabled: false, voice_auto_speak: true,
       harness_id: "", delegate_targets: [], context_tier_proportions: null,
@@ -78,6 +82,7 @@ describe("configuration lifecycle edge cases", () => {
       never_reply: 0, adaptive_persona_enabled: 0, voice_enabled: 0, voice_auto_speak: 1,
       harness_id: null, context_tier_proportions: null, anti_hallucination_model_config: null,
       router_enabled: null, tool_credentials: null, warm_summary_limit: configured.warm_summary_limit,
+      voice_browser_voice: "Microsoft Hazel - English (United Kingdom)",
     });
     expect(upsertAgentConfig({ ...base, router_enabled: false }).router_enabled).toBe(0);
   });

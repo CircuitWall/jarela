@@ -44,6 +44,16 @@ const SCHEMA_MIGRATIONS: readonly Migration[] = [{
       db.exec("ALTER TABLE agent_configs ADD COLUMN voice_stt_engine TEXT NOT NULL DEFAULT 'gemini'");
     }
   },
+}, {
+  // ADR-0124. Per-agent device voice for the Browser/Whisper speech path.
+  // Empty string = the device default, so upgrades speak exactly as before.
+  id: "3.7.2-browser-voice",
+  apply(db) {
+    const columns = db.prepare("SELECT name FROM pragma_table_info('agent_configs')").all();
+    if (!columns.some((column) => column.name === "voice_browser_voice")) {
+      db.exec("ALTER TABLE agent_configs ADD COLUMN voice_browser_voice TEXT NOT NULL DEFAULT ''");
+    }
+  },
 }];
 // Encryption commits as its own migration, separate from credential
 // reshaping below. Reshaping reads already-encrypted `memory_store` rows

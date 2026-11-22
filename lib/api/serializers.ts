@@ -68,6 +68,7 @@ export function agentToResponse(a: AgentConfigRow) {
     voice_stt_model: a.voice_stt_model,
     voice_stt_engine: normalizeSttEngine(a.voice_stt_engine),
     voice_auto_speak: !!a.voice_auto_speak,
+    voice_browser_voice: a.voice_browser_voice ?? "",
     harness_id: a.harness_id,
     delegate_targets: parseDelegateTargets(a.delegate_targets),
     context_tier_proportions: getAgentTierProportions(a),

@@ -69,6 +69,8 @@ export interface AgentConfig {
   /** ADR-0123 voice input engine. */
   voice_stt_engine: SttEngine;
   voice_auto_speak: boolean;
+  /** ADR-0124 device voice key for Browser/Whisper replies; "" = device default. */
+  voice_browser_voice: string;
   /**
    * Optional override for which behavioral harness wraps this agent's system
    * prompt. NULL = inherit the global default. Built-in IDs are prefixed
@@ -165,6 +167,7 @@ export interface AgentConfigIn {
   voice_stt_model?: string;
   voice_stt_engine?: SttEngine;
   voice_auto_speak?: boolean;
+  voice_browser_voice?: string;
   harness_id?: string | null;
   delegate_targets?: string[];
   // null = clear and inherit from the model; undefined = leave as-is.

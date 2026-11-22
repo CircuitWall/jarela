@@ -137,4 +137,13 @@ describe("agent usage profile defaults", () => {
     act(() => result.current.setAdaptivePersonaEnabled(true));
     expect(result.current.buildPayload().adaptive_verbosity).toBe(93);
   });
+
+  it("keeps the saved device voice through an edit", () => {
+    const agent = {
+      voice_enabled: true, voice_stt_engine: "browser", voice_browser_voice: "urn:hazel",
+    } as AgentConfig;
+    const { result } = renderHook(() => useAgentEditorForm(agent));
+    expect(result.current.voiceBrowserVoice).toBe("urn:hazel");
+    expect(result.current.buildPayload().voice_browser_voice).toBe("urn:hazel");
+  });
 });

@@ -179,7 +179,10 @@ states are shown explicitly. Model/strategy changes affect new runs, not a
 reply already in progress. Voice input is hands-free: a short silence pauses
 the capture and a longer one sends the turn. Spoken replies follow the speech
 engine — Gemini input uses Gemini TTS and needs the Google AI integration,
-while Browser and Whisper input use the device's built-in voices. Turns that
+while Browser and Whisper input use the device's built-in voices, with a
+per-agent device voice picker and a small tone vocabulary (calm, warm,
+reassuring, serious, whisper, excited, slow) approximated as rate/pitch/volume.
+Turns that
 arrived as speech are marked so replies favor prose over tables and code, and
 a spoken reply continues the exchange hands-free: when it finishes — or the
 user presses Stop to interrupt it — capture reopens, and 5 s of silence ends
