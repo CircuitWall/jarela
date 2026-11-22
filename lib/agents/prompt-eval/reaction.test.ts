@@ -277,6 +277,7 @@ describe("mistakes are surfaced, not absorbed", () => {
       capped: false,
       answer: "",
       selection,
+      guardrails: { pass: true, reasons: [] },
       judge: null,
       judgeSamples: [],
       pass: selection.pass,

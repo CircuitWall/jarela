@@ -136,6 +136,16 @@ describe("scenario catalogue", () => {
       }
     }
   });
+
+  it("declares protected values the request actually contains", () => {
+    // An `mustNotEcho` value that never appears in the request cannot be
+    // echoed, so the guardrail would be decorative.
+    for (const scenario of PROMPT_SCENARIOS) {
+      for (const value of scenario.expect.mustNotEcho) {
+        expect(scenario.request, `${scenario.id}: protected value is not in the request`).toContain(value);
+      }
+    }
+  });
 });
 
 describe("shared behaviour rubric", () => {

@@ -89,7 +89,7 @@ if (!runnable) {
 const { PROMPT_SCENARIOS } = await import("./scenarios");
 const { buildScenarioPrompt } = await import("./assemble");
 const { mapPool, resolveConcurrency } = await import("./concurrency");
-const { scoreToolSelection, evaluateJudgeSamples, aggregateOutcomes } = await import("./score");
+const { scoreAnswerGuardrails, scoreToolSelection, evaluateJudgeSamples, aggregateOutcomes } = await import("./score");
 const { buildJudgeInput, buildJudgeMessages, parseJudgeVerdict } = await import("./judge");
 const { getProvider } = await import("@/lib/providers");
 const { getAllTools, toOpenAITools } = await import("@/lib/tools");
@@ -153,6 +153,7 @@ async function evaluate(scenario: (typeof PROMPT_SCENARIOS)[number]): Promise<Sc
   const selection = scoreToolSelection(scenario, turn.calls);
 
   const answer = turn.answer;
+  const guardrails = scoreAnswerGuardrails(scenario, answer, turn.calls);
   const judgeMessages = buildJudgeMessages(buildJudgeInput(scenario, turn.calls, answer, turn.results));
   // Samples are independent, so they run together. The median still decides,
   // and a malformed sample keeps its number in the failure text.
@@ -190,7 +191,7 @@ async function evaluate(scenario: (typeof PROMPT_SCENARIOS)[number]): Promise<Sc
       }
     : null;
 
-  const failures = [...selection.reasons, ...scoring.failures, ...judgeFailures];
+  const failures = [...selection.reasons, ...guardrails.reasons, ...scoring.failures, ...judgeFailures];
   const warnings = [...scoring.warnings];
   if (turn.capped) {
     failures.push(`turn did not converge within ${MAX_ROUNDS} model rounds; the follow-up answer is incomplete by construction`);
@@ -207,6 +208,7 @@ async function evaluate(scenario: (typeof PROMPT_SCENARIOS)[number]): Promise<Sc
     capped: turn.capped,
     answer,
     selection,
+    guardrails,
     judge: verdict,
     judgeSamples: scoring.samples,
     pass: failures.length === 0,
@@ -452,6 +454,7 @@ async function evaluateAll(): Promise<ScenarioOutcome[]> {
         capped: false,
         answer: "",
         selection: { pass: false, reasons: [] },
+        guardrails: { pass: false, reasons: [] },
         judge: null,
         judgeSamples: [],
         pass: false,
