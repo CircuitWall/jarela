@@ -6,6 +6,7 @@ import type { ContentPart } from "@/api/types";
 import { downscaleImageFile } from "@/lib/attachments/downscale-image";
 import { errorMessage } from "@/lib/utils/error";
 import { normalizeSttEngine } from "@/lib/voice/stt/types";
+import { unlockBrowserSpeech } from "@/lib/voice/tts/browser";
 import { startBrowserCapture } from "./voice-browser-capture";
 import { startServerCapture } from "./voice-server-capture";
 import type { CaptureControls } from "./voice-capture-types";
@@ -329,6 +330,10 @@ function useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTrans
 
   async function startRecording(options?: { conversation?: boolean }) {
     if (!agentId || !voiceReadyRef.current || recordingRef.current || transcribingRef.current) return;
+    // iPhone/iPad Safari drops every `speak()` that is not armed by a user
+    // gesture — including the streamed reply, which happens seconds later. The
+    // mic press is the one gesture this path reliably gets.
+    unlockBrowserSpeech();
     const conversation = options?.conversation === true;
     // A manual capture replaces any lingering conversation loop.
     if (!conversation) endVoiceConversation();

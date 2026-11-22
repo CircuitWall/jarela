@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isBrowserTtsAvailable, speakWithBrowser } from "./browser";
+import { isBrowserTtsAvailable, speakWithBrowser, unlockBrowserSpeech } from "./browser";
 
 class FakeUtterance {
   lang = "";
@@ -45,6 +45,25 @@ describe("browser speech synthesis", () => {
     expect(isBrowserTtsAvailable()).toBe(true);
     vi.unstubAllGlobals();
     expect(isBrowserTtsAvailable()).toBe(false);
+  });
+
+  it("primes the synthesiser from a user gesture for mobile Safari", () => {
+    unlockBrowserSpeech();
+    expect(speak).toHaveBeenCalledTimes(1);
+    const primer = lastUtterance();
+    expect(primer.text).toBe("");
+    expect(primer.volume).toBe(0);
+  });
+
+  it("resumes a paused synthesiser while unlocking", () => {
+    synth.paused = true;
+    unlockBrowserSpeech();
+    expect(resume).toHaveBeenCalled();
+  });
+
+  it("does nothing when speech synthesis is unavailable", () => {
+    vi.unstubAllGlobals();
+    expect(() => unlockBrowserSpeech()).not.toThrow();
   });
 
   it("speaks the reply and reports start and completion", () => {

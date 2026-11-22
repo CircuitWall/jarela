@@ -45,6 +45,27 @@ export function isBrowserTtsAvailable(): boolean {
     && typeof window.SpeechSynthesisUtterance === "function";
 }
 
+/**
+ * Mobile Safari only allows a `speak()` that runs inside a user gesture to arm
+ * the synthesiser; every later utterance from a timer or a stream callback is
+ * silently dropped until the page has done that once — even an empty utterance
+ * is enough ("an utterance (even a blank one) during a user interaction to
+ * enable utterances during timeouts", SO 61658740). Call this from the same
+ * click that starts capture, so the reply can be read aloud minutes later.
+ */
+export function unlockBrowserSpeech(): void {
+  if (!isBrowserTtsAvailable()) return;
+  const synth = window.speechSynthesis;
+  try {
+    if (synth.paused) synth.resume();
+    const primer = new window.SpeechSynthesisUtterance("");
+    primer.volume = 0;
+    synth.speak(primer);
+  } catch {
+    /* nothing to unlock in this browser */
+  }
+}
+
 export function speakWithBrowser(
   text: string,
   handlers: BrowserSpeechHandlers = {},

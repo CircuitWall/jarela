@@ -15,6 +15,14 @@ const RETRY_DELAY_MS = 150;
 export interface LiveSpeechHandlers {
   /** The first slice actually produced audio. */
   onStart(): void;
+  /**
+   * A slice was handed to the engine, before its own `start` event. Chromium
+   * fires `start` ~100 ms after `speak()`, and a short reply can finalize
+   * inside that window — which let the whole-message reader start too, cancel
+   * the live clip (it speaks with `replace`) and restart the reply from the
+   * top. Dispatch is the moment this turn is audibly claimed.
+   */
+  onDispatch?(): void;
   /** Every queued slice finished and no more are coming. */
   onDrain(): void;
   onError(message: string): void;
@@ -170,6 +178,7 @@ export function createLiveSpeechQueue({ engine, agentId, browserVoice, handlers 
     }
     const clip = queue.shift()!;
     busy = true;
+    handlers.onDispatch?.();
     const played = useBrowser ? playBrowser(clip) : playGemini(clip);
     void played.then(
       () => {
