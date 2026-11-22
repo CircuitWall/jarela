@@ -4,6 +4,7 @@ import { createLiveSpeechQueue, type LiveSpeechHandlers } from "./live-speech";
 
 const spoken: string[] = [];
 let objectUrls = 0;
+const cancelSpy = vi.fn();
 
 function handlers() {
   return {
@@ -35,20 +36,32 @@ afterEach(() => {
   spoken.length = 0;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  cancelSpy.mockClear();
 });
 
-function useBrowserVoices() {
+function useBrowserVoices({ failFirstSpeak = false } = {}) {
+  let failed = false;
   const synth = {
     paused: false,
     speaking: false,
+    pending: false,
     speak(utterance: FakeUtterance) {
+      if (failFirstSpeak && !failed) {
+        failed = true;
+        setTimeout(() => utterance.onerror?.({ error: "synthesis-failed" }), 0);
+        return;
+      }
       spoken.push(utterance.text);
+      synth.speaking = true;
       setTimeout(() => {
+        synth.speaking = false;
         utterance.onstart?.();
         utterance.onend?.();
       }, 0);
     },
-    cancel() { /* one clip at a time */ },
+    cancel() {
+      cancelSpy();
+    },
     pause() { /* unused */ },
     resume() { /* unused */ },
   };
@@ -97,6 +110,23 @@ describe("createLiveSpeechQueue", () => {
     expect(h.onStart).toHaveBeenCalledTimes(1);
     expect(h.onDrain).toHaveBeenCalledTimes(1);
     expect(h.onError).not.toHaveBeenCalled();
+    // Back-to-back slices must not cancel first: Chromium drops the new clip
+    // and the start watchdog then reports a failure the user can hear through.
+    expect(cancelSpy).not.toHaveBeenCalled();
+  });
+
+  it("retries a slice the browser refused to start", async () => {
+    useBrowserVoices({ failFirstSpeak: true });
+    const h = handlers();
+    const queue = createLiveSpeechQueue({ engine: "browser", agentId: "agent-1", handlers: h })!;
+
+    queue.push("Recovered sentence.");
+    queue.finish();
+    await wait(250);
+
+    expect(spoken).toEqual(["Recovered sentence."]);
+    expect(h.onError).not.toHaveBeenCalled();
+    expect(h.onDrain).toHaveBeenCalledTimes(1);
   });
 
   it("drops queued slices once cancelled", async () => {

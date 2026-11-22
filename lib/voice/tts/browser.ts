@@ -22,13 +22,27 @@ export interface BrowserSpeechSession {
   cancel(): void;
 }
 
+export interface BrowserSpeechOptions {
+  /**
+   * Cancel a clip that is already speaking (a manual Play replaces it).
+   * Sequential slices pass false: Chromium silently drops a `speak()` that
+   * follows a `cancel()` on an idle synth, which then trips the start
+   * watchdog and reports a failure for audio the user actually hears.
+   */
+  replace?: boolean;
+}
+
 export function isBrowserTtsAvailable(): boolean {
   if (typeof window === "undefined") return false;
   return typeof window.speechSynthesis?.speak === "function"
     && typeof window.SpeechSynthesisUtterance === "function";
 }
 
-export function speakWithBrowser(text: string, handlers: BrowserSpeechHandlers = {}): BrowserSpeechSession | null {
+export function speakWithBrowser(
+  text: string,
+  handlers: BrowserSpeechHandlers = {},
+  options: BrowserSpeechOptions = {},
+): BrowserSpeechSession | null {
   if (!isBrowserTtsAvailable()) return null;
   const synth = window.speechSynthesis;
   const utterance = new window.SpeechSynthesisUtterance(text);
@@ -43,8 +57,9 @@ export function speakWithBrowser(text: string, handlers: BrowserSpeechHandlers =
 
   const startTimer = setTimeout(() => {
     if (settled || started) return;
-    // Some engines speak without firing `start`; trust the state flag.
-    if (synth.speaking) {
+    // Some engines speak without firing `start`; a clip that is speaking or
+    // still queued behind another one is not a failure.
+    if (synth.speaking || synth.pending) {
       started = true;
       handlers.onStart?.();
       return;
@@ -86,7 +101,11 @@ export function speakWithBrowser(text: string, handlers: BrowserSpeechHandlers =
   };
 
   // One clip at a time: a new Play press replaces whatever is speaking.
-  try { synth.cancel(); } catch { /* not speaking */ }
+  if (options.replace !== false) {
+    try {
+      if (synth.speaking || synth.pending || synth.paused) synth.cancel();
+    } catch { /* not speaking */ }
+  }
   try {
     if (synth.paused) synth.resume();
     synth.speak(utterance);
