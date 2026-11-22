@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Select } from "@/components/ui/Select";
 import { GEMINI_STT_MODELS, GEMINI_TTS_MODELS, GEMINI_VOICES } from "@/lib/voice/constants";
 import { STT_ENGINES, sttEngineLabel, type SttEngine } from "@/lib/voice/stt/types";
+import { replyTtsEngineLabel, resolveReplyTtsEngine, type ReplyTtsEngine } from "@/lib/voice/tts/engine";
 import { useAppContext } from "@/contexts/AppContext";
 import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 import { errorMessage } from "@/lib/utils/error";
@@ -24,6 +25,9 @@ export function VoiceFields({ form, models, integrations, selectedModel, onClose
     selectedProvider: selectedModel?.provider,
     selectedModelId: selectedModel?.model_id,
   });
+  // Spoken replies follow the speech engine: Gemini input keeps Gemini TTS;
+  // Browser and Whisper input use the device's built-in voices.
+  const ttsEngine = resolveReplyTtsEngine(form.voiceSttEngine);
   return (
     <>
       <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -37,39 +41,25 @@ export function VoiceFields({ form, models, integrations, selectedModel, onClose
       </label>
       <p className="text-[11px] text-fg-faint">
         When on, the chat input shows a microphone and assistant replies show a play button.
-        Spoken replies always use Gemini TTS and need the Google integration api_key; input can
-        use a local or browser engine instead.
+        Spoken replies follow the speech engine: Gemini uses Gemini TTS (Google key), while
+        Browser and Whisper use this device&apos;s voices.
       </p>
-      {!readiness.voiceReady && (
+      {ttsEngine === "gemini" && !readiness.hasGoogleIntegration && (
         <VoiceReadinessNotice
-          hasGoogleIntegration={readiness.hasGoogleIntegration}
-          onOpenModels={() => onClose(() => dispatch({ type: "SET_TAB", tab: "models" }))}
           onOpenCredentials={() => onClose(() => {
             dispatch({ type: "SET_TAB", tab: "credentials" });
             dispatch({ type: "SET_SELECTION", tab: "credentials", itemId: "list" });
           })}
         />
       )}
-      <VoicePickers form={form} />
+      <VoicePickers form={form} ttsEngine={ttsEngine} />
     </>
   );
 }
 
-function VoicePickers({ form }: { form: AgentEditorForm }) {
+function VoicePickers({ form, ttsEngine }: { form: AgentEditorForm; ttsEngine: ReplyTtsEngine }) {
   return (
     <>
-      <label className="block">
-        <span className="text-xs text-fg-subtle mb-1 block">TTS model</span>
-        <Select value={form.voiceModel} onChange={(e) => form.setVoiceModel(e.target.value)} disabled={!form.voiceEnabled}>
-          {GEMINI_TTS_MODELS.map((m) => (<option key={m.id} value={m.id}>{m.id} — {m.label}</option>))}
-        </Select>
-      </label>
-      <label className="block">
-        <span className="text-xs text-fg-subtle mb-1 block">Voice</span>
-        <Select value={form.voiceName} onChange={(e) => form.setVoiceName(e.target.value)} disabled={!form.voiceEnabled}>
-          {GEMINI_VOICES.map((v) => (<option key={v.id} value={v.id}>{v.label}</option>))}
-        </Select>
-      </label>
       <label className="block">
         <span className="text-xs text-fg-subtle mb-1 block">Speech recognition engine</span>
         <Select
@@ -84,6 +74,7 @@ function VoicePickers({ form }: { form: AgentEditorForm }) {
       </label>
       <p className="text-[11px] text-fg-faint">
         Browser: free and instant, but Chromium/Safari only and weaker on technical terms.
+        Chrome and Edge may send audio to the browser vendor&apos;s speech service.
         Whisper: runs locally on this machine after a one-time ~45 MB model download.
         Gemini: sends audio to Google and needs the Google integration.
       </p>
@@ -95,6 +86,27 @@ function VoicePickers({ form }: { form: AgentEditorForm }) {
             {GEMINI_STT_MODELS.map((m) => (<option key={m.id} value={m.id}>{m.id} — {m.label}</option>))}
           </Select>
         </label>
+      )}
+      {ttsEngine === "gemini" ? (
+        <>
+          <label className="block">
+            <span className="text-xs text-fg-subtle mb-1 block">TTS model</span>
+            <Select value={form.voiceModel} onChange={(e) => form.setVoiceModel(e.target.value)} disabled={!form.voiceEnabled}>
+              {GEMINI_TTS_MODELS.map((m) => (<option key={m.id} value={m.id}>{m.id} — {m.label}</option>))}
+            </Select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-fg-subtle mb-1 block">Voice</span>
+            <Select value={form.voiceName} onChange={(e) => form.setVoiceName(e.target.value)} disabled={!form.voiceEnabled}>
+              {GEMINI_VOICES.map((v) => (<option key={v.id} value={v.id}>{v.label}</option>))}
+            </Select>
+          </label>
+        </>
+      ) : (
+        <p className="text-[11px] text-fg-faint">
+          Spoken replies use {replyTtsEngineLabel(ttsEngine)}. Switch the speech engine to Gemini
+          to choose a Gemini voice and TTS model. The agent&apos;s generate_voice tool always uses Gemini.
+        </p>
       )}
       <label className="flex items-center gap-2 cursor-pointer select-none">
         <input
@@ -198,37 +210,25 @@ function WhisperModelPanel() {
 }
 
 function VoiceReadinessNotice({
-  hasGoogleIntegration,
-  onOpenModels,
   onOpenCredentials,
 }: {
-  hasGoogleIntegration: boolean;
-  onOpenModels: () => void;
   onOpenCredentials: () => void;
 }) {
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
-      <p>Voice is not fully ready at the system level yet.</p>
+      <p>Gemini spoken replies need the Google AI integration.</p>
       <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-        Spoken replies need a Gemini model plus the existing Google AI integration. Without both, enabling voice would require extra setup.
+        Add the Google key, or choose Browser or Whisper as the speech engine to speak with
+        this device&apos;s voices instead.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={onOpenModels}
+          onClick={onOpenCredentials}
           className="rounded-md border border-amber-600/30 bg-white/50 px-2 py-1 text-[11px] font-medium text-amber-900 dark:bg-black/10 dark:text-amber-100"
         >
-          Open Models
+          Open Credentials
         </button>
-        {!hasGoogleIntegration && (
-          <button
-            type="button"
-            onClick={onOpenCredentials}
-            className="rounded-md border border-amber-600/30 bg-white/50 px-2 py-1 text-[11px] font-medium text-amber-900 dark:bg-black/10 dark:text-amber-100"
-          >
-            Open Credentials
-          </button>
-        )}
       </div>
     </div>
   );

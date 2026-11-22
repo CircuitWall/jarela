@@ -11,6 +11,11 @@ informed:
 > **Amended by [ADR-0123](./0123-pluggable-voice-input-engines.md).** The STT
 > half of this decision is now pluggable per agent (`gemini`, `browser`, or
 > local `whisper`); Gemini remains the default and TTS is unchanged.
+>
+> **Amended (spoken replies):** reply TTS follows the speech engine. Gemini
+> input keeps Gemini TTS (Google key); browser and Whisper input speak through
+> the device's built-in voices, so reply playback no longer requires a Google
+> key unless the input engine is Gemini. `generate_voice` remains Gemini-only.
 
 ## Context and Problem Statement
 

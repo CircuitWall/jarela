@@ -4,6 +4,12 @@ Status: **Accepted**
 
 Date: 2026-11-21
 
+> **Amended (UX):** capture is hands-free — a short silence pauses the
+> capture, and a longer silence ends and sends the turn. Reply TTS follows the
+> selected engine: Gemini input uses Gemini TTS; browser and Whisper input use
+> the device's built-in voices. Whisper remains recognition-only. Barge-in and
+> speech-to-speech stay out of scope.
+
 Related: [ADR-0017](./0017-voice-via-gemini.md) (voice via Gemini — input path
 amended here), [ADR-0101](./0101-on-demand-local-embedding-model.md)
 (hash-pinned on-demand model assets), [ADR-0121](./0121-optional-tool-and-integration-dependencies.md)
@@ -68,9 +74,9 @@ Leaving Gemini as the only option also baked an engine-specific assumption
 * The Whisper engine needs a second install step (runtime package + model
   download). Both report actionable states rather than failing silently.
 * Interruption semantics are unchanged: all three engines are half-duplex
-  (record → stop → transcribe). Barge-in and speech-to-speech remain out of
-  scope — they would cost the text-in-the-middle architecture that tools,
-  memory and checkpoints depend on (see the streaming-TTS follow-up).
+  (record → pause/auto-end → transcribe). Barge-in and speech-to-speech remain
+  out of scope — they would cost the text-in-the-middle architecture that
+  tools, memory and checkpoints depend on (see the streaming-TTS follow-up).
 * New external dependency: `huggingface.co` for the one-time model download.
   It is opt-in (only when the Whisper engine is used) and hash-verified.
 

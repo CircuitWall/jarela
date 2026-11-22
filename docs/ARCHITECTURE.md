@@ -18,7 +18,7 @@ C4Container
       Container(pricing, "Pricing and Model Updates", "lib/pricing + lib/stores/pricing + lib/stores/model-metadata", "Refreshes provider pricing, separate aggregator signals, and source-backed API model metadata")
       Container(embed, "Embeddings", "lib/embeddings", "Vector embedding generator for semantic memory recall")
       Container(docs, "Document RAG", "lib/documents (+ lib/documents/remote)", "Folder indexer + remote indexers for GitHub, Gmail, Outlook, iCloud, Jira, and Confluence; chunked + embedded into the documents tables; surfaced via documents_search (ADR-0024, ADR-0026, ADR-0029, ADR-0110)")
-      Container(voice, "Voice", "lib/voice", "Per-agent STT engines — Gemini multimodal, browser Web Speech API, or local Whisper tiny ONNX (ADR-0017, ADR-0123) — plus Gemini TTS for the generate_voice tool and spoken replies, with reply-level tone directives that never reach the visible message")
+      Container(voice, "Voice", "lib/voice", "Per-agent STT engines — Gemini multimodal, browser Web Speech API, or local Whisper tiny ONNX (ADR-0017, ADR-0123) — with hands-free pause/auto-end, plus spoken replies that follow the engine: Gemini TTS for Gemini input and the generate_voice tool, device voices for Browser/Whisper input; reply-level tone directives never reach the visible message")
       Container(mcp, "MCP Adapter", "@langchain/mcp-adapters", "Discovers & invokes external MCP tool servers")
       Container(sched, "Scheduler", "cron-parser", "Runs scheduled tasks + polls event-driven watchers; persists in DB (ADR-0022, ADR-0025, ADR-0027)")
       Container(bridges, "Bridges", "lib/bridges", "Inbound transports (WhatsApp/Baileys) routed to agents")
@@ -943,7 +943,7 @@ state. See [ADR-0106](adr/0106-on-demand-release-documentation.md).
 | Dependency | Purpose | Failure mode |
 |---|---|---|
 | Anthropic / OpenAI / Google / Cohere | LLM inference | Surface provider error to UI; allow model switch |
-| Google GenAI (Gemini) — STT + TTS endpoints | Gemini voice input engine (default) + `generate_voice` tool (ADR-0017, ADR-0123) | Gemini-engine input and all spoken replies degrade; the browser and Whisper input engines keep working |
+| Google GenAI (Gemini) — STT + TTS endpoints | Gemini voice input engine (default), Gemini-engine spoken replies, and the `generate_voice` tool (ADR-0017, ADR-0123) | Gemini-engine input and Gemini spoken replies degrade; browser and Whisper input plus device-voice replies keep working |
 | Hugging Face model CDN (huggingface.co) | One-time hash-pinned download of the Whisper tiny model (ADR-0123) | Whisper input reports "not installed"; browser and Gemini engines keep working, chat continues |
 | MCP servers | External tools | Tool call returns error; agent can recover or skip |
 | External provider/tool `.cjs` files (~/.jarela/{providers,tools}/) | User-authored extensions, hot-loaded | Validation errors surfaced in `GET /api/v1/extensions` and the Extensions tab; loader skips invalid files (ADR-0013) |

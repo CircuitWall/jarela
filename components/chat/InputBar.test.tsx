@@ -6,6 +6,7 @@ import { InputBar } from "./InputBar";
 const mediaDevicesDescriptor = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   if (mediaDevicesDescriptor) Object.defineProperty(navigator, "mediaDevices", mediaDevicesDescriptor);
@@ -88,7 +89,7 @@ describe("InputBar local ownership", () => {
     expect(textbox.value).toBe("keep me");
   });
 
-  it("owns recording teardown and hands back only the trimmed transcript", async () => {
+  it("ends the server capture when the user presses Finish (no Web Audio fallback)", async () => {
     const stopTrack = vi.fn();
     const stream = { getTracks: () => [{ stop: stopTrack }] };
     const getUserMedia = vi.fn().mockResolvedValue(stream);
@@ -102,10 +103,13 @@ describe("InputBar local ownership", () => {
       stream = stream;
       ondataavailable: ((event: { data: Blob }) => void) | null = null;
       onstop: (() => void) | null = null;
+      onerror: (() => void) | null = null;
       start() {
         this.state = "recording";
         this.ondataavailable?.({ data: new Blob(["voice"]) });
       }
+      pause() { this.state = "paused"; }
+      resume() { this.state = "recording"; }
       stop() {
         this.state = "inactive";
         this.onstop?.();
@@ -118,14 +122,89 @@ describe("InputBar local ownership", () => {
     const onVoiceTranscript = vi.fn();
     renderComposer({ voiceEnabled: true, agentId: "agent-1", onVoiceTranscript });
     fireEvent.click(screen.getByRole("button", { name: "Record voice message" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Stop recording" })).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Cancel voice input" })).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Stop recording" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Finish recording" }));
     await waitFor(() => expect(onVoiceTranscript).toHaveBeenCalledWith("spoken turn"));
     expect(stopTrack).toHaveBeenCalled();
     expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
   });
 
-  it("uses the browser engine without a server round trip", async () => {
+  it("auto-pauses and auto-sends from mic-level silence", async () => {
+    vi.useFakeTimers();
+    const stopTrack = vi.fn();
+    const stream = { getTracks: () => [{ stop: stopTrack }] };
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true, value: { getUserMedia },
+    });
+    const pauseSpy = vi.fn();
+    class Recorder {
+      static isTypeSupported = () => true;
+      state = "inactive";
+      mimeType = "audio/webm";
+      stream = stream;
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      start() {
+        this.state = "recording";
+        this.ondataavailable?.({ data: new Blob(["voice"]) });
+      }
+      pause() { pauseSpy(); this.state = "paused"; }
+      resume() { this.state = "recording"; }
+      stop() { this.state = "inactive"; this.onstop?.(); }
+    }
+    vi.stubGlobal("MediaRecorder", Recorder);
+
+    const level = { value: 200 };
+    class FakeAnalyser {
+      fftSize = 1024;
+      getByteTimeDomainData(buffer: Uint8Array) { buffer.fill(level.value); }
+      connect() { /* noop */ }
+      disconnect() { /* noop */ }
+    }
+    class FakeSource {
+      connect() { /* noop */ }
+      disconnect() { /* noop */ }
+    }
+    class FakeAudioContext {
+      createMediaStreamSource() { return new FakeSource(); }
+      createAnalyser() { return new FakeAnalyser(); }
+      resume() { return Promise.resolve(); }
+      close() { return Promise.resolve(); }
+    }
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ text: "server words" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onVoiceTranscript = vi.fn();
+    renderComposer({ voiceEnabled: true, agentId: "agent-1", onVoiceTranscript });
+    fireEvent.click(screen.getByRole("button", { name: "Record voice message" }));
+    await act(async () => {
+      await Promise.resolve();
+      vi.advanceTimersByTime(200);
+    });
+    expect(screen.getByRole("button", { name: "Cancel voice input" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Finish recording" })).toBeNull();
+
+    level.value = 128;
+    await act(async () => {
+      vi.advanceTimersByTime(1_300);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(pauseSpy).toHaveBeenCalled();
+    expect(onVoiceTranscript).toHaveBeenCalledWith("server words");
+    expect(stopTrack).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("uses the browser engine and auto-sends after transcript inactivity", async () => {
+    vi.useFakeTimers();
     class FakeRecognition {
       static instances: FakeRecognition[] = [];
       continuous = false;
@@ -150,7 +229,7 @@ describe("InputBar local ownership", () => {
     renderComposer({ voiceEnabled: true, agentId: "agent-1", voiceSttEngine: "browser", onVoiceTranscript });
 
     fireEvent.click(screen.getByRole("button", { name: "Record voice message" }));
-    await waitFor(() => expect(FakeRecognition.instances).toHaveLength(1));
+    expect(FakeRecognition.instances).toHaveLength(1);
     const recognition = FakeRecognition.instances[0];
     const interim = Object.assign([{ transcript: "spoken words" }], { isFinal: false });
     act(() => {
@@ -161,9 +240,47 @@ describe("InputBar local ownership", () => {
     act(() => {
       recognition.onresult?.({ resultIndex: 0, results: [final] });
     });
-    fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
-    await waitFor(() => expect(onVoiceTranscript).toHaveBeenCalledWith("spoken words"));
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_300);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onVoiceTranscript).toHaveBeenCalledWith("spoken words");
     expect(fetchMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("cancels the turn instead of sending it", async () => {
+    class FakeRecognition {
+      static instances: FakeRecognition[] = [];
+      continuous = false;
+      interimResults = false;
+      lang = "";
+      maxAlternatives = 1;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      constructor() { FakeRecognition.instances.push(this); }
+      start() { /* started */ }
+      stop() { this.onend?.(); }
+      abort() { this.onend?.(); }
+    }
+    FakeRecognition.instances = [];
+    vi.stubGlobal("SpeechRecognition", FakeRecognition);
+    const onVoiceTranscript = vi.fn();
+    renderComposer({ voiceEnabled: true, agentId: "agent-1", voiceSttEngine: "browser", onVoiceTranscript });
+
+    fireEvent.click(screen.getByRole("button", { name: "Record voice message" }));
+    const recognition = FakeRecognition.instances[0];
+    const interim = Object.assign([{ transcript: "discard me" }], { isFinal: false });
+    act(() => {
+      recognition.onresult?.({ resultIndex: 0, results: [interim] });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel voice input" }));
+    expect(onVoiceTranscript).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Record voice message" })).toBeTruthy();
   });
 
   it("keeps the transcript and clears capture state when the engine ends on its own", async () => {
