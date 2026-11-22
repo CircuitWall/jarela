@@ -3,6 +3,7 @@ import {
   _resetAutoSpeak,
   consumeAutoSpeak,
   consumeLiveSpeech,
+  markLiveSpeechSpoken,
   requestAutoSpeak,
   requestLiveSpeech,
   subscribeAutoSpeak,
@@ -56,8 +57,18 @@ describe("auto-speak handoff", () => {
   it("does not read the reply twice when it was already spoken live", () => {
     requestLiveSpeech();
     expect(consumeLiveSpeech()).toBe(true);
+    markLiveSpeechSpoken();
     requestAutoSpeak("msg-live");
     expect(consumeAutoSpeak("msg-live")).toBe(false);
+  });
+
+  it("still reads the finished reply when live reading never started", () => {
+    requestLiveSpeech();
+    expect(consumeLiveSpeech()).toBe(true);
+    // A reader that dies before its first clip keeps the finalize request, so
+    // a development remount or a missing voice degrades instead of going mute.
+    requestAutoSpeak("msg-muted");
+    expect(consumeAutoSpeak("msg-muted")).toBe(true);
   });
 
   it("keeps the finalize request when the live reader never started", () => {

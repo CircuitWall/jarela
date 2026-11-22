@@ -26,8 +26,17 @@ export function requestLiveSpeech(): void {
 export function consumeLiveSpeech(): boolean {
   if (!livePending) return false;
   livePending = false;
-  liveSpoken = true;
   return true;
+}
+
+/**
+ * Audio from the live reader actually started. Until this fires the finalize
+ * request is still honoured, so a reader that dies before it speaks (a
+ * development remount, a missing voice) degrades to reading the finished
+ * reply instead of leaving the turn silent.
+ */
+export function markLiveSpeechSpoken(): void {
+  liveSpoken = true;
 }
 
 export function requestAutoSpeak(messageId: string): void {
