@@ -112,8 +112,13 @@ const MAX_ROUNDS = 8;
 /** Scenario fan-out. The wait is provider round trips, so a small pool turns
  *  the wall time into roughly the tail instead of the sum. */
 const concurrency = resolveConcurrency(process.env.JARELA_PROMPT_EVAL_CONCURRENCY);
-/** Result for a call the scenario did not describe; clearly synthetic. */
-const GENERIC_TOOL_RESULT = JSON.stringify({ ok: true, note: "synthetic evaluation result" });
+/** Result for a call the scenario did not describe. An explicit error, not a
+ *  fake success: a model must not mistake a stub for tool evidence. */
+const GENERIC_TOOL_RESULT = JSON.stringify({
+  ok: false,
+  error: "evaluation_stub",
+  message: "This tool is not executed by the prompt evaluation; no real result is available.",
+});
 
 function mockVerdict(scenario: (typeof PROMPT_SCENARIOS)[number]) {
   return JSON.stringify({
@@ -402,8 +407,17 @@ function resultFor(
     return sequence[Math.min(index, sequence.length - 1)];
   }
 
-  const declared = scenario.expect.toolResults[target] ?? scenario.expect.toolResults[call.name];
-  if (declared) return declared;
+  const declaredKey = scenario.expect.toolResults[target] !== undefined ? target : call.name;
+  const declared = scenario.expect.toolResults[declaredKey];
+  if (declared !== undefined) {
+    // A declared result describes one request. Serving it again to a different
+    // query or target would claim identical output for different input.
+    if (!servedFixture.has(`declared:${declaredKey}`)) {
+      servedFixture.add(`declared:${declaredKey}`);
+      return declared;
+    }
+    return GENERIC_TOOL_RESULT;
+  }
   // The declared fixture is the expected outcome: the target of a proxied call
   // as much as a directly bound tool. Only the first call receives it; a second
   // call with different arguments is a different request and gets a clearly
