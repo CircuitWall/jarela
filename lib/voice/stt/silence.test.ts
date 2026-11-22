@@ -64,6 +64,12 @@ describe("createSilenceDetector", () => {
     expect(d.phase).toBe("ended");
   });
 
+  it("honours a shorter no-speech window for conversation mode", () => {
+    const d = createSilenceDetector(0, { ...opts, noSpeechMs: 5_000 });
+    expect(d.sample(quiet(), 4_900)).toEqual([]);
+    expect(d.sample(quiet(), 5_000)).toEqual(["no-speech"]);
+  });
+
   it("ends at the hard capture cap", () => {
     const d = createSilenceDetector(0, opts);
     run(d, [[loud(), 100], [loud(), 200]]);

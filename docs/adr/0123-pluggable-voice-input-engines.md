@@ -9,7 +9,11 @@ Date: 2026-11-21
 > selected engine: Gemini input uses Gemini TTS; browser and Whisper input use
 > the device's built-in voices. Voice-originated turns are tagged with
 > `voice_input` metadata so the system prompt shapes the reply for listening
-> (prose over tables/code). Whisper remains recognition-only. Barge-in and
+> (prose over tables/code). A spoken reply keeps the conversation going: when
+> the auto-spoken reply ends — or the user presses Stop to interrupt it —
+> capture reopens, and 5 s of leading silence ends the loop. Only the
+> auto-speak path joins the loop; the manual Play button never opens the
+> microphone. Whisper remains recognition-only. Barge-in and
 > speech-to-speech stay out of scope.
 
 Related: [ADR-0017](./0017-voice-via-gemini.md) (voice via Gemini — input path

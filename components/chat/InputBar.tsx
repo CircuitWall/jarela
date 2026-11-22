@@ -9,6 +9,13 @@ import { normalizeSttEngine } from "@/lib/voice/stt/types";
 import { startBrowserCapture } from "./voice-browser-capture";
 import { startServerCapture } from "./voice-server-capture";
 import type { CaptureControls } from "./voice-capture-types";
+import {
+  consumeVoiceListen,
+  endVoiceConversation,
+  getVoiceConversationState,
+  stopVoiceSpeech,
+  subscribeVoiceConversation,
+} from "./voice-conversation";
 
 interface Props {
   attachments: ContentPart[];
@@ -89,7 +96,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
   // every keystroke, which is the root cause of typing feeling sluggish on
   // long threads. Parent only needs the text at submit/queue time.
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { recording, paused, transcribing, partial, voiceError, iosPwaFix, autoEnd, startRecording, cancelRecording, finishRecording } = useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTranscript });
+  const { recording, paused, transcribing, partial, voiceError, iosPwaFix, autoEnd, voiceSpeaking, startRecording, cancelRecording, finishRecording } = useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTranscript });
 
   const { value, setValue, textareaRef, setHlIdx, suggestions, showSuggestions, activeIdx, applySuggestion, fireSubmit, handleKeyDown } = useComposerText({ streaming, disabled, attachments, onSubmit, onQueue });
 
@@ -146,31 +153,17 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
         </button>
 
         {voiceEnabled && agentId && (
-          <>
-            {recording && !autoEnd && (
-              <button
-                onClick={finishRecording}
-                disabled={transcribing}
-                className="shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-fg-faint hover:text-fg hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                title="Finish recording now"
-                aria-label="Finish recording"
-              >
-                <Check size={16} />
-              </button>
-            )}
-            <button
-              onClick={recording ? cancelRecording : startRecording}
-              disabled={disabled || streaming || transcribing}
-              className={`shrink-0 h-11 w-11 flex items-center justify-center rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${recording
-                ? "bg-rose-500 text-white animate-pulse"
-                : "text-fg-faint hover:text-fg hover:bg-surface-3"
-                }`}
-              title={recording ? "Cancel voice input" : transcribing ? "Transcribing…" : "Record voice message"}
-              aria-label={recording ? "Cancel voice input" : "Record voice message"}
-            >
-              {recording ? <X size={16} /> : <Mic size={16} />}
-            </button>
-          </>
+          <VoiceCaptureControls
+            recording={recording}
+            autoEnd={autoEnd}
+            transcribing={transcribing}
+            disabled={disabled}
+            streaming={streaming}
+            voiceSpeaking={voiceSpeaking}
+            onFinish={finishRecording}
+            onCancel={cancelRecording}
+            onStart={() => { void startRecording(); }}
+          />
         )}
 
         <textarea
@@ -195,12 +188,17 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
           disabled={disabled}
         />
 
-        {streaming && (
+        {(streaming || voiceSpeaking) && (
           <button
-            onClick={onStop}
+            onClick={() => {
+              if (streaming) onStop();
+              if (voiceSpeaking) stopVoiceSpeech();
+            }}
             className="glass-btn-stop shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors"
-            title="Stop (interrupt the run — typing steers instead)"
-            aria-label="Stop"
+            title={voiceSpeaking
+              ? "Stop reading and listen"
+              : "Stop (interrupt the run — typing steers instead)"}
+            aria-label={voiceSpeaking ? "Stop reading and listen" : "Stop"}
           >
             <Square size={16} />
           </button>
@@ -220,6 +218,11 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
       {voiceError && (
         <p className="mt-1 text-[11px] text-rose-500" role="alert">{voiceError}</p>
       )}
+      {voiceSpeaking && !recording && !transcribing && (
+        <p className="mt-1 text-[11px] text-fg-faint" aria-live="polite">
+          Reading the reply — press Stop to interrupt and speak.
+        </p>
+      )}
       {recording && !voiceError && (
         <p className="mt-1 text-[11px] text-fg-faint" aria-live="polite">
           {paused
@@ -231,6 +234,48 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
         <p className="mt-1 text-[11px] text-fg-faint" aria-live="polite">Transcribing…</p>
       )}
     </div>
+  );
+}
+
+// Mic / cancel / finish cluster. Split out of InputBar so its render stays
+// under the function-size budget and the capture states stay legible.
+function VoiceCaptureControls({ recording, autoEnd, transcribing, disabled, streaming, voiceSpeaking, onFinish, onCancel, onStart }: {
+  recording: boolean;
+  autoEnd: boolean;
+  transcribing: boolean;
+  disabled: boolean | undefined;
+  streaming: boolean;
+  voiceSpeaking: boolean;
+  onFinish: () => void;
+  onCancel: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <>
+      {recording && !autoEnd && (
+        <button
+          onClick={onFinish}
+          disabled={transcribing}
+          className="shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-fg-faint hover:text-fg hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Finish recording now"
+          aria-label="Finish recording"
+        >
+          <Check size={16} />
+        </button>
+      )}
+      <button
+        onClick={recording ? onCancel : onStart}
+        disabled={disabled || streaming || transcribing || voiceSpeaking}
+        className={`shrink-0 h-11 w-11 flex items-center justify-center rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${recording
+          ? "bg-rose-500 text-white animate-pulse"
+          : "text-fg-faint hover:text-fg hover:bg-surface-3"
+          }`}
+        title={recording ? "Cancel voice input" : transcribing ? "Transcribing…" : "Record voice message"}
+        aria-label={recording ? "Cancel voice input" : "Record voice message"}
+      >
+        {recording ? <X size={16} /> : <Mic size={16} />}
+      </button>
+    </>
   );
 }
 
@@ -246,28 +291,55 @@ function useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTrans
   const [transcribing, setTranscribing] = useState(false);
   const [partial, setPartial] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [voiceSpeaking, setVoiceSpeaking] = useState(() => getVoiceConversationState().speaking);
   const controlsRef = useRef<CaptureControls | null>(null);
+  const conversationRef = useRef(false);
+  const recordingRef = useRef(recording);
+  const transcribingRef = useRef(transcribing);
+  const startConversationRef = useRef<() => void>(() => {});
+  const voiceReadyRef = useRef(false);
+  recordingRef.current = recording;
+  transcribingRef.current = transcribing;
+  voiceReadyRef.current = !!voiceEnabled && !!agentId;
   const iosPwaFix = isIosStandalonePwa();
   const engine = normalizeSttEngine(voiceSttEngine);
 
-  useEffect(() => () => {
-    controlsRef.current?.cancel();
-    controlsRef.current = null;
-  }, []);
-
-  // Shared by every end-of-turn path (silence, manual finish, engine end) so
-  // a transcript is accepted exactly one way.
+  // Conversation mode uses a 5 s leading-silence window: if the user does not
+  // start talking after a spoken reply, the loop ends instead of holding the mic.
   function accept(text: string) {
     const trimmed = text.trim();
-    if (trimmed) onVoiceTranscript?.(trimmed);
-    else setVoiceError("No speech was detected.");
+    if (trimmed) {
+      conversationRef.current = false;
+      onVoiceTranscript?.(trimmed);
+      return;
+    }
+    const inConversation = conversationRef.current;
+    conversationRef.current = false;
+    setVoiceError(inConversation
+      ? "Voice conversation ended after 5 seconds of silence."
+      : "No speech was detected.");
+    if (inConversation) endVoiceConversation();
   }
 
-  async function startRecording() {
-    if (!voiceEnabled || !agentId || recording || transcribing) return;
+  function handleCaptureError(message: string) {
+    const inConversation = conversationRef.current;
+    conversationRef.current = false;
+    setVoiceError(inConversation && message === "No speech was detected."
+      ? "Voice conversation ended after 5 seconds of silence."
+      : message);
+    if (inConversation) endVoiceConversation();
+  }
+
+  async function startRecording(options?: { conversation?: boolean }) {
+    if (!agentId || !voiceReadyRef.current || recordingRef.current || transcribingRef.current) return;
+    const conversation = options?.conversation === true;
+    // A manual capture replaces any lingering conversation loop.
+    if (!conversation) endVoiceConversation();
+    conversationRef.current = conversation;
     setVoiceError(null);
     setPartial("");
     setPaused(false);
+    const captureOptions = conversation ? { noSpeechMs: 5_000 } : undefined;
     const handlers = {
       onRecording: setRecording,
       onPaused: setPaused,
@@ -275,25 +347,63 @@ function useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTrans
       onAutoEnd: setAutoEnd,
       onTranscribing: setTranscribing,
       onTranscript: accept,
-      onError: (message: string) => setVoiceError(message),
+      onError: handleCaptureError,
     };
     try {
       if (engine === "browser") {
         setAutoEnd(true);
-        controlsRef.current = startBrowserCapture(handlers);
+        controlsRef.current = startBrowserCapture(handlers, captureOptions);
       } else {
-        controlsRef.current = await startServerCapture({ ...handlers, agentId, engine });
+        controlsRef.current = await startServerCapture({ ...handlers, agentId, engine }, captureOptions);
       }
     } catch (err) {
+      const inConversation = conversationRef.current;
+      conversationRef.current = false;
       setVoiceError(errorMessage(err));
       setRecording(false);
       setPaused(false);
+      if (inConversation) endVoiceConversation();
     }
   }
 
-  function cancelRecording() {
+  startConversationRef.current = () => {
+    void startRecording({ conversation: true });
+  };
+
+  useEffect(() => {
+    function startConversationCapture(): boolean {
+      if (recordingRef.current || transcribingRef.current) return true;
+      if (!voiceReadyRef.current) return false;
+      startConversationRef.current();
+      return true;
+    }
+    return subscribeVoiceConversation((event) => {
+      if (event.type === "state") {
+        setVoiceSpeaking(event.speaking);
+        return false;
+      }
+      if (event.type === "listen") return startConversationCapture();
+      if (event.type === "end") setVoiceSpeaking(false);
+      return false;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (voiceEnabled && agentId && consumeVoiceListen()) startConversationRef.current();
+  }, [voiceEnabled, agentId]);
+
+  useEffect(() => () => {
     controlsRef.current?.cancel();
     controlsRef.current = null;
+    if (conversationRef.current) endVoiceConversation();
+  }, []);
+
+  function cancelRecording() {
+    const inConversation = conversationRef.current;
+    conversationRef.current = false;
+    controlsRef.current?.cancel();
+    controlsRef.current = null;
+    if (inConversation) endVoiceConversation();
   }
 
   function finishRecording() {
@@ -309,6 +419,7 @@ function useVoiceRecording({ voiceEnabled, agentId, voiceSttEngine, onVoiceTrans
     voiceError,
     iosPwaFix,
     autoEnd,
+    voiceSpeaking,
     startRecording,
     cancelRecording,
     finishRecording,

@@ -2,6 +2,12 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InputBar } from "./InputBar";
+import {
+  _resetVoiceConversation,
+  getVoiceConversationState,
+  notifyVoiceSpeechEnded,
+  notifyVoiceSpeechStarted,
+} from "./voice-conversation";
 
 const mediaDevicesDescriptor = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
 
@@ -9,6 +15,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  _resetVoiceConversation();
   if (mediaDevicesDescriptor) Object.defineProperty(navigator, "mediaDevices", mediaDevicesDescriptor);
   else Reflect.deleteProperty(navigator, "mediaDevices");
 });
@@ -316,6 +323,95 @@ describe("InputBar local ownership", () => {
     });
 
     await waitFor(() => expect(onVoiceTranscript).toHaveBeenCalledWith("ended by silence"));
+    expect(screen.getByRole("button", { name: "Record voice message" })).toBeTruthy();
+  });
+});
+
+describe("InputBar voice conversation loop", () => {
+  function stubRecognition() {
+    class FakeRecognition {
+      static instances: FakeRecognition[] = [];
+      continuous = false;
+      interimResults = false;
+      lang = "";
+      maxAlternatives = 1;
+      onresult: ((event: unknown) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+      onend: (() => void) | null = null;
+      constructor() { FakeRecognition.instances.push(this); }
+      start() { /* started */ }
+      stop() { this.onend?.(); }
+      abort() { this.onend?.(); }
+    }
+    FakeRecognition.instances = [];
+    vi.stubGlobal("SpeechRecognition", FakeRecognition);
+    return FakeRecognition;
+  }
+
+  it("listens again when a spoken reply ends", () => {
+    const recognition = stubRecognition();
+    const onVoiceTranscript = vi.fn();
+    renderComposer({ voiceEnabled: true, agentId: "agent-1", voiceSttEngine: "browser", onVoiceTranscript });
+
+    act(() => {
+      notifyVoiceSpeechStarted("msg-1", vi.fn());
+      notifyVoiceSpeechEnded("msg-1");
+    });
+
+    expect(recognition.instances).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Cancel voice input" })).toBeTruthy();
+    expect(onVoiceTranscript).not.toHaveBeenCalled();
+  });
+
+  it("stops reading and listens when the user presses Stop", () => {
+    const recognition = stubRecognition();
+    const stop = vi.fn();
+    const props = renderComposer({ voiceEnabled: true, agentId: "agent-1", voiceSttEngine: "browser" }).props;
+
+    act(() => {
+      notifyVoiceSpeechStarted("msg-1", stop);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Stop reading and listen" }));
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(props.onStop).not.toHaveBeenCalled();
+    expect(recognition.instances).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Cancel voice input" })).toBeTruthy();
+  });
+
+  it("ends the conversation after 5 seconds of silence", async () => {
+    vi.useFakeTimers();
+    const recognition = stubRecognition();
+    const onVoiceTranscript = vi.fn();
+    renderComposer({ voiceEnabled: true, agentId: "agent-1", voiceSttEngine: "browser", onVoiceTranscript });
+
+    act(() => {
+      notifyVoiceSpeechStarted("msg-1", vi.fn());
+      notifyVoiceSpeechEnded("msg-1");
+    });
+    expect(recognition.instances).toHaveLength(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(4_900);
+    });
+    expect(screen.queryByText("Voice conversation ended after 5 seconds of silence.")).toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(screen.getByText("Voice conversation ended after 5 seconds of silence.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Record voice message" })).toBeTruthy();
+    expect(onVoiceTranscript).not.toHaveBeenCalled();
+    expect(getVoiceConversationState().active).toBe(false);
+  });
+
+  it("does not start listening for a manual play button", () => {
+    const recognition = stubRecognition();
+    const { textbox } = renderComposer({ voiceEnabled: true, agentId: "agent-1", voiceSttEngine: "browser" });
+    fireEvent.change(textbox, { target: { value: "typed turn" } });
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    expect(recognition.instances).toHaveLength(0);
     expect(screen.getByRole("button", { name: "Record voice message" })).toBeTruthy();
   });
 });
