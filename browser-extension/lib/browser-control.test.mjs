@@ -981,36 +981,68 @@ describe("dispatchCommand — a page script that returns nothing", () => {
   });
 });
 
-describe("dispatchCommand — navigating the app tab", () => {
+describe("dispatchCommand — the Jarela app tab", () => {
   const appTab = { id: 9, windowId: 1, active: true, url: "http://127.0.0.1:4312/" };
-  const deps = (extra = {}) => makeDeps({
+  const appDeps = (extra = {}) => makeDeps({
     resolveTargetTab: vi.fn().mockResolvedValue({ tab: appTab }),
     isAppTabUrl: (url) => url.startsWith("http://127.0.0.1:4312"),
     ...extra,
   });
 
-  it("refuses to steer the tab that is running the conversation", async () => {
-    const { deps: d } = deps();
-    const r = await dispatchCommand(d, { type: "navigate", url: "https://example.com" });
-    expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/is the Jarela app itself/);
-    expect(r.data).toMatchObject({ needs_tab: "non_app" });
-    expect(d.updateTab).not.toHaveBeenCalled();
+  it("refuses every command against the tab that is running the conversation", async () => {
+    for (const command of [
+      { type: "navigate", url: "https://example.com" },
+      { type: "click", selector: "#go" },
+      { type: "fill", selector: "#q", value: "x" },
+      { type: "snapshot" },
+      { type: "extract", selector: "body" },
+      { type: "batch", steps: [{ action: "click", selector: "#go" }] },
+    ]) {
+      const { deps } = appDeps();
+      const r = await dispatchCommand(deps, command);
+      expect(r.ok, command.type).toBe(false);
+      expect(r.error).toMatch(/is the Jarela app itself/);
+      expect(r.data).toMatchObject({ needs_tab: "self" });
+      expect(deps.executeScript, command.type).not.toHaveBeenCalled();
+      expect(deps.updateTab, command.type).not.toHaveBeenCalled();
+      expect(deps.activateTab, command.type).not.toHaveBeenCalled();
+    }
   });
 
-  it("honours an explicit allow_app_tab", async () => {
-    const { deps: d } = deps();
-    const r = await dispatchCommand(d, { type: "navigate", url: "https://example.com", allow_app_tab: true });
+  it("refuses to activate the app tab", async () => {
+    const { deps } = makeDeps({
+      getTab: vi.fn().mockResolvedValue(appTab),
+      isAppTabUrl: (url) => url.startsWith("http://127.0.0.1:4312"),
+    });
+    const r = await dispatchCommand(deps, { type: "activate_tab", tab_id: 9 });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/is the Jarela app itself/);
+    expect(r.data).toMatchObject({ needs_tab: "self" });
+    expect(deps.activateTab).not.toHaveBeenCalled();
+  });
+
+  it("lists the app tab as a non-operable self tab", async () => {
+    const { deps } = makeDeps({
+      queryTabs: vi.fn().mockResolvedValue([
+        { id: 7, windowId: 1, index: 0, active: false, url: "https://example.com", title: "Example" },
+        { id: 9, windowId: 1, index: 1, active: true, url: "http://127.0.0.1:4312/", title: "Jarela" },
+      ]),
+      isAppTabUrl: (url) => url.startsWith("http://127.0.0.1:4312"),
+    });
+    const r = await dispatchCommand(deps, { type: "tabs", include_unusable: true });
     expect(r.ok).toBe(true);
-    expect(d.updateTab).toHaveBeenCalledWith({ tabId: 9, url: "https://example.com" });
+    const self = r.data.tabs.find((tab) => tab.tab_id === 9);
+    expect(self).toMatchObject({ self: true, usable: false });
+    expect(self.unusable_reason).toMatch(/Jarela app itself/);
+    expect(r.data.tabs.find((tab) => tab.tab_id === 7).usable).toBe(true);
   });
 
   it("still allows opening the app in a different tab", async () => {
-    const { deps: d } = makeDeps({
+    const { deps } = makeDeps({
       resolveTargetTab: vi.fn().mockResolvedValue({ tab: { id: 11, windowId: 1, active: true, url: "https://example.com" } }),
       isAppTabUrl: (url) => url.startsWith("http://127.0.0.1:4312"),
     });
-    const r = await dispatchCommand(d, { type: "navigate", url: "http://127.0.0.1:4312/" });
+    const r = await dispatchCommand(deps, { type: "navigate", url: "http://127.0.0.1:4312/" });
     expect(r.ok).toBe(true);
   });
 });

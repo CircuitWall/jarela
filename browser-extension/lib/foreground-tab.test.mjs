@@ -27,9 +27,10 @@ function makeStorage(initial = {}) {
   };
 }
 
-function makeDeps({ tabs = [], byId = {} } = {}) {
+function makeDeps({ tabs = [], byId = {}, isAppTabUrl } = {}) {
   return {
     storage: makeStorage(),
+    ...(isAppTabUrl ? { isAppTabUrl } : {}),
     getTab: vi.fn().mockImplementation(async (id) => {
       if (byId[id] !== undefined) return byId[id];
       throw new Error("No tab with id " + id);
@@ -74,6 +75,13 @@ describe("getForegroundTab / recordForegroundTab", () => {
     expect(await getForegroundTab(s)).toBeNull();
   });
 
+  it("refuses to record the Jarela app tab", async () => {
+    const s = makeStorage();
+    const isApp = (url) => url.startsWith("http://127.0.0.1:4312");
+    expect(await recordForegroundTab(s, { id: 9, url: "http://127.0.0.1:4312/" }, isApp)).toBe(false);
+    expect(await getForegroundTab(s)).toBeNull();
+  });
+
   it("clears the record on demand", async () => {
     const s = makeStorage();
     await recordForegroundTab(s, { id: 7, url: "https://x.com/" });
@@ -87,6 +95,15 @@ describe("handleTabActivated", () => {
     const deps = makeDeps({ byId: { 5: { id: 5, url: "https://x.com/", windowId: 1 } } });
     expect(await handleTabActivated(deps, { tabId: 5 })).toBe(true);
     expect((await getForegroundTab(deps.storage)).tabId).toBe(5);
+  });
+
+  it("does not record the Jarela app tab", async () => {
+    const deps = makeDeps({
+      byId: { 9: { id: 9, url: "http://127.0.0.1:4312/", windowId: 1 } },
+      isAppTabUrl: (url) => url.startsWith("http://127.0.0.1:4312"),
+    });
+    expect(await handleTabActivated(deps, { tabId: 9 })).toBe(false);
+    expect(await getForegroundTab(deps.storage)).toBeNull();
   });
 
   it("ignores activation of unusable tabs", async () => {

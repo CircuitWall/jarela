@@ -81,6 +81,17 @@ async function loadConfig() {
   return currentConfig;
 }
 
+// True when `url` is the Jarela app itself. The app tab is never a
+// browser-control target, never a capture target, and never the ambient
+// foreground context: it is the surface the user is talking to us in.
+function isAppUrl(url) {
+  try {
+    return typeof url === "string" && url.length > 0 && new URL(url).origin === buildBase(currentConfig);
+  } catch {
+    return false;
+  }
+}
+
 async function unregisterFormSubmissionCapture() {
   const registered = await chrome.scripting.getRegisteredContentScripts({
     ids: [FORM_SUBMISSION_SCRIPT_ID],
@@ -547,7 +558,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   try {
     const pin = await getPinnedTab(chrome.storage.local);
     if (!pin || pin.tabId !== tabId) return;
-    if (isUsableUrl(changeInfo.url)) return;
+    if (isUsableUrl(changeInfo.url) && !isAppUrl(changeInfo.url)) return;
     await clearPinnedTab(chrome.storage.local);
     const label = pin.title || pin.url || "the pinned tab";
     void notify(
@@ -560,6 +571,17 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 });
 
 async function startPickerInTab(tabId) {
+  // The picker exists to capture page content into the app; running it on
+  // the app itself would capture its own chat surface. Refuse centrally so
+  // every entry point (toolbar, popup, message) shares the guard.
+  if (typeof chrome.tabs.get === "function") {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (isAppUrl(tab?.url)) {
+      const err = new Error(`the ${BRAND.name} app itself is not a capture target`);
+      err.code = "jarela_self_tab";
+      throw err;
+    }
+  }
   await chrome.scripting.executeScript({
     target: { tabId },
     files: ["content.js"],
@@ -1199,6 +1221,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 chrome.commands?.onCommand.addListener((command, tab) => {
   if (!tab?.id) return;
   if (command !== "fill-focused-field") return;
+  if (isAppUrl(tab.url)) {
+    void notify(
+      `${BRAND.name} fill menu`,
+      `The fill/rewrite menu doesn't run on the ${BRAND.name} app itself. Use it on a page with an editable field.`,
+      false,
+    );
+    return;
+  }
   openActionMenu(tab.id).catch((err) => {
     console.warn("[jarela] keyboard command failed:", err);
   });
@@ -1232,6 +1262,18 @@ chrome.action.onClicked.addListener(async (tab) => {
   try {
     await startPickerInTab(tab.id);
   } catch (err) {
+    if (err?.code === "jarela_self_tab") {
+      try {
+        await chrome.notifications.create({
+          type: "basic",
+          iconUrl: "icons/icon-128.png",
+          title: "Can't capture this page",
+          message: `This is the ${BRAND.name} app itself. Open the page you want to capture and try again.`,
+          priority: 1,
+        });
+      } catch { /* */ }
+      return;
+    }
     // Most common: the page disallows content scripts (chrome://, web store).
     try {
       await chrome.notifications.create({
@@ -1289,6 +1331,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab?.id) {
           sendResponse({ ok: false, status: 0, body: { error: "No active tab" } });
+          return;
+        }
+        if (isAppUrl(tab.url)) {
+          sendResponse({
+            ok: false,
+            status: 0,
+            body: { error: `the ${BRAND.name} app itself is not a capture target` },
+          });
           return;
         }
         await startPickerInTab(tab.id);
@@ -1416,8 +1466,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: false, status: 0, body: { error: resolved?.reason ?? "no tab to pin" } });
           return;
         }
-        if (!isUsableUrl(resolved.tab.url)) {
-          sendResponse({ ok: false, status: 0, body: { error: "tab URL is not scriptable (chrome:// / blank / extension page)" } });
+        if (!isUsableUrl(resolved.tab.url) || isAppUrl(resolved.tab.url)) {
+          sendResponse({ ok: false, status: 0, body: { error: "that tab is the Jarela app itself — pick a regular page" } });
           return;
         }
         const saved = await setPinnedTab(chrome.storage.local, resolved.tab);
@@ -1431,8 +1481,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         }
         const tab = await chrome.tabs.get(tabId);
-        if (!tab?.id || !isUsableUrl(tab.url)) {
-          sendResponse({ ok: false, status: 0, body: { error: "tab URL is not scriptable (chrome:// / blank / extension page)" } });
+        if (!tab?.id || !isUsableUrl(tab.url) || isAppUrl(tab.url)) {
+          sendResponse({
+            ok: false,
+            status: 0,
+            body: {
+              error: isAppUrl(tab?.url)
+                ? "that tab is the Jarela app itself — pick a regular page"
+                : "tab URL is not scriptable (chrome:// / blank / extension page)",
+            },
+          });
           return;
         }
         const saved = await setPinnedTab(chrome.storage.local, tab);
@@ -1599,6 +1657,7 @@ const foregroundTrackerDeps = {
   storage: chrome.storage.local,
   getTab: (id) => chrome.tabs.get(id),
   queryTabs: (q) => chrome.tabs.query(q),
+  isAppTabUrl: isAppUrl,
 };
 
 // Deps the pure tab-resolver needs (storage + a couple of tabs.* calls).
@@ -1611,6 +1670,8 @@ const tabTargetDeps = {
   // back to a live `chrome.tabs.query`. This is the main fix for
   // "agent targets the wrong tab when the popup steals focus".
   getForegroundTab: () => getForegroundTab(chrome.storage.local),
+  // The app tab itself is never a target, even when it is focused.
+  isAppTabUrl: isAppUrl,
 };
 
 // chrome.* dependency bundle handed to the pure dispatcher.
@@ -1629,13 +1690,7 @@ const chromeDeps = {
   executeScript: (opts) => chrome.scripting.executeScript(opts),
   captureVisibleTab: captureVisibleTabDep,
   waitTabLoaded,
-  isAppTabUrl: (url) => {
-    try {
-      return typeof url === "string" && url.length > 0 && new URL(url).origin === buildBase(currentConfig);
-    } catch {
-      return false;
-    }
-  },
+  isAppTabUrl: (url) => isAppUrl(url),
   getTab: (id) => chrome.tabs.get(id),
   goBack: (id) => chrome.tabs.goBack(id),
   goForward: (id) => chrome.tabs.goForward(id),
@@ -1789,6 +1844,15 @@ async function gateAndDispatch(cmd) {
   const tab = resolved?.tab;
   if (!tab?.id) {
     return { ok: false, error: resolved?.reason ?? "no active tab" };
+  }
+  // Refuse before the approval prompt and overlay: asking the user to
+  // approve an action that can never run on this tab is pure noise.
+  if (isAppUrl(tab.url)) {
+    return {
+      ok: false,
+      error: "this tab is the Jarela app itself — it is not a browser-control target. Target another tab instead.",
+      data: { needs_tab: "self" },
+    };
   }
   const host = deriveCommandHost(tab, cmd);
   if (!host) {

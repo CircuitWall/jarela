@@ -118,9 +118,9 @@ through tools registered in the Jarela toolbelt:
 
 | Tool                   | Action                                                            |
 | ---------------------- | ----------------------------------------------------------------- |
-| `browser_tabs`         | List open tabs with a small `tab_ref`, target markers, and URL/title metadata where permissions allow. |
-| `browser_activate_tab` | Focus a tab by `tab_ref` from `browser_tabs` (a raw tab id is accepted too). |
-| `browser_navigate`     | Open a URL, or move with `back` / `forward` / `reload` (http/https only), and optionally wait for a selector. Refuses to steer the Jarela app tab unless `allow_app_tab` is set. |
+| `browser_tabs`         | List open tabs with a small `tab_ref`, target markers, and URL/title metadata where permissions allow. The Jarela app's own tab is listed as `self: true` / `usable: false` and is never a target. |
+| `browser_activate_tab` | Focus a tab by `tab_ref` from `browser_tabs` (a raw tab id is accepted too). Refuses the Jarela app tab. |
+| `browser_navigate`     | Open a URL, or move with `back` / `forward` / `reload` (http/https only), and optionally wait for a selector. Refuses to steer the Jarela app tab. |
 | `browser_snapshot`     | Return an indented accessibility tree (role, accessible name, durable `ref`) plus a text excerpt; `filter`, `depth`, `ref` scope it. |
 | `browser_click`        | Click by `ref`, `role` + `name`, or selector — resolved against the live DOM. |
 | `browser_press`        | Press a key or chord (`Escape`, `Enter`, `Control+a`); without a locator it goes to the focused element. |

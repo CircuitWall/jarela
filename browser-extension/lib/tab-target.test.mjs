@@ -23,10 +23,11 @@ function makeStorage(initial = {}) {
   };
 }
 
-function makeDeps({ pinned = null, getTabImpl, tabsByQuery = {} } = {}) {
+function makeDeps({ pinned = null, getTabImpl, tabsByQuery = {}, isAppTabUrl } = {}) {
   const storage = makeStorage(pinned ? { [STORAGE_KEY]: pinned } : {});
   return {
     storage,
+    ...(isAppTabUrl ? { isAppTabUrl } : {}),
     getTab: vi.fn().mockImplementation(async (id) => {
       if (typeof getTabImpl === "function") return getTabImpl(id);
       throw new Error("not found");
@@ -37,6 +38,8 @@ function makeDeps({ pinned = null, getTabImpl, tabsByQuery = {} } = {}) {
     }),
   };
 }
+
+const isApp = (url) => typeof url === "string" && url.startsWith("http://127.0.0.1:4312");
 
 describe("isUsableUrl", () => {
   it.each([
@@ -124,6 +127,20 @@ describe("findFallbackTab", () => {
       tabsByQuery: { lastFocused: [{ id: 1, url: "chrome://x" }], all: [{ id: 2, url: "about:blank" }] },
     });
     expect(await findFallbackTab(deps)).toBeNull();
+  });
+
+  it("never picks the Jarela app tab, even when it is active and focused", async () => {
+    const deps = makeDeps({
+      isAppTabUrl: isApp,
+      tabsByQuery: {
+        lastFocused: [
+          { id: 3, url: "https://target.example.com/page", active: false },
+          { id: 9, url: "http://127.0.0.1:4312/", active: true },
+        ],
+      },
+    });
+    const t = await findFallbackTab(deps);
+    expect(t.id).toBe(3);
   });
 });
 
@@ -221,5 +238,46 @@ describe("resolveTargetTab", () => {
     const r = await resolveTargetTab(deps);
     expect(r.source).toBe("active");
     expect(r.tab.id).toBe(99);
+  });
+
+  it("releases a pin whose tab landed on the Jarela app and retargets", async () => {
+    const deps = makeDeps({
+      pinned: { tabId: 7, url: "https://ratsit.se/", host: "ratsit.se", title: "", pinnedAt: 1 },
+      getTabImpl: (id) => Promise.resolve({ id, url: "http://127.0.0.1:4312/" }),
+      isAppTabUrl: isApp,
+      tabsByQuery: { lastFocused: [{ id: 11, url: "https://fallback.test/", active: true }] },
+    });
+    const r = await resolveTargetTab(deps);
+    expect(r.source).toBe("active");
+    expect(r.tab.id).toBe(11);
+    expect(await getPinnedTab(deps.storage)).toBeNull();
+  });
+
+  it("skips a foreground-tracked Jarela app tab", async () => {
+    const liveTab = { id: 99, url: "https://stale.test/", active: true };
+    const deps = makeDeps({
+      getTabImpl: (id) =>
+        Promise.resolve(id === 33 ? { id: 33, url: "http://127.0.0.1:4312/" } : liveTab),
+      isAppTabUrl: isApp,
+      tabsByQuery: { lastFocused: [liveTab] },
+    });
+    deps.getForegroundTab = vi.fn().mockResolvedValue({ tabId: 33, url: "http://127.0.0.1:4312/" });
+    const r = await resolveTargetTab(deps);
+    expect(r.source).toBe("active");
+    expect(r.tab.id).toBe(99);
+  });
+
+  it("reports no target when only the Jarela app tab is open", async () => {
+    const deps = makeDeps({
+      isAppTabUrl: isApp,
+      tabsByQuery: {
+        lastFocused: [{ id: 9, url: "http://127.0.0.1:4312/", active: true }],
+        all: [{ id: 9, url: "http://127.0.0.1:4312/", active: true }],
+      },
+    });
+    const r = await resolveTargetTab(deps);
+    expect(r.source).toBe("none");
+    expect(r.tab).toBeNull();
+    expect(r.reason).toMatch(/no usable/);
   });
 });

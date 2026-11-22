@@ -66,12 +66,18 @@ async function driveTool<T>(
 }
 
 describe("browser_navigate", () => {
-  it("refuses to navigate the Jarela app itself unless explicitly allowed", async () => {
-    const raw = await browserNavigateTool.invoke({ url: "http://localhost:4312/?tab=tools" });
-    const parsed = JSON.parse(raw);
+  it("surfaces the extension's refusal when the resolved tab is the Jarela app itself", async () => {
+    const p = browserNavigateTool.invoke({ url: "http://localhost:4312/?tab=tools" });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("navigate");
+      if (cmd.type === "navigate") expect(cmd.url).toBe("http://localhost:4312/?tab=tools");
+      return {
+        ok: false,
+        error: "this tab is the Jarela app itself — it is not a browser-control target. Target another tab instead.",
+      };
+    });
 
     expect(parsed).toMatchObject({ ok: false, error_code: "app_self_target", retryable: false });
-    expect(await pollNextCommand(50)).toBeNull();
   });
 
   it("enqueues a navigate command and surfaces the extension result", async () => {
@@ -767,6 +773,25 @@ describe("browser_tabs tab_ref and metadata hint", () => {
     const parsed = JSON.parse(out);
     expect(parsed.ok).toBe(false);
     expect(parsed.error).toMatch(/not in the last tab inventory|call browser_tabs first/);
+    expect(await pollNextCommand(50)).toBeNull();
+  });
+
+  it("presents the Jarela app as a non-operable self tab and refuses to activate it", async () => {
+    const selfTabsData = {
+      tabs: [
+        { tab_id: 88509162, window_id: 1, active: true, url: "http://127.0.0.1:4312/", host: "127.0.0.1", usable: false, self: true, title: "Jarela" },
+        { tab_id: 88509170, window_id: 1, active: false, url: "https://example.com", host: "example.com", usable: true, title: "Example" },
+      ],
+    };
+    const p1 = browserTabsTool.invoke({});
+    const { parsed } = await driveTool(p1, () => ({ ok: true, data: selfTabsData }));
+    const data = parsed.data as { tabs: Array<Record<string, unknown>>; self_hint?: string };
+    expect(data.tabs[0]).toMatchObject({ self: true, usable: false, tab_ref: 1 });
+    expect(data.self_hint).toMatch(/cannot be targeted/);
+
+    const out = await browserActivateTabTool.invoke({ tab_ref: 1 });
+    const refused = JSON.parse(out);
+    expect(refused).toMatchObject({ ok: false, error_code: "app_self_target" });
     expect(await pollNextCommand(50)).toBeNull();
   });
 });
