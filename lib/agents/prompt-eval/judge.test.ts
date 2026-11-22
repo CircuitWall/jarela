@@ -28,6 +28,11 @@ describe("judge prompt", () => {
     expect(JUDGE_SYSTEM_PROMPT).toContain("Record a hard failure only when the transcript literally shows it");
   });
 
+  it("scores fuzzy behaviour without re-judging the deterministic guardrails", () => {
+    expect(JUDGE_SYSTEM_PROMPT).toContain("cross-cutting behaviours that apply to every scenario");
+    expect(JUDGE_SYSTEM_PROMPT).toContain("Tool selection and argument shape are verified outside this rubric");
+  });
+
   it("carries no unresolved template values", () => {
     expect(JUDGE_SYSTEM_PROMPT).not.toMatch(/\{\{[^}]+\}/);
     expect(JUDGE_SYSTEM_PROMPT).not.toMatch(/\bundefined\b/);

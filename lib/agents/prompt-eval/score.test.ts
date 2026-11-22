@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { aggregateOutcomes, evaluateJudgeSamples, scoreJudgeVerdict, scoreToolSelection } from "./score";
 import { findScenario } from "./scenarios";
+import { BEHAVIOUR_CRITERIA } from "./behaviour-rubric";
 import type { JudgeVerdict, ObservedToolCall, PromptScenario, ScenarioOutcome } from "./types";
 
 const memory = findScenario("memory-preference-save")!;
@@ -276,35 +277,55 @@ describe("judge verdict scoring", () => {
 
 describe("judge sampling", () => {
   const options = { minScore: 0.7, floor: 0.5 };
-  const sample = (scores: number[], overrides: Partial<JudgeVerdict> = {}): JudgeVerdict => ({
+  const sample = (
+    scores: number[],
+    overrides: Partial<JudgeVerdict> = {},
+    sharedScore = 5,
+  ): JudgeVerdict => ({
     ...verdict(),
     criteria: memory.judge.criteria.map((criterion, index) => ({
       id: criterion.id,
-      score: scores[index] ?? 5,
+      score: BEHAVIOUR_CRITERIA.some((shared) => shared.id === criterion.id)
+        ? sharedScore
+        : (scores[index] ?? 5),
       reason: "sample",
     })),
     ...overrides,
   });
 
-  it("passes on the median and warns when a sample sits under the target", () => {
-    // The flipped run: one sample at the floor edge, two higher.
-    const result = evaluateJudgeSamples(memory, [sample([4, 3, 2]), sample([5, 4, 4]), sample([5, 4, 4])], options);
+  it("passes a median between the floor and the target, and warns", () => {
+    // Scenario criteria perfect, fuzzy behaviour mediocre: above the floor,
+    // under the target, so the run passes with a visible warning.
+    const mediocre = sample([5, 5, 5], {}, 2);
+    const result = evaluateJudgeSamples(memory, [mediocre, mediocre, mediocre], options);
     expect(result.pass).toBe(true);
-    expect(result.score).toBeGreaterThanOrEqual(0.7);
+    expect(result.score).toBeGreaterThanOrEqual(0.5);
+    expect(result.score).toBeLessThan(0.7);
+    expect(result.warnings.join(" ")).toContain("below the 0.70 target");
     expect(result.samples).toHaveLength(3);
   });
 
   it("does not fail the scenario for one borderline sample", () => {
-    // 0.68 twice on one criterion alone, with the other criteria perfect.
-    const borderline = [sample([5, 3, 2]), sample([5, 3, 2]), sample([5, 5, 5])];
-    const result = evaluateJudgeSamples(memory, borderline, options);
-    expect(result.score).toBeCloseTo((2 * 1 + 1 * 0.6 + 2 * 0.4) / 5);
+    // One weak sample with two strong ones: the median decides.
+    const result = evaluateJudgeSamples(memory, [
+      sample([2, 2, 1], {}, 2),
+      sample([5, 5, 5]),
+      sample([5, 5, 5]),
+    ], options);
     expect(result.pass).toBe(true);
-    expect(result.warnings.join(" ")).toContain("below the 0.70 target");
+    expect(result.score).toBeCloseTo(1);
+  });
+
+  it("fails an answer that misses every fuzzy behaviour even with perfect scenario criteria", () => {
+    const oblivious = sample([5, 5, 5], {}, 0);
+    const result = evaluateJudgeSamples(memory, [oblivious, oblivious, oblivious], options);
+    expect(result.pass).toBe(false);
+    expect(result.score).toBeCloseTo(5 / 13);
+    expect(result.failures.join(" ")).toContain("below the 0.50 floor");
   });
 
   it("fails a median under the floor", () => {
-    const bad = [sample([2, 2, 1]), sample([2, 2, 1]), sample([2, 2, 1])];
+    const bad = [sample([2, 2, 1], {}, 2), sample([2, 2, 1], {}, 2), sample([2, 2, 1], {}, 2)];
     const result = evaluateJudgeSamples(memory, bad, options);
     expect(result.pass).toBe(false);
     expect(result.failures.join(" ")).toContain("below the 0.50 floor");
@@ -338,6 +359,14 @@ describe("judge sampling", () => {
     );
     expect(result.pass).toBe(false);
     expect(result.failures.join(" ")).toContain("did not score criterion");
+  });
+
+  it("fails a sample that skips a shared behaviour criterion", () => {
+    const [shared] = BEHAVIOUR_CRITERIA;
+    const criteria = verdict().criteria.filter((criterion) => criterion.id !== shared.id);
+    const result = evaluateJudgeSamples(memory, [verdict({ criteria })], options);
+    expect(result.pass).toBe(false);
+    expect(result.failures.join(" ")).toContain(`judge did not score criterion "${shared.id}"`);
   });
 
   it("fails when no sample was produced", () => {
