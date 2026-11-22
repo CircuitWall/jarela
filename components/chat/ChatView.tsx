@@ -204,8 +204,9 @@ function useChatRunCompletion({ threadId, thread, onMessageSent, attachRef }: {
   attachRef: import("react").RefObject<((id: string, quietActivity?: boolean) => Promise<unknown>) | null>;
 }) {
   // When the next user turn came from a voice transcription, arm this flag
-  // so handleDone can fire a `jarela:speak-message` event at the new
-  // assistant message id and the bubble auto-plays the TTS reply once.
+  // so handleDone can hand the newest assistant reply to the auto-speak
+  // coordinator. The request is parked by message id until its bubble is
+  // mounted and no longer streaming, so a single frame cannot lose it.
   const pendingAutoSpeakRef = useRef(false);
   // Need clearStreamingContent/clearToolEvents before useSSE returns them.
   // Use refs so handleDone isn't dependent on the hook's return value.

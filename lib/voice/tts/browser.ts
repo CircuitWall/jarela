@@ -3,8 +3,15 @@
 // Used when the agent's speech engine is Browser or Whisper. Gemini keeps
 // Gemini TTS; Whisper only transcribes, so it cannot synthesize and maps to
 // the operating system's voices here.
+//
+// `speechSynthesis.speak()` can accept an utterance and then never start it
+// (paused synth, no output device, browser quirk). A short watchdog turns
+// that silence into a visible error instead of a stuck "playing" state.
+
+const START_TIMEOUT_MS = 2_000;
 
 export interface BrowserSpeechHandlers {
+  onStart?: () => void;
   onEnd?: () => void;
   onError?: (error: string) => void;
 }
@@ -30,12 +37,46 @@ export function speakWithBrowser(text: string, handlers: BrowserSpeechHandlers =
   utterance.pitch = 1;
   utterance.volume = 1;
 
+  let started = false;
+  let settled = false;
   let cancelled = false;
+
+  const startTimer = setTimeout(() => {
+    if (settled || started) return;
+    // Some engines speak without firing `start`; trust the state flag.
+    if (synth.speaking) {
+      started = true;
+      handlers.onStart?.();
+      return;
+    }
+    settled = true;
+    cancelled = true;
+    try { synth.cancel(); } catch { /* not speaking */ }
+    handlers.onError?.(
+      "the browser did not start speech synthesis — check the system voice output, or switch the speech engine to Gemini",
+    );
+  }, START_TIMEOUT_MS);
+
+  function clearStart() {
+    clearTimeout(startTimer);
+  }
+
+  utterance.onstart = () => {
+    if (settled) return;
+    started = true;
+    clearStart();
+    handlers.onStart?.();
+  };
   utterance.onend = () => {
+    clearStart();
+    if (settled) return;
+    settled = true;
     if (!cancelled) handlers.onEnd?.();
   };
   utterance.onerror = (event) => {
-    if (cancelled) return;
+    clearStart();
+    if (settled) return;
+    settled = true;
     // Starting another clip cancels the previous one; that is not an error.
     if (event.error === "interrupted" || event.error === "canceled") {
       handlers.onEnd?.();
@@ -46,7 +87,14 @@ export function speakWithBrowser(text: string, handlers: BrowserSpeechHandlers =
 
   // One clip at a time: a new Play press replaces whatever is speaking.
   try { synth.cancel(); } catch { /* not speaking */ }
-  synth.speak(utterance);
+  try {
+    if (synth.paused) synth.resume();
+    synth.speak(utterance);
+  } catch {
+    clearStart();
+    settled = true;
+    return null;
+  }
 
   return {
     pause() {
@@ -57,6 +105,8 @@ export function speakWithBrowser(text: string, handlers: BrowserSpeechHandlers =
     },
     cancel() {
       cancelled = true;
+      settled = true;
+      clearStart();
       try { synth.cancel(); } catch { /* not speaking */ }
     },
   };

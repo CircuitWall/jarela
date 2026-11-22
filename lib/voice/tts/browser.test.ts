@@ -7,6 +7,7 @@ class FakeUtterance {
   rate = 1;
   pitch = 1;
   volume = 1;
+  onstart: (() => void) | null = null;
   onend: (() => void) | null = null;
   onerror: ((event: { error: string }) => void) | null = null;
   constructor(readonly text: string) { /* captured */ }
@@ -16,13 +17,17 @@ const speak = vi.fn();
 const pause = vi.fn();
 const resume = vi.fn();
 const cancel = vi.fn();
+const synth = { speaking: false, paused: false, speak, pause, resume, cancel };
 
 beforeEach(() => {
+  synth.speaking = false;
+  synth.paused = false;
   vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
-  vi.stubGlobal("speechSynthesis", { speak, pause, resume, cancel });
+  vi.stubGlobal("speechSynthesis", synth);
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
@@ -38,9 +43,10 @@ describe("browser speech synthesis", () => {
     expect(isBrowserTtsAvailable()).toBe(false);
   });
 
-  it("speaks the reply and reports completion", () => {
+  it("speaks the reply and reports start and completion", () => {
+    const onStart = vi.fn();
     const onEnd = vi.fn();
-    const session = speakWithBrowser("hello there", { onEnd });
+    const session = speakWithBrowser("hello there", { onStart, onEnd });
 
     expect(session).not.toBeNull();
     expect(speak).toHaveBeenCalledTimes(1);
@@ -48,6 +54,8 @@ describe("browser speech synthesis", () => {
     expect(utterance.text).toBe("hello there");
     expect(utterance.lang).toBeTruthy();
 
+    utterance.onstart?.();
+    expect(onStart).toHaveBeenCalledTimes(1);
     utterance.onend?.();
     expect(onEnd).toHaveBeenCalledTimes(1);
 
@@ -55,6 +63,28 @@ describe("browser speech synthesis", () => {
     session?.resume();
     expect(pause).toHaveBeenCalled();
     expect(resume).toHaveBeenCalled();
+  });
+
+  it("reports when speech never actually starts", () => {
+    vi.useFakeTimers();
+    const onError = vi.fn();
+    speakWithBrowser("hello", { onError });
+    vi.advanceTimersByTime(2_100);
+    expect(onError).toHaveBeenCalledWith(expect.stringMatching(/did not start/));
+    expect(cancel).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("trusts the synth state when it is speaking without a start event", () => {
+    vi.useFakeTimers();
+    const onStart = vi.fn();
+    const onError = vi.fn();
+    speakWithBrowser("hello", { onStart, onError });
+    synth.speaking = true;
+    vi.advanceTimersByTime(2_100);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 
   it("treats an interrupted clip as a normal end", () => {

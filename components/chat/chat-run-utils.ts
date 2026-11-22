@@ -1,5 +1,6 @@
 import { api } from "@/api/client";
 import type { Message } from "@/api/types";
+import { requestAutoSpeak } from "./auto-speak";
 import { appendUnique, applyThreadMeta, isUnconfirmed, type ThreadMetaApplier } from "./chat-helpers";
 
 export interface FinalizeParams {
@@ -37,11 +38,9 @@ export async function finalizeRunFromServer(p: FinalizeParams): Promise<void> {
   if (p.pendingAutoSpeakRef.current) {
     p.pendingAutoSpeakRef.current = false;
     const latest = [...d.messages].reverse().find((m) => m.role === "assistant" && m.id);
-    if (latest?.id && typeof window !== "undefined") {
-      requestAnimationFrame(() => {
-        window.dispatchEvent(new CustomEvent("jarela:speak-message", { detail: { messageId: latest.id } }));
-      });
-    }
+    // Parked until the bubble mounts, so a tool-heavy reconciliation cannot
+    // lose the single dispatch frame the old window event used.
+    if (latest?.id) requestAutoSpeak(latest.id);
   }
 }
 
