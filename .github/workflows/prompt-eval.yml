@@ -73,6 +73,12 @@ jobs:
       JARELA_PROMPT_EVAL_JUDGE_PROVIDER: ${{ inputs.judge_provider || vars.JARELA_PROMPT_EVAL_JUDGE_PROVIDER || inputs.provider || vars.JARELA_PROMPT_EVAL_PROVIDER || 'anthropic' }}
       JARELA_PROMPT_EVAL_JUDGE_MODEL: ${{ inputs.judge_model || vars.JARELA_PROMPT_EVAL_JUDGE_MODEL || inputs.model || vars.JARELA_PROMPT_EVAL_MODEL || '' }}
       JARELA_PROMPT_EVAL_MIN_SCORE: ${{ inputs.min_score || vars.JARELA_PROMPT_EVAL_MIN_SCORE || '0.7' }}
+      # A PR needs a fast signal; the weekly and manual runs keep the
+      # median-of-3 sampling that absorbs one noisy judge sample.
+      JARELA_PROMPT_EVAL_JUDGE_SAMPLES: ${{ github.event_name == 'pull_request' && '1' || '3' }}
+      # Scenarios are independent; three at a time keeps provider rate limits
+      # comfortable while cutting the wall time to roughly the tail.
+      JARELA_PROMPT_EVAL_CONCURRENCY: "3"
     steps:
       - uses: actions/checkout@v7
         with:

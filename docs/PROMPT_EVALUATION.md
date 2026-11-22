@@ -128,7 +128,16 @@ npm run test:prompt-eval
 | `JARELA_PROMPT_EVAL_JUDGE_API_KEY` | overrides the judge provider's key variable |
 | `JARELA_PROMPT_EVAL_MIN_SCORE` | suite mean judge score target, default `0.7` |
 | `JARELA_PROMPT_EVAL_FLOOR` | per-scenario median below which the answer is broken rather than borderline, default `0.5` |
-| `JARELA_PROMPT_EVAL_JUDGE_SAMPLES` | judge samples per scenario, median decides; default `3`, `1` disables sampling |
+| `JARELA_PROMPT_EVAL_JUDGE_SAMPLES` | judge samples per scenario, median decides; default `3`, `1` disables sampling. The workflow uses `1` on pull requests and `3` on schedule/dispatch |
+| `JARELA_PROMPT_EVAL_CONCURRENCY` | scenarios evaluated in parallel; default `3`, capped at `6` |
+
+Scenarios are independent, so the suite runs a small pool at a time instead of
+one after another; a full run's wall time is roughly the tail rather than the
+sum. Most of each call is payload: the assembled system prompt (~42k chars) plus
+the tool schemas for the whole bound surface (~298k chars, ~74k tokens est. for
+109 tools), re-sent every round. The 11 full-surface scenarios share that stable
+prefix and tool block byte for byte, so a provider with automatic prefix caching
+can reuse them; the two `proxy_only` scenarios use a different, tiny surface.
 
 Reports land in `.prompt-eval/report.json` and `report.md` (gitignored). In CI the
 markdown also goes to the job summary and both files are uploaded as artifacts.
@@ -150,9 +159,11 @@ request. The gate is:
 | Median judge score below `MIN_SCORE` (0.7) but above the floor | warning, shown in the report |
 | Suite mean judge score below `MIN_SCORE` | fail |
 
-Each scenario is judged `JUDGE_SAMPLES` times (default 3) at temperature 0 and the
-median decides, so the same commit stops flipping on a single borderline sample.
-Borderline results stay visible as warnings instead of disappearing.
+Each scenario is judged `JUDGE_SAMPLES` times at temperature 0 and the median
+decides, so the same commit stops flipping on a single borderline sample.
+Pull-request runs use one sample for speed; schedule and dispatch runs keep the
+median of three. Borderline results stay visible as warnings instead of
+disappearing.
 
 ## CI wiring
 
@@ -172,7 +183,8 @@ live tier:
 - `workflow_dispatch` — run on demand, optionally overriding provider, model and
   threshold;
 - a pull request labelled `prompt-eval` from this repository (forks are excluded
-  because they never receive the secret);
+  because they never receive the secret); PR runs use one judge sample and three
+  concurrent scenarios for a fast signal;
 - a weekly schedule, to catch provider or model drift on `main`.
 
 A credential preflight checks the subject and judge providers before spending
