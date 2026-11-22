@@ -406,10 +406,22 @@ function finalizeHistoryWindow(input: {
     ? truncateLargestMessagesWithinBudget(hotMessagesResolved, hotCap || budget.tierBudgets.hot)
     : hotMessagesResolved;
 
-  const history = hotMessagesForPrompt.map((m) => ({
-    role: m.role as "user" | "assistant",
-    content: multiChannel ? prefixChannelLabel(parseStoredMessageContent(m.content), m) : parseStoredMessageContent(m.content),
-  }));
+  // The trailing user row is the turn being answered right now. It carries no
+  // channel ambiguity — it *is* the active channel's request — and labelling it
+  // broke two things: `assemblePromptMessages` compares the last history
+  // message against the request text (ADR-0126), so a `[chat @ hh:mm]` tag made
+  // every turn look absent, injecting a duplicate user turn and a warning on
+  // each run; and the model copied the tag into its own prose ("[chat @ 10:55]
+  // …"). Older rows keep their attribution.
+  const lastIndex = hotMessagesForPrompt.length - 1;
+  const history = hotMessagesForPrompt.map((m, index) => {
+    const content = parseStoredMessageContent(m.content);
+    const labelled = multiChannel && !(index === lastIndex && m.role === "user");
+    return {
+      role: m.role as "user" | "assistant",
+      content: labelled ? prefixChannelLabel(content, m) : content,
+    };
+  });
 
   // Should be unreachable: the budget floors at 1 token and
   // takeRecentMessagesWithinBudget always keeps the newest row. If it ever

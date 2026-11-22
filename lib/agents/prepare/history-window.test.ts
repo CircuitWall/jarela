@@ -39,6 +39,7 @@ const { addMessage, createThread, deleteThread, getThread, getMessages, listThre
   await import("@/lib/stores/threads");
 const { putMemory, deleteMemory } = await import("@/lib/stores/memory");
 const { buildHistoryWindow, wrapWarmSummary } = await import("./history-window");
+const { assemblePromptMessages } = await import("./prompt-messages");
 const { refreshWarmSummary } = await import("../warm-summary-background");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 const { upsertModelConfig } = await import("@/lib/stores/model-config");
@@ -724,6 +725,38 @@ describe("buildHistoryWindow multi-channel context (ADR-0044)", () => {
     const contents = result.history.map((m) => String(m.content));
     expect(contents.some((c) => /^\[chat @ \d\d:\d\d\] chat question$/.test(c))).toBe(true);
     expect(contents.some((c) => /^\[watcher @ \d\d:\d\d\] watcher fired$/.test(c))).toBe(true);
+  });
+
+  it("leaves the live turn unlabelled so the prompt keeps exactly one copy", async () => {
+    const t = createThread("test-agent", "multi-live");
+    addMessage(t.thread_id, "user", "earlier question");
+    addMessage(t.thread_id, "assistant", "earlier answer");
+    addMessage(t.thread_id, "assistant", "AUTOMATION_ROW", null, "watcher");
+    addMessage(t.thread_id, "user", "the live question");
+    chatReturns("RECAP");
+
+    const result = await buildHistoryWindow(t.thread_id, agentCfg(), providerParams, "the live question", modelInfo, undefined, {
+      scope: "foreground",
+      channels: ["chat", "watcher"],
+      includeWarm: false,
+      includeFacts: false,
+    });
+
+    const contents = result.history.map((m) => String(m.content));
+    // The turn being answered stays plain; older rows keep their attribution.
+    expect(contents.at(-1)).toBe("the live question");
+    expect(contents.some((c) => /^\[chat @ \d\d:\d\d\] earlier question$/.test(c))).toBe(true);
+
+    // ADR-0126: the assembler must recognise its own request in the window,
+    // otherwise it injects a duplicate user turn and warns on every run.
+    const assembled = assemblePromptMessages({
+      hotHistory: result.history,
+      includeHot: true,
+      currentContent: "the live question",
+    });
+    expect(assembled.currentTurnSource).toBe("history");
+    expect(assembled.recoveredFromEmptyWindow).toBe(false);
+    expect(assembled.messages.filter((m) => m.role === "user")).toHaveLength(2);
   });
 
   it("surfaces a fresh automation-channel summary block but skips a stale one", async () => {

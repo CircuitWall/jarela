@@ -6,6 +6,13 @@ deciders: example-user, claude
 
 # Per-channel warm summary and source-attributed context
 
+> **Amended (2026-11-22):** only rows *older* than the live turn carry a
+> `[channel @ hh:mm]` label. The trailing user row is the request currently
+> being answered, so labelling it gave the model a tag to copy into its prose
+> and made the prompt assembler fail its "is the request already in history?"
+> check (ADR-0126) — every turn then logged `history requested but did not
+> carry the current turn` and prompted with the user's message twice.
+
 ## Context and Problem Statement
 
 ADR-0022 established a message-channel taxonomy (`user`, `assistant`,
