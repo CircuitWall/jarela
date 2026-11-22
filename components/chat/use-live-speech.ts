@@ -37,6 +37,8 @@ interface LiveSession {
   done: boolean;
   /** Audio actually started, so unmounting the view may stop it. */
   started: boolean;
+  /** The user pressed Stop: this turn must not start reading again. */
+  stopped: boolean;
 }
 
 let current: LiveSession | null = null;
@@ -60,7 +62,12 @@ function startSession(engine: ReplyTtsEngine, agentId: string | null, browserVoi
       onStart: () => {
         if (holder.session) holder.session.started = true;
         markLiveSpeechSpoken();
-        notifyVoiceSpeechStarted(LIVE_SPEECH_ID, () => queue?.cancel());
+        notifyVoiceSpeechStarted(LIVE_SPEECH_ID, () => {
+          // Stop: silence the clip, empty the queue, and make sure the rest of
+          // this turn's text cannot start a new reader later.
+          if (holder.session) holder.session.stopped = true;
+          queue?.cancel();
+        });
       },
       onDrain: () => notifyVoiceSpeechEnded(LIVE_SPEECH_ID),
       onError: (message) => {
@@ -85,7 +92,7 @@ function startSession(engine: ReplyTtsEngine, agentId: string | null, browserVoi
     });
     return null;
   }
-  holder.session = { queue, splitter: createStreamingSpeechSplitter(), seen: "", done: false, started: false };
+  holder.session = { queue, splitter: createStreamingSpeechSplitter(), seen: "", done: false, started: false, stopped: false };
   return holder.session;
 }
 
@@ -123,7 +130,12 @@ export function useLiveSpeech({ content, streaming, agentConfig }: {
       session.seen = text;
     } else {
       // A steer or a retry replaces the live text; what was read is stale, so
-      // start a fresh reader rather than reading a suffix in isolation.
+      // start a fresh reader rather than reading a suffix in isolation. After
+      // Stop there is no reader to restart: the user asked for silence.
+      if (session.stopped) {
+        current = null;
+        return;
+      }
       session.queue.cancel();
       const restarted = startSession(ttsEngine, agentId, browserVoice);
       current = restarted;
