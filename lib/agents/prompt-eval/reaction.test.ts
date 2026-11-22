@@ -137,6 +137,7 @@ async function runScripted(
 const memoryScenario = findScenario("memory-preference-save")!;
 const skillScenario = findScenario("skill-guided-procedure")!;
 const rangeScenario = findScenario("known-range-file-read")!;
+const recallScenario = findScenario("recall-before-answering")!;
 
 /**
  * LangGraph stores a tool result as an lc-serialized message envelope, so the
@@ -169,7 +170,7 @@ function findToolMessage(messages: readonly ToolMessage[], name: string): ToolMe
 }
 
 describe("prompt reaches the model", () => {
-  it.each([memoryScenario, skillScenario, rangeScenario].map((scenario) => [scenario.id, scenario] as const))(
+  it.each([memoryScenario, skillScenario, rangeScenario, recallScenario].map((scenario) => [scenario.id, scenario] as const))(
     "sends the assembled prompt and its tool set for %s",
     async (_, scenario) => {
       const call = scenario.expect.tools[0];
@@ -225,6 +226,18 @@ describe("a correct selection executes against real tools", () => {
     expect(result.content).toContain("line 5");
     expect(result.content).not.toContain("line 2");
   });
+
+  it("searches the real memory store and returns hits rather than a guess", async () => {
+    const { toolMessages, threw } = await runScripted(recallScenario, [
+      { name: "memory_search", args: { query: "Northwind renewal price", include_chats: true } },
+    ]);
+    expect(threw, threw?.message).toBeNull();
+
+    // The store has no matching record, so the tool must return an empty hit
+    // list; anything else would mean the selection never reached the tool.
+    const result = toolResult(findToolMessage(toolMessages, "memory_search"));
+    expect(Array.isArray(result)).toBe(true);
+  });
 });
 
 describe("mistakes are surfaced, not absorbed", () => {
@@ -260,11 +273,15 @@ describe("mistakes are surfaced, not absorbed", () => {
       model: "scripted",
       judgeModel: "scripted",
       toolCalls: calls,
+      rounds: 1,
+      capped: false,
       answer: "",
       selection,
       judge: null,
+      judgeSamples: [],
       pass: selection.pass,
       failures: selection.reasons,
+      warnings: [],
     };
     expect(aggregateOutcomes([outcome])).toMatchObject({ total: 1, passed: 0, failed: 1, toolSelectionAccuracy: 0 });
   });

@@ -138,6 +138,17 @@ export function scoreToolSelection(
   if (forbiddenHits.length > 0) {
     reasons.push(`called forbidden tool(s): ${forbiddenHits.map((call) => call.name).join(", ")}`);
   }
+  // invoke_tool can reach a forbidden tool without ever naming it as the call,
+  // so the proxy target is checked too; otherwise a narrowed binding would make
+  // the forbidden expectation decorative.
+  const proxiedForbidden = calls.flatMap((call) => {
+    const target = call.arguments.name;
+    if (call.name !== "invoke_tool" || typeof target !== "string") return [];
+    return expect.forbidden.includes(target) ? [target] : [];
+  });
+  if (proxiedForbidden.length > 0) {
+    reasons.push(`called forbidden tool(s) through invoke_tool: ${[...new Set(proxiedForbidden)].join(", ")}`);
+  }
 
   const matches = calls.filter((call) => expect.tools.includes(call.name));
   if (expect.requireToolCall) {
@@ -157,7 +168,10 @@ export function scoreToolSelection(
   // expected tool happens to be listed first.
   const first = expect.proxiedTool
     ? calls.find((call) => call.name === "invoke_tool" && call.arguments.name === expect.proxiedTool)
-    : matches[0];
+    // A multi-tool expectation declares keys for the call that carries them.
+    // Checking `matches[0]` would fail a correct flow whenever the earlier
+    // expected tool (a lookup, say) takes different arguments.
+    : matches.find((call) => expect.argumentKeys.every((key) => key in call.arguments)) ?? matches[0];
   if (first) {
     const missing = expect.argumentKeys.filter((key) => !(key in first.arguments));
     if (missing.length > 0) {
