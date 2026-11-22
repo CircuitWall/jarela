@@ -70,9 +70,11 @@ The contract tests enforce three properties that keep a scenario honest:
 ## What the judge scores
 
 Facts code can settle are guardrails, not rubric items. Which tool ran, with
-what arguments, whether `invoke_tool` carried a valid proxy shape, and whether
-an expected call was missing are decided by `scoreToolSelection` and the verdict
-structure check. The judge never overrules them.
+what arguments, whether `invoke_tool` carried a valid proxy shape, whether an
+expected call was missing, and whether a protected request value (`mustNotEcho`)
+was repeated in the reply or a tool argument are decided by
+`scoreToolSelection`, `scoreAnswerGuardrails`, and the verdict structure check.
+The judge never overrules them.
 
 Everything a transcript can show but code cannot settle is graded by the judge.
 Every scenario receives the shared rubric in
@@ -256,7 +258,9 @@ mid-suite.
    `npm run prompts:dump` output, not from the builder source; the anchor is
    checked against the assembled text.
 6. Write `toolResultFixture` as the smallest result that lets a judge tell a
-   grounded answer from an invented one.
+   grounded answer from an invented one. Declare `mustNotEcho` for any value the
+   reply must not repeat (a pasted credential); code checks the reply and every
+   tool argument, and the refusal reason never prints the value.
 7. Add `judge.criteria` only for behaviour this request alone can produce. The
    cross-cutting fuzzy behaviours already arrive through the shared rubric;
    restating one, or reusing a reserved id, fails the contract tests.

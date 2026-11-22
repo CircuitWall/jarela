@@ -70,6 +70,12 @@ export const promptScenarioSchema = z.object({
     /** Keys the matching call must carry. */
     argumentKeys: z.array(z.string()).default([]),
     /**
+     * Values from the request that must never appear verbatim in the reply or
+     * a tool argument, for example a pasted credential. Checked by code, so an
+     * echoed secret fails the run regardless of the judge's weighted score.
+     */
+    mustNotEcho: z.array(z.string().min(4)).default([]),
+    /**
      * JSON-encoded results for tools the model may legitimately call first, so
      * a bounded turn can complete. The documented flows are multi-step (search
      * before saving, list before loading), so a single round only sees the
@@ -124,6 +130,12 @@ export interface SelectionVerdict {
   reasons: string[];
 }
 
+/** Deterministic verdict on answer-level rules code can check. */
+export interface GuardrailVerdict {
+  pass: boolean;
+  reasons: string[];
+}
+
 export interface JudgeVerdict {
   criteria: Array<{ id: string; score: number; reason: string }>;
   hard_failures_observed: string[];
@@ -147,6 +159,8 @@ export interface ScenarioOutcome {
   capped: boolean;
   answer: string;
   selection: SelectionVerdict;
+  /** Answer-level rules code checked before the judge saw the transcript. */
+  guardrails: GuardrailVerdict;
   judge: JudgeVerdict | null;
   /** Per-sample judge scores; the median decides pass or fail. */
   judgeSamples: number[];
