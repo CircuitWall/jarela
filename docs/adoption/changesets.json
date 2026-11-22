@@ -5811,6 +5811,106 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "3.7.1",
+      "previous_version": "3.7.0",
+      "date": "2026-11-22",
+      "hints": [],
+      "commits": [
+        "fix(files): align ranged file downloads",
+        "fix(tools): tolerate copied tool result refs",
+        "fix(tools): normalize tool result ref input forms",
+        "ci(prompts): add behaviour tests and judge-based evaluation",
+        "feat(voice): add hidden tone directives for spoken replies",
+        "feat(voice): add pluggable browser, whisper and gemini input engines"
+      ],
+      "prompts": [
+        {
+          "id": "static.agent.tool-usage-sop",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "1. Bound first. If a tool listed under \"Enabled tools\" fits the task, call it directly — unless the request matches a listed skill's Use when: criteria, in which case load that skill first with read_skill and follow its procedure.",
+            "5. Invoke through the proxy. For permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\", call invoke_tool with the exact name and pass the target's arguments in args, a structured JSON object that matches the schema from step 4. Send args={} when the target takes no arguments. On…"
+          ],
+          "removed_lines": [
+            "1. Bound first. If a tool listed under \"Enabled tools\" fits the task, call it directly.",
+            "5. Invoke through the proxy. For permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\", call invoke_tool with the exact name and args_json — a JSON object encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}'. Send args_json='{}' when the target takes no arguments. Never …"
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.audit.prompt-behaviour-judge",
+          "source": "lib/agents/prompt-eval/judge.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "static.skill.browser-navigation",
+          "source": "lib/skills/builtins/browser-navigation/SKILL.md",
+          "change": "changed",
+          "added_lines": [
+            "description: \"Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints. Load it before the first browser_* tool call.\""
+          ],
+          "removed_lines": [
+            "description: \"Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints.\""
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Available skills",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "Use read_skill(id) to load a skill's full instructions before applying it. Load a skill with read_skill before the first action in a domain it covers; the loaded procedure governs tool choice, ordering and confirmation. Only load skills relevant to the current task.",
+            "- browser-navigation (builtin): Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints. Load it before the first browser_* tool call."
+          ],
+          "removed_lines": [
+            "Use read_skill(id) to load a skill's full instructions before applying it. Only load skills relevant to the current task.",
+            "- browser-navigation (builtin): Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Spoken delivery",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Tool usage SOP",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "1. Bound first. If a tool listed under \"Enabled tools\" fits the task, call it directly — unless the request matches a listed skill's Use when: criteria, in which case load that skill first with read_skill and follow its procedure.",
+            "5. Invoke through the proxy. For permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\", call invoke_tool with the exact name and pass the target's arguments in args, a structured JSON object that matches the schema from step 4. Send args={} when the target takes no arguments. On…"
+          ],
+          "removed_lines": [
+            "1. Bound first. If a tool listed under \"Enabled tools\" fits the task, call it directly.",
+            "5. Invoke through the proxy. For permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\", call invoke_tool with the exact name and args_json — a JSON object encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}'. Send args_json='{}' when the target takes no arguments. Never …"
+          ],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "tool_result_get",
+          "change": "changed",
+          "description_changed": false,
+          "params_added": [],
+          "params_removed": [],
+          "params_changed": [
+            "result_ref"
+          ],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }
