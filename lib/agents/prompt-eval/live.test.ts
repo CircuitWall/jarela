@@ -293,6 +293,10 @@ async function runTurn(
   const calls: ObservedToolCall[] = [];
   const results: Array<{ name: string; content: string }> = [];
   const cursors = new Map<string, number>();
+  // The declared fixture answers the expected call once. Serving it to every
+  // repeat would tell the model that an unrelated range, query, or target
+  // returned the same content, which is a transcript no real tool produces.
+  const servedFixture = new Set<string>();
   const messages: InvokeMessage[] = [
     ...priorMessages(scenario),
     { role: "user", content: scenario.request },
@@ -316,7 +320,7 @@ async function runTurn(
       })),
     });
     for (const call of pending.tool_calls) {
-      const content = resultFor(scenario, call, cursors);
+      const content = resultFor(scenario, call, cursors, servedFixture);
       results.push({ name: typeof call.arguments.name === "string" ? `${call.name}:${call.arguments.name}` : call.name, content });
       messages.push({ role: "tool", tool_call_id: call.id, content });
     }
@@ -345,6 +349,7 @@ function resultFor(
   scenario: (typeof PROMPT_SCENARIOS)[number],
   call: { name: string; arguments: Record<string, unknown> },
   cursors: Map<string, number>,
+  servedFixture: Set<string>,
 ): string {
   // A proxied call must still receive the proxied tool's result, or the model
   // sees a stub and the judge grades a conversation that could not happen.
@@ -364,9 +369,15 @@ function resultFor(
   const declared = scenario.expect.toolResults[target] ?? scenario.expect.toolResults[call.name];
   if (declared) return declared;
   // The declared fixture is the expected outcome: the target of a proxied call
-  // as much as a directly bound tool.
+  // as much as a directly bound tool. Only the first call receives it; a second
+  // call with different arguments is a different request and gets a clearly
+  // synthetic result instead of a contradictory duplicate.
   if (scenario.expect.tools.includes(target) || scenario.expect.proxiedTool === target) {
-    return scenario.expect.toolResultFixture;
+    if (!servedFixture.has(target)) {
+      servedFixture.add(target);
+      return scenario.expect.toolResultFixture;
+    }
+    return GENERIC_TOOL_RESULT;
   }
   return GENERIC_TOOL_RESULT;
 }
