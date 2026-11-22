@@ -33,6 +33,12 @@ Trunk-based development. One long-lived branch.
   - `chore/<slug>` — tooling, infra, refactors with no behaviour change
   - `docs/<slug>` — documentation only
   - `refactor/<slug>` — internal restructuring with no behaviour change
+- **Start from current `main`.** Run `git fetch origin --prune` and cut the
+  topic branch from `origin/main`. A branch whose upstream reports `[gone]`,
+  or that is behind `main` (`git rev-list --left-right --count
+  origin/main...HEAD`), is already-merged work: read what landed on `main`
+  first — the feature you are about to write may already be there — then
+  branch fresh instead of adding to the old one.
 - **Never push directly to `main`.** GitHub branch protection blocks it.
   Every change lands via PR + rebase merge.
 - **Delete the topic branch after merge.** Keep `git branch -a` clean.
