@@ -72,8 +72,13 @@ export function buildJudgeInput(
   scenario: PromptScenario,
   calls: readonly ObservedToolCall[],
   answer: string,
-  /** Results actually served to the model this turn, in call order. */
-  toolResults: readonly { name: string; content: string }[] = [],
+  /**
+   * Results actually served to the model this turn, in call order. Omit only
+   * for a harness self-test: an empty array means the turn received no
+   * evidence, and handing the judge the expected fixture instead would let it
+   * credit a call the agent never made.
+   */
+  toolResults?: readonly { name: string; content: string }[],
 ): JudgeInput {
   return {
     request: scenario.request,
@@ -83,9 +88,9 @@ export function buildJudgeInput(
     observed_tool_calls: calls.map((call) => ({ name: call.name, arguments: call.arguments })),
     // Grading against a single declared fixture while the turn served several
     // results makes grounded claims look invented. Pass what the model saw.
-    tool_results: toolResults.length > 0
-      ? toolResults.map((result) => `${result.name} -> ${result.content}`)
-      : [scenario.expect.toolResultFixture],
+    tool_results: toolResults === undefined
+      ? [scenario.expect.toolResultFixture]
+      : toolResults.map((result) => `${result.name} -> ${result.content}`),
     observed_answer: answer,
     criteria: [...scenario.judge.criteria],
     hard_failures: [...scenario.judge.hardFailures],
