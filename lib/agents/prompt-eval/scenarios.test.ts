@@ -33,6 +33,7 @@ afterAll(() => {
 
 const { PROMPT_SCENARIOS, findScenario } = await import("./scenarios");
 const { promptScenarioSchema } = await import("./types");
+const { BEHAVIOUR_CRITERIA, withBehaviourRubric } = await import("./behaviour-rubric");
 const { buildScenarioPrompt, listedToolNames } = await import("./assemble");
 const { getAllToolsAsync, getAllToolCatalogAsync } = await import("@/lib/tools");
 
@@ -133,6 +134,30 @@ describe("scenario catalogue", () => {
       if (scenario.expect.requireToolCall) {
         expect(scenario.expect.tools.length, `${scenario.id}: requires a call but expects no tool`).toBeGreaterThan(0);
       }
+    }
+  });
+});
+
+describe("shared behaviour rubric", () => {
+  it("judges every cross-cutting behaviour on every scenario", () => {
+    expect(BEHAVIOUR_CRITERIA.length, "the rubric must cover more than one behaviour").toBeGreaterThanOrEqual(4);
+    for (const scenario of PROMPT_SCENARIOS) {
+      const ids = scenario.judge.criteria.map((criterion) => criterion.id);
+      for (const shared of BEHAVIOUR_CRITERIA) {
+        expect(
+          ids.filter((id) => id === shared.id).length,
+          `${scenario.id}: expected exactly one "${shared.id}" criterion`,
+        ).toBe(1);
+      }
+    }
+  });
+
+  it("reserves the shared ids so a scenario cannot redefine them", () => {
+    for (const shared of BEHAVIOUR_CRITERIA) {
+      expect(
+        () => withBehaviourRubric([{ id: shared.id, weight: 1, description: "duplicate of the shared rubric" }]),
+        `${shared.id} must be reserved`,
+      ).toThrow(/collides with the shared behaviour rubric/);
     }
   });
 });

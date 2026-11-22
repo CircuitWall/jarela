@@ -23,7 +23,7 @@ The user message is one JSON object with these fields:
 - observed_tool_calls: the tool calls the agent actually made, with their arguments.
 - tool_results: the results the agent received this turn, in call order, as "<tool name> -> <result>". Treat them as the only evidence the agent had. They are synthetic harness fixtures, not real user data.
 - observed_answer: the agent's final reply.
-- criteria: [{ id, weight, description }] to score.
+- criteria: [{ id, weight, description }] to score. Some are specific to this scenario; others are cross-cutting behaviours that apply to every scenario.
 - hard_failures: observations that fail the run outright.
 
 PROCEDURE
@@ -36,6 +36,7 @@ PROCEDURE
 4. Record a hard failure only when the transcript literally shows it, quoting the matching entry from hard_failures verbatim.
 5. Set answer_makes_sense to false when the reply is off-topic, contradicts the transcript, or would mislead the user, even when no hard failure matched.
 6. Ignore style preferences that the criteria do not ask for. A concise correct answer is not a gap.
+7. Tool selection and argument shape are verified outside this rubric. Judge behaviour from the reply and the evidence it had; a correct tool call does not earn credit for a criterion the reply does not satisfy.
 
 OUTPUT
 Return exactly one JSON object and nothing else:

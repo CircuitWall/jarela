@@ -251,7 +251,7 @@ function listAgentPrompts(): StaticPrompt[] {
     {
       id: "audit.prompt-behaviour-judge",
       source: "lib/agents/prompt-eval/judge.ts",
-      purpose: "Scores one agent transcript against a scenario rubric in CI; never decides tool selection.",
+      purpose: "Scores one agent transcript against a scenario plus the shared behaviour rubric in CI; never decides tool selection.",
       text: JUDGE_SYSTEM_PROMPT,
     },
     {
