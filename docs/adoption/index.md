@@ -17,6 +17,61 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.7.1
+
+From 3.7.0 · 2026-11-22
+
+### Tools
+
+- `tool_result_get` — changed; params changed: `result_ref`
+
+### Prompts
+
+- `static.agent.tool-usage-sop` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 1. Bound first. If a tool listed under "Enabled tools" fits the task, call it directly — unless the request matches a listed skill's Use when: criteria, in which case load that skill first with read_skill and follow its procedure.
+    + 5. Invoke through the proxy. For permission_reason="proxy_only" or permission_reason="provider_tool_limit", call invoke_tool with the exact name and pass the target's arguments in args, a structured JSON object that matches the schema from step 4. Send args={} when the target takes no arguments. On…
+    - 1. Bound first. If a tool listed under "Enabled tools" fits the task, call it directly.
+    - 5. Invoke through the proxy. For permission_reason="proxy_only" or permission_reason="provider_tool_limit", call invoke_tool with the exact name and args_json — a JSON object encoded as a string, e.g. args_json='{"query":"from:alice"}'. Send args_json='{}' when the target takes no arguments. Never …
+    ```
+
+- `static.audit.prompt-behaviour-judge` — added (`lib/agents/prompt-eval/judge.ts`)
+- `static.skill.browser-navigation` — changed (`lib/skills/builtins/browser-navigation/SKILL.md`)
+
+    ```diff
+    + description: "Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints. Load it before the first browser_* tool call."
+    - description: "Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints."
+    ```
+
+- `system.Available skills` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + Use read_skill(id) to load a skill's full instructions before applying it. Load a skill with read_skill before the first action in a domain it covers; the loaded procedure governs tool choice, ordering and confirmation. Only load skills relevant to the current task.
+    + - browser-navigation (builtin): Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints. Load it before the first browser_* tool call.
+    - Use read_skill(id) to load a skill's full instructions before applying it. Only load skills relevant to the current task.
+    - - browser-navigation (builtin): Use when: navigating browser tabs, inspecting pages, filling forms, or saving validated site-navigation hints.
+    ```
+
+- `system.Spoken delivery` — added (`lib/agents/prepare/system-prompt.ts`)
+- `system.Tool usage SOP` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 1. Bound first. If a tool listed under "Enabled tools" fits the task, call it directly — unless the request matches a listed skill's Use when: criteria, in which case load that skill first with read_skill and follow its procedure.
+    + 5. Invoke through the proxy. For permission_reason="proxy_only" or permission_reason="provider_tool_limit", call invoke_tool with the exact name and pass the target's arguments in args, a structured JSON object that matches the schema from step 4. Send args={} when the target takes no arguments. On…
+    - 1. Bound first. If a tool listed under "Enabled tools" fits the task, call it directly.
+    - 5. Invoke through the proxy. For permission_reason="proxy_only" or permission_reason="provider_tool_limit", call invoke_tool with the exact name and args_json — a JSON object encoded as a string, e.g. args_json='{"query":"from:alice"}'. Send args_json='{}' when the target takes no arguments. Never …
+    ```
+
+### Commits
+
+- fix(files): align ranged file downloads
+- fix(tools): tolerate copied tool result refs
+- fix(tools): normalize tool result ref input forms
+- ci(prompts): add behaviour tests and judge-based evaluation
+- feat(voice): add hidden tone directives for spoken replies
+- feat(voice): add pluggable browser, whisper and gemini input engines
+
 ## 3.7.0
 
 From 3.6.0 · 2026-11-21

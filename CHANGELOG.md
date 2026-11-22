@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-11-22
+
+### Added
+
+- voice: Add pluggable browser, whisper and gemini input engines
+- voice: Add hidden tone directives for spoken replies
+
+### Fixed
+
+- tools: Normalize tool result ref input forms
+- tools: Tolerate copied tool result refs
+- files: Align ranged file downloads
+
+### Changed
+
+- prompts: Add behaviour tests and judge-based evaluation
+
 ## [3.7.0] - 2026-11-21
 
 ### Added
