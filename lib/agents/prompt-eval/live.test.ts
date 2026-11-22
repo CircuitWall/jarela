@@ -143,11 +143,13 @@ async function evaluate(scenario: (typeof PROMPT_SCENARIOS)[number]): Promise<Sc
     ...priorMessages(scenario),
     { role: "user", content: selectionPrompt(scenario) },
   ];
-  const first = await invokeSubject(
+  const first = await invokeWithRetry(
+    invokeSubject,
     config.model,
     firstRequest,
     { api_key: config.key, temperature: 0 },
     tools,
+    `${scenario.id} round 1`,
   );
   const turn = await runTurn(invokeSubject, scenario, assembled.prompt, first, tools);
   const selection = scoreToolSelection(scenario, turn.calls);
@@ -170,7 +172,14 @@ async function evaluate(scenario: (typeof PROMPT_SCENARIOS)[number]): Promise<Sc
           ]
         : judgeMessages;
       try {
-        const text = (await invokeJudge(config.judgeModel, messages, { api_key: config.judgeKey, temperature: 0 }, [])).text ?? "";
+        const text = (await invokeWithRetry(
+          invokeJudge,
+          config.judgeModel,
+          messages,
+          { api_key: config.judgeKey, temperature: 0 },
+          [],
+          `${scenario.id} judge`,
+        )).text ?? "";
         return { verdict: parseJudgeVerdict(text) };
       } catch (error) {
         return { failure: `judge sample ${sample}: ${(error as Error).message}` };
@@ -254,6 +263,31 @@ function selectionPrompt(scenario: (typeof PROMPT_SCENARIOS)[number]): string {
 
 type InvokeFn = NonNullable<ModelProvider["invoke"]>;
 
+/** Transient provider failures under concurrency. A behaviour gate should not
+ *  fail because one request lost its connection or hit a rate limit. */
+const RETRYABLE_PROVIDER_ERROR =
+  /connection error|econnreset|econnrefused|etimedout|timed? ?out|rate limit|\b429\b|\b50[0234]\b|fetch failed|socket hang up|temporarily unavailable/i;
+
+async function invokeWithRetry(
+  invoke: InvokeFn,
+  model: string,
+  messages: InvokeMessage[],
+  params: { api_key: string; temperature: number },
+  tools: OpenAITool[],
+  label: string,
+): Promise<InvokeResult> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await invoke(model, messages, params, tools);
+    } catch (error) {
+      const message = (error as Error).message;
+      if (attempt >= 3 || !RETRYABLE_PROVIDER_ERROR.test(message)) throw error;
+      console.warn(`[prompt-eval] ${label}: ${message}; retrying (${attempt}/3)`);
+      await new Promise((resolve) => setTimeout(resolve, 1_000 * attempt));
+    }
+  }
+}
+
 interface TurnResult {
   calls: ObservedToolCall[];
   /** Results served to the model, in call order. */
@@ -326,11 +360,13 @@ async function runTurn(
     }
     // The system prompt is re-sent so the answer is produced under the same
     // instructions the selection was made under.
-    pending = await invoke(
+    pending = await invokeWithRetry(
+      invoke,
       config.model,
       [{ role: "system", content: systemPrompt }, ...messages],
       { api_key: config.key, temperature: 0 },
       tools,
+      `${scenario.id} round ${round + 1}`,
     );
   }
 
