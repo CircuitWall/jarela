@@ -39,3 +39,26 @@ export function truncateText(s: string, maxChars: number): string {
   const end = safeUtf16Boundary(s, maxChars - 1);
   return `${s.slice(0, end)}…`;
 }
+
+function isUtf8ContinuationByte(byte: number | undefined): boolean {
+  return byte !== undefined && (byte & 0xc0) === 0x80;
+}
+
+// Byte window for paged reads: moves `[start, start + limit)` inside `buf` onto
+// UTF-8 character boundaries so a page never splits a multi-byte character.
+// The start backs up to its lead byte, and the end backs up so it does not cut
+// a character — unless that character alone exceeds `limit`, in which case the
+// whole character is included so paging always makes progress.
+export function utf8ByteWindow(buf: Buffer, start: number, limit: number): { start: number; end: number } {
+  const span = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : buf.length;
+  let s = Number.isFinite(start) ? Math.max(0, Math.min(Math.floor(start), buf.length)) : 0;
+  while (s > 0 && isUtf8ContinuationByte(buf[s])) s--;
+  let e = Math.min(buf.length, s + span);
+  if (e < buf.length && isUtf8ContinuationByte(buf[e])) {
+    let lead = e;
+    while (lead > s && isUtf8ContinuationByte(buf[lead])) lead--;
+    if (lead > s) e = lead;
+    else while (e < buf.length && isUtf8ContinuationByte(buf[e])) e++;
+  }
+  return { start: s, end: e };
+}

@@ -2,11 +2,16 @@ import { promises as fsp } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { getConfig } from "@/lib/env/config";
 import { errorMessage } from "@/lib/utils/error";
+import { utf8ByteWindow } from "@/lib/utils/text";
 
 const DEFAULT_PREVIEW_BYTES = 4 * 1024;
 const MAX_READ_BYTES = 1024 * 1024;
 const JSON_ARRAY_PREVIEW_ITEMS = 20;
 const FILES_ROUTE_PREFIX = "/api/v1/files/";
+// One path segment of the files route, stopping before any wrapper the model
+// may have copied along with it (`)`, `]`, quote, query, fragment, ...).
+const REF_SEGMENT = /^[A-Za-z0-9._%-]+/;
+const CONTENT_HASH_NAME = /^[A-F0-9]{64}(?:\.[A-Za-z0-9]+)?$/;
 
 export interface ToolResultRef {
   uri: string;
@@ -99,8 +104,12 @@ export async function readToolResultRef(args: {
       name: args.name,
     };
   }
-  const offset = Math.max(0, Math.floor(args.offset ?? 0));
-  const limit = Math.min(MAX_READ_BYTES, Math.max(1, Math.floor(args.limit ?? DEFAULT_PREVIEW_BYTES)));
+  const requestedOffset = args.offset ?? 0;
+  const offset = Number.isFinite(requestedOffset) ? Math.max(0, Math.floor(requestedOffset)) : 0;
+  const requestedLimit = args.limit ?? DEFAULT_PREVIEW_BYTES;
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.min(MAX_READ_BYTES, Math.max(1, Math.floor(requestedLimit)))
+    : DEFAULT_PREVIEW_BYTES;
   try {
     const resolved = await openToolResultFile(name);
     if ("error" in resolved) return { ok: false, status: "ambiguous", name, error: resolved.error };
@@ -114,7 +123,7 @@ export async function readToolResultRef(args: {
       const windowLength = Math.max(0, Math.min(stat.size - windowStart, offset - windowStart + limit + 3));
       const buf = Buffer.alloc(windowLength);
       if (windowLength > 0) await file.read(buf, 0, windowLength, windowStart);
-      const { start, end } = utf8Window(buf, Math.min(offset, stat.size) - windowStart, limit);
+      const { start, end } = utf8ByteWindow(buf, Math.min(offset, stat.size) - windowStart, limit);
       const actualOffset = windowStart + start;
       const nextOffset = windowStart + end;
       return {
@@ -148,25 +157,37 @@ export async function readToolResultRef(args: {
 // absolute `path` side by side, so a copied locator can arrive in any of those
 // forms. Map each back to the bare stored name; everything else stays as-is and
 // fails the isSafeFileName check, which is what keeps path traversal out.
-async function toStoredName(raw: string): Promise<string> {
+async function toStoredName(raw: unknown): Promise<string> {
+  if (typeof raw !== "string") return "";
   const trimmed = raw.trim();
   const routeAt = trimmed.indexOf(FILES_ROUTE_PREFIX);
   if (routeAt !== -1) {
-    const tail = trimmed.slice(routeAt + FILES_ROUTE_PREFIX.length).split(/[?#]/)[0];
-    try {
-      return decodeURIComponent(tail);
-    } catch {
-      return tail;
-    }
+    const segment = REF_SEGMENT.exec(trimmed.slice(routeAt + FILES_ROUTE_PREFIX.length))?.[0] ?? "";
+    return normalizeStoredName(decodeRefSegment(segment));
   }
   if (/[\\/]/.test(trimmed)) {
     const { FILES_DIR } = await import("@/lib/files");
     const stored = resolve(FILES_DIR);
     const given = resolve(dirname(trimmed));
     const sameDir = process.platform === "win32" ? given.toLowerCase() === stored.toLowerCase() : given === stored;
-    if (sameDir) return basename(trimmed);
+    if (sameDir) return normalizeStoredName(basename(trimmed));
   }
-  return trimmed;
+  return normalizeStoredName(trimmed);
+}
+
+function decodeRefSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+// Stored spill names are `<lowercase sha256>.<ext>`. Fold a copied uppercase
+// hash so the reference resolves on case-sensitive file systems too; names that
+// are not content-addressed are left untouched.
+function normalizeStoredName(name: string): string {
+  return CONTENT_HASH_NAME.test(name) ? name.toLowerCase() : name;
 }
 
 async function openToolResultFile(name: string): Promise<
@@ -187,25 +208,6 @@ async function openToolResultFile(name: string): Promise<
   if (matches.length > 1) return { error: "ambiguous content hash; pass the full result_ref.name including its extension" };
   const resolvedName = matches[0] ?? name;
   return { name: resolvedName, file: await fsp.open(fileAbsPath(resolvedName)!, "r") };
-}
-
-const isUtf8Continuation = (byte: number | undefined) => byte !== undefined && (byte & 0xc0) === 0x80;
-
-// Moves `[start, start + limit)` inside `buf` onto character boundaries: the
-// start backs up to its lead byte, and the end backs up so it does not cut a
-// character — unless that character alone exceeds `limit`, in which case the
-// whole character is returned so paging always makes progress.
-function utf8Window(buf: Buffer, start: number, limit: number): { start: number; end: number } {
-  let s = Math.max(0, Math.min(start, buf.length));
-  while (s > 0 && isUtf8Continuation(buf[s])) s--;
-  let e = Math.min(buf.length, s + limit);
-  if (e < buf.length && isUtf8Continuation(buf[e])) {
-    let lead = e;
-    while (lead > s && isUtf8Continuation(buf[lead])) lead--;
-    if (lead > s) e = lead;
-    else while (e < buf.length && isUtf8Continuation(buf[e])) e++;
-  }
-  return { start: s, end: e };
 }
 
 export function serializeToolResult(result: unknown): string {

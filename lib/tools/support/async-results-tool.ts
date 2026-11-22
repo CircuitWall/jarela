@@ -62,7 +62,11 @@ export const toolResultGetTool = tool(
     const configuredBudget = config?.configurable?.tool_result_max_bytes;
     const maxEncodedBytes = typeof configuredBudget === "number" && Number.isFinite(configuredBudget)
       ? Math.max(1, Math.min(getToolResultMaxBytes(), Math.floor(configuredBudget))) : getToolResultMaxBytes();
-    const refName = result_ref?.name ?? name;
+    const requestedRef = (result_ref?.name ?? name)?.trim() ?? "";
+    // A copied async key is the same result as the key argument; reading it as
+    // a file name would report a correct id as missing.
+    const refIsKey = /^async_[0-9a-f]{16}$/.test(requestedRef);
+    const refName = refIsKey ? "" : requestedRef;
     if (refName) {
       if (refName.startsWith(BACKGROUND_RESULT_REF_PREFIX)) {
         const page = readBackgroundResultReference(refName, threadId, offset, limit, consume, maxEncodedBytes);
@@ -77,28 +81,29 @@ export const toolResultGetTool = tool(
       }
       return JSON.stringify(await readToolResultRef({ name: refName, offset, limit }));
     }
-    if (!key) {
+    const resolvedKey = key?.trim() || (refIsKey ? requestedRef : "");
+    if (!resolvedKey) {
       return JSON.stringify({ ok: false, status: "unknown", error: "pass either key or result_ref.name" });
     }
-    let rec: AsyncResultRecord | null = getAsyncResult(key, threadId);
+    let rec: AsyncResultRecord | null = getAsyncResult(resolvedKey, threadId);
     if (!rec) {
       return JSON.stringify({
         ok: false,
         status: "unknown",
-        key,
+        key: resolvedKey,
         error: "no async result for that key (it may have expired or never existed)",
       });
     }
     if (rec.status === "pending" && typeof wait_ms === "number" && wait_ms > 0) {
-      rec = (await waitForFinish(key, wait_ms, threadId)) ?? rec;
+      rec = (await waitForFinish(resolvedKey, wait_ms, threadId)) ?? rec;
     }
     if (!rec) {
-      return JSON.stringify({ ok: false, status: "unknown", key });
+      return JSON.stringify({ ok: false, status: "unknown", key: resolvedKey });
     }
     const finished = rec.status !== "pending";
     const response = { ok: true, ...serialize(rec, /* includeResult */ true, maxEncodedBytes) };
     if (consume && finished && !(rec.owner_thread_id && "result_ref" in response)) {
-      consumeAsyncResult(key, threadId);
+      consumeAsyncResult(resolvedKey, threadId);
     }
     return JSON.stringify(response);
   },

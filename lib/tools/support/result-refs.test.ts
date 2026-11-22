@@ -212,7 +212,16 @@ describe("readToolResultRef", () => {
     const { fileAbsPath } = await import("@/lib/files");
     const envelope = await spill("paged reference body ".repeat(20));
     const absPath = fileAbsPath(envelope.result_ref.name)!;
-    for (const name of [envelope.result_ref.uri, absPath]) {
+    const forms = [
+      envelope.result_ref.uri,
+      absPath,
+      // A copied link, an absolute URL, a query string, and an uppercased hash
+      // all name the same stored file.
+      `[result](${envelope.result_ref.uri})`,
+      `http://localhost:4312${envelope.result_ref.uri}?download=1`,
+      envelope.result_ref.name.toUpperCase(),
+    ];
+    for (const name of forms) {
       expect(await readToolResultRef({ name, limit: 9 })).toMatchObject({ ok: true, result: "paged ref" });
     }
     expect(await readToolResultRef({ name: join(tmpdir(), "outside-files.json") }))
