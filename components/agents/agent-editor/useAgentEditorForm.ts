@@ -71,6 +71,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [voiceSttModel, setVoiceSttModel] = useState<string>(agent?.voice_stt_model ?? "gemini-2.5-flash");
   const [voiceSttEngine, setVoiceSttEngine] = useState<SttEngine>(normalizeSttEngine(agent?.voice_stt_engine));
   const [voiceAutoSpeak, setVoiceAutoSpeak] = useState<boolean>(agent?.voice_auto_speak ?? true);
+  const [voiceBrowserVoice, setVoiceBrowserVoice] = useState<string>(agent?.voice_browser_voice ?? "");
   const [routerPolicy, setRouterPolicy] = useState<RouterPolicy>(agent?.router_policy ?? "");
   const [routerEnabled, setRouterEnabled] = useState<RouterEnabled>(agent?.router_enabled ?? null);
   const [usageStrategy, setUsageStrategy] = useState<UsageStrategyOverride>(agent?.usage_strategy ?? "");
@@ -118,6 +119,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
     voiceName, setVoiceName, voiceSttModel, setVoiceSttModel,
     voiceSttEngine, setVoiceSttEngine,
     voiceAutoSpeak, setVoiceAutoSpeak,
+    voiceBrowserVoice, setVoiceBrowserVoice,
     routerPolicy, setRouterPolicy, routerEnabled, setRouterEnabled,
     usageStrategy, setUsageStrategy,
   };
@@ -138,6 +140,7 @@ interface PayloadFields {
   adaptiveExpressiveness: number; adaptiveVerbosity: number;
   voiceEnabled: boolean; voiceModel: string; voiceName: string;
   voiceSttModel: string; voiceSttEngine: SttEngine; voiceAutoSpeak: boolean;
+  voiceBrowserVoice: string;
   routerPolicy: RouterPolicy; routerEnabled: RouterEnabled;
   usageStrategy: UsageStrategyOverride;
 }
@@ -167,6 +170,7 @@ function buildAgentPayload(f: PayloadFields): AgentConfigIn {
     voice_stt_model: f.voiceSttModel,
     voice_stt_engine: f.voiceSttEngine,
     voice_auto_speak: f.voiceAutoSpeak,
+    voice_browser_voice: f.voiceBrowserVoice,
     harness_id: f.harnessId || null,
     delegate_targets: f.delegateTargets,
     context_tier_proportions: f.tierOverride,

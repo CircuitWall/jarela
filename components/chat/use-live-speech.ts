@@ -45,11 +45,16 @@ export function _resetLiveSpeech(): void {
   current = null;
 }
 
-function startSession(engine: ReplyTtsEngine, agentId: string | null): LiveSession | null {
+function startSession(
+  engine: ReplyTtsEngine,
+  agentId: string | null,
+  browserVoice: string | null,
+): LiveSession | null {
   let queue: LiveSpeechQueue | null = null;
   queue = createLiveSpeechQueue({
     engine,
     agentId,
+    browserVoice,
     handlers: {
       onStart: () => notifyVoiceSpeechStarted(LIVE_SPEECH_ID, () => queue?.cancel()),
       onDrain: () => notifyVoiceSpeechEnded(LIVE_SPEECH_ID),
@@ -88,6 +93,7 @@ export function useLiveSpeech({ content, streaming, agentConfig }: {
   const voiceEnabled = !!agentConfig?.voice_enabled;
   const ttsEngine = resolveReplyTtsEngine(agentConfig?.voice_stt_engine);
   const agentId = agentConfig?.id ?? null;
+  const browserVoice = agentConfig?.voice_browser_voice ?? null;
 
   useEffect(() => {
     const text = content ?? "";
@@ -95,7 +101,7 @@ export function useLiveSpeech({ content, streaming, agentConfig }: {
     // never streams still falls back to the finalize reader.
     if (voiceEnabled && consumeLiveSpeech()) {
       current?.queue.cancel();
-      current = startSession(ttsEngine, agentId);
+      current = startSession(ttsEngine, agentId, browserVoice);
     }
     const session = current;
     if (!session || session.done) return;
@@ -113,7 +119,7 @@ export function useLiveSpeech({ content, streaming, agentConfig }: {
       // A steer or a retry replaces the live text; what was read is stale, so
       // start a fresh reader rather than reading a suffix in isolation.
       session.queue.cancel();
-      const restarted = startSession(ttsEngine, agentId);
+      const restarted = startSession(ttsEngine, agentId, browserVoice);
       current = restarted;
       if (!restarted) return;
       for (const chunk of restarted.splitter.take(text, { flush: !streaming })) restarted.queue.push(chunk);
@@ -124,7 +130,7 @@ export function useLiveSpeech({ content, streaming, agentConfig }: {
       active.done = true;
       active.queue.finish();
     }
-  }, [content, streaming, voiceEnabled, ttsEngine, agentId]);
+  }, [content, streaming, voiceEnabled, ttsEngine, agentId, browserVoice]);
 
   // Leaving the thread mid-run must not keep talking; finishing the run must.
   useEffect(() => () => {

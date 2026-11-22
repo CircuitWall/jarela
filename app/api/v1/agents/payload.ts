@@ -39,6 +39,7 @@ export function toCreateAgentInput(id: string, body: AgentCreateBody): UpsertAge
     voice_stt_model: body.voice_stt_model,
     voice_stt_engine: body.voice_stt_engine,
     voice_auto_speak: body.voice_auto_speak,
+    voice_browser_voice: body.voice_browser_voice,
     harness_id: body.harness_id,
     delegate_targets: body.delegate_targets,
     context_tier_proportions: body.context_tier_proportions,
@@ -84,6 +85,7 @@ export function toUpdateAgentInput(
     voice_stt_model: body.voice_stt_model,
     voice_stt_engine: body.voice_stt_engine,
     voice_auto_speak: body.voice_auto_speak,
+    voice_browser_voice: body.voice_browser_voice,
     harness_id: "harness_id" in body ? body.harness_id : undefined,
     delegate_targets: "delegate_targets" in body ? body.delegate_targets : undefined,
     context_tier_proportions:

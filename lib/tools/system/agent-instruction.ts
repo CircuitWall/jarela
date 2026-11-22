@@ -106,6 +106,7 @@ export const readAgentConfigTool = tool(
       voice_stt_model: cfg.voice_stt_model,
       voice_stt_engine: normalizeSttEngine(cfg.voice_stt_engine),
       voice_auto_speak: cfg.voice_auto_speak === 1,
+      voice_browser_voice: cfg.voice_browser_voice || null,
     });
   },
   {

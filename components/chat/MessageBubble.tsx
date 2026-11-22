@@ -1263,8 +1263,10 @@ function toggleBrowserSession(session: BrowserSpeechSession, playing: boolean): 
 }
 
 /** Starts a fresh OS-voice clip. False when this browser cannot synthesize. */
-function startBrowserClip({ speakable, auto, messageId, sessionRef, setAudioState, setAudioError }: {
+function startBrowserClip({ speakable, style, voice, auto, messageId, sessionRef, setAudioState, setAudioError }: {
   speakable: string;
+  style: string | null;
+  voice: string | null;
   auto: boolean;
   messageId: string | null;
   sessionRef: { current: BrowserSpeechSession | null };
@@ -1286,7 +1288,7 @@ function startBrowserClip({ speakable, auto, messageId, sessionRef, setAudioStat
       setAudioState("error");
       if (messageId) notifyVoiceSpeechFailed(messageId);
     },
-  });
+  }, { voice, style });
   if (!session) return false;
   sessionRef.current = session;
   if (auto && messageId) {
@@ -1354,6 +1356,8 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
       }
       if (startBrowserClip({
         speakable,
+        style,
+        voice: agentConfig.voice_browser_voice ?? null,
         auto,
         messageId,
         sessionRef: browserSpeechRef,

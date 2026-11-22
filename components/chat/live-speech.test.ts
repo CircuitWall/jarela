@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createLiveSpeechQueue, type LiveSpeechHandlers } from "./live-speech";
 
 const spoken: string[] = [];
+const utterances: FakeUtterance[] = [];
 let objectUrls = 0;
 const cancelSpy = vi.fn();
 
@@ -24,6 +25,7 @@ class FakeUtterance {
   rate = 1;
   pitch = 1;
   volume = 1;
+  voice: { name: string; lang: string } | null = null;
   onstart: (() => void) | null = null;
   onend: (() => void) | null = null;
   onerror: ((event: { error: string }) => void) | null = null;
@@ -34,6 +36,7 @@ class FakeUtterance {
 
 afterEach(() => {
   spoken.length = 0;
+  utterances.length = 0;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   cancelSpy.mockClear();
@@ -45,7 +48,9 @@ function useBrowserVoices({ failFirstSpeak = false } = {}) {
     paused: false,
     speaking: false,
     pending: false,
+    getVoices: () => [{ name: "Hazel", lang: "en-GB", voiceURI: "urn:hazel" }],
     speak(utterance: FakeUtterance) {
+      utterances.push(utterance);
       if (failFirstSpeak && !failed) {
         failed = true;
         setTimeout(() => utterance.onerror?.({ error: "synthesis-failed" }), 0);
@@ -127,6 +132,25 @@ describe("createLiveSpeechQueue", () => {
     expect(spoken).toEqual(["Recovered sentence."]);
     expect(h.onError).not.toHaveBeenCalled();
     expect(h.onDrain).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads with the agent's chosen device voice and tone", async () => {
+    useBrowserVoices();
+    const h = handlers();
+    const queue = createLiveSpeechQueue({
+      engine: "browser",
+      agentId: "agent-1",
+      browserVoice: "urn:hazel",
+      handlers: h,
+    })!;
+
+    queue.push("[[tone: whisper]] Quietly now.");
+    queue.finish();
+    await wait(20);
+
+    expect(utterances[0]?.voice?.name).toBe("Hazel");
+    expect(utterances[0]?.lang).toBe("en-GB");
+    expect(utterances[0]?.volume).toBeLessThan(0.5);
   });
 
   it("drops queued slices once cancelled", async () => {

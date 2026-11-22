@@ -35,6 +35,8 @@ interface Clip {
 interface LiveSpeechOptions {
   engine: ReplyTtsEngine;
   agentId: string | null;
+  /** Device voice key for the browser engine; empty = device default. */
+  browserVoice?: string | null;
   handlers: LiveSpeechHandlers;
 }
 
@@ -57,7 +59,7 @@ function synthesize(agentId: string, text: string, style: string | null): Promis
  * voices and no Gemini agent), so the caller can stay silent instead of
  * queueing clips that will never play.
  */
-export function createLiveSpeechQueue({ engine, agentId, handlers }: LiveSpeechOptions): LiveSpeechQueue | null {
+export function createLiveSpeechQueue({ engine, agentId, browserVoice, handlers }: LiveSpeechOptions): LiveSpeechQueue | null {
   const useBrowser = engine === "browser" && isBrowserTtsAvailable();
   if (!useBrowser && !agentId) return null;
   const speechAgentId = agentId ?? "";
@@ -85,7 +87,7 @@ export function createLiveSpeechQueue({ engine, agentId, handlers }: LiveSpeechO
         onStart: markStarted,
         onEnd: () => resolve(),
         onError: (message) => reject(new Error(message)),
-      }, { replace });
+      }, { replace, voice: browserVoice, style: clip.style });
       if (!session) {
         reject(new Error("this browser cannot synthesize speech"));
         return;
