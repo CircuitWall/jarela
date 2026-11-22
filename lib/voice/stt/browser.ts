@@ -58,6 +58,23 @@ export function isBrowserSttAvailable(): boolean {
   return recognitionCtor() !== null;
 }
 
+/**
+ * Join transcript chunks with exactly one space where neither side already
+ * supplies whitespace. Chrome's results often carry no boundary whitespace, so
+ * plain concatenation fused words together.
+ */
+function joinTranscript(acc: string, chunk: string): string {
+  if (!acc) return chunk;
+  if (!chunk) return acc;
+  return /\s$/.test(acc) || /^\s/.test(chunk) ? acc + chunk : `${acc} ${chunk}`;
+}
+
+function joinFinals(finals: readonly (string | undefined)[]): string {
+  let text = "";
+  for (const final of finals) if (final) text = joinTranscript(text, final);
+  return text;
+}
+
 function describeSpeechError(code: string): string {
   switch (code) {
     case "not-allowed":
@@ -93,6 +110,15 @@ export function startBrowserStt({ lang, onPartial, onEnd }: SttStartOptions = {}
   recognition.lang = lang || (typeof navigator !== "undefined" ? navigator.language : "en-US");
 
   let finalText = "";
+  // Transcript settled so far, plus the current recognizer segment's finals
+  // keyed by result index. Chrome restarts recognition mid-turn without firing
+  // `onend` and replays its buffer; rebuilding the segment from the cumulative
+  // result list (instead of appending each event's deltas) makes a replayed or
+  // re-emitted event idempotent.
+  let committedText = "";
+  let segmentKey: unknown = null;
+  let segmentFinals: (string | undefined)[] = [];
+  let lastFinalText = "";
   let failure: string | null = null;
   let settled = false;
   let stopRequested = false;
@@ -123,14 +149,34 @@ export function startBrowserStt({ lang, onPartial, onEnd }: SttStartOptions = {}
   }
 
   recognition.onresult = (event) => {
+    // A new result object at index 0 means the recognizer started a fresh
+    // segment; the previous one is settled and only its finals are kept.
+    const first = event.results.length > 0 ? event.results[0] : null;
+    const restarted = first !== null && segmentKey !== null && first !== segmentKey;
+    if (restarted) {
+      committedText = joinTranscript(committedText, joinFinals(segmentFinals));
+      segmentFinals = [];
+    }
+    if (first !== null) segmentKey = first;
+
     let interim = "";
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+    for (let i = 0; i < event.results.length; i += 1) {
       const result = event.results[i];
       const text = result[0]?.transcript ?? "";
-      if (result.isFinal) finalText += text;
-      else interim += text;
+      if (!text) continue;
+      if (!result.isFinal) {
+        interim = joinTranscript(interim, text);
+        continue;
+      }
+      // A restarted segment replays audio the previous one already finalized;
+      // keeping the repeat handed the composer the phrase twice
+      // ("No voice conversationNo voice conversation").
+      if (restarted && i === 0 && text.trim() === lastFinalText.trim()) continue;
+      segmentFinals[i] = text;
+      lastFinalText = text;
     }
-    const combined = `${finalText}${interim}`.trim();
+    finalText = joinTranscript(committedText, joinFinals(segmentFinals));
+    const combined = joinTranscript(finalText, interim).trim();
     if (combined) onPartial?.(combined);
   };
   recognition.onerror = (event) => {
