@@ -24,6 +24,20 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
    - If new work depends on an unmerged PR, chain it: branch from the tip of the chain, set the PR base to the previous PR's branch, and never branch from `main` for overlapping files.
    - Merge chains sequentially from the bottom. After each merge, `git fetch origin` then `git rebase --onto origin/main <old-parent-tip>` on the next branch, `git push --force-with-lease`, retarget the base to `main`, wait for CI, merge, repeat. See CONTRIBUTING.md "Open PRs and chained PRs".
 
+1b. Prove the base is current and unmerged before the first edit.
+   - `git fetch origin --prune`, then `git status --short --branch`. An upstream
+     marker of `[gone]` means the branch was already merged and deleted
+     upstream: it is a place to look, never a place to add work.
+   - `git rev-list --left-right --count origin/main...HEAD` must report `0`
+     behind. Anything else means the checkout cannot show what `main` already
+     contains — cut the topic branch from `origin/main` (or rebase) before
+     editing, and re-read the area you were about to change.
+   - `git cherry -v origin/main HEAD`: every line starting `-` is already
+     upstream. A branch made only of `-` lines carries no unique work, so
+     anything added there starts life as a duplicate.
+   - Record the base (`git rev-parse origin/main`) in the change summary so the
+     review can tell which tree the change was written against.
+
 2. Respect the current worktree.
    - Run `git status --short --branch` before editing.
    - Treat unexpected changes as user work. Do not revert, overwrite, or reformat them unless the user explicitly asks.
@@ -40,6 +54,16 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
      [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md), then check
      [docs/architecture-patterns.json](../../../docs/architecture-patterns.json)
      for an existing canonical operation pattern.
+   - Search upstream, not only the worktree. A stale checkout cannot reveal a
+     module that exists only on `origin/main`: when the area is unfamiliar, or
+     the branch was not just cut from `origin/main`, look at the shipping tree
+     directly — `git ls-tree -r --name-only origin/main <dir>` to see what
+     exists and `git grep -n <symbol> origin/main -- <paths>` to find the owner
+     — and compare before writing anything new.
+   - If a module, hook, component, or test that already performs the requested
+     behaviour exists upstream, extend it. Authoring a parallel implementation
+     is a regression risk, not a shortcut: the old one usually carries
+     behaviour the new one silently drops.
    - Search the owning module and its tests for existing functions that perform
      the same operation. Compare their input/output contracts, validation,
      error behavior, ordering, concurrency, persistence, security, and lifecycle;
@@ -81,6 +105,11 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
 
 7. Commit correctly.
    - Use a topic branch based on `origin/main`; never commit directly to `main`.
+   - Prove the base is current before committing:
+     `git merge-base --is-ancestor origin/main HEAD` must exit 0. If it does
+     not, rebase onto `origin/main` first — a branch that does not contain
+     current `main` cannot be reviewed against it, and its diff will contain
+     reverts of work it never saw.
    - Do not stack meaningless follow-up commits for the same focused topic. If a correction, test fix, wording tweak, or CI repair belongs to the current change, amend the previous commit or use an autosquash fixup before pushing for review.
    - Create a new commit only when it represents a distinct reviewable concern that should remain separate on `main` after the rebase merge.
    - Commit subjects must follow Conventional Commits: `type(scope): imperative description`.
@@ -91,6 +120,10 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
 
 8. Open or update the PR.
    - Push topic branches to upstream `origin` unless the user explicitly says otherwise.
+   - Read `git diff --stat origin/main...HEAD` before opening. A diff that
+     deletes whole modules, or adds a directory that already exists on `main`,
+     means the branch is based on a stale tree — rebase and re-review instead
+     of shipping a silent revert.
    - Before creating a PR from an existing branch, confirm the intended scope when the branch has mixed commits, already-applied commits, no matching issue/PR, or a compare view that does not clearly describe the desired outcome.
    - If only part of a branch should merge, ask whether to open a clean cherry-picked PR, update the existing branch, or leave it alone.
    - PR title must be a Conventional Commit subject, and so must every commit on the branch — rebase merge lands them all on `main`.
@@ -103,10 +136,31 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
    - If a PR was merged without auto-close, verify `mergedAt` before manually closing the issue.
    - After a clean merge, remove residual topic branches locally and remotely when they are no longer needed. Verify the merge first; do not delete branches that still carry unmerged work.
 
+## Failure these gates prevent
+
+Work once started on a branch whose upstream was `[gone]` (already merged and
+deleted) and 19 commits behind `origin/main`. Because the checkout could not
+show what `main` already contained, an existing feature looked missing and was
+rebuilt from scratch — a shallower duplicate of code that already shipped —
+and the duplicate was then installed over the working app, so the regression
+reached the user.
+
+Three commands would have caught it before the first edit:
+`git status --short --branch` for `[gone]`,
+`git rev-list --left-right --count origin/main...HEAD` for the 19,
+`git ls-tree -r --name-only origin/main <area>` for the module that was
+already there.
+
 ## Quick Checks
 
 ```powershell
+git fetch origin --prune
 git status --short --branch
+git rev-list --left-right --count origin/main...HEAD
+git cherry -v origin/main HEAD
+git merge-base --is-ancestor origin/main HEAD
+git ls-tree -r --name-only origin/main <area>
+git grep -n <symbol> origin/main -- <paths>
 npm run lint
 npm run typecheck
 npm test --workspace <workspace> -- <focused-test>
@@ -114,7 +168,6 @@ npm run check:impact -- --base origin/main --head HEAD
 git commit --amend --no-edit
 git commit --fixup <commit>
 git rebase -i --autosquash <base>
-git cherry -v origin/main <branch>
 gh pr view <pr> --repo CircuitWall/jarela --json state,mergedAt,url,title
 git branch --merged main
 git branch -d <branch>
