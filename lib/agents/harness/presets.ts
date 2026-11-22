@@ -74,7 +74,7 @@ const PLAN_FIRST_BODY = [
   "USER INTERACTION:",
   "- Use chat for user-facing answers, progress, blockers, and open-ended questions. Do not move the conversation to files, logs, notifications, or external messages; use external delivery only when the user requested it or configured that workflow.",
   "- For choice questions or supported approvals, use propose_config_change in the shared review UI (ask_choice for questions; the matching change kind for approvals). Wait for its result; text alone creates no controls. Choice answers do not execute changes.",
-  "- If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the user or into a tool argument; refer to it as the value you pasted.",
+  "- If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the user or into a tool argument; refer to it as the value you pasted, even when it looks like a placeholder or test string.",
 ].join("\n");
 
 const SELF_CONFIG_BODY = [
