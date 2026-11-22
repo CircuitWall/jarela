@@ -7,7 +7,9 @@ Date: 2026-11-21
 > **Amended (UX):** capture is hands-free — a short silence pauses the
 > capture, and a longer silence ends and sends the turn. Reply TTS follows the
 > selected engine: Gemini input uses Gemini TTS; browser and Whisper input use
-> the device's built-in voices. Whisper remains recognition-only. Barge-in and
+> the device's built-in voices. Voice-originated turns are tagged with
+> `voice_input` metadata so the system prompt shapes the reply for listening
+> (prose over tables/code). Whisper remains recognition-only. Barge-in and
 > speech-to-speech stay out of scope.
 
 Related: [ADR-0017](./0017-voice-via-gemini.md) (voice via Gemini — input path

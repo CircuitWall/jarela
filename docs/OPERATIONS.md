@@ -179,8 +179,9 @@ states are shown explicitly. Model/strategy changes affect new runs, not a
 reply already in progress. Voice input is hands-free: a short silence pauses
 the capture and a longer one sends the turn. Spoken replies follow the speech
 engine — Gemini input uses Gemini TTS and needs the Google AI integration,
-while Browser and Whisper input use the device's built-in voices. Chat voice
-controls refresh after saving without a page reload. The additions
+while Browser and Whisper input use the device's built-in voices. Turns that
+arrived as speech are marked so replies favor prose over tables and code.
+Chat voice controls refresh after saving without a page reload. The additions
 use the existing desktop breakpoints and sidebar widths; the mobile header and
 small-screen menu drawer are unchanged.
 

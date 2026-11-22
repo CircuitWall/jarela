@@ -777,11 +777,12 @@ describe("buildToolReliabilityContext", () => {
 });
 
 describe("buildSystemPrompt spoken delivery", () => {
-  function promptFor(voiceEnabled: number) {
+  function promptFor(voiceEnabled: number, voiceInput = false) {
     return buildSystemPrompt({
       agentCfg: agentCfg({ voice_enabled: voiceEnabled }),
       trimmedMessage: "hi", budget, recallCtx: "", warmSummaryCtx: "", factsCtx: "",
       experienceMode: "full", delegateRosterLines: [],
+      voiceInput,
     });
   }
 
@@ -800,5 +801,19 @@ describe("buildSystemPrompt spoken delivery", () => {
     const section = prompt.indexOf("--- Spoken delivery ---");
     expect(section).toBeGreaterThan(prompt.indexOf(CACHE_SHARED_SPLIT_SENTINEL));
     expect(section).toBeLessThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+  });
+
+  it("shapes the reply for listening only on a spoken user turn", () => {
+    const spoken = promptFor(1, true);
+    expect(spoken.match(/--- Voice input ---/g)).toHaveLength(1);
+    expect(spoken).toContain("answer for listening rather than reading");
+    expect(spoken).toContain("Avoid tables, code blocks, logs");
+    expect(spoken).toContain("offer to show the full detail in text");
+    expect(spoken).not.toMatch(/\{\{|undefined|NaN|\[object Object\]/);
+    // Per-turn guidance must sit in the dynamic block, after both sentinels.
+    expect(spoken.indexOf("--- Voice input ---")).toBeGreaterThan(spoken.indexOf(CACHE_SPLIT_SENTINEL));
+
+    expect(promptFor(1, false)).not.toContain("--- Voice input ---");
+    expect(promptFor(0, false)).not.toContain("--- Voice input ---");
   });
 });

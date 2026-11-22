@@ -75,8 +75,11 @@ export function useChatSubmitHandlers({
     const msg = text.trim();
     if (!msg || !agentId) return;
     if (agentConfig?.voice_auto_speak !== false) pendingAutoSpeakRef.current = true;
-    if (queue.isReady()) { void launchRun(msg, []); return; }
-    queue.enqueue(msg, []);
+    // Mark the turn as spoken so the system prompt shapes the reply for
+    // listening instead of reading tables/code aloud.
+    const options: ChatRunOptions = { messageMetadata: { voice_input: true } };
+    if (queue.isReady()) { void launchRun(msg, [], options); return; }
+    queue.enqueue(msg, [], options);
   }, [agentConfig?.voice_auto_speak, agentId, launchRun, pendingAutoSpeakRef, queue]);
 
   const handleRetryMessage = useCallback((text: string, atts: ContentPart[]) => {
