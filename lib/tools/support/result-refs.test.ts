@@ -208,8 +208,19 @@ describe("readToolResultRef", () => {
     expect(page).toMatchObject({ offset: 0, limit: 2, result: "ab", next_offset: 2 });
   });
 
+  it("accepts the published uri and absolute path forms of a ref", async () => {
+    const { fileAbsPath } = await import("@/lib/files");
+    const envelope = await spill("paged reference body ".repeat(20));
+    const absPath = fileAbsPath(envelope.result_ref.name)!;
+    for (const name of [envelope.result_ref.uri, absPath]) {
+      expect(await readToolResultRef({ name, limit: 9 })).toMatchObject({ ok: true, result: "paged ref" });
+    }
+    expect(await readToolResultRef({ name: join(tmpdir(), "outside-files.json") }))
+      .toMatchObject({ ok: false, error: expect.stringContaining("unsafe result_ref name") });
+  });
+
   it("rejects path traversal and unknown refs without throwing", async () => {
-    expect(await readToolResultRef({ name: "../secrets.json" })).toMatchObject({ ok: false, error: "unsafe result_ref name" });
+    expect(await readToolResultRef({ name: "../secrets.json" })).toMatchObject({ ok: false, error: expect.stringContaining("unsafe result_ref name") });
     expect(await readToolResultRef({ name: "deadbeef.json" })).toMatchObject({ ok: false, status: "unknown" });
   });
 });
