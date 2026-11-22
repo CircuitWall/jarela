@@ -20,6 +20,12 @@ import { parseVoiceDirectives } from "@/lib/voice/tone";
 import { isBrowserTtsAvailable, speakWithBrowser, type BrowserSpeechSession } from "@/lib/voice/tts/browser";
 import { resolveReplyTtsEngine } from "@/lib/voice/tts/engine";
 import { consumeAutoSpeak, subscribeAutoSpeak } from "./auto-speak";
+import {
+  endVoiceConversation,
+  notifyVoiceSpeechEnded,
+  notifyVoiceSpeechFailed,
+  notifyVoiceSpeechStarted,
+} from "./voice-conversation";
 import { parseStoredMessageContent, stripDeclaredReferencesFence } from "@/api/message-content";
 import "highlight.js/styles/github-dark.css";
 import { MarkdownContent, ContentPartView } from "./MessageContent";
@@ -1274,6 +1280,55 @@ function useMessageActions({ dispatch, messageId, threadId, message, isUser, onR
   return { handleInAppLink, copyLink, category, canRetry, handleRetry, copiedMessage, copyMessage };
 }
 
+type AudioPlaybackState = "idle" | "loading" | "playing" | "paused" | "error";
+
+/** A second press on the speaker toggles the clip instead of re-synthesizing. */
+function toggleBrowserSession(session: BrowserSpeechSession, playing: boolean): AudioPlaybackState {
+  if (playing) {
+    session.pause();
+    return "paused";
+  }
+  session.resume();
+  return "playing";
+}
+
+/** Starts a fresh OS-voice clip. False when this browser cannot synthesize. */
+function startBrowserClip({ speakable, auto, messageId, sessionRef, setAudioState, setAudioError }: {
+  speakable: string;
+  auto: boolean;
+  messageId: string | null;
+  sessionRef: { current: BrowserSpeechSession | null };
+  setAudioState: (state: AudioPlaybackState) => void;
+  setAudioError: (error: string | null) => void;
+}): boolean {
+  setAudioError(null);
+  setAudioState("loading");
+  const session = speakWithBrowser(speakable, {
+    onStart: () => setAudioState("playing"),
+    onEnd: () => {
+      sessionRef.current = null;
+      setAudioState("idle");
+      if (messageId) notifyVoiceSpeechEnded(messageId);
+    },
+    onError: (error) => {
+      sessionRef.current = null;
+      setAudioError(error);
+      setAudioState("error");
+      if (messageId) notifyVoiceSpeechFailed(messageId);
+    },
+  });
+  if (!session) return false;
+  sessionRef.current = session;
+  if (auto && messageId) {
+    notifyVoiceSpeechStarted(messageId, () => {
+      session.cancel();
+      sessionRef.current = null;
+      setAudioState("idle");
+    });
+  }
+  return true;
+}
+
 function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }: {
   isUser: boolean;
   agentConfig: AgentConfig | null | undefined;
@@ -1287,10 +1342,11 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
   const browserSpeechRef = useRef<BrowserSpeechSession | null>(null);
-  const [audioState, setAudioState] = useState<"idle" | "loading" | "playing" | "paused" | "error">("idle");
+  const [audioState, setAudioState] = useState<AudioPlaybackState>("idle");
   const [audioError, setAudioError] = useState<string | null>(null);
 
   const releaseAudio = useCallback(() => {
+    notifyVoiceSpeechFailed(messageId ?? "");
     browserSpeechRef.current?.cancel();
     browserSpeechRef.current = null;
     const a = audioRef.current;
@@ -1303,39 +1359,37 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
       URL.revokeObjectURL(audioUrlRef.current);
       audioUrlRef.current = null;
     }
-  }, []);
+  }, [messageId]);
 
   useEffect(() => () => releaseAudio(), [releaseAudio]);
 
-  const speak = useCallback(async () => {
+  const speak = useCallback(async (auto = false) => {
     if (!voiceEnabled || !agentConfig || streaming) return;
     // `[[tone: …]]` steers delivery and never reaches the visible message;
     // it is extracted here and sent as the TTS style. Browser voices cannot
     // express it, so it is ignored on that path.
     const { text: speakable, style } = parseVoiceDirectives(ttsAbleText);
-    if (!speakable.trim()) return;
+    if (!speakable.trim()) {
+      if (auto) endVoiceConversation();
+      return;
+    }
 
     // Browser/Whisper agents speak through the OS voices: no key, no network.
     if (ttsEngine === "browser" && isBrowserTtsAvailable()) {
-      if (browserSpeechRef.current) {
-        if (audioState === "playing") {
-          browserSpeechRef.current.pause();
-          setAudioState("paused");
-        } else {
-          browserSpeechRef.current.resume();
-          setAudioState("playing");
-        }
+      const current = browserSpeechRef.current;
+      if (current) {
+        setAudioState(toggleBrowserSession(current, audioState === "playing"));
+        if (audioState === "playing") endVoiceConversation();
         return;
       }
-      setAudioError(null);
-      setAudioState("loading");
-      const session = speakWithBrowser(speakable, {
-        onStart: () => setAudioState("playing"),
-        onEnd: () => { browserSpeechRef.current = null; setAudioState("idle"); },
-        onError: (error) => { browserSpeechRef.current = null; setAudioError(error); setAudioState("error"); },
-      });
-      if (session) {
-        browserSpeechRef.current = session;
+      if (startBrowserClip({
+        speakable,
+        auto,
+        messageId,
+        sessionRef: browserSpeechRef,
+        setAudioState,
+        setAudioError,
+      })) {
         return;
       }
       // No speech synthesis in this browser: fall through to Gemini TTS.
@@ -1346,6 +1400,7 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
       if (audioState === "playing") {
         audioRef.current.pause();
         setAudioState("paused");
+        endVoiceConversation();
       } else {
         try { await audioRef.current.play(); setAudioState("playing"); }
         catch (err) { setAudioError(errorMessage(err)); setAudioState("error"); }
@@ -1372,26 +1427,43 @@ function useMessageVoice({ isUser, agentConfig, message, streaming, messageId }:
       const url = URL.createObjectURL(blob);
       audioUrlRef.current = url;
       const audio = new Audio(url);
-      audio.onended = () => setAudioState("idle");
+      audio.onended = () => {
+        setAudioState("idle");
+        if (messageId) notifyVoiceSpeechEnded(messageId);
+      };
       audio.onpause = () => setAudioState((s) => (s === "playing" ? "paused" : s));
-      audio.onerror = () => { setAudioState("error"); setAudioError("playback failed"); };
+      audio.onerror = () => {
+        setAudioState("error");
+        setAudioError("playback failed");
+        if (messageId) notifyVoiceSpeechFailed(messageId);
+      };
       audioRef.current = audio;
       await audio.play();
       setAudioState("playing");
+      if (auto && messageId) {
+        notifyVoiceSpeechStarted(messageId, () => {
+          try { audio.pause(); } catch { /* ignore */ }
+          setAudioState("paused");
+        });
+      }
     } catch (err) {
       setAudioError(errorMessage(err));
       setAudioState("error");
+      if (auto) {
+        if (messageId) notifyVoiceSpeechFailed(messageId);
+        else endVoiceConversation();
+      }
     }
-  }, [voiceEnabled, agentConfig, streaming, ttsAbleText, audioState, ttsEngine]);
+  }, [voiceEnabled, agentConfig, streaming, ttsAbleText, audioState, ttsEngine, messageId]);
 
   useEffect(() => {
     // Wait until the run has actually stopped streaming: a request that
     // arrives during the finalize frame stays parked and is consumed here.
     if (!voiceEnabled || !messageId || streaming) return;
-    if (consumeAutoSpeak(messageId)) void speak();
+    if (consumeAutoSpeak(messageId)) void speak(true);
     return subscribeAutoSpeak((id) => {
       if (id !== messageId) return false;
-      void speak();
+      void speak(true);
       return true;
     });
   }, [voiceEnabled, messageId, streaming, speak]);

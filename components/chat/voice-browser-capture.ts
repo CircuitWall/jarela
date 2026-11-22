@@ -17,7 +17,15 @@ export interface BrowserCaptureHandlers {
   onError(message: string): void;
 }
 
-export function startBrowserCapture(handlers: BrowserCaptureHandlers): CaptureControls {
+export interface BrowserCaptureOptions {
+  /** Leading silence before the capture aborts. Conversation mode uses 5 s. */
+  noSpeechMs?: number;
+}
+
+export function startBrowserCapture(
+  handlers: BrowserCaptureHandlers,
+  options: BrowserCaptureOptions = {},
+): CaptureControls {
   let session: ReturnType<typeof startBrowserStt> | null = null;
   let settled = false;
   let timers: {
@@ -36,7 +44,10 @@ export function startBrowserCapture(handlers: BrowserCaptureHandlers): CaptureCo
   function arm(withSpeech: boolean) {
     clearTimers();
     if (!withSpeech) {
-      timers.noSpeech = setTimeout(() => cancel("No speech was detected."), VOICE_TIMING.noSpeechMs);
+      timers.noSpeech = setTimeout(
+        () => cancel("No speech was detected."),
+        options.noSpeechMs ?? VOICE_TIMING.noSpeechMs,
+      );
       return;
     }
     timers.pause = setTimeout(() => handlers.onPaused(true), VOICE_TIMING.pauseAfterMs);

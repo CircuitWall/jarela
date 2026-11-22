@@ -20,9 +20,17 @@ export interface ServerCaptureHandlers {
   onError(message: string): void;
 }
 
+export interface ServerCaptureOptions {
+  /** Leading silence before the capture aborts. Conversation mode uses 5 s. */
+  noSpeechMs?: number;
+}
+
 const NOOP: CaptureControls = { finish() { /* nothing to stop */ }, cancel() { /* nothing to stop */ } };
 
-export async function startServerCapture(handlers: ServerCaptureHandlers): Promise<CaptureControls> {
+export async function startServerCapture(
+  handlers: ServerCaptureHandlers,
+  options: ServerCaptureOptions = {},
+): Promise<CaptureControls> {
   let recorder: MediaRecorder | null = null;
   let monitor: VoiceActivityMonitor | null = null;
   let stream: MediaStream | null = null;
@@ -113,7 +121,7 @@ export async function startServerCapture(handlers: ServerCaptureHandlers): Promi
       },
       onEnd: finish,
       onNoSpeech: () => cancel("No speech was detected."),
-    });
+    }, options);
     handlers.onAutoEnd(monitor !== null);
     handlers.onRecording(true);
   } catch (err) {

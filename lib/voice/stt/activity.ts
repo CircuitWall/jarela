@@ -32,6 +32,11 @@ export interface VoiceActivityMonitor {
   stop(): void;
 }
 
+export interface VoiceActivityMonitorOptions {
+  /** Override the leading-silence window (conversation mode uses 5 s). */
+  noSpeechMs?: number;
+}
+
 /**
  * Watch a live mic stream and report the same pause/resume/end events as the
  * browser engine. Returns null when the browser has no Web Audio support — the
@@ -40,6 +45,7 @@ export interface VoiceActivityMonitor {
 export function monitorVoiceActivity(
   stream: MediaStream,
   handlers: VoiceActivityHandlers,
+  options: VoiceActivityMonitorOptions = {},
 ): VoiceActivityMonitor | null {
   const Ctor = audioContextCtor();
   if (!Ctor) return null;
@@ -68,7 +74,7 @@ export function monitorVoiceActivity(
   const detector = createSilenceDetector(Date.now(), {
     pauseAfterMs: VOICE_TIMING.pauseAfterMs,
     endAfterMs: VOICE_TIMING.endAfterMs,
-    noSpeechMs: VOICE_TIMING.noSpeechMs,
+    noSpeechMs: options.noSpeechMs ?? VOICE_TIMING.noSpeechMs,
     maxCaptureMs: VOICE_TIMING.maxCaptureMs,
     speechThreshold: VOICE_TIMING.speechThreshold,
     speechStartMs: VOICE_TIMING.speechStartMs,
