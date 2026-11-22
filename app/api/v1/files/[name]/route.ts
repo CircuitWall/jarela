@@ -70,10 +70,18 @@ async function serve(req: NextRequest, { name }: { name: string }, method: "GET"
     if (m) {
       const a = m[1] ? Number(m[1]) : NaN;
       const b = m[2] ? Number(m[2]) : NaN;
-      if (Number.isFinite(a) && Number.isFinite(b)) { start = a; end = b; }
-      else if (Number.isFinite(a)) { start = a; }
-      else if (Number.isFinite(b)) { start = Math.max(0, s.size - b); }
-      if (start > end || end >= s.size) {
+      if (Number.isFinite(a)) {
+        start = a;
+        end = Number.isFinite(b) ? Math.min(b, s.size - 1) : s.size - 1;
+      } else if (Number.isFinite(b)) {
+        start = Math.max(0, s.size - b);
+        end = s.size - 1;
+      }
+      // Clamp instead of rejecting: clients (and Safari's image probes) ask for
+      // a fixed window past the end of small files, which RFC 9110 allows.
+      start = Math.max(0, start);
+      end = Math.min(end, s.size - 1);
+      if (start > end) {
         return new NextResponse(null, {
           status: 416,
           headers: { "Content-Range": `bytes */${s.size}`, "Accept-Ranges": "bytes" },
