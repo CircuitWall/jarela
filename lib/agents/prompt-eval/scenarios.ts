@@ -596,10 +596,11 @@ const scenarios: PromptScenarioInput[] = [
     id: "undecided-choice-proposal",
     title: "Ask through the choice UI before scheduling an undecided plan",
     risk:
-      "The user has two concrete options and no decision. The prompt must open an ask_choice " +
-      "proposal instead of creating the schedule on a guess or asking for a typed answer.",
+      "The user asked for a recurring setup whose only open parameter is the slot. " +
+      "The prompt must resolve that bounded choice through the choice UI instead of " +
+      "creating the schedule on a guess or asking for a typed answer.",
     agentTools: [],
-    request: "I can't decide between Friday evening and Monday morning for my weekly review — help me pick.",
+    request: "Set up my weekly review, but I can't decide between Friday evening and Monday morning — help me choose the slot.",
     expect: {
       tools: ["propose_config_change"],
       forbidden: ["schedule_task", "schedule_watcher"],

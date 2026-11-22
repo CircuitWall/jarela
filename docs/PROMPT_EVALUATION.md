@@ -266,9 +266,11 @@ mid-suite.
 ## Limits
 
 - The live tier does not execute tools; it scores the observed call and feeds
-  back the declared fixture. An evaluation run cannot restart a server or write
-  real memory, but it also cannot validate tool side effects — the reaction tier
-  covers those with real tools.
+  back the declared fixture for the calls it made. A turn with no call receives
+  an empty result set, so the judge cannot credit a call the agent never made.
+  An evaluation run cannot restart a server or write real memory, but it also
+  cannot validate tool side effects — the reaction tier covers those with real
+  tools.
 - Facts a transcript can settle are decided by code, not the judge: which tool
   was called, with what arguments, and whether `invoke_tool` carried a valid
   `args`/`args_json` shape. Judge `hardFailures` are reserved for claims the

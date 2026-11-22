@@ -71,6 +71,12 @@ describe("judge input", () => {
     expect(input.tool_results).toEqual([scenario.expect.toolResultFixture]);
   });
 
+  it("passes an empty result set when the turn received no evidence", () => {
+    // A call that never ran must not be credited with the expected fixture.
+    const input = buildJudgeInput(scenario, [], "answer", []);
+    expect(input.tool_results).toEqual([]);
+  });
+
   it("renders as a system turn plus one JSON user turn", () => {
     const messages = buildJudgeMessages(buildJudgeInput(scenario, [], "answer"));
     expect(messages.map((message) => message.role)).toEqual(["system", "user"]);
