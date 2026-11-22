@@ -10,6 +10,8 @@ import type { ReplyTtsEngine } from "@/lib/voice/tts/engine";
 import { cleanSpeechChunk } from "@/lib/voice/tts/text";
 import { errorMessage } from "@/lib/utils/error";
 
+const RETRY_DELAY_MS = 150;
+
 export interface LiveSpeechHandlers {
   /** The first slice actually produced audio. */
   onStart(): void;
@@ -67,6 +69,9 @@ export function createLiveSpeechQueue({ engine, agentId, handlers }: LiveSpeechO
   let started = false;
   let cancelled = false;
   let stopActive: (() => void) | null = null;
+  // Only the first slice may replace a clip that is already speaking; later
+  // slices must be handed to an idle synth (see BrowserSpeechOptions.replace).
+  let firstClip = true;
 
   function markStarted(): void {
     if (started || cancelled) return;
@@ -74,13 +79,13 @@ export function createLiveSpeechQueue({ engine, agentId, handlers }: LiveSpeechO
     handlers.onStart();
   }
 
-  function playBrowser(clip: Clip): Promise<void> {
+  function attemptBrowser(clip: Clip, replace: boolean): Promise<void> {
     return new Promise((resolve, reject) => {
       const session = speakWithBrowser(clip.text, {
         onStart: markStarted,
         onEnd: () => resolve(),
         onError: (message) => reject(new Error(message)),
-      });
+      }, { replace });
       if (!session) {
         reject(new Error("this browser cannot synthesize speech"));
         return;
@@ -90,6 +95,23 @@ export function createLiveSpeechQueue({ engine, agentId, handlers }: LiveSpeechO
         resolve();
       };
     });
+  }
+
+  async function playBrowser(clip: Clip): Promise<void> {
+    const replace = firstClip;
+    firstClip = false;
+    try {
+      await attemptBrowser(clip, replace);
+      return;
+    } catch {
+      if (cancelled) return;
+      // Chromium sometimes drops the clip that follows a cancel(); a single
+      // retry on an idle synth recovers the slice instead of reporting an
+      // error for audio the user can already hear.
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      if (cancelled) return;
+      await attemptBrowser(clip, false);
+    }
   }
 
   async function playGemini(clip: Clip): Promise<void> {

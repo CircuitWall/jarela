@@ -17,11 +17,12 @@ const speak = vi.fn();
 const pause = vi.fn();
 const resume = vi.fn();
 const cancel = vi.fn();
-const synth = { speaking: false, paused: false, speak, pause, resume, cancel };
+const synth = { speaking: false, paused: false, pending: false, speak, pause, resume, cancel };
 
 beforeEach(() => {
   synth.speaking = false;
   synth.paused = false;
+  synth.pending = false;
   vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
   vi.stubGlobal("speechSynthesis", synth);
 });
@@ -85,6 +86,37 @@ describe("browser speech synthesis", () => {
     expect(onStart).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it("accepts a clip that is still queued behind another one", () => {
+    vi.useFakeTimers();
+    const onStart = vi.fn();
+    const onError = vi.fn();
+    speakWithBrowser("hello", { onStart, onError });
+    synth.pending = true;
+    vi.advanceTimersByTime(2_100);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("does not cancel an idle synth before speaking", () => {
+    speakWithBrowser("hello");
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it("replaces a clip that is already speaking", () => {
+    synth.speaking = true;
+    speakWithBrowser("hello");
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves another clip alone when asked not to replace it", () => {
+    synth.speaking = true;
+    speakWithBrowser("next slice", {}, { replace: false });
+    expect(speak).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("treats an interrupted clip as a normal end", () => {
