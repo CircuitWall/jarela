@@ -42,11 +42,15 @@ function outcome(scenario: PromptScenario, overrides: Partial<ScenarioOutcome> =
     model: "model",
     judgeModel: "judge",
     toolCalls: [],
+    rounds: 1,
+    capped: false,
     answer: "ok",
     selection: { pass: true, reasons: [] },
     judge: verdict(),
+    judgeSamples: [1],
     pass: true,
     failures: [],
+    warnings: [],
     ...overrides,
   };
 }
@@ -86,6 +90,27 @@ describe("tool selection scoring", () => {
     expect(result.pass).toBe(false);
     expect(result.reasons.join(" ")).toContain("missing required argument(s): key, record");
   });
+
+  it("checks required arguments on the expected call that carries them", () => {
+    // A multi-tool flow often starts with a lookup whose arguments differ from
+    // the call the keys describe. The earlier call must not fail the check.
+    const multi: PromptScenario = {
+      ...memory,
+      expect: { ...memory.expect, tools: ["memory_list", "memory_upsert"], argumentKeys: ["namespace", "key"] },
+    };
+
+    expect(scoreToolSelection(multi, [
+      call("memory_list", { namespace: "facts" }),
+      call("memory_upsert", { namespace: "facts", key: "pr-description-rollback-plan", record: {} }),
+    ])).toEqual({ pass: true, reasons: [] });
+
+    const missing = scoreToolSelection(multi, [
+      call("memory_list", { namespace: "facts" }),
+      call("memory_upsert", { namespace: "facts" }),
+    ]);
+    expect(missing.pass).toBe(false);
+    expect(missing.reasons.join(" ")).toContain("missing required argument(s)");
+  });
 });
 
 describe("proxy invocation rules", () => {
@@ -123,6 +148,14 @@ describe("proxy invocation rules", () => {
     const result = scoreToolSelection(proxy, [invoked("memory_search", {}, { args_json: "[1,2]" })]);
     expect(result.pass).toBe(false);
     expect(result.reasons.join(" ")).toContain("must decode to a JSON object");
+  });
+
+  it("fails when a forbidden tool is reached through the proxy", () => {
+    const result = scoreToolSelection(repair, [
+      invoked("memory_write", { namespace: "facts", key: "northwind-restock", value: "confirmed" }),
+    ]);
+    expect(result.pass).toBe(false);
+    expect(result.reasons.join(" ")).toContain("through invoke_tool: memory_write");
   });
 
   it("allows a different proxied target after the expected one", () => {
