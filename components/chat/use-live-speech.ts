@@ -59,6 +59,12 @@ function startSession(engine: ReplyTtsEngine, agentId: string | null, browserVoi
     agentId,
     browserVoice,
     handlers: {
+      // Claim the turn for the live reader as soon as audio is handed to the
+      // engine. `onStart` waits for the browser's own `start` event, ~100 ms
+      // later — and a short reply finalizes inside that window, which is when
+      // the whole-message reader also fired, cancelled the live clip and read
+      // the reply again from the top.
+      onDispatch: () => markLiveSpeechSpoken(),
       onStart: () => {
         if (holder.session) holder.session.started = true;
         markLiveSpeechSpoken();
