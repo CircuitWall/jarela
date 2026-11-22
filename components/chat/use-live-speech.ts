@@ -15,7 +15,7 @@ import type { AgentConfig } from "@/api/types";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { resolveReplyTtsEngine, type ReplyTtsEngine } from "@/lib/voice/tts/engine";
 import { createStreamingSpeechSplitter, type StreamingSpeechSplitter } from "@/lib/voice/tts/stream";
-import { consumeLiveSpeech } from "./auto-speak";
+import { consumeLiveSpeech, markLiveSpeechSpoken } from "./auto-speak";
 import { createLiveSpeechQueue, type LiveSpeechQueue } from "./live-speech";
 import {
   endVoiceConversation,
@@ -35,6 +35,8 @@ interface LiveSession {
   seen: string;
   /** No more text will be fed; the queue may still be playing. */
   done: boolean;
+  /** Audio actually started, so unmounting the view may stop it. */
+  started: boolean;
 }
 
 let current: LiveSession | null = null;
@@ -45,18 +47,21 @@ export function _resetLiveSpeech(): void {
   current = null;
 }
 
-function startSession(
-  engine: ReplyTtsEngine,
-  agentId: string | null,
-  browserVoice: string | null,
-): LiveSession | null {
+function startSession(engine: ReplyTtsEngine, agentId: string | null, browserVoice: string | null): LiveSession | null {
   let queue: LiveSpeechQueue | null = null;
+  // A holder, not a local: the start handler runs after this returns, and
+  // TypeScript would otherwise narrow a never-reassigned local to null.
+  const holder: { session: LiveSession | null } = { session: null };
   queue = createLiveSpeechQueue({
     engine,
     agentId,
     browserVoice,
     handlers: {
-      onStart: () => notifyVoiceSpeechStarted(LIVE_SPEECH_ID, () => queue?.cancel()),
+      onStart: () => {
+        if (holder.session) holder.session.started = true;
+        markLiveSpeechSpoken();
+        notifyVoiceSpeechStarted(LIVE_SPEECH_ID, () => queue?.cancel());
+      },
       onDrain: () => notifyVoiceSpeechEnded(LIVE_SPEECH_ID),
       onError: (message) => {
         notifyVoiceSpeechFailed(LIVE_SPEECH_ID);
@@ -80,7 +85,8 @@ function startSession(
     });
     return null;
   }
-  return { queue, splitter: createStreamingSpeechSplitter(), seen: "", done: false };
+  holder.session = { queue, splitter: createStreamingSpeechSplitter(), seen: "", done: false, started: false };
+  return holder.session;
 }
 
 export function useLiveSpeech({ content, streaming, agentConfig }: {
@@ -133,7 +139,11 @@ export function useLiveSpeech({ content, streaming, agentConfig }: {
   }, [content, streaming, voiceEnabled, ttsEngine, agentId, browserVoice]);
 
   // Leaving the thread mid-run must not keep talking; finishing the run must.
+  // Only a clip that is actually speaking is stopped: React runs this cleanup
+  // once per development mount (StrictMode, on by default for the App Router),
+  // and cancelling there would throw away a reader that had not spoken yet —
+  // the turn's live intent is already spent, so the reply went silent.
   useEffect(() => () => {
-    if (streamingRef.current) _resetLiveSpeech();
+    if (current?.started && streamingRef.current) _resetLiveSpeech();
   }, []);
 }

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, render } from "@testing-library/react";
+import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentConfig } from "@/api/types";
 
@@ -84,6 +85,17 @@ describe("useLiveSpeech", () => {
     view.rerender(<Probe content="" streaming={false} />);
     expect(mocks.queue.push).toHaveBeenCalledWith("Only a tail");
     expect(mocks.queue.finish).toHaveBeenCalledTimes(1);
+  });
+
+  it("survives a development remount", () => {
+    requestLiveSpeech();
+    render(
+      <StrictMode>
+        <Probe content="Hello there. " streaming />
+      </StrictMode>,
+    );
+    expect(mocks.queue.push).toHaveBeenCalledWith("Hello there.");
+    expect(mocks.queue.cancel).not.toHaveBeenCalled();
   });
 
   it("starts a fresh reader when a steer replaces the reply", () => {
