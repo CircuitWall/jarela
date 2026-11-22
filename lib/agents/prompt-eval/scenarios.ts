@@ -566,19 +566,6 @@ const scenarios: PromptScenarioInput[] = [
         ],
         total: 1,
       }),
-      toolResults: {
-        web_fetch: JSON.stringify({
-          url: "https://nextjs.org/blog/next-17",
-          status: 200,
-          content_type: "text/html",
-          title: "Next.js 17",
-          mode: "text",
-          bytes_read: 18_432,
-          truncated: false,
-          content: "Next.js 17 is the latest stable release of the framework.",
-          images: { og: null, twitter: null, samples: [] },
-        }),
-      },
     },
     promptAnchors: [
       "For factual, external, or time-sensitive claims, retrieve evidence first (web_search/fetch/file tools) before asserting.",

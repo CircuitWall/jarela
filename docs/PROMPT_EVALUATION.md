@@ -276,8 +276,9 @@ mid-suite.
 
 - The live tier does not execute tools; it scores the observed call and feeds
   back the declared fixture for the calls it made. The first call to an expected
-  tool receives that scenario's fixture; later calls get a clearly synthetic
-  stub, so a different range or query never appears to return identical content.
+  tool receives that scenario's fixture; later calls get an explicit
+  `evaluation_stub` error, so a different range, query, or URL never appears to
+  return identical content.
   A turn with no call receives an empty result set, so the judge cannot credit a
   call the agent never made. An evaluation run cannot restart a server or write
   real memory, but it also cannot validate tool side effects — the reaction tier
