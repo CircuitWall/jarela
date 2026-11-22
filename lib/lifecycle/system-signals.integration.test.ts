@@ -114,6 +114,16 @@ describe("system signal full-flow contract", () => {
     expect(readdirSync(join(root, "files"))).toEqual([]);
   });
 
+  it("realigns a background page that starts inside a character and trims the reference", async () => {
+    const thread = owner("contract-boundary");
+    const tracked = asyncResults.startOwnedAsyncCall("synthetic_boundary", thread.thread_id);
+    asyncResults.completeAsyncCall(tracked.key, "€".repeat(100)); // 3 bytes each
+    const { readBackgroundResultReference, backgroundResultReference } = await import("@/lib/stores/background-results");
+    const name = backgroundResultReference(tracked.key);
+    expect(readBackgroundResultReference(` ${name} `, thread.thread_id, 4, 6))
+      .toMatchObject({ ok: true, status: "done", offset: 3, result: "€€", next_offset: 9, done: false });
+  });
+
   it("settles an owned result from another module instance as route bundles can do", async () => {
     const thread = owner("contract-module-reload");
     const tracked = asyncResults.startOwnedAsyncCall("synthetic_reload", thread.thread_id);

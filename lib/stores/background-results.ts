@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
+import { utf8ByteWindow } from "@/lib/utils/text";
 
 export const BACKGROUND_RESULT_RETENTION_MS = 7 * 24 * 60 * 60_000;
 export const BACKGROUND_RESULT_MAX_BYTES = 2 * 1024 * 1024;
@@ -58,29 +59,32 @@ export function backgroundResultReference(key: string): string {
 }
 
 export function readBackgroundResultReference(name: string, threadId: string | undefined, offset = 0, limit = 4096, consume = false, maxEncodedBytes = Infinity): Record<string, unknown> {
-  if (!threadId || !name.startsWith(BACKGROUND_RESULT_REF_PREFIX)) return { ok: false, status: "unknown", error: "Background result owner context is required" };
-  const key = name.slice(BACKGROUND_RESULT_REF_PREFIX.length);
+  const reference = typeof name === "string" ? name.trim() : "";
+  if (!threadId || !reference.startsWith(BACKGROUND_RESULT_REF_PREFIX)) return { ok: false, status: "unknown", error: "Background result owner context is required" };
+  const key = reference.slice(BACKGROUND_RESULT_REF_PREFIX.length).trim();
   const record = getBackgroundResult(key, threadId);
   const contents = record?.status === "done" ? record.result : record?.status === "error" ? record.error : null;
   if (!record || contents === null) return { ok: false, status: "unknown", error: "No accessible background result for that reference" };
   const bytes = Buffer.from(contents, "utf8");
-  const start = Math.min(bytes.length, Math.max(0, Math.floor(offset)));
-  const length = Math.min(1024 * 1024, Math.max(1, Math.floor(limit)));
-  if (start < bytes.length && (bytes[start] & 0xc0) === 0x80) return { ok: false, status: "unknown", error: "Offset splits a UTF-8 character" };
-  let end = Math.min(bytes.length, start + length);
-  while (end > start && end < bytes.length && (bytes[end] & 0xc0) === 0x80) end--;
-  if (end === start) {
-    end = Math.min(bytes.length, start + length);
-    while (end < bytes.length && (bytes[end] & 0xc0) === 0x80) end++;
-  }
-  const page = () => ({ ok: true, status: "done", source_status: record.status, name, offset: start, limit: end - start, bytes: bytes.length,
+  const requestedOffset = Number.isFinite(offset) ? Math.max(0, Math.floor(offset)) : 0;
+  const requestedLimit = Number.isFinite(limit) ? Math.min(1024 * 1024, Math.max(1, Math.floor(limit))) : 4096;
+  // Same boundary rule as spilled refs: a caller offset inside a character is
+  // realigned to its lead byte instead of failing the read.
+  const window = utf8ByteWindow(bytes, requestedOffset, requestedLimit);
+  const start = window.start;
+  let end = window.end;
+  const page = () => ({ ok: true, status: "done", source_status: record.status, name: reference, offset: start, limit: end - start, bytes: bytes.length,
     result: bytes.subarray(start, end).toString("utf8"), next_offset: end >= bytes.length ? null : end, done: end >= bytes.length });
-  while (Buffer.byteLength(JSON.stringify(page())) > maxEncodedBytes) {
-    if (end - start <= 4) return { ok: false, status: "unknown", error: "Inline output budget is too small for protected result paging" };
-    end = start + Math.floor((end - start) / 2);
-    while (end > start && (bytes[end] & 0xc0) === 0x80) end--;
+  let response = page();
+  while (Buffer.byteLength(JSON.stringify(response)) > maxEncodedBytes) {
+    if (end - start <= 4) return { ok: false, status: "error", error: "Inline output budget is too small for protected result paging" };
+    const halved = utf8ByteWindow(bytes, start, Math.floor((end - start) / 2)).end;
+    // A single character wider than the remaining budget cannot be split; the
+    // page would repeat forever if we kept halving it.
+    if (halved >= end) return { ok: false, status: "error", error: "Inline output budget is too small for protected result paging" };
+    end = halved;
+    response = page();
   }
-  const response = page();
   if (consume && response.done) getBackgroundResult(key, threadId, true);
   return response;
 }

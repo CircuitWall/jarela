@@ -181,6 +181,17 @@ describe("tool_result_get", () => {
     expect(getAsyncResult(key)).not.toBeNull();
   });
 
+  it("reads a bare async key or a padded reference copied into result_ref.name", async () => {
+    const key = startAsyncCall("synthetic_copy");
+    completeAsyncCall(key, "copied key result");
+    expect(JSON.parse(await toolResultGetTool.invoke({ result_ref: { name: key } }) as string))
+      .toMatchObject({ status: "done", result: "copied key result" });
+    expect(JSON.parse(await toolResultGetTool.invoke({ result_ref: { name: `  ${key}  ` } }) as string))
+      .toMatchObject({ status: "done", result: "copied key result" });
+    expect(JSON.parse(await toolResultGetTool.invoke({ key: ` ${key} ` }) as string))
+      .toMatchObject({ status: "done", result: "copied key result" });
+  });
+
   it("reads a spilled result_ref in bounded ranges", async () => {
     const payload = "abcdefghij".repeat(20);
     process.env.JARELA_TOOL_RESULT_MAX_BYTES = "32";
