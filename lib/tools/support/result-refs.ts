@@ -1,10 +1,12 @@
 import { promises as fsp } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { getConfig } from "@/lib/env/config";
 import { errorMessage } from "@/lib/utils/error";
 
 const DEFAULT_PREVIEW_BYTES = 4 * 1024;
 const MAX_READ_BYTES = 1024 * 1024;
 const JSON_ARRAY_PREVIEW_ITEMS = 20;
+const FILES_ROUTE_PREFIX = "/api/v1/files/";
 
 export interface ToolResultRef {
   uri: string;
@@ -85,10 +87,17 @@ export async function readToolResultRef(args: {
   limit?: number;
 }): Promise<Record<string, unknown>> {
   const { fileAbsPath } = await import("@/lib/files");
-  let name = args.name;
+  let name = await toStoredName(args.name);
   const abs = fileAbsPath(name);
   if (!abs) {
-    return { ok: false, status: "unknown", error: "unsafe result_ref name", name: args.name };
+    return {
+      ok: false,
+      status: "unknown",
+      error:
+        `unsafe result_ref name: pass result_ref.name, the bare emitted file name including its extension; ` +
+        `the result_ref.uri and absolute path forms are also accepted, but "${args.name}" is neither`,
+      name: args.name,
+    };
   }
   const offset = Math.max(0, Math.floor(args.offset ?? 0));
   const limit = Math.min(MAX_READ_BYTES, Math.max(1, Math.floor(args.limit ?? DEFAULT_PREVIEW_BYTES)));
@@ -133,6 +142,31 @@ export async function readToolResultRef(args: {
         : `could not read spilled tool result: ${errorMessage(error)}`,
     };
   }
+}
+
+// Envelopes publish `uri` (the /api/v1/files route), `name`, and sometimes an
+// absolute `path` side by side, so a copied locator can arrive in any of those
+// forms. Map each back to the bare stored name; everything else stays as-is and
+// fails the isSafeFileName check, which is what keeps path traversal out.
+async function toStoredName(raw: string): Promise<string> {
+  const trimmed = raw.trim();
+  const routeAt = trimmed.indexOf(FILES_ROUTE_PREFIX);
+  if (routeAt !== -1) {
+    const tail = trimmed.slice(routeAt + FILES_ROUTE_PREFIX.length).split(/[?#]/)[0];
+    try {
+      return decodeURIComponent(tail);
+    } catch {
+      return tail;
+    }
+  }
+  if (/[\\/]/.test(trimmed)) {
+    const { FILES_DIR } = await import("@/lib/files");
+    const stored = resolve(FILES_DIR);
+    const given = resolve(dirname(trimmed));
+    const sameDir = process.platform === "win32" ? given.toLowerCase() === stored.toLowerCase() : given === stored;
+    if (sameDir) return basename(trimmed);
+  }
+  return trimmed;
 }
 
 async function openToolResultFile(name: string): Promise<

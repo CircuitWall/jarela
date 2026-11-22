@@ -126,7 +126,7 @@ export const toolResultGetTool = tool(
         .optional()
         .describe("If true and the call has finished, delete the entry after returning it. Default false."),
       result_ref: z.object({
-        name: z.string().describe("The full result_ref.name returned by a truncated tool result, including its file extension. Do not substitute sha256."),
+        name: z.string().describe("The full result_ref.name returned by a truncated tool result, including its file extension. Do not substitute sha256. The result_ref.uri and absolute path forms are accepted too."),
       }).optional().describe("Read a spilled tool result by reference instead of an async key."),
       name: z
         .string()
