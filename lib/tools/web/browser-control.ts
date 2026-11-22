@@ -23,7 +23,6 @@ import {
   type BrowserResult,
 } from "@/lib/api/browser-control";
 import { writeBinaryFile, writeTextFile } from "@/lib/files";
-import { isAppOrigin } from "@/lib/api/app-origin";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { withStreamDefault } from "../support/tool-metadata";
 
@@ -90,8 +89,8 @@ function withAskInstruction(error: string): Record<string, unknown> {
       ask_user: true,
       retryable: false,
       next_step:
-        "This tab is the app the user is talking to you in. Target another tab, or pass allow_app_tab only when the " +
-        "user explicitly asked you to drive the Jarela app itself. Do not retry the same call unchanged.",
+        "This tab is the app the user is talking to you in, and the extension never lets you drive it. " +
+        "Target another tab with browser_tabs, or ask the user how they want to proceed. Do not retry the same call unchanged.",
     };
   }
   if (AWAITING_APPROVAL_PATTERN.test(error)) {
@@ -255,7 +254,7 @@ let lastSnapshotTabId: number | null = null;
 // `browser_tabs` hands out small symbolic handles because a raw Chrome tab
 // id is a large number that the redaction layer masks in tool output.
 const TAB_INVENTORY_TTL_MS = 5 * 60_000;
-let lastTabInventory: { at: number; byRef: Map<number, number> } | null = null;
+let lastTabInventory: { at: number; byRef: Map<number, number>; selfTabIds: Set<number> } | null = null;
 
 function asSnapshot(raw: unknown): CachedSnapshot | null {
   if (!raw || typeof raw !== "object") return null;
@@ -506,25 +505,15 @@ export function formatTree(tree: unknown, limit = 200): string | null {
 // --------------------------------------------------------------------- //
 
 export const browserNavigateTool = withStreamDefault(tool(
-  async ({ url, to, wait_for_selector, allow_app_tab, timeout_ms }) => {
+  async ({ url, to, wait_for_selector, timeout_ms }) => {
     if (!url && !to) {
       return JSON.stringify({ action: "browser_navigate", ok: false, error: "provide either `url` or `to` (back/forward/reload)." });
     }
     if (url && to) {
       return JSON.stringify({ action: "browser_navigate", ok: false, error: "provide either `url` or `to`, not both." });
     }
-    // Refuse before dispatching when the target is the app itself: the trip
-    // through the extension only discovers this on the current tab, and an
-    // agent that navigates the conversation tab closes the chat it is in.
-    if (url && !allow_app_tab && isAppOrigin(url)) {
-      return JSON.stringify({
-        action: "browser_navigate",
-        ok: false,
-        ...withAskInstruction("this url is the Jarela app itself"),
-      });
-    }
     const result = await run(
-      { type: "navigate", ...(url ? { url } : {}), ...(to ? { to } : {}), wait_for_selector, allow_app_tab, auto_snapshot: true },
+      { type: "navigate", ...(url ? { url } : {}), ...(to ? { to } : {}), wait_for_selector, auto_snapshot: true },
       timeout_ms ?? DEFAULT_NAVIGATE_TIMEOUT_MS,
     );
     return formatActionResult("browser_navigate", result);
@@ -549,12 +538,6 @@ export const browserNavigateTool = withStreamDefault(tool(
         .max(2000)
         .optional()
         .describe("CSS selector to wait for before returning. Useful when the target page is JS-rendered."),
-      allow_app_tab: z
-        .boolean()
-        .optional()
-        .describe(
-          "Set only when the user explicitly asked you to navigate the Jarela app tab. Without it, navigating the tab that is running the conversation is refused, because it would close the chat the user is watching.",
-        ),
       timeout_ms: TimeoutMs,
     }),
   },
@@ -1070,13 +1053,18 @@ export const browserTabsTool = withStreamDefault(tool(
     // small symbolic handle it can actually repeat back to
     // `browser_activate_tab`, and keep the numeric id for humans and logs.
     const byRef = new Map<number, number>();
+    const selfTabIds = new Set<number>();
     const annotated = tabs.map((tab, index) => {
       const ref = index + 1;
-      if (typeof tab.tab_id === "number") byRef.set(ref, tab.tab_id);
+      if (typeof tab.tab_id === "number") {
+        byRef.set(ref, tab.tab_id);
+        if (tab.self === true) selfTabIds.add(tab.tab_id);
+      }
       return { tab_ref: ref, ...tab } as Record<string, unknown>;
     });
-    lastTabInventory = { at: Date.now(), byRef };
+    lastTabInventory = { at: Date.now(), byRef, selfTabIds };
     const unidentified = annotated.filter((tab) => tab.usable === false && !tab.url).length;
+    const selfTabs = annotated.filter((tab) => tab.self === true).length;
     return JSON.stringify({
       action: "browser_tabs",
       ok: true,
@@ -1090,14 +1078,22 @@ export const browserTabsTool = withStreamDefault(tool(
                 "Grant host access for those sites in the Jarela extension options to see and target them.",
             }
           : {}),
+        ...(selfTabs > 0
+          ? {
+              self_hint:
+                `${selfTabs} tab(s) are marked self: true — the Jarela app itself. ` +
+                "They are listed for context but cannot be targeted by any browser tool.",
+            }
+          : {}),
       },
-      hint: "Address a tab with `tab_ref` (small and stable for this inventory) rather than `tab_id`.",
+      hint: "Address a tab with `tab_ref` (small and stable for this inventory) rather than `tab_id`. Tabs marked `self` are the Jarela app and are not operable.",
     });
   },
   {
     name: "browser_tabs",
     description:
       "List browser tabs known to the Jarela extension: a small `tab_ref`, tab id, window id, active/focused/pinned/foreground markers, title, URL/host when permissions allow, and whether the tab can be scripted. " +
+      "The Jarela app's own tab is marked `self: true` and `usable: false`; it is never a valid target. " +
       "Use `tab_ref` with `browser_activate_tab`. The inventory is a snapshot in time: re-run this if a target tab was opened or closed since. " +
       "Tabs whose title and URL were withheld need host access granted in the extension options.",
     schema: z.object({
@@ -1128,6 +1124,19 @@ export const browserActivateTabTool = withStreamDefault(tool(
         });
       }
       resolved = mapped;
+    }
+    const inventory = lastTabInventory;
+    if (
+      inventory &&
+      Date.now() - inventory.at <= TAB_INVENTORY_TTL_MS &&
+      typeof resolved === "number" &&
+      inventory.selfTabIds.has(resolved)
+    ) {
+      return JSON.stringify({
+        action: "browser_activate_tab",
+        ok: false,
+        ...withAskInstruction("this tab is the Jarela app itself — it is not a browser-control target"),
+      });
     }
     const result = await run({ type: "activate_tab", tab_id: resolved }, timeout_ms);
     return stringifyResult("browser_activate_tab", result);

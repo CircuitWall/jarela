@@ -826,6 +826,28 @@ function isScriptableTabUrl(url) {
   }
 }
 
+// The Jarela app tab is never a browser-control target: it is the surface
+// the user is talking to us in, so clicking/filling/navigating there either
+// fights the chat UI or closes the conversation. The service worker knows
+// its own origin and supplies the predicate through `deps.isAppTabUrl`.
+function isSelfTab(deps, url) {
+  try {
+    return typeof deps.isAppTabUrl === "function" && deps.isAppTabUrl(url) === true;
+  } catch {
+    return false;
+  }
+}
+
+function selfTabRefusal() {
+  return {
+    ok: false,
+    error:
+      "this tab is the Jarela app itself — it is not a browser-control target. " +
+      "Target another tab instead.",
+    data: { needs_tab: "self" },
+  };
+}
+
 async function listTabs(deps, includeUnusable) {
   if (typeof deps.queryTabs !== "function") {
     return { ok: false, error: "tab inventory is unavailable in this extension build" };
@@ -841,7 +863,8 @@ async function listTabs(deps, includeUnusable) {
   const foregroundTabId = typeof foreground?.tabId === "number" ? foreground.tabId : null;
   const summarized = (tabs || []).map((tab) => {
     const url = typeof tab.url === "string" ? tab.url : typeof tab.pendingUrl === "string" ? tab.pendingUrl : "";
-    const usable = isScriptableTabUrl(url);
+    const self = isSelfTab(deps, url);
+    const usable = !self && isScriptableTabUrl(url);
     return {
       tab_id: tab.id,
       window_id: tab.windowId,
@@ -855,7 +878,14 @@ async function listTabs(deps, includeUnusable) {
       host: tabHost(url),
       status: typeof tab.status === "string" ? tab.status : "unknown",
       usable,
-      ...(usable ? {} : { unusable_reason: url ? "unsupported URL" : "URL unavailable; grant host access or tabs permission for metadata" }),
+      ...(self ? { self: true } : {}),
+      ...(usable ? {} : {
+        unusable_reason: self
+          ? "the Jarela app itself — not a browser-control target"
+          : url
+            ? "unsupported URL"
+            : "URL unavailable; grant host access or tabs permission for metadata",
+      }),
     };
   }).filter((tab) => includeUnusable || tab.usable);
   return {
@@ -873,6 +903,16 @@ async function listTabs(deps, includeUnusable) {
 async function activateTab(deps, tabId) {
   if (typeof deps.activateTab !== "function") {
     return { ok: false, error: "tab activation is unavailable in this extension build" };
+  }
+  // Refuse before focusing: activation is itself a way to steer the user
+  // away from the conversation they are reading.
+  if (typeof deps.getTab === "function") {
+    try {
+      const existing = await deps.getTab(tabId);
+      if (existing && isSelfTab(deps, existing.url)) return selfTabRefusal();
+    } catch {
+      // Missing tab — let activateTab report it.
+    }
   }
   const tab = await deps.activateTab(tabId);
   if (!tab?.id) return { ok: false, error: `tab ${tabId} was not found` };
@@ -1090,18 +1130,6 @@ async function runAct(deps, tabId, action, payload) {
 
 async function runNavigate(deps, tab, command, timeout) {
   if (!command.url && !command.to) return { ok: false, error: "navigate needs `url` or `to`" };
-  // Navigating the Jarela app tab destroys the user's own chat surface. The
-  // agent can still open the app in a different tab; it just cannot steer the
-  // tab the user is having the conversation in without saying so.
-  if (!command.allow_app_tab && typeof deps.isAppTabUrl === "function" && deps.isAppTabUrl(tab.url)) {
-    return {
-      ok: false,
-      error:
-        "this tab is the Jarela app itself — navigating it would close the conversation the user is watching. " +
-        "Target another tab, or pass allow_app_tab when the user explicitly asked for it.",
-      data: { needs_tab: "non_app" },
-    };
-  }
   await reportProgress(deps, command, "navigating");
   if (command.to === "back" || command.to === "forward") {
     const navigateHistory = command.to === "back" ? deps.goBack : deps.goForward;
@@ -1224,6 +1252,10 @@ export async function dispatchCommand(deps, command) {
   if (!tab) {
     return { ok: false, error: resolutionReason };
   }
+  // Every command type goes through the same refusal, not just navigate:
+  // clicking, filling or snapshotting the app's own UI mutates the chat the
+  // user is watching and can strand the agent inside its own interface.
+  if (isSelfTab(deps, tab.url)) return selfTabRefusal();
 
   try {
     switch (command.type) {

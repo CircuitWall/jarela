@@ -41,6 +41,23 @@ export function isUsableUrl(url) {
   }
 }
 
+// The Jarela app itself is never a target. The service worker supplies
+// the origin predicate (`deps.isAppTabUrl`); when the focused tab is the
+// app, resolution falls through to another usable tab instead of driving
+// the surface the user is having the conversation in.
+function isAppTab(deps, tab) {
+  if (typeof deps?.isAppTabUrl !== "function" || typeof tab?.url !== "string") return false;
+  try {
+    return deps.isAppTabUrl(tab.url) === true;
+  } catch {
+    return false;
+  }
+}
+
+function isTargetableTab(deps, tab) {
+  return !!tab && isUsableUrl(tab.url) && !isAppTab(deps, tab);
+}
+
 // --------------------------------------------------------------------- //
 // Pin persistence                                                       //
 // --------------------------------------------------------------------- //
@@ -93,15 +110,15 @@ function deriveHost(url) {
 //   +20  if http/https (most pages)
 //   +1   per minute since lastAccessed is recent (we don't have it, so 0)
 //   -∞   if URL is unusable
-function scoreTab(tab) {
-  if (!tab || !isUsableUrl(tab.url)) return -Infinity;
+function scoreTab(deps, tab) {
+  if (!isTargetableTab(deps, tab)) return -Infinity;
   let s = 0;
   if (tab.active) s += 100;
   if (tab.lastFocusedWindow) s += 50;
   try {
     const proto = new URL(tab.url).protocol;
     if (proto === "https:" || proto === "http:") s += 20;
-  } catch { /* unreachable — isUsableUrl already parsed */ }
+  } catch { /* unreachable — isTargetableTab already parsed */ }
   return s;
 }
 
@@ -111,7 +128,7 @@ export async function findFallbackTab(deps) {
   // toolbar icon".
   const lastFocused = await deps.queryTabs({ lastFocusedWindow: true });
   const scored = (lastFocused || [])
-    .map((t) => ({ tab: t, score: scoreTab({ ...t, lastFocusedWindow: true }) }))
+    .map((t) => ({ tab: t, score: scoreTab(deps, { ...t, lastFocusedWindow: true }) }))
     .filter((x) => Number.isFinite(x.score))
     .sort((a, b) => b.score - a.score);
   if (scored[0]) return scored[0].tab;
@@ -120,7 +137,7 @@ export async function findFallbackTab(deps) {
   // last-focused window only has chrome:// pages.
   const all = await deps.queryTabs({});
   const anyScored = (all || [])
-    .map((t) => ({ tab: t, score: scoreTab(t) }))
+    .map((t) => ({ tab: t, score: scoreTab(deps, t) }))
     .filter((x) => Number.isFinite(x.score))
     .sort((a, b) => b.score - a.score);
   return anyScored[0]?.tab ?? null;
@@ -151,13 +168,18 @@ export async function resolveTargetTab(deps) {
   if (pin) {
     try {
       const tab = await deps.getTab(pin.tabId);
-      if (tab && isUsableUrl(tab.url)) {
+      if (tab && isTargetableTab(deps, tab)) {
         return { tab, source: "pinned" };
       }
-      // Pinned tab still open but navigated somewhere unusable
-      // (chrome://, blank). Surface this clearly instead of silently
-      // retargeting — the user's mental model is "I pinned ratsit.se".
-      if (tab) {
+      if (tab && isUsableUrl(tab.url)) {
+        // Pinned tab landed on the Jarela app itself. It can never be a
+        // target, so release the pin and keep looking instead of failing
+        // every command until the user notices.
+        await clearPinnedTab(deps.storage);
+      } else if (tab) {
+        // Pinned tab still open but navigated somewhere unusable
+        // (chrome://, blank). Surface this clearly instead of silently
+        // retargeting — the user's mental model is "I pinned ratsit.se".
         return { tab: null, source: "none", reason: `pinned tab navigated to ${tab.url || "unusable URL"}` };
       }
     } catch {
@@ -176,7 +198,7 @@ export async function resolveTargetTab(deps) {
       const fg = await deps.getForegroundTab();
       if (fg && fg.tabId) {
         const tab = await deps.getTab(fg.tabId);
-        if (tab && isUsableUrl(tab.url)) {
+        if (tab && isTargetableTab(deps, tab)) {
           return { tab, source: "foreground" };
         }
       }

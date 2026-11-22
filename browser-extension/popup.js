@@ -236,7 +236,8 @@ function renderTabBadges(container, tab) {
   if (tab.foreground) badges.push(["current", "hot"]);
   else if (tab.active && tab.focused_window) badges.push(["active", "hot"]);
   if (tab.pinned_target) badges.push(["pinned", "pin"]);
-  if (!tab.usable) badges.push(["blocked", ""]);
+  if (tab.self) badges.push(["self", ""]);
+  else if (!tab.usable) badges.push(["blocked", ""]);
   for (const [label, cls] of badges) {
     const badge = document.createElement("span");
     badge.className = `tab-badge ${cls}`.trim();
@@ -285,7 +286,7 @@ async function renderTabList() {
     const focus = document.createElement("button");
     focus.type = "button";
     focus.textContent = "Focus";
-    focus.disabled = !tab.tab_id;
+    focus.disabled = !tab.tab_id || Boolean(tab.self);
     focus.addEventListener("click", async () => {
       setStatus(`Focusing ${tabLabel(tab)}…`);
       const out = await callBackground("jarela-activate-tab", { tab_id: tab.tab_id });

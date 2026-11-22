@@ -50,10 +50,13 @@ function deriveHost(url) {
 
 // Record a tab as the current foreground, but only if it's a real
 // content page. Skips chrome://, the extension's own pages, blank
-// tabs, etc. — those would just confuse the resolver.
-export async function recordForegroundTab(storage, tab) {
+// tabs, and the Jarela app itself — recording the app would make the
+// resolver (and the ambient-surroundings push) point at the surface the
+// user is already talking to us in.
+export async function recordForegroundTab(storage, tab, isAppTabUrl) {
   if (!tab || typeof tab.id !== "number") return false;
   if (!isUsableUrl(tab.url)) return false;
+  if (typeof isAppTabUrl === "function" && isAppTabUrl(tab.url)) return false;
   const value = {
     tabId: tab.id,
     windowId: typeof tab.windowId === "number" ? tab.windowId : 0,
@@ -94,7 +97,7 @@ export async function handleTabActivated(deps, { tabId }) {
   if (typeof tabId !== "number") return false;
   try {
     const tab = await deps.getTab(tabId);
-    return await recordForegroundTab(deps.storage, tab);
+    return await recordForegroundTab(deps.storage, tab, deps.isAppTabUrl);
   } catch {
     return false;
   }
@@ -108,7 +111,7 @@ export async function handleTabActivated(deps, { tabId }) {
 export async function handleTabUpdated(deps, tabId, changeInfo, tab) {
   if (!tab || !tab.active) return false;
   if (changeInfo?.status !== "complete" && typeof changeInfo?.url !== "string") return false;
-  return await recordForegroundTab(deps.storage, tab);
+  return await recordForegroundTab(deps.storage, tab, deps.isAppTabUrl);
 }
 
 /**
@@ -123,7 +126,7 @@ export async function handleWindowFocused(deps, windowId) {
     const tabs = await deps.queryTabs({ active: true, windowId });
     const tab = tabs?.[0];
     if (!tab) return false;
-    return await recordForegroundTab(deps.storage, tab);
+    return await recordForegroundTab(deps.storage, tab, deps.isAppTabUrl);
   } catch {
     return false;
   }
@@ -138,12 +141,12 @@ export async function seedForegroundTab(deps) {
   try {
     const tabs = await deps.queryTabs({ active: true, lastFocusedWindow: true });
     for (const tab of tabs || []) {
-      if (await recordForegroundTab(deps.storage, tab)) return true;
+      if (await recordForegroundTab(deps.storage, tab, deps.isAppTabUrl)) return true;
     }
     // Fallback: any active tab across windows.
     const all = await deps.queryTabs({ active: true });
     for (const tab of all || []) {
-      if (await recordForegroundTab(deps.storage, tab)) return true;
+      if (await recordForegroundTab(deps.storage, tab, deps.isAppTabUrl)) return true;
     }
   } catch {
     /* swallow — we'll learn on the next event */
@@ -164,7 +167,7 @@ export async function recordSidePanelCurrentTab(deps) {
     for (const query of queries) {
       const tabs = await deps.queryTabs(query);
       for (const tab of tabs || []) {
-        if (await recordForegroundTab(deps.storage, tab)) {
+        if (await recordForegroundTab(deps.storage, tab, deps.isAppTabUrl)) {
           return { recorded: true, tabId: tab.id };
         }
       }
