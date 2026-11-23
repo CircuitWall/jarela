@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { isApprovalCandidate, isTrustedReleasePr } from "./approve-release-ci.mjs";
+import { isApprovalCandidate, isAwaitingApprovalStart, isTrustedReleasePr } from "./approve-release-ci.mjs";
 
 const context = { repository: "example/project", sha: "a".repeat(40), number: "42", workflowId: 7 };
 const pr = {
@@ -45,5 +45,16 @@ describe("scoped release CI approval", () => {
       { head_repository: { full_name: "other/fork" } }, { pull_requests: [] },
       { pull_requests: [{ number: 43, head: run.pull_requests[0].head }] },
     ]) expect(isApprovalCandidate({ ...run, ...changes }, context)).toBe(false);
+  });
+
+  it("waits out the pre-approval action_required state instead of failing on it", () => {
+    const approved = { ...run, status: "completed", conclusion: "action_required" };
+    expect(isAwaitingApprovalStart(approved, 0)).toBe(true);
+    expect(isAwaitingApprovalStart(approved, 179_999)).toBe(true);
+    expect(isAwaitingApprovalStart(approved, 180_000)).toBe(false);
+    expect(isAwaitingApprovalStart({ ...approved, status: "queued", conclusion: null }, 0)).toBe(false);
+    expect(isAwaitingApprovalStart({ ...approved, status: "in_progress", conclusion: null }, 0)).toBe(false);
+    expect(isAwaitingApprovalStart({ ...approved, conclusion: "success" }, 0)).toBe(false);
+    expect(isAwaitingApprovalStart({ ...approved, conclusion: "failure" }, 0)).toBe(false);
   });
 });
