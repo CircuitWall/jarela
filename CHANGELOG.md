@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-11-23
+
+### Added
+
+- voice: Add hands-free capture and engine-matched replies
+- voice: Add voice-turn reply guidance
+- voice: Keep listening after each spoken reply
+- voice: Stream reply speech from the first sentence
+- voice: Allow choosing the device voice for replies
+
+### Fixed
+
+- browser: Block steering the jarela app tab
+- voice: Prevent silent browser speech failures
+- voice: Keep browser speech slices that never start
+- prompt: Keep channel labels off the live turn
+- voice: Keep the live reader through a dev remount
+- voice: Drop the speech queue when stop is pressed
+- agents: Run prompt evaluation scenarios concurrently
+- agents: Keep unobserved tool results out of the judge input
+- agents: Block echoing pasted secrets in replies
+- agents: Keep duplicate evaluation calls from reusing the fixture
+- agents: Tolerate transient provider errors in the live tier
+- agents: Keep one declared result from answering different calls
+- agents: Keep pasted placeholders out of replies
+
+### Changed
+
+- agents: Add prompt behaviour scenarios for uncovered rules
+- agents: Enforce shared fuzzy behaviour rubric on every scenario
+
 ## [3.7.1] - 2026-11-22
 
 ### Added
