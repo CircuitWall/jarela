@@ -17,6 +17,81 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.8.0
+
+From 3.7.1 · 2026-11-23
+
+### Tools
+
+- `browser_navigate` — changed; params removed: `allow_app_tab`
+- `browser_tabs` — changed; description changed
+
+### Prompts
+
+- `static.audit.prompt-behaviour-judge` — changed (`lib/agents/prompt-eval/judge.ts`)
+
+    ```diff
+    + - criteria: [{ id, weight, description }] to score. Some are specific to this scenario; others are cross-cutting behaviours that apply to every scenario.
+    + 7. Tool selection and argument shape are verified outside this rubric. Judge behaviour from the reply and the evidence it had; a correct tool call does not earn credit for a criterion the reply does not satisfy.
+    - - criteria: [{ id, weight, description }] to score.
+    ```
+
+- `static.harness.builtin:default.plan_first` — changed (`lib/agents/harness/presets.ts`)
+
+    ```diff
+    + - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…
+    - - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text.
+    ```
+
+- `static.skill.browser-navigation` — changed (`lib/skills/builtins/browser-navigation/SKILL.md`)
+
+    ```diff
+    + - Never steer the tab that is running this conversation. The Jarela app tab is marked `self: true` in `browser_tabs` and every browser tool refuses it, because acting there mutates the chat the user is watching; open a different tab instead.
+    + - If an action is refused because the tab is the Jarela app itself (`self: true`), target another tab. The app tab is never operable, so do not retry it.
+    - - Never steer the tab that is running this conversation. `browser_navigate` refuses to navigate the Jarela app tab unless `allow_app_tab` is set, because doing so closes the chat the user is watching; open a different tab instead.
+    - - If navigation is refused because the tab is the Jarela app itself, target another tab or ask the user before passing `allow_app_tab`.
+    ```
+
+- `system.Acknowledge before acting` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…
+    - - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text.
+    ```
+
+- `system.Spoken delivery` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + 1. Optionally start a reply with `[[tone: <short delivery note>]]` — at most one, at the very beginning — to steer how it sounds, for example `[[tone: warm and reassuring]]` or `[[tone: brisk and matter-of-fact]]`. Device voices only hear a few notes (calm, warm, reassuring, serious, whisper, excit…
+    - 1. Optionally start a reply with `[[tone: <short delivery note>]]` — at most one, at the very beginning — to steer how it sounds, for example `[[tone: warm and reassuring]]` or `[[tone: brisk and matter-of-fact]]`.
+    ```
+
+- `system.Voice input` — added (`lib/agents/prepare/system-prompt.ts`)
+
+### Commits
+
+- fix(release): keep waiting for the approved run to start
+- fix(agents): keep pasted placeholders out of replies
+- fix(agents): keep one declared result from answering different calls
+- fix(agents): tolerate transient provider errors in the live tier
+- fix(agents): keep duplicate evaluation calls from reusing the fixture
+- fix(agents): block echoing pasted secrets in replies
+- fix(agents): keep unobserved tool results out of the judge input
+- perf(agents): run prompt evaluation scenarios concurrently
+- test(agents): enforce shared fuzzy behaviour rubric on every scenario
+- test(agents): add prompt behaviour scenarios for uncovered rules
+- fix(voice): drop the speech queue when stop is pressed
+- fix(voice): keep the live reader through a dev remount
+- fix(prompt): keep channel labels off the live turn
+- feat(voice): allow choosing the device voice for replies
+- fix(voice): keep browser speech slices that never start
+- feat(voice): stream reply speech from the first sentence
+- feat(voice): keep listening after each spoken reply
+- feat(voice): add voice-turn reply guidance
+- fix(voice): prevent silent browser speech failures
+- feat(voice): add hands-free capture and engine-matched replies
+- fix(browser): block steering the jarela app tab
+
 ## 3.7.1
 
 From 3.7.0 · 2026-11-22
