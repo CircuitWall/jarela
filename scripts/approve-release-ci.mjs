@@ -20,6 +20,15 @@ export function isApprovalCandidate(run, { repository, sha, number, workflowId }
       && pr.head.sha === sha && pr.head.repo?.url === `https://api.github.com/repos/${repository}`);
 }
 
+// GitHub reports the pre-approval attempt as completed/action_required until the
+// approved attempt is actually queued, so that state is not a final conclusion.
+export const APPROVAL_SETTLE_MS = 180_000;
+
+export function isAwaitingApprovalStart(run, elapsedMs) {
+  return run.status === "completed" && run.conclusion === "action_required"
+    && elapsedMs < APPROVAL_SETTLE_MS;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { GITHUB_REPOSITORY: repository, HEAD_SHA: sha, PR_NUMBER: number } = process.env;
   if (!repository || !/^[a-f0-9]{40}$/.test(sha ?? "") || !/^\d+$/.test(number ?? "")) {
@@ -40,10 +49,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (!isTrustedReleasePr(current, context)) throw new Error("Release PR changed before CI approval");
     api(`repos/${repository}/actions/runs/${run.id}/approve`, "POST");
     console.log(`Approved CI run ${run.id} for verified release PR #${number} at ${sha}`);
+    const approvedAt = Date.now();
     let complete = false;
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < 90; attempt++) {
       const result = api(`repos/${repository}/actions/runs/${run.id}`);
-      if (result.status === "completed") {
+      if (result.status === "completed" && !isAwaitingApprovalStart(result, Date.now() - approvedAt)) {
+        if (result.conclusion === "action_required") {
+          throw new Error(`Approval did not start release CI run ${run.id} within ${APPROVAL_SETTLE_MS / 1000}s`);
+        }
         if (result.conclusion !== "success") throw new Error(`Approved release CI concluded ${result.conclusion}`);
         complete = true;
         break;
