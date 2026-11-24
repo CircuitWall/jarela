@@ -273,7 +273,10 @@ describe("prompt registry coverage", () => {
       "jarela-documentation": ["describe_extension_surfaces", "list_skills", "read_skill"],
       "jarela-integrations": ["describe_extension_surfaces", "list_integrations", "get_integration_setup", "propose_config_change", "list_tools", "workflow_progress"],
       "jarela-operations": ["list_tools", "list_skills", "read_skill", "schedule_task", "schedule_watcher", "workflow_progress"],
-      "memory-organization": ["memory_upsert", "memory_read", "memory_list", "memory_delete", "list_tools", "plan_memory_cleanup"],
+      "memory-organization": [
+        "memory_upsert", "memory_read", "memory_list", "memory_delete", "list_tools",
+        "plan_memory_cleanup", "memory_audit", "memory_apply_maintenance",
+      ],
       "personal-briefing": ["list_tools", "validate_personal_briefing"],
     };
     const known = new Set((await getAllToolCatalogAsync()).map((tool) => tool.name));

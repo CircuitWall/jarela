@@ -80,15 +80,18 @@ describe("list_tools", () => {
     setCategoryEnabled("Memory", false);
 
     const defaultView = parse(await listToolsTool.invoke({ query: "memory_read" }));
-    expect(defaultView.tools).toHaveLength(1);
-    expect(defaultView.tools[0]).toMatchObject({
+    // A keyword search must still surface disabled tools with their flags
+    // instead of hiding them. Match by name rather than asserting a result
+    // count: the query is a substring search over descriptions too, so
+    // another tool that merely mentions memory_read can legitimately match.
+    expect(defaultView.tools).toContainEqual(expect.objectContaining({
       name: "memory_read",
       status: "disabled",
       status_reason: "category_disabled",
       permission: "unavailable",
       permission_reason: "category_disabled",
-    });
-
+    }));
+    expect(defaultView.tools.every((tool) => tool.permission !== "enabled")).toBe(true);
   });
 
   it("discovers the typed skill resource reader with its schema and no execute capability", async () => {

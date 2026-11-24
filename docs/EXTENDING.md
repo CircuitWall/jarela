@@ -50,7 +50,7 @@ correctness. No general JavaScript runner or milestone completion is introduced.
 | Skill | Portable implementation | Jarela entry point |
 | --- | --- | --- |
 | Personal Briefing | `personal-briefing/scripts/validate.mjs` validates bounded structure, reference membership and source gaps | Existing read-only `validate_personal_briefing` tool imports the same function |
-| Memory Organization | `memory-organization/scripts/plan-cleanup.mjs` computes expired active facts and exact duplicate candidates at explicit UTC time | New read-only `plan_memory_cleanup` tool imports the same function |
+| Memory Organization | `memory-organization/scripts/plan-cleanup.mjs` computes expired active facts and exact duplicate candidates at explicit UTC time | Read-only `plan_memory_cleanup` imports the same function; store-wide cleanup uses the `memory_audit` and `memory_apply_maintenance` tools below |
 
 Both bundles include `scripts/run.mjs`: an authorized external host can invoke
 `node <skill-root>/scripts/run.mjs`, send one JSON input on stdin and close stdin.
@@ -84,6 +84,41 @@ excluded; expiry at or before `now` is reported. Duplicate candidates match
 trimmed kind/subject/content and the exact expiry string. Provenance, confidence,
 tags and history may still differ, so review full records before a separately
 authorized archival. No merging, writing, deletion or trust changes occur.
+
+#### Store-wide maintenance (code-backed, size-independent)
+
+The same skill drives `memory_audit` (read) and `memory_apply_maintenance`
+(write) for stores of any size. These are not script steps:
+`lib/memory/maintenance.ts` reads `memory_store` through ordered keyset batches
+(`scanMemoryRows` in `lib/stores/memory.ts`), so a scan's memory use is
+proportional to one batch plus a bounded group index, never to store size.
+
+The audit classifies every maintainable row in code: expired active records,
+normalized exact duplicates, near-duplicate candidates (token overlap within a
+kind/subject bucket), unstructured legacy values, values that look structured
+but fail validation, and records that never received an embedding. It returns
+aggregate counts plus one bounded page of groups and a `next_cursor`. Sensitive
+namespaces and the settings, app-lifecycle, session-recap, advertisement and
+chat-archive namespaces are filtered in SQL and reported only as counts.
+
+Every reported record carries a fingerprint over its stored bytes and
+`updated_at`. `memory_apply_maintenance` re-checks that fingerprint inside one
+transaction, so a record changed after the review returns `stale` instead of
+being overwritten. It defaults to `dry_run: true`; writes require
+`dry_run: false`, at most 50 operations, and are limited to archival, explicit
+deletion, and structured upsert (which converts a legacy value in place under
+the same key). Writes and bulk scans stay in `facts` unless the caller sets
+`allow_non_facts_namespaces` for a legacy namespace the user named. Fully
+specified bulk rules — `archive_expired` and `archive_duplicates`
+(strongest-provenance survivor) — run in code instead of being enumerated by
+the model.
+
+`lib/memory/contract.ts` is the single source of truth for the canonical
+namespace (`facts`), the key rule and the excluded namespaces. The agent prompt,
+this skill and `record.ts` are checked against it by
+`lib/memory/contract.test.ts`, so the published contract cannot drift silently.
+No table, process or cache is added, and the portable planner above is
+unchanged.
 
 Jarela invokes only these fixed reviewed implementations in-process through
 normal tool permissions. It never imports scripts from a user repository or
@@ -121,7 +156,8 @@ from a different working directory. They verify fixtures, source mutation
 independence, paths with spaces/metacharacters, record-count boundaries and
 structured failures. This is a local CLI/contract test, not production snapshot
 staging, artifact consent, process-tree cleanup, workflow persistence or
-cross-host acceptance. In Jarela, continue using `plan_memory_cleanup`.
+cross-host acceptance. In Jarela, continue using `plan_memory_cleanup` for
+bounded projections, or `memory_audit` for a store-wide, code-backed review.
 
 ## Table of contents
 

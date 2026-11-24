@@ -37,6 +37,72 @@ export interface MemoryRow {
   created_at: string; updated_at: string;
 }
 
+// Internal maintenance view of a row. `scanMemoryRows` returns the raw stored
+// value (ciphertext for sensitive namespaces, which maintenance callers
+// exclude) so callers can fingerprint and classify a row without loading
+// `embedding`. It is not a substitute for `getMemory`'s decryption.
+export interface MemoryScanRow extends MemoryRow {
+  embedded: boolean;
+}
+
+export interface MemoryScanOptions {
+  /** Restrict the scan to one namespace. */
+  namespace?: string;
+  /** Namespaces to skip in SQL so excluded rows are never transferred. */
+  excludeNamespaces?: readonly string[];
+  /** Keyset position of the last row already consumed, from the prior batch. */
+  after?: { namespace: string; key: string } | null;
+  batchSize?: number;
+}
+
+/** Upper bound for one scan batch; keeps a single batch bounded regardless of store size. */
+export const MEMORY_SCAN_MAX_BATCH = 2_000;
+
+/**
+ * Read one ordered batch of rows using the (namespace, key) primary key as a
+ * keyset cursor. Maintenance callers page until a short batch arrives instead
+ * of loading the whole store, so scan memory stays proportional to the batch
+ * and to whatever the caller accumulates per row — never to store size.
+ */
+export function scanMemoryRows(options: MemoryScanOptions = {}): MemoryScanRow[] {
+  const batchSize = Math.min(Math.max(Math.trunc(options.batchSize ?? 500), 1), MEMORY_SCAN_MAX_BATCH);
+  const where: string[] = [];
+  const params: (string | number)[] = [];
+  if (options.namespace) {
+    where.push("namespace=?");
+    params.push(options.namespace);
+  }
+  const excluded = [...new Set(options.excludeNamespaces ?? [])];
+  if (excluded.length > 0) {
+    where.push(`namespace NOT IN (${excluded.map(() => "?").join(",")})`);
+    params.push(...excluded);
+  }
+  if (options.after) {
+    where.push("(namespace>? OR (namespace=? AND key>?))");
+    params.push(options.after.namespace, options.after.namespace, options.after.key);
+  }
+  const sql = `SELECT namespace,key,value,created_at,updated_at,(embedding IS NOT NULL) AS embedded
+    FROM memory_store${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""}
+    ORDER BY namespace,key LIMIT ?`;
+  const rows = getDb().prepare(sql).all(...params, batchSize) as unknown as Array<MemoryRow & { embedded: number }>;
+  return rows.map(({ embedded, ...row }) => ({ ...row, embedded: Boolean(embedded) }));
+}
+
+/** Row counts per namespace, for bounded store-wide summaries. */
+export function memoryNamespaceCounts(): Array<{ namespace: string; rows: number }> {
+  return getDb()
+    .prepare("SELECT namespace, COUNT(*) AS rows FROM memory_store GROUP BY namespace ORDER BY namespace")
+    .all() as unknown as Array<{ namespace: string; rows: number }>;
+}
+
+/** Raw stored value plus revision marker, used for compare-and-set maintenance writes. */
+export function getStoredMemoryValue(namespace: string, key: string): { value: string; updated_at: string } | null {
+  const row = getDb()
+    .prepare("SELECT value, updated_at FROM memory_store WHERE namespace=? AND key=?")
+    .get(namespace, key) as { value: string; updated_at: string } | undefined;
+  return row ?? null;
+}
+
 export function listMemory(namespace?: string, search?: string, limit = 50): MemoryRow[] {
   if (namespace === "agent-advertisements") throw new Error("Use agent advertisement settings to inspect derived metadata");
   let sql = MEM_COLS_SQL + " WHERE namespace<>? AND NOT(namespace=? AND (key=? OR key LIKE ?))";

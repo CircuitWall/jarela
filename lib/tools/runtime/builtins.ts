@@ -28,6 +28,7 @@ import "../system/integrations";
 import "../general/workflow-progress";
 import "../general/validate-personal-briefing";
 import "../general/plan-memory-cleanup";
+import "../general/memory-maintenance";
 import "../general/authoring";
 import "../general/extension-lifecycle";
 import "../general/contribution-lifecycle";
