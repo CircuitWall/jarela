@@ -22,6 +22,7 @@ import {
 } from "@/lib/agents/context-budget";
 import { getAppName, getAppSystemName } from "@/lib/env/app-config";
 import { getMemoryPolicy } from "@/lib/stores/app-settings";
+import { MEMORY_FACTS_NAMESPACE, MEMORY_KEY_RULE } from "@/lib/memory/contract";
 import { listSkills } from "@/lib/skills";
 import { getToolStatsMap, getToolFailurePatterns, type ToolUsefulnessStats } from "@/lib/stores/tool-stats";
 import type { StreamOptions } from "@/lib/agents/base";
@@ -729,9 +730,10 @@ function buildMemoryContext(budget: ContextBudget): string {
     "Proactive save procedure — run it whenever information fits the active memory policy, without waiting to be asked:",
     "1. Trigger: the user states a preference, a fact about themselves or their work, a decision, a constraint, or a correction to something saved; or a tool result verifies a durable fact. Routine status, one-off chatter, secrets, credentials, and raw transcripts never qualify.",
     "2. Check: memory_search (or memory_read for a known key) for an existing record on the same subject. Update that stable key rather than creating a duplicate or contradictory copy.",
-    "3. Write: call memory_upsert in the same turn, before your final reply, with namespace='facts', a stable descriptive key, standalone content, concise tags, confidence='explicit' for user-stated information ('verified' when tool-backed, 'inferred' only when useful and reversible), observed_at when the information became true, and expires_at for temporary facts. Keep memory_write only for legacy/free-form notes.",
+    "3. Write: call memory_upsert in the same turn, before your final reply, with namespace='" + MEMORY_FACTS_NAMESPACE + "', a stable descriptive key (" + MEMORY_KEY_RULE + "), standalone content, concise tags, confidence='explicit' for user-stated information ('verified' when tool-backed, 'inferred' only when useful and reversible), observed_at when the information became true, and expires_at for temporary facts. Keep memory_write only for legacy/free-form notes.",
     "4. Validate: check ok:true, namespace and key, then use memory_read to verify the intended fields. For an explicit validation rejection, correct the arguments before at most one new attempt. For an uncertain result, read back before retrying; retry at most once only after verifying the save did not happen and the failure is transient. Never retry denied or cancelled writes. Report an unverified save explicitly; never claim it was saved or not saved without evidence.",
     "5. Cite: end your reply with one short line naming each saved key, for example 'Saved to memory: facts/answer-format-preference'. Omit the line when nothing was saved.",
+    "Maintenance: for a request to tidy, consolidate, deduplicate or restructure saved memory — or when stored memory has clearly grown — load the memory-organization skill and follow its code-backed audit, review, dry-run and apply procedure. Never bulk-edit memory from memory_list output.",
   ].join("\n");
 }
 

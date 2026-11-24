@@ -227,7 +227,11 @@ host owns zombie reaping. Simultaneous app and broker death requires external
 cgroup cleanup, not an inferred successful run.
 
 The Memory Organization workflow example only plans from supplied entries and
-asks for a typed keep/review response. It never archives/deletes memory. Create,
+asks for a typed keep/review response. It never archives/deletes memory. For
+store-wide cleanup inside the app, use the same skill's `memory_audit` (read
+only) and `memory_apply_maintenance` tools; the apply step defaults to a dry
+run, requires the fingerprints reported by the audit, and reports `stale`
+instead of overwriting a record that changed. Create,
 resume, approve its exact script plan, then resume again. A choice answer is
 separate from script consent. Completed step outputs are contract-checked,
 not independent proof of factual accuracy. Do not retry an uncertain write:

@@ -178,6 +178,13 @@ or subprocess is introduced. Their standalone JSON CLI adapters are for hosts
 that independently authorize Node execution, not a checked-runner workaround.
 The memory planner consumes supplied fact projections only and never accesses
 the store or mutates it. Bundle files are included in standalone build tracing.
+Store-wide maintenance is separate: `lib/memory/maintenance.ts` implements the
+`memory_audit` and `memory_apply_maintenance` tools behind the same skill. It
+scans `memory_store` through keyset batches in `lib/stores/memory.ts`, filters
+other subsystems' namespaces in SQL, and applies fingerprint-checked changes in
+one transaction with a dry-run default. Writes stay in the canonical `facts`
+namespace unless the caller explicitly opts into another legacy namespace. It
+adds no table, process or cache; the portable planner is unchanged.
 See [script-backed built-ins](EXTENDING.md#script-backed-built-in-steps).
 The unreleased Memory Organization execution manifest adapts those same two
 portable scripts for artifact/protocol contracts and explicit execution; bounded `anyOf`
