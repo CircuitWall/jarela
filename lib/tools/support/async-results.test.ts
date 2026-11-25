@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+﻿import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -15,10 +15,23 @@ import {
   completeAsyncCall,
   failAsyncCall,
   consumeAsyncResult,
+  appendAsyncProgress,
+  readAsyncProgress,
   MAX_ENTRIES,
 } from "./async-results";
 import { toolResultGetTool, toolResultListTool } from "./async-results-tool";
+import { createThread } from "@/lib/stores/threads";
+import { getSystemOperation } from "@/lib/stores/system-signals";
+import { getDataDir } from "@/lib/db/data-dir";
 import { resetConfigCache } from "@/lib/env/config";
+
+// Promotion/async settlement wakes the owning agent through the durable signal
+// dispatcher. That is covered by the lifecycle tests; here it would try to run
+// a real agent turn, so keep the store real and stub only the dispatch.
+vi.mock("@/lib/lifecycle/system-signals", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/lifecycle/system-signals")>();
+  return { ...actual, requestSystemSignalDispatch: vi.fn() };
+});
 
 const TMP_ROOT = mkdtempSync(join(tmpdir(), "jarela-tool-results-"));
 process.env.JARELA_DB_DIR = TMP_ROOT;
@@ -216,7 +229,7 @@ describe("tool_result_get", () => {
 
   it("also accepts the deprecated flat {name, offset, limit} shape as a shorthand for result_ref", async () => {
     // Some agents still call with a flat `name` instead of nesting it under
-    // `result_ref` — accept it rather than failing outright, with a
+    // `result_ref` â€” accept it rather than failing outright, with a
     // deprecation warning, per the tool_result_get schema-drift fix.
     const payload = "abcdefghij".repeat(20);
     process.env.JARELA_TOOL_RESULT_MAX_BYTES = "32";
@@ -600,5 +613,308 @@ describe("deadline_ms ceiling", () => {
     await waitFor(() => getAsyncResult(key)?.status === "error");
     const rec = getAsyncResult(key)!;
     expect(rec.error).toContain("budget of 30ms");
+  });
+});
+
+/** A tool that streams its own output the way local_exec/terminal_exec do. */
+function makeOutputTool(
+  name: string,
+  chunks: Array<{ delayMs: number; text: string }>,
+  exitCode = 0,
+  holdMs = 0,
+) {
+  return tool(
+    async ({ value }: { value: string }, config?: unknown) => {
+      const writer = (config as { writer?: (c: unknown) => void } | undefined)?.writer;
+      for (const chunk of chunks) {
+        await new Promise((r) => setTimeout(r, chunk.delayMs));
+        writer?.({ id: "call-1", name, text: chunk.text, kind: "output" });
+      }
+      if (holdMs) await new Promise((r) => setTimeout(r, holdMs));
+      return JSON.stringify({ ok: true, value, exit_code: exitCode });
+    },
+    { name, description: "test", schema: z.object({ value: z.string() }) },
+  );
+}
+
+describe("live output of a running call", () => {
+  // The ceiling tests above leave JARELA_TOOL_MAX_DEADLINE_MS set at 30ms.
+  beforeEach(() => { delete process.env.JARELA_TOOL_MAX_DEADLINE_MS; });
+
+  it("captures output reported while an async call runs, with the exit code", async () => {
+    const wrapped = wrapWithWallclock(makeOutputTool("chatty", [
+      { delayMs: 5, text: "compiling\n" },
+      { delayMs: 5, text: "linking\n" },
+    ], 0));
+    const out = await wrapped.invoke({ value: "x", async_run: true, deadline_ms: 1_000 });
+    const { key } = JSON.parse(out as string);
+    await waitFor(() => getAsyncResult(key)?.status === "done");
+    const rec = getAsyncResult(key)!;
+    expect(rec.progress).toContain("compiling");
+    expect(rec.progress).toContain("linking");
+    expect(rec.progress_bytes).toBeGreaterThan(0);
+    expect(rec.exit_code).toBe(0);
+  });
+
+  it("pages the window from a byte cursor", () => {
+    const key = startAsyncCall("manual-output");
+    appendAsyncProgress(key, "hello ");
+    appendAsyncProgress(key, "world");
+    const first = readAsyncProgress(key, 0, 6)!;
+    expect(first.text).toBe("hello ");
+    expect(first.next_offset).toBe(6);
+    expect(first.eof).toBe(false);
+    const second = readAsyncProgress(key, first.next_offset, 64)!;
+    expect(second.text).toBe("world");
+    expect(second.eof).toBe(true);
+  });
+
+  it("reports how much scrolled out of the window instead of losing the reader's place", () => {
+    const key = startAsyncCall("window-overflow");
+    const big = "x".repeat(70 * 1024);
+    appendAsyncProgress(key, big);
+    const page = readAsyncProgress(key, 0, 64)!;
+    expect(page.dropped_bytes).toBeGreaterThan(0);
+    expect(page.offset).toBeGreaterThan(0);
+    expect(page.text.length).toBe(64);
+  });
+
+  it("does not add progress to an unreadable record once it is gone", () => {
+    const key = startAsyncCall("consumed");
+    appendAsyncProgress(key, "out");
+    consumeAsyncResult(key);
+    expect(readAsyncProgress(key, 0, 64)).toBeNull();
+  });
+});
+
+describe("progress log on disk", () => {
+  beforeEach(() => { delete process.env.JARELA_TOOL_MAX_DEADLINE_MS; });
+
+  it("writes the stream to a capped log and removes it when the result is consumed", async () => {
+    const key = startAsyncCall("log-lifecycle");
+    appendAsyncProgress(key, "line one\n");
+    const rec = getAsyncResult(key)!;
+    expect(rec.log_path).toBeTruthy();
+    await waitFor(() => existsSync(rec.log_path!) && readFileSync(rec.log_path!, "utf8").includes("line one"));
+
+    consumeAsyncResult(key);
+    await waitFor(() => !existsSync(rec.log_path!));
+  });
+
+  it("prunes idle logs older than the retention window when a new one is created", async () => {
+    // The global test setup may redirect JARELA_DB_DIR, so resolve the log
+    // directory the same way the store does instead of assuming TMP_ROOT.
+    const dir = join(getDataDir(), "background-tasks");
+    const seed = startAsyncCall("seed");
+    appendAsyncProgress(seed, "seed\n");
+    expect(existsSync(dir)).toBe(true);
+
+    const stale = join(dir, "async_stale0000000000.log");
+    writeFileSync(stale, "stale\n");
+    const old = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    utimesSync(stale, old, old);
+
+    appendAsyncProgress(startAsyncCall("fresh"), "fresh\n");
+    await waitFor(() => !existsSync(stale));
+  });
+});
+
+describe("following a call through tool_result_get", () => {
+  beforeEach(() => { delete process.env.JARELA_TOOL_MAX_DEADLINE_MS; });
+
+  it("tool_result_get returns the progress of a pending call", async () => {
+    const wrapped = wrapWithWallclock(makeOutputTool("slow-output", [
+      { delayMs: 5, text: "started\n" },
+    ], 0, 300));
+    const out = await wrapped.invoke({ value: "x", async_run: true, deadline_ms: 5_000 });
+    const { key } = JSON.parse(out as string);
+    await waitFor(() => (getAsyncResult(key)?.progress_bytes ?? 0) > 0);
+    const response = JSON.parse(await toolResultGetTool.invoke({ key }) as string);
+    expect(response.status).toBe("pending");
+    expect(response.progress.text).toContain("started");
+    expect(response.progress.next_offset).toBeGreaterThan(0);
+    expect(response.hint).toContain("Still running");
+  });
+
+  it("captures output for a follower even when the transcript stream is off", async () => {
+    const wrapped = wrapWithWallclock(makeOutputTool("quiet-stream", [{ delayMs: 5, text: "quiet line\n" }]));
+    const out = await wrapped.invoke({ value: "x", async_run: true, stream: false, deadline_ms: 1_000 });
+    const { key } = JSON.parse(out as string);
+    await waitFor(() => getAsyncResult(key)?.status === "done");
+    expect(getAsyncResult(key)!.progress).toContain("quiet line");
+  });
+
+  it("tool_result_list reports progress bytes, last output time and exit code", async () => {
+    const wrapped = wrapWithWallclock(makeOutputTool("listed", [{ delayMs: 5, text: "row\n" }], 3));
+    const out = await wrapped.invoke({ value: "x", async_run: true, deadline_ms: 1_000 });
+    const { key } = JSON.parse(out as string);
+    await waitFor(() => getAsyncResult(key)?.status === "done");
+    const list = JSON.parse(await toolResultListTool.invoke({}) as string);
+    const row = (list.results as Array<Record<string, unknown>>).find((entry) => entry.key === key)!;
+    expect(row).toMatchObject({ status: "done", exit_code: 3 });
+    expect(row.progress_bytes).toBeGreaterThan(0);
+    expect(row.last_output_at).toEqual(expect.any(Number));
+  });
+
+  it("returns progress for a finished call only when a cursor is supplied", async () => {
+    const wrapped = wrapWithWallclock(makeOutputTool("finished-progress", [{ delayMs: 5, text: "kept\n" }]));
+    const out = await wrapped.invoke({ value: "x", async_run: true, deadline_ms: 1_000 });
+    const { key } = JSON.parse(out as string);
+    await waitFor(() => getAsyncResult(key)?.status === "done");
+
+    const bare = JSON.parse(await toolResultGetTool.invoke({ key }) as string);
+    expect(bare.progress).toBeUndefined();
+
+    const paged = JSON.parse(await toolResultGetTool.invoke({ key, cursor: 0 }) as string);
+    expect(paged.progress.text).toContain("kept");
+    expect(paged.progress.eof).toBe(true);
+  });
+
+  it("consume removes the finished call's progress and its log with it", async () => {
+    const wrapped = wrapWithWallclock(makeOutputTool("consumed-with-log", [{ delayMs: 5, text: "bye\n" }]));
+    const out = await wrapped.invoke({ value: "x", async_run: true, deadline_ms: 1_000 });
+    const { key } = JSON.parse(out as string);
+    await waitFor(() => getAsyncResult(key)?.status === "done");
+    const logPath = getAsyncResult(key)!.log_path!;
+    await waitFor(() => existsSync(logPath));
+
+    await toolResultGetTool.invoke({ key, consume: true });
+    expect(getAsyncResult(key)).toBeNull();
+    await waitFor(() => !existsSync(logPath));
+  });
+
+  it("does not expose one thread's progress to another thread", async () => {
+    const owner = createThread("progress-owner");
+    const stranger = createThread("progress-stranger");
+    const wrapped = wrapWithWallclock(makeOutputTool("thread-scoped", [{ delayMs: 5, text: "secret\n" }], 0, 200));
+    const out = await wrapped.invoke({ value: "x", async_run: true, deadline_ms: 5_000 }, {
+      configurable: { thread_id: owner.thread_id },
+    });
+    const { key } = JSON.parse(out as string);
+    await waitFor(() => (getAsyncResult(key, owner.thread_id)?.progress_bytes ?? 0) > 0);
+
+    const denied = JSON.parse(await toolResultGetTool.invoke({ key, cursor: 0 }, {
+      configurable: { thread_id: stranger.thread_id },
+    }) as string);
+    expect(denied.ok).toBe(false);
+    expect(denied.status).toBe("unknown");
+  });
+
+  it("wait_ms with a cursor returns as soon as new output arrives", async () => {
+    const wrapped = wrapWithWallclock(makeOutputTool("late-output", [
+      { delayMs: 120, text: "late line\n" },
+    ]));
+    const out = await wrapped.invoke({ value: "x", async_run: true, deadline_ms: 5_000 });
+    const { key } = JSON.parse(out as string);
+    const startedAt = Date.now();
+    const response = JSON.parse(await toolResultGetTool.invoke({ key, cursor: 0, wait_ms: 5_000 }) as string);
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(response.progress.text).toContain("late line");
+  });
+
+  it("wait_ms without a cursor still waits for completion", async () => {
+    const wrapped = wrapWithWallclock(makeSlowTool("settle-only", 120));
+    const out = await wrapped.invoke({ value: "x", async_run: true, deadline_ms: 5_000 });
+    const { key } = JSON.parse(out as string);
+    const response = JSON.parse(await toolResultGetTool.invoke({ key, wait_ms: 5_000 }) as string);
+    expect(response.status).toBe("done");
+  });
+});
+
+describe("deadline promotion", () => {
+  beforeEach(() => { delete process.env.JARELA_TOOL_MAX_DEADLINE_MS; });
+
+  it("moves a thread-owned call to the background instead of abandoning it", async () => {
+    const thread = createThread("promotion-agent");
+    const wrapped = wrapWithWallclock(makeSlowTool("overrun", 120));
+    const out = await wrapped.invoke(
+      { value: "x", deadline_ms: 20 },
+      { configurable: { thread_id: thread.thread_id } },
+    );
+    const parsed = JSON.parse(out as string);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.backgrounded).toBe(true);
+    expect(parsed.key).toMatch(/^async_[0-9a-f]{16}$/);
+    expect(parsed.message).toMatch(/moved to the background/);
+    expect(parsed.message).toMatch(/Do not repeat it/);
+
+    // The abandoned promise is still owned: its real result is recorded.
+    await waitFor(() => getAsyncResult(parsed.key, thread.thread_id)?.status === "done");
+    const rec = getAsyncResult(parsed.key, thread.thread_id)!;
+    expect(JSON.parse(rec.result!)).toEqual({ ok: true, value: "x" });
+  });
+
+  it("records that the promoted operation was already in flight", async () => {
+    const thread = createThread("promotion-intent-agent");
+    const wrapped = wrapWithWallclock(makeSlowTool("overrun-intent", 120));
+    const before = Date.now();
+    const out = await wrapped.invoke(
+      { value: "x", deadline_ms: 20 },
+      { configurable: { thread_id: thread.thread_id } },
+    );
+    const parsed = JSON.parse(out as string);
+    const operation = getSystemOperation(parsed.key)!;
+    const payload = JSON.parse(operation.payload) as { promoted?: boolean; started_at?: number; deadline_ms?: number };
+    // Intent is recorded at promotion time, so it must say the work predates it.
+    expect(payload.promoted).toBe(true);
+    expect(payload.deadline_ms).toBe(20);
+    expect(payload.started_at).toBeGreaterThanOrEqual(before);
+    expect(payload.started_at!).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("gives concurrent promotions distinct records that both settle", async () => {
+    const thread = createThread("promotion-concurrent-agent");
+    const wrapped = wrapWithWallclock(makeSlowTool("overrun-concurrent", 120));
+    const [a, b] = await Promise.all([
+      wrapped.invoke({ value: "a", deadline_ms: 20 }, { configurable: { thread_id: thread.thread_id } }),
+      wrapped.invoke({ value: "b", deadline_ms: 20 }, { configurable: { thread_id: thread.thread_id } }),
+    ]);
+    const receiptA = JSON.parse(a as string);
+    const receiptB = JSON.parse(b as string);
+    expect(receiptA.backgrounded).toBe(true);
+    expect(receiptB.backgrounded).toBe(true);
+    expect(receiptA.key).not.toBe(receiptB.key);
+
+    await waitFor(() =>
+      getAsyncResult(receiptA.key, thread.thread_id)?.status === "done"
+      && getAsyncResult(receiptB.key, thread.thread_id)?.status === "done");
+    expect(JSON.parse(getAsyncResult(receiptA.key, thread.thread_id)!.result!)).toEqual({ ok: true, value: "a" });
+    expect(JSON.parse(getAsyncResult(receiptB.key, thread.thread_id)!.result!)).toEqual({ ok: true, value: "b" });
+  });
+
+  it("does not mark a promoted completion-turn call as wake eligible", async () => {
+    const thread = createThread("promotion-completion-agent");
+    const wrapped = wrapWithWallclock(makeSlowTool("overrun-completion", 120));
+    const out = await wrapped.invoke(
+      { value: "x", deadline_ms: 20 },
+      { configurable: { thread_id: thread.thread_id, signal_continuation: true } },
+    );
+    const parsed = JSON.parse(out as string);
+    const operation = getSystemOperation(parsed.key)!;
+    expect(JSON.parse(operation.payload).wake_eligible).toBe(false);
+  });
+
+  it("keeps promoting output seen before the deadline", async () => {    const thread = createThread("promotion-output-agent");
+    const wrapped = wrapWithWallclock(makeOutputTool("overrun-chatty", [
+      { delayMs: 5, text: "early line\n" },
+      { delayMs: 200, text: "never reached in time\n" },
+    ]));
+    const out = await wrapped.invoke(
+      { value: "x", deadline_ms: 40 },
+      { configurable: { thread_id: thread.thread_id } },
+    );
+    const parsed = JSON.parse(out as string);
+    expect(parsed.backgrounded).toBe(true);
+    const rec = getAsyncResult(parsed.key, thread.thread_id)!;
+    expect(rec.progress).toContain("early line");
+  });
+
+  it("returns the plain timeout result when there is no owning thread", async () => {
+    const wrapped = wrapWithWallclock(makeSlowTool("no-thread", 120));
+    const out = await wrapped.invoke({ value: "x", deadline_ms: 20 });
+    const parsed = JSON.parse(out as string);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error_code).toBe("tool_timeout");
+    expect(parsed.backgrounded).toBeUndefined();
   });
 });

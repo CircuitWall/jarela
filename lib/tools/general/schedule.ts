@@ -236,10 +236,82 @@ export const updateScheduledTaskTool = tool(
   },
 );
 
+export const scheduleWakeupTool = tool(
+  async ({ in_ms, at_iso, message, silent }, config) => {
+    const agentId = agentIdFromConfig(config);
+    if (!agentId) return JSON.stringify({ error: "No agent context (missing thread_id)" });
+    if (in_ms === undefined && !at_iso) return JSON.stringify({ error: "Provide either in_ms or at_iso" });
+    if (in_ms !== undefined && at_iso) return JSON.stringify({ error: "Provide only one of in_ms or at_iso, not both" });
+
+    const when = at_iso ?? new Date(Date.now() + Math.max(1_000, in_ms ?? 0)).toISOString();
+    try {
+      // Validate by computing the first run, same as schedule_task.
+      const firstRun = computeNextRun("once", when);
+      if (firstRun.getTime() < Date.now() - 60_000) {
+        return JSON.stringify({ error: `wakeup time "${when}" is in the past` });
+      }
+      const row = createScheduledTask({
+        agent_id: agentId,
+        prompt: message,
+        description: `Wakeup: ${message}`.slice(0, 120),
+        kind: "once",
+        schedule: when,
+        silent,
+        reaction_kind: "agent_prompt",
+      });
+      startScheduler();
+      return JSON.stringify({
+        ok: true,
+        id: row.id,
+        fire_at: row.next_run_at,
+        silent: row.silent === 1,
+        cancel_with: `cancel_scheduled_task(id="${row.id}")`,
+      });
+    } catch (err) {
+      return JSON.stringify({ error: errorMessage(err) });
+    }
+  },
+  {
+    name: "schedule_wakeup",
+    description:
+      "Arm a one-shot alarm that revives this conversation later with `message`. Use it when you must check on " +
+      "something after a delay — a background call followed with tool_result_get, a deploy, a slow build — " +
+      "instead of stalling the turn or polling in a loop. The turn ends normally; when the alarm fires you get a " +
+      "new turn whose prompt is exactly `message`, so write a message that is enough on its own (for example: " +
+      "\"Check background task async_1a2b3c4d: run tool_result_get with key=async_1a2b3c4d and report whether the " +
+      "build passed.\"). This is the relative-time form of schedule_task: it creates one visible, cancellable " +
+      "scheduled task and needs a normal one-shot delay, not a cron expression. Alarms survive a restart.",
+    schema: z.object({
+      in_ms: z
+        .number()
+        .int()
+        .min(1_000)
+        .max(30 * 24 * 60 * 60_000)
+        .optional()
+        .describe("Delay from now in milliseconds (minimum 1000)."),
+      at_iso: z
+        .string()
+        .optional()
+        .describe("Absolute ISO 8601 UTC time to fire instead of in_ms."),
+      message: z
+        .string()
+        .min(1)
+        .describe("The prompt delivered when the alarm fires. Must stand alone; the new turn has no other context."),
+      silent: z
+        .boolean()
+        .optional()
+        .describe(
+          "When true the completion notification is suppressed and you may answer NO_REPLY if nothing material " +
+          "surfaced. Errors still notify. Default false.",
+        ),
+    }),
+  },
+);
+
 registerLangChainPackage({
   category: "Schedule",
   tools: {
     read: [listScheduledTasksTool],
-    write: [scheduleTaskTool, updateScheduledTaskTool, cancelScheduledTaskTool],
+    write: [scheduleTaskTool, scheduleWakeupTool, updateScheduledTaskTool, cancelScheduledTaskTool],
   },
 });

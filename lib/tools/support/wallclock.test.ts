@@ -46,8 +46,23 @@ function makeJsonSchemaTool(name: string, delayMs: number, schema: Record<string
   );
 }
 
-function makeSlowTool(name: string, delayMs: number) {
+// Bulk output: the shape local_exec/terminal_exec report through
+// reportToolOutput, tagged so the wrapper knows not to reset the budget.
+function makeBulkOutputTool(name: string, ticks: number, gapMs: number) {
   return tool(
+    async ({ value }: { value: string }, config?: unknown) => {
+      const writer = (config as { writer?: (c: unknown) => void } | undefined)?.writer;
+      for (let i = 0; i < ticks; i++) {
+        await new Promise((r) => setTimeout(r, gapMs));
+        writer?.({ id: "call-1", name, text: `tick ${i + 1}\n`, kind: "output" });
+      }
+      return JSON.stringify({ ok: true, value });
+    },
+    { name, description: "test", schema: z.object({ value: z.string() }) },
+  );
+}
+
+function makeSlowTool(name: string, delayMs: number) {  return tool(
     async ({ value }: { value: string }) => {
       await new Promise((r) => setTimeout(r, delayMs));
       return JSON.stringify({ ok: true, value });
@@ -112,6 +127,19 @@ describe("wrapWithWallclock", () => {
     expect(parsed.deadline_ms).toBe(20);
     expect(parsed.message).toMatch(/exceeded its wall-clock budget/);
     expect(parsed.message).toMatch(/"slow"/);
+  });
+
+  it("falls back to the timeout receipt when promotion cannot record intent", async () => {
+    signalMocks.begin.mockImplementationOnce(() => { throw new Error("System operation backlog limit reached"); });
+    const wrapped = wrapWithWallclock(makeSlowTool("promotion-intent-fails", 120));
+    const out = await wrapped.invoke(
+      { value: "x", deadline_ms: 20 },
+      { configurable: { thread_id: "test-thread" } },
+    );
+    const parsed = JSON.parse(out as string);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error_code).toBe("tool_timeout");
+    expect(parsed.backgrounded).toBeUndefined();
   });
 
   it("uses the default budget when deadline_ms is omitted", async () => {
@@ -181,6 +209,34 @@ describe("wrapWithWallclock", () => {
       const parsed = JSON.parse(out as string);
       expect(parsed.ok).toBe(false);
       expect(parsed.error_code).toBe("tool_timeout");
+    });
+
+    it("does not extend the budget for bulk output the way progress does", async () => {
+      // ~125ms of steady stdout against a 70ms budget. Bulk output proves the
+      // process is alive, not that it is progressing, so it must still fire.
+      const wrapped = wrapWithWallclock(makeBulkOutputTool("bulk-chatter", 5, 25));
+      const writer = vi.fn();
+      const out = await wrapped.invoke({ value: "x", deadline_ms: 70, stream: true }, { writer } as never);
+      const parsed = JSON.parse(out as string);
+      expect(parsed.error_code).toBe("tool_timeout");
+      // ...while still reaching the transcript live.
+      expect(writer).toHaveBeenCalled();
+      expect(writer).toHaveBeenCalledWith(expect.objectContaining({ kind: "output" }));
+    });
+
+    it("keeps a progress-reporting call alive past the same budget", async () => {
+      // Same shape and timing as the bulk-output case, but reported as
+      // progress (reportToolProgress) instead of output.
+      const inner = makeReportingTool("progress-chatter", [
+        { delayMs: 25, text: "tick 1" },
+        { delayMs: 25, text: "tick 2" },
+        { delayMs: 25, text: "tick 3" },
+        { delayMs: 25, text: "tick 4" },
+        { delayMs: 25 },
+      ]);
+      const wrapped = wrapWithWallclock(inner);
+      const out = await wrapped.invoke({ value: "x", deadline_ms: 70, stream: true }, { writer: () => {} } as never);
+      expect(JSON.parse(out as string)).toEqual({ ok: true, value: "x" });
     });
 
     it("forwards the chunk to the caller's original writer after resetting the timer", async () => {

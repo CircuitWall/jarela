@@ -11,7 +11,7 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
-const { listScheduledTasksTool, updateScheduledTaskTool } = await import("./schedule");
+const { listScheduledTasksTool, updateScheduledTaskTool, scheduleWakeupTool } = await import("./schedule");
 const {
   createScheduledTask,
   listScheduledTasks,
@@ -199,5 +199,105 @@ describe("list_scheduled_tasks tool (cross-agent visibility)", () => {
       interval_seconds: 300,
       reaction_prompt: "Only notify if there is a material change.",
     });
+  });
+});
+
+describe("schedule_wakeup tool", () => {
+  beforeEach(() => {
+    for (const t of listScheduledTasks()) deleteScheduledTask(t.id);
+  });
+
+  it("arms a one-shot task whose firing prompt is the wakeup message", async () => {
+    upsertAgentConfig({
+      id: "wakeup-agent",
+      name: "Wakeup",
+      identity: "w",
+      instructions: "",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("wakeup-agent");
+    const before = Date.now();
+    const out = JSON.parse(String(await scheduleWakeupTool.invoke(
+      { in_ms: 5_000, message: "Check background task async_abcdef12 and report the build result." },
+      { configurable: { thread_id: thread.thread_id } },
+    ))) as { ok: boolean; id: string; fire_at: string };
+
+    expect(out.ok).toBe(true);
+    const row = getScheduledTask(out.id)!;
+    expect(row.kind).toBe("once");
+    expect(row.prompt).toBe("Check background task async_abcdef12 and report the build result.");
+    expect(row.agent_id).toBe("wakeup-agent");
+    expect(new Date(row.next_run_at).getTime()).toBeGreaterThanOrEqual(before + 4_000);
+  });
+
+  it("rejects a wakeup with no agent context", async () => {
+    const out = JSON.parse(String(await scheduleWakeupTool.invoke(
+      { in_ms: 5_000, message: "check" },
+      {},
+    ))) as { error?: string };
+    expect(out.error).toMatch(/agent context/);
+  });
+
+  it("rejects both in_ms and at_iso, and neither", async () => {    upsertAgentConfig({
+      id: "wakeup-agent-2",
+      name: "Wakeup 2",
+      identity: "w2",
+      instructions: "",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("wakeup-agent-2");
+    const both = JSON.parse(String(await scheduleWakeupTool.invoke(
+      { in_ms: 5_000, at_iso: new Date(Date.now() + 60_000).toISOString(), message: "check" },
+      { configurable: { thread_id: thread.thread_id } },
+    ))) as { error?: string };
+    expect(both.error).toMatch(/only one/);
+
+    const neither = JSON.parse(String(await scheduleWakeupTool.invoke(
+      { message: "check" },
+      { configurable: { thread_id: thread.thread_id } },
+    ))) as { error?: string };
+    expect(neither.error).toMatch(/either in_ms or at_iso/);
+  });
+
+  it("accepts an absolute time and passes the silent flag through", async () => {
+    upsertAgentConfig({
+      id: "wakeup-agent-3",
+      name: "Wakeup 3",
+      identity: "w3",
+      instructions: "",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("wakeup-agent-3");
+    const at = new Date(Date.now() + 60_000).toISOString();
+    const out = JSON.parse(String(await scheduleWakeupTool.invoke(
+      { at_iso: at, message: "re-check the deploy", silent: true },
+      { configurable: { thread_id: thread.thread_id } },
+    ))) as { ok: boolean; id: string; silent: boolean };
+
+    expect(out.ok).toBe(true);
+    expect(out.silent).toBe(true);
+    const row = getScheduledTask(out.id)!;
+    expect(new Date(row.next_run_at).getTime()).toBe(new Date(at).getTime());
+    expect(row.silent).toBe(1);
+  });
+
+  it("rejects a wakeup time in the past", async () => {
+    upsertAgentConfig({
+      id: "wakeup-agent-4",
+      name: "Wakeup 4",
+      identity: "w4",
+      instructions: "",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("wakeup-agent-4");
+    const out = JSON.parse(String(await scheduleWakeupTool.invoke(
+      { at_iso: new Date(Date.now() - 120_000).toISOString(), message: "late" },
+      { configurable: { thread_id: thread.thread_id } },
+    ))) as { error?: string };
+    expect(out.error).toMatch(/in the past/);
   });
 });

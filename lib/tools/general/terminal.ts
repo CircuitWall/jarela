@@ -7,7 +7,7 @@ import { registerLangChainPackage } from "../packages/langchain-package";
 import { checkExecAllowed, isBlockedExecCommand, resolveSafetyMode, type SafetyMode } from "../security/safety";
 import { getConfig } from "@/lib/env/config";
 import type { ToolConfig } from "../filesystem/workspace-context";
-import { currentWorkspace } from "../filesystem/workspace-context";
+import { currentWorkspace, reportToolOutput } from "../filesystem/workspace-context";
 import { withStreamDefault } from "../support/tool-metadata";
 
 const DEFAULT_SHELL = platform() === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
@@ -203,7 +203,13 @@ async function execInTerminalSession(
     return JSON.stringify({ error: String(err) });
   }
 
-  const result = await session.exec(command, timeout_ms ?? 60_000);
+  session.setOutputListener((chunk) => reportToolOutput(config, "terminal_exec", chunk));
+  let result: Awaited<ReturnType<TerminalSession["exec"]>>;
+  try {
+    result = await session.exec(command, timeout_ms ?? 60_000);
+  } finally {
+    session.setOutputListener(null);
+  }
   const stdout = clip(result.stdout);
   const stderr = clip(result.stderr, 2_000);
   const truncated = stdout.truncated || stderr.truncated;

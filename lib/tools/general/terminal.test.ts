@@ -19,6 +19,7 @@ const fake = vi.hoisted(() => {
     sent: string[] = [];
     executed: string[] = [];
     closed = false;
+    outputListener: ((chunk: string) => void) | null = null;
     constructor(opts: { sessionId: string }) { this.sessionId = opts.sessionId; }
     async exec(command: string) {
       this.executed.push(command);
@@ -26,6 +27,7 @@ const fake = vi.hoisted(() => {
     }
     send(input: string) { this.sent.push(input); }
     readBuffer() { return "buffered"; }
+    setOutputListener(fn: ((chunk: string) => void) | null) { this.outputListener = fn; }
     close() { this.closed = true; }
   }
   return { sessions, state, FakeSession };

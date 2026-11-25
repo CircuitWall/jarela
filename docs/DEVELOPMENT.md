@@ -501,10 +501,19 @@ External effects can still have unknown outcomes after a timeout or crash.
 
 The existing `async_run` tool wrapper records intent before starting work and
 emits completion, failure, or timeout signals with the async tracking key.
+A thread-owned call that outlives its `deadline_ms` is moved to the background
+instead of being abandoned (ADR-0127): the same record settles, the same
+completion signal fires, and the turn receives a receipt naming the key. Calls
+with no owning thread keep the structured timeout result.
 After restart, unfinished calls are marked interrupted; they are not replayed.
 Completed result envelopes are encrypted in SQLite and retained for seven
 days. The process-local map remains a fast cache; `tool_result_get` and
 `tool_result_list` fall back to durable storage and enforce thread ownership.
+While a call runs, its reported output is parked on the same in-memory record:
+a bounded 64 KiB window readable by byte cursor through `tool_result_get`
+(`cursor` + `wait_ms` returns on new output), and a capped 8 MiB log at
+`JARELA_DB_DIR/background-tasks/<key>.log` for history. The window is not
+durable; only the outcome is.
 References include an expiry; legacy process-local references are not offered
 after restart. Owned success and error text use encrypted virtual references,
 not plaintext spills. UTF-8-safe pages fit the inline transport budget including

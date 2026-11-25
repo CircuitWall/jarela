@@ -10,6 +10,7 @@ import {
   consumeAsyncResult,
   getAsyncResult,
   listAsyncResults,
+  readAsyncProgress,
   type AsyncResultRecord,
 } from "./async-results";
 import { parseToolResultReferenceEnvelope, readToolResultRef, getToolResultMaxBytes } from "./result-refs";
@@ -23,6 +24,9 @@ function serialize(rec: AsyncResultRecord, includeResult: boolean, maxEncodedByt
     started_at: rec.started_at,
     finished_at: rec.finished_at,
     elapsed_ms: (rec.finished_at ?? Date.now()) - rec.started_at,
+    progress_bytes: rec.progress_bytes,
+    last_output_at: rec.last_output_at,
+    exit_code: rec.exit_code,
   };
   const terminalContents = rec.status === "done" ? rec.result : rec.status === "error" ? rec.error : null;
   if (includeResult && rec.status === "done") {
@@ -43,26 +47,42 @@ function serialize(rec: AsyncResultRecord, includeResult: boolean, maxEncodedByt
   return out;
 }
 
-async function waitForFinish(key: string, waitMs: number, threadId?: string): Promise<AsyncResultRecord | null> {
+/**
+ * Wait for a pending call to settle — or, when the caller is following from a
+ * cursor, for any new output past it. `cursor: Infinity` means "settle only",
+ * which is the original wait-for-completion behaviour.
+ */
+async function waitForFinish(
+  key: string,
+  waitMs: number,
+  threadId: string | undefined,
+  cursor = Number.POSITIVE_INFINITY,
+): Promise<AsyncResultRecord | null> {
   const deadline = Date.now() + Math.max(0, waitMs);
   // 50ms poll — cheap on a Map.get, and bounded by waitMs.
   while (Date.now() < deadline) {
     const rec = getAsyncResult(key, threadId);
     if (!rec) return null;
-    if (rec.status !== "pending") return rec;
+    if (rec.status !== "pending" || rec.progress_bytes > cursor) return rec;
     await new Promise((r) => setTimeout(r, 50));
   }
   return getAsyncResult(key, threadId);
 }
 
 export const toolResultGetTool = tool(
-  async ({ key, result_ref, name, offset, limit, wait_ms, consume }, config) => {
+  async ({ key, result_ref, name, offset, limit, wait_ms, consume, cursor }, config) => {
     const owner = config?.configurable?.thread_id;
     const threadId = typeof owner === "string" ? owner : undefined;
     const configuredBudget = config?.configurable?.tool_result_max_bytes;
     const maxEncodedBytes = typeof configuredBudget === "number" && Number.isFinite(configuredBudget)
       ? Math.max(1, Math.min(getToolResultMaxBytes(), Math.floor(configuredBudget))) : getToolResultMaxBytes();
     const requestedRef = (result_ref?.name ?? name)?.trim() ?? "";
+    // Following from a cursor is an explicit "show me what changed" request;
+    // it is what makes wait_ms return on new output instead of only on
+    // completion.
+    const following = typeof cursor === "number" && Number.isFinite(cursor) && cursor >= 0;
+    const cursorFrom = following ? Math.max(0, Math.floor(cursor as number)) : 0;
+    const progressBytes = Math.min(limit ?? 8 * 1024, 64 * 1024);
     // A copied async key is the same result as the key argument; reading it as
     // a file name would report a correct id as missing.
     const refIsKey = /^async_[0-9a-f]{16}$/.test(requestedRef);
@@ -95,13 +115,33 @@ export const toolResultGetTool = tool(
       });
     }
     if (rec.status === "pending" && typeof wait_ms === "number" && wait_ms > 0) {
-      rec = (await waitForFinish(resolvedKey, wait_ms, threadId)) ?? rec;
+      rec = (await waitForFinish(resolvedKey, wait_ms, threadId, following ? cursorFrom : Number.POSITIVE_INFINITY)) ?? rec;
     }
     if (!rec) {
       return JSON.stringify({ ok: false, status: "unknown", key: resolvedKey });
     }
     const finished = rec.status !== "pending";
-    const response = { ok: true, ...serialize(rec, /* includeResult */ true, maxEncodedBytes) };
+    const response: Record<string, unknown> = { ok: true, ...serialize(rec, /* includeResult */ true, maxEncodedBytes) };
+    // Progress is the point of following a running call: return what changed
+    // since the caller's cursor while it is still pending, and let a finished
+    // call be paged the same way when a cursor was asked for.
+    if (rec.progress_bytes > 0 && (following || !finished)) {
+      const page = readAsyncProgress(resolvedKey, cursorFrom, progressBytes, threadId);
+      if (page) {
+        response.progress = page;
+        if (page.dropped_bytes > 0) {
+          response.progress_note =
+            `${page.dropped_bytes} byte(s) scrolled out of the live window before cursor ${cursorFrom}; ` +
+            `resumed at ${page.offset}. Read the full log from log_path with file_grep/file_read.`;
+        }
+        if (rec.log_path) response.log_path = rec.log_path;
+        if (!finished) {
+          response.hint =
+            "Still running. Call again with cursor=progress.next_offset to read only new output, or pass wait_ms " +
+            "to wait for more. Arm schedule_wakeup instead of polling in a loop when the wait is long.";
+        }
+      }
+    }
     if (consume && finished && !(rec.owner_thread_id && "result_ref" in response)) {
       consumeAsyncResult(resolvedKey, threadId);
     }
@@ -110,10 +150,15 @@ export const toolResultGetTool = tool(
   {
     name: "tool_result_get",
     description:
-      "Retrieve the result of a previously async-fired tool call by its key. " +
-      "Also reads result_ref payloads by the full result_ref.name (including extension, not sha256) with offset/limit. Unambiguous legacy content hashes are accepted for text/JSON spills. Owned background output stays encrypted and thread-scoped; protected pages are bounded by the inline output budget. " +
+      "Retrieve a background call's output by its key, or read a spilled result_ref payload. " +
+      "Background keys come from `async_run: true` and from calls moved to the background at their deadline. " +
+      "While a call is still pending it returns `progress` — the output produced so far — so you can follow a long " +
+      "task without blocking the conversation. Pass `cursor` with the previous response's progress.next_offset to " +
+      "receive only what changed; combined with `wait_ms` that returns as soon as new output arrives. " +
+      "The full output log is at `log_path` (use file_grep/file_read for history older than the bounded window). " +
+      "For result_ref payloads, read by the full result_ref.name (including extension, not sha256) with offset/limit. Unambiguous legacy content hashes are accepted for text/JSON spills. Owned background output stays encrypted and thread-scoped; protected pages are bounded by the inline output budget. " +
       "For spilled file_read output, prefer file_grep and a bounded line-ranged file_read on the source. Read only a needed result slice with a small limit; do not exhaust pages unless the task requires complete inspection. " +
-      "Pass `wait_ms` to short-poll up to that long for a pending call to finish. " +
+      "Pass `wait_ms` without `cursor` to wait for a pending call to finish. " +
       "Pass `consume: true` to delete a finished inline result, or on the final protected page to delete a paged result. " +
       "Status will be 'pending' (still running), 'done' (success — `result` populated), " +
       "'error' (failed — `error` populated), 'unknown' (missing key/reference), or 'ambiguous' (a hash matches multiple files; pass the full reference name).",
@@ -125,7 +170,16 @@ export const toolResultGetTool = tool(
         .min(0)
         .max(60_000)
         .optional()
-        .describe("Optional short-poll budget (0–60000 ms). Returns as soon as the call finishes or the budget elapses."),
+        .describe("Optional poll budget (0–60000 ms). Without `cursor` it waits for the call to finish; with `cursor` it also returns as soon as new output arrives."),
+      cursor: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe(
+          "Byte cursor for following a running call's output. Pass the previous response's progress.next_offset " +
+          "to get only new output. Omit to read progress from the start (and wait only for completion).",
+        ),
       consume: z
         .boolean()
         .optional()
@@ -158,9 +212,11 @@ export const toolResultListTool = tool(
   {
     name: "tool_result_list",
     description:
-      "List currently tracked async tool results (newest first). Useful when you've forgotten " +
-      "a key or want a quick status check across pending background calls. Synchronous spilled results are read directly by result_ref.name and are not tracked in this async list. Optional `status` " +
-      "filter narrows to 'pending' / 'done' / 'error'.",
+      "List currently tracked background calls (newest first) — the ones started with async_run and the ones moved " +
+      "to the background at their deadline. Each row carries status, elapsed time, progress_bytes, last_output_at " +
+      "and exit_code, so you can tell a call that is producing output from one that is stalled. Use it when you " +
+      "have forgotten a key. Synchronous spilled results are read directly by result_ref.name and are not tracked " +
+      "here. Optional `status` filter narrows to 'pending' / 'done' / 'error'.",
     schema: z.object({
       status: z.enum(["pending", "done", "error"]).optional()
         .describe("Optional status filter."),
