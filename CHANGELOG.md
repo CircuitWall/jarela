@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.1] - 2026-11-25
+
+### Added
+
+- memory: Add code-backed memory maintenance
+- tools: Keep slow calls running and follow their output
+
 ## [3.8.0] - 2026-11-23
 
 ### Added
