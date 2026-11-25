@@ -416,25 +416,30 @@ failure handling, ordering, security, or lifecycle differ. Record which
 decision was made and the evidence in the change review. `npm run lint`
 validates that catalog entries point to existing source and test files.
 
-### Architecture audit snapshot
+### Architecture guardrails and accepted risks
 
-The 2026-08 whole-repo audit found four areas that should shape future
-refactors and dependency upgrades:
+Standing rules from completed architecture audits:
 
-- **State ownership:** UI-only preferences still have direct `localStorage`
-  writers. Any new persistent state should go through `lib/stores` or an
-  explicit documented browser-cache exception.
-- **Route validation:** API routes mix direct zod `safeParse()` calls with the
-  shared `validateBody()` helper. New route handlers should use the helper so
-  error bodies stay consistent.
-- **Tool/plugin capability metadata:** built-in tools declare read/write/execute
-  capability tiers, while external `.cjs` tools still default to `execute`.
-  Extension-contract changes here should be handled with an ADR and deprecation
-  window.
-- **Secrets and external process boundaries:** credentials, MCP env, proxy
-  config, and hot-loaded plugins remain the highest-risk security surfaces.
-  Upgrades must preserve encryption/redaction and the single Next.js process
-  invariant.
+- **State ownership:** Durable state goes through `lib/stores`. Browser-local
+  preferences go through `lib/ui/browser-store.ts`; the pre-paint theme script
+  is the only direct reader. `check-ui-data-access.mjs` ratchets remaining
+  direct `fetch` debt in `components/`, `hooks/`, and `contexts/`.
+- **Route validation:** Use `validateBody()` for ordinary JSON bodies. Direct
+  `safeParse()` remains intentional for query/path parameters, optional bodies
+  with endpoint defaults, and nested/derived contracts.
+- **Capabilities:** Built-in tools declare read/write/execute. External and MCP
+  tools default to `execute`; manifest-level overrides remain an ADR-0038
+  follow-up.
+- **Secrets:** Credential params and proxy passwords are masked; MCP
+  `spec.env` / `spec.headers` are returned only to the authenticated operator
+  editor and are encrypted at rest. External plugins execute in-process with
+  user privileges; there is no sandbox or signature verification.
+- **Chat runtime:** `ChatView`/`useSSE` retain ref and render-order bridges;
+  avoid adding public methods or mirrored refs and extract incrementally.
+- **Persistence:** Migrations are forward-only; restore a backup instead of
+  downgrading.
+- **External resources:** Firecrawl search and the bundled Gmail OAuth proxy are
+  documented external dependencies; both remain optional/bypassable.
 
 ## C4 — Component (Agent Runtime)
 

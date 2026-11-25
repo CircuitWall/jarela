@@ -31,6 +31,10 @@ schemas, or response envelopes from generic REST examples.
 - Use the owning Zod schema at JSON boundaries. Reuse
   `validateBody(req, schema)` for ordinary JSON bodies; it returns parsed data or
   a 400 `NextResponse`, including on malformed JSON.
+- Direct `schema.safeParse()` stays appropriate for query/path parameters,
+  optional bodies with endpoint-specific defaults, and nested/derived contracts
+  (pending-action choices, OAuth payloads) where `validateBody` would change the
+  documented error shape. Do not migrate those mechanically.
 - Keep bounded-body readers and endpoint-specific validation messages intact.
   Validate queries, multipart uploads, and binary inputs explicitly.
 - Do not mechanically replace 400 with 422. Structured 422 responses require an

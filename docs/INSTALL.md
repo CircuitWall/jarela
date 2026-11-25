@@ -329,6 +329,9 @@ To restore:
 
 On the same machine (same keychain or keyfile), credentials keep working. On a machine without the original master key, the encrypted credentials cannot be decrypted, so re-enter them in Settings. In every case, re-pair any messaging bridges.
 
+Schema migrations are forward-only. Downgrading to an older Jarela release is
+not supported; restore a backup into an empty data directory instead.
+
 ## Uninstall
 
 - **macOS**: `launchctl unload ~/Library/LaunchAgents/com.jarela.app.plist && rm -rf ~/Library/Application\ Support/Jarela ~/Library/LaunchAgents/com.jarela.app.plist`

@@ -781,6 +781,11 @@ gateway, vendor-internal model catalogue, etc.), drop a CommonJS plugin
 into `~/.jarela/providers/<name>.cjs`. It's hot-loaded per call — no
 rebuild, no restart.
 
+> **Trust:** external providers and tools execute in-process with your user
+> privileges. Jarela does not sandbox them or verify signatures. Only load
+> plugin code you trust and can audit; treat the providers/tools directories
+> like executable configuration.
+
 Steps:
 
 1. Copy [`lib/providers/template-external.cjs.example`](../lib/providers/template-external.cjs.example) to `~/.jarela/providers/<name>.cjs`.
@@ -868,6 +873,13 @@ tool policy), and surfaced through the `list_tools` agent tool.
 
 External (`.cjs`) and MCP tools default to `execute` until manifest-level
 overrides land. See [ADR-0038](adr/0038-tool-capability-axis.md).
+
+**Two capability axes.** Provider capabilities (`vision`, `files`, `tools`,
+`streaming`, `json_mode`, `web_search`, `audio`) describe what a model can
+consume or produce. Tool capabilities (`read`, `write`, `execute`) describe the
+side effects of a tool call. They are independent; do not infer either axis from
+the other. Manifest-level capability overrides for external/MCP tools remain a
+follow-up under ADR-0038.
 
 **Declare the backing integration** when the tool needs credentials the
 operator configures in the Integrations panel:
@@ -1015,6 +1027,10 @@ packages, …) can be loaded into Jarela without writing code. The
 operator manages the install themselves; Jarela reads a JSON manifest,
 dynamic-imports the package, calls the constructor, and registers the
 returned tool under a Jarela category + capability.
+
+> **Trust:** this is the same in-process trust model as `JARELA_TOOLS_DIR`
+> extensions. There is no signature verification or sandbox; review the
+> package and its dependency tree before installing it.
 
 1. Pick a directory for installed packages. Default is
    `~/.jarela/packages/`; override with `JARELA_PACKAGES_DIR`.

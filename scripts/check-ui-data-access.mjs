@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Ratchet for UI data-access debt.
 //
-// components/ and hooks/ should call the typed api/client (and the documented
-// lib/ui/browser-store exception) instead of fetch/localStorage directly.
+// components/, hooks/, and contexts/ should call the typed api/client (and the
+// documented lib/ui/browser-store exception) instead of fetch/localStorage directly.
 // Existing call sites are recorded in ui-data-access-baseline.json; counts may
 // only decrease. A new file or a higher count fails lint, so the debt cannot
 // grow while it is migrated incrementally.
@@ -13,7 +13,7 @@ import url from "node:url";
 
 const SELF_PATH = url.fileURLToPath(import.meta.url);
 export const REPO_ROOT = path.resolve(path.dirname(SELF_PATH), "..");
-const SCAN_DIRS = ["components", "hooks"];
+const SCAN_DIRS = ["components", "hooks", "contexts"];
 const DIRECT_FETCH = /\bfetch\s*\(/g;
 const DIRECT_STORAGE = /\blocalStorage\s*\./g;
 

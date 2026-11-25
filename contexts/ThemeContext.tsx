@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { readBrowserValue, removeBrowserValue, writeBrowserValue } from "@/lib/ui/browser-store";
 
 export type Theme = "light" | "dark" | "system";
 export type AccentColor = "default" | "blue" | "teal" | "violet" | "rose";
@@ -22,33 +23,18 @@ function isSurfaceStyle(v: unknown): v is SurfaceStyle {
 }
 
 function readStored(): Theme {
-  if (typeof window === "undefined") return "system";
-  try {
-    const v = window.localStorage.getItem(STORAGE_KEY);
-    return isTheme(v) ? v : "system";
-  } catch {
-    return "system";
-  }
+  const v = readBrowserValue(STORAGE_KEY);
+  return isTheme(v) ? v : "system";
 }
 
 function readStoredAccent(): AccentColor {
-  if (typeof window === "undefined") return "blue";
-  try {
-    const value = window.localStorage.getItem(ACCENT_STORAGE_KEY);
-    return isAccentColor(value) ? value : "default";
-  } catch {
-    return "default";
-  }
+  const value = readBrowserValue(ACCENT_STORAGE_KEY);
+  return isAccentColor(value) ? value : "default";
 }
 
 function readStoredSurface(): SurfaceStyle {
-  if (typeof window === "undefined") return "ambient";
-  try {
-    const value = window.localStorage.getItem(SURFACE_STORAGE_KEY);
-    return isSurfaceStyle(value) ? value : "ambient";
-  } catch {
-    return "ambient";
-  }
+  const value = readBrowserValue(SURFACE_STORAGE_KEY);
+  return isSurfaceStyle(value) ? value : "ambient";
 }
 
 const LIGHT_CHROME = "#ffffff";
@@ -131,32 +117,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setTheme = useCallback((t: Theme) => {
     setThemeState(t);
     apply(t);
-    try {
-      window.localStorage.setItem(STORAGE_KEY, t);
-    } catch {
-      /* ignore quota / private-mode errors */
-    }
+    writeBrowserValue(STORAGE_KEY, t);
   }, []);
 
   const setAccentColor = useCallback((color: AccentColor) => {
     setAccentColorState(color);
     applyAccentColor(color);
-    try {
-      if (color === "default") window.localStorage.removeItem(ACCENT_STORAGE_KEY);
-      else window.localStorage.setItem(ACCENT_STORAGE_KEY, color);
-    } catch {
-      /* ignore quota / private-mode errors */
-    }
+    if (color === "default") removeBrowserValue(ACCENT_STORAGE_KEY);
+    else writeBrowserValue(ACCENT_STORAGE_KEY, color);
   }, []);
 
   const setSurfaceStyle = useCallback((style: SurfaceStyle) => {
     setSurfaceStyleState(style);
     applySurfaceStyle(style);
-    try {
-      window.localStorage.setItem(SURFACE_STORAGE_KEY, style);
-    } catch {
-      /* ignore quota / private-mode errors */
-    }
+    writeBrowserValue(SURFACE_STORAGE_KEY, style);
   }, []);
 
   return (
