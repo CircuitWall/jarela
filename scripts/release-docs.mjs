@@ -142,7 +142,9 @@ export function repository(cwd = process.cwd()) {
 }
 
 export function renderDocumentationPrompt(context) {
-  return `${readFileSync(new URL("./prompts/release-docs.txt", import.meta.url), "utf8")}\n\nRelease input:\n${JSON.stringify(context, null, 2)}\n`;
+  const prompt = readFileSync(new URL("./prompts/release-docs.txt", import.meta.url), "utf8")
+    .replace(/\r\n/g, "\n");
+  return `${prompt}\n\nRelease input:\n${JSON.stringify(context, null, 2)}\n`;
 }
 
 function main() {

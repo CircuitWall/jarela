@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UnifiedHookResult } from "@/hooks/useListState";
 import { pushToast, type NotifSource } from "@/lib/ui/toasts";
+import { readBrowserValue, writeBrowserValue } from "@/lib/ui/browser-store";
 import { SERVER_ACTIVITY_UPDATE_EVENT } from "@/api/health";
 
 interface RunCompleted {
@@ -112,21 +113,17 @@ interface Options {
 // server's recentSince() replay returned nothing.
 const LAST_TS_KEY = "jarela.notif.lastTs";
 function loadLastTs(): number {
-  if (typeof window === "undefined") return 0;
-  try {
-    const raw = window.localStorage.getItem(LAST_TS_KEY);
-    const n = raw ? Number(raw) : 0;
-    if (!Number.isFinite(n) || n <= 0) return 0;
-    // Clamp to the bus's RECENT_LIMIT window — older events are gone from
-    // memory anyway, and we don't want to spam the user with day-old toasts
-    // on the first reopen of a long-idle PWA.
-    const MAX_WINDOW_MS = 6 * 60 * 60 * 1000; // 6h
-    return Math.max(n, Date.now() - MAX_WINDOW_MS);
-  } catch { return 0; }
+  const raw = readBrowserValue(LAST_TS_KEY);
+  const n = raw ? Number(raw) : 0;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // Clamp to the bus's RECENT_LIMIT window — older events are gone from
+  // memory anyway, and we don't want to spam the user with day-old toasts
+  // on the first reopen of a long-idle PWA.
+  const MAX_WINDOW_MS = 6 * 60 * 60 * 1000; // 6h
+  return Math.max(n, Date.now() - MAX_WINDOW_MS);
 }
 function saveLastTs(ts: number): void {
-  if (typeof window === "undefined") return;
-  try { window.localStorage.setItem(LAST_TS_KEY, String(ts)); } catch { /* quota / privacy mode */ }
+  writeBrowserValue(LAST_TS_KEY, String(ts));
 }
 
 export function useEventNotifications(options: Options): UnifiedHookResult<

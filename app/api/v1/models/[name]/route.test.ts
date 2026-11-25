@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NextRequest } from "next/server";
+import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
 
 vi.mock("@/lib/models/discover-context-window", () => ({
   enrichParamsWithDiscoveredContext: vi.fn(async (_provider: string, _model: string, params: Record<string, unknown>) => params),
@@ -79,6 +80,32 @@ describe("PATCH /api/v1/models/[name]", () => {
     for (const body of [{}, { enabled: false, is_default: true }, { is_default: false }, { params: {} }]) {
       expect((await PATCH(json("PATCH", "solo", body), ctx("solo"))).status).toBe(400);
     }
+  });
+
+  it("waits for an in-flight PUT under the same model lock", async () => {
+    upsertModelConfig("serial", "anthropic", "claude-x", {}, true);
+    let releaseEnrich!: () => void;
+    const enrichGate = new Promise<void>((resolve) => { releaseEnrich = resolve; });
+    const enrichStarted = vi.fn();
+    vi.mocked(enrichParamsWithDiscoveredContext).mockImplementationOnce(async (_provider, _model, params) => {
+      enrichStarted();
+      await enrichGate;
+      return params;
+    });
+
+    const put = PUT(json("PUT", "serial", { provider: "anthropic", model_id: "claude-x", params: {} }), ctx("serial"));
+    await vi.waitFor(() => expect(enrichStarted).toHaveBeenCalled());
+
+    let patchSettled = false;
+    const patch = PATCH(json("PATCH", "serial", { is_default: true }), ctx("serial"))
+      .finally(() => { patchSettled = true; });
+    await Promise.resolve();
+    expect(patchSettled).toBe(false);
+
+    releaseEnrich();
+    const [putResponse, patchResponse] = await Promise.all([put, patch]);
+    expect(putResponse.status).toBe(200);
+    expect(patchResponse.status).toBe(200);
   });
 });
 

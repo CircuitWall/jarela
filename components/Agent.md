@@ -104,9 +104,11 @@ labelled button. Prefer `getByRole`/`getByLabel` contract points over test ids.
 - **Direct `fetch`** — 21 components still call endpoints that are absent from
   the typed client (voice/TTS, redaction, health, update, authoring). This is
   known debt, not a pattern; add the endpoint to `api/client.ts` when touching
-  one of these flows.
-- **Direct `localStorage`** — only currency, crypto-fallback, and update banners
-  do this; new persistent UI preference belongs in a hook or the settings store.
+  one of these flows. `npm run ui-data:check` ratchets the baseline so new
+  direct calls fail lint.
+- **Direct `localStorage`** — route browser-only preferences through
+  `lib/ui/browser-store.ts`; the UI data-access ratchet treats direct
+  `localStorage` calls as new debt. Durable preferences belong in stores.
 - **Duplicating shared logic** — the avatar-gradient hash exists twice
   (`components/agents/AgentsPanel.tsx`, `components/ui/Toaster.tsx`); extract a
   shared helper instead of adding a third copy.

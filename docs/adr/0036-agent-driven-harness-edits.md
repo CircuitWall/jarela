@@ -138,7 +138,7 @@ Chosen option: **1**, because:
 * Extends: [ADR-0033](0033-configurable-harness.md).
 * Precedent: [ADR-0010 — agent-led setup and integration manifests](0010-agent-led-setup-and-integration-manifests.md).
 * Implementation:
-  * [lib/tools/propose.ts](../../lib/tools/propose.ts) — schema +
+  * [lib/tools/propose.ts](../../lib/tools/system/propose.ts) — schema +
     payload doc.
   * [lib/agents/proposals.ts](../../lib/agents/proposals.ts) —
     `applyUpsertHarness` handler + extended `applyUpdateAgent`.

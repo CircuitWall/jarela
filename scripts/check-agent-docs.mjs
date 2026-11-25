@@ -50,6 +50,7 @@ export const ARCHITECTURE_DOCS = [
   "docs/EXTENDING.md",
   "docs/ui-hook-api.md",
   "packages/README.md",
+  "packages/AGENTS.md",
 ];
 
 // Directories walked when looking for undeclared Agent.md files. Workspace

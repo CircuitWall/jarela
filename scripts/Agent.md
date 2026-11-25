@@ -15,10 +15,10 @@ operator automation — not application runtime code.
 - The only published runtime entry is [jarela-bin.mjs](./jarela-bin.mjs). The
   rest support development, release, installation, packaging, or live testing.
 - Scripts may import `lib/` helpers (`node:` builtins first); application code
-  must not import scripts. The sole shared-module exception is
-  [release-docs.mjs](./release-docs.mjs), whose prompt renderer is consumed by
-  `lib/agents/prompt-registry.ts`. Put new shared logic in `lib/`, not in a
-  script.
+  must not import scripts. The release prompt template now lives in
+  `lib/prompts/release-docs.ts`; [release-docs.mjs](./release-docs.mjs) keeps
+  its CLI copy under `scripts/prompts/`, and a test asserts both render
+  identically. Put new shared logic in `lib/`, not in a script.
 - Gate scripts are dependency-light: only `node:` imports unless the script
   genuinely needs the tool (Zod, TypeScript, esbuild, undici). Declare any
   third-party import in `package.json`.
@@ -113,7 +113,7 @@ exit path directly with representative arguments.
 
 | Group | Scripts |
 | --- | --- |
-| Gates | [check-architecture-patterns.mjs](./check-architecture-patterns.mjs), [check-agent-docs.mjs](./check-agent-docs.mjs) (guides + architecture-document links), [check-api-docs.mjs](./check-api-docs.mjs) (public routes ↔ docs/api.md), [check-adr-registry.mjs](./check-adr-registry.mjs) (unique ADR ids + citations), [check-integration-manifests.mjs](./check-integration-manifests.mjs), [check-dockerfile-workspaces.mjs](./check-dockerfile-workspaces.mjs), [check-ci-workflows.mjs](./check-ci-workflows.mjs), [check-function-complexity.mjs](./check-function-complexity.mjs), [check-change-impact.mjs](./check-change-impact.mjs), [check-git-conventions.mjs](./check-git-conventions.mjs) |
+| Gates | [check-architecture-patterns.mjs](./check-architecture-patterns.mjs), [check-agent-docs.mjs](./check-agent-docs.mjs) (guides + architecture-document links), [check-api-docs.mjs](./check-api-docs.mjs) (public routes ↔ docs/api.md), [check-adr-registry.mjs](./check-adr-registry.mjs) (unique ADR ids, citations, links), [check-ui-data-access.mjs](./check-ui-data-access.mjs) (direct fetch/storage ratchet), [check-integration-manifests.mjs](./check-integration-manifests.mjs), [check-dockerfile-workspaces.mjs](./check-dockerfile-workspaces.mjs), [check-ci-workflows.mjs](./check-ci-workflows.mjs), [check-function-complexity.mjs](./check-function-complexity.mjs), [check-change-impact.mjs](./check-change-impact.mjs), [check-git-conventions.mjs](./check-git-conventions.mjs) |
 | Security/package | [scan-secrets.mjs](./scan-secrets.mjs), [scan-sensitive-terms.mjs](./scan-sensitive-terms.mjs), [check-route-bundles.mjs](./check-route-bundles.mjs), [check-npm-package.mjs](./check-npm-package.mjs), [check-link-preview-version.mjs](./check-link-preview-version.mjs) |
 | Hooks/tests | [select-precommit-tests.mjs](./select-precommit-tests.mjs), [setup-git-hooks.mjs](./setup-git-hooks.mjs), [live-test.mjs](./live-test.mjs), [live-test-isolated.mjs](./live-test-isolated.mjs), [isolated-dev.mjs](./isolated-dev.mjs), [e2e-servers.mjs](./e2e-servers.mjs), [e2e-isolation.mjs](./e2e-isolation.mjs) |
 | Release/package | [nightly-release.mjs](./nightly-release.mjs), [approve-release-ci.mjs](./approve-release-ci.mjs), [ci-release-metadata.mjs](./ci-release-metadata.mjs), [release-changeset.mjs](./release-changeset.mjs), [release-docs.mjs](./release-docs.mjs), [release-docker.mjs](./release-docker.mjs), [rewrite-workspace-deps.mjs](./rewrite-workspace-deps.mjs), [prune-npm-source-maps.mjs](./prune-npm-source-maps.mjs), [standalone-footprint.mjs](./standalone-footprint.mjs) |

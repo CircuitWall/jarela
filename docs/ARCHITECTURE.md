@@ -141,7 +141,9 @@ and the boundaries new code should use.
 adapters, and stores → local persistence or configured external services.
 ESLint enforces the UI half of that direction: `components/` and `hooks/` cannot
 import `lib/db`, `lib/stores`, `lib/crypto`, `lib/scheduler`, or
-`lib/notifications`.
+`lib/notifications`. Each store owns its tables; the approved cross-store
+cascades and read-only joins are enumerated in
+[lib/stores/Agent.md](../lib/stores/Agent.md#cross-store-access-exceptions).
 
 The unreleased credential editor keeps API dispatch and form state in
 `hooks/useIntegrationCredential.ts` and authorization sessions in
@@ -353,6 +355,8 @@ them — but they are load-bearing:
 - **`lib/ui/tabs.ts`** — the canonical tab vocabulary shared by AppContext and
   the pure deep-link parser, keeping URL recognition aligned with available
   tabs.
+- **`lib/ui/browser-store.ts`** — the single documented browser-local cache
+  exception for non-durable UI preferences; durable state belongs in stores.
 - **`lib/api/`** — `errorResponse` / `notFoundResponse` / `createdResponse`
   / `validateBody` and the per-resource `*ToResponse` row→JSON serializers
   shared between list and `[id]` route handlers.

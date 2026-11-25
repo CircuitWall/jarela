@@ -90,7 +90,7 @@ no-surprise-billing drivers:
 3. **Hard fail with a guidance message** if the Google API key is missing.
 
 Implementation lives in [lib/voice/gemini.ts](../../lib/voice/gemini.ts)
-(API client) and [lib/tools/generate_voice.ts](../../lib/tools/generate_voice.ts)
+(API client) and [lib/tools/generate_voice.ts](../../lib/tools/web/generate_voice.ts)
 (tool surface). Audio clips land in `~/.jarela/files/voice-<uuid>.wav`
 and are served by `GET /api/v1/files/[name]`, the same path used by
 `generate_image`.
@@ -144,7 +144,7 @@ and are served by `GET /api/v1/files/[name]`, the same path used by
 
 * [lib/voice/gemini.ts](../../lib/voice/gemini.ts) — REST client for both
   directions.
-* [lib/tools/generate_voice.ts](../../lib/tools/generate_voice.ts) — tool
+* [lib/tools/generate_voice.ts](../../lib/tools/web/generate_voice.ts) — tool
   schema and per-agent voice resolution.
 * [ARCHITECTURE.md](../ARCHITECTURE.md) — Voice container in the
   C4-Container diagram and the Gemini STT/TTS row in External Dependencies.

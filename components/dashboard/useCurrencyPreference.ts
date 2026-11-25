@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { DashboardCurrencyInfo, UserProfile } from "@/api/types";
+import { readBrowserValue, writeBrowserValue } from "@/lib/ui/browser-store";
 import { CURRENCY_MODE_KEY, CURRENCY_PICK_KEY, USD_CURRENCY, type CurrencyMode } from "./dashboard-constants";
 
 export interface UseCurrencyPreferenceResult {
@@ -19,19 +20,15 @@ export function useCurrencyPreference(): UseCurrencyPreferenceResult {
   const [profileLocation, setProfileLocation] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
 
   useEffect(() => {
-    try {
-      const savedMode = window.localStorage.getItem(CURRENCY_MODE_KEY);
-      if (savedMode === "auto" || savedMode === "manual") setCurrencyMode(savedMode);
-      const savedCurrency = window.localStorage.getItem(CURRENCY_PICK_KEY);
-      if (savedCurrency && /^[A-Z]{3}$/.test(savedCurrency)) setManualCurrency(savedCurrency);
-    } catch { /* ignore storage failures */ }
+    const savedMode = readBrowserValue(CURRENCY_MODE_KEY);
+    if (savedMode === "auto" || savedMode === "manual") setCurrencyMode(savedMode);
+    const savedCurrency = readBrowserValue(CURRENCY_PICK_KEY);
+    if (savedCurrency && /^[A-Z]{3}$/.test(savedCurrency)) setManualCurrency(savedCurrency);
   }, []);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(CURRENCY_MODE_KEY, currencyMode);
-      window.localStorage.setItem(CURRENCY_PICK_KEY, manualCurrency);
-    } catch { /* ignore storage failures */ }
+    writeBrowserValue(CURRENCY_MODE_KEY, currencyMode);
+    writeBrowserValue(CURRENCY_PICK_KEY, manualCurrency);
   }, [currencyMode, manualCurrency]);
 
   useEffect(() => {

@@ -1,5 +1,5 @@
 ---
-status: "proposed"
+status: "accepted"
 date: 2026-06-01
 deciders: example-user
 ---
@@ -8,7 +8,7 @@ deciders: example-user
 
 ## Context and Problem Statement
 
-Today the [tool registry](../../lib/tools/registry.ts) tags each built-in
+Today the [tool registry](../../lib/tools/runtime/registry.ts) tags each built-in
 tool with a single dimension — `ToolCategory` (`Memory`, `Files`, `Web`,
 `Mail`, `Atlassian`, …). That dimension is *topical* and exists to group
 tools in the Agent editor sidebar; it deliberately says nothing about what
@@ -216,7 +216,7 @@ capability — guarantees no tool slips through during the migration.
 ## More Information
 
 * Affected files: every `lib/tools/<name>.ts` that calls `registerTools`,
-  plus [lib/tools/registry.ts](../../lib/tools/registry.ts).
+  plus [lib/tools/registry.ts](../../lib/tools/runtime/registry.ts).
 * Related: [ADR-0037](0037-agent-output-validator.md) (the validator's
   citation rules can later differentiate execute-tool citations from
   read-tool citations).

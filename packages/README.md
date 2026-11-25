@@ -38,7 +38,9 @@ Packages declare workspace dependencies on each other with
 
 ## Adding a new package
 
-Open an ADR first if the package is non-trivial. The general checklist:
+Package-local rules and validation expectations live in
+[AGENTS.md](./AGENTS.md). Open an ADR first if the package is non-trivial. The
+general checklist:
 
 1. `mkdir packages/<name>` and add `package.json`, `tsconfig.json`,
    `README.md`, `CHANGELOG.md`.

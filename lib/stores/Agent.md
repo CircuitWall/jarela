@@ -104,13 +104,32 @@ statement-reuse contract and [threads.ts](./threads.ts) for the reference use.
 - **Per-call schema probing** — `init*Schema()` on every operation adds
   `PRAGMA table_info` cost; initialize once or rely on migrations.
 - **Cross-store table access** — reading another store's tables directly
-  couples schemas. Cascades and aggregates exist (credentials, model-config,
-  dashboard-metrics); new ones need an explicit reason or a store-owned query.
+  couples schemas. Cascades and aggregates exist; new ones need an explicit
+  reason or a store-owned query. See the approved exceptions below.
 - **Unbounded JSON columns** — add caps before storing transcripts, artifacts,
   or backlogs.
 - **Plaintext secrets** — route sensitive values through `lib/crypto`.
 - **New ad-hoc files** — persistence belongs in SQLite under `JARELA_DB_DIR`.
 - **Skipping the ADR** — schema and directory changes require one.
+
+## Cross-store access exceptions
+
+Stores own their tables. Direct access to another store's tables is allowed
+only for referential integrity or a read-only aggregate, and every case must
+be listed here:
+
+| Store | Cross-store access | Why |
+| --- | --- | --- |
+| `credentials.ts` | reads `model_configs`, `agent_configs` | refuse deleting a referenced credential |
+| `model-config.ts` | clears `agent_configs.model_config_name` | referential integrity on delete |
+| `harnesses.ts` | clears `agent_configs.harness_id` | referential integrity on delete |
+| `threads.ts` | deletes matching `memory_store` archive rows | cascade thread → chat archive |
+| `system-signals.ts` | reads/updates `background_tool_results`, `pending_actions` | delivery leases and failure settlement |
+| `dashboard-metrics.ts` | joins `agent_configs`, `model_configs` | read-only dashboard aggregate |
+
+Anything else must go through the owning store's exported functions. Adding a
+new exception requires updating this table, a test that covers the cascade,
+and review of the owning store's schema.
 
 ## Testing requirements
 

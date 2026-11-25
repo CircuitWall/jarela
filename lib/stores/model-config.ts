@@ -126,6 +126,24 @@ export function setModelConfigEnabled(name: string, enabled: boolean): ModelConf
 }
 
 /**
+ * Apply the PATCH contract for one model config in a single transaction.
+ * Callers must hold `withModelConfigMutation(name)` so this cannot interleave
+ * with a concurrent PUT or DELETE.
+ */
+export function updateModelConfigState(
+  name: string,
+  patch: { enabled?: boolean; is_default?: true },
+): ModelConfigRow {
+  return withDbTransaction(() => {
+    let row = getModelConfig(name);
+    if (!row) throw new ModelConfigStateError(`Model config "${name}" not found`, 404);
+    if (patch.enabled !== undefined) row = setModelConfigEnabled(name, patch.enabled);
+    if (patch.is_default) row = setDefaultModelConfig(name);
+    return row;
+  });
+}
+
+/**
  * Insert or update a model config. `is_default` undefined keeps the current
  * flag (false for new rows); true atomically clears every other default and
  * re-enables the row, because the default must always be selectable.

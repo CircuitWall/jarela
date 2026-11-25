@@ -9,8 +9,8 @@ deciders: example-user
 ## Context and Problem Statement
 
 The native Atlassian tool surface in
-[lib/tools/atlassian.ts](../../lib/tools/atlassian.ts) and the Jira Align
-surface in [lib/tools/jira-align.ts](../../lib/tools/jira-align.ts) cover
+[the Atlassian package](../../packages/atlassian-langchain/src/index.ts) and the Jira Align
+surface in [the Jira Align package](../../packages/jira-align-langchain/src/index.ts) cover
 single-issue/page CRUD well but leave large practical gaps. In particular
 the agent has **zero coverage of Jira's Agile API** — it cannot operate
 sprints (create, start, complete, move issues, rank backlog) the way it
@@ -24,7 +24,7 @@ operates issues today. Several other gaps surface from the same audit:
   / priorities / statuses, plus the version-release lifecycle.
 - Confluence v2 holes left from
   [ADR-0026](0026-remote-document-sources.md) /
-  [the v2 migration audit](../../lib/tools/atlassian.ts#L962): page
+  [the v2 migration audit](../../packages/atlassian-langchain/src/index.ts): page
   delete, footer **and inline** comment update/delete, label remove,
   attachment delete.
 - Jira Align hierarchy listing: programs / teams / releases / sprints /
@@ -40,7 +40,7 @@ demos), not just an issue editor.
 ## Decision Drivers
 
 - **Native over MCP**, per
-  [`atlassian.ts` module header](../../lib/tools/atlassian.ts#L1-L17):
+  [the package entry point](../../packages/atlassian-langchain/src/index.ts):
   corporate networks block public PyPI/npm, so the `mcp-atlassian`
   install path is fragile. Native REST tools go through the same
   proxy plumbing as the rest of the server.
@@ -49,7 +49,7 @@ demos), not just an issue editor.
   reduced review overhead more than we'd benefit from incremental
   shipping.
 - **Reuse existing patterns**, not invent new ones: tool registration
-  ([lib/tools/registry.ts](../../lib/tools/registry.ts)), auth
+  ([lib/tools/registry.ts](../../lib/tools/runtime/registry.ts)), auth
   resolution, `omit-arg-to-list-options` for transitions, two-arg
   destructive-confirm gates ([ADR-0021](0021-jira-align-type-aware-routing.md)).
 - **Per-tool permissions** continue to work via the AgentEditor
@@ -88,7 +88,7 @@ demos), not just an issue editor.
 
 Chose **option 1**. Tools live in the existing two files; registration
 goes through the existing
-[`registerTools()`](../../lib/tools/registry.ts) call at the bottom
+[`registerTools()`](../../lib/tools/runtime/registry.ts) call at the bottom
 of each. UI surfaces (AgentEditor, BuiltinToolsPanel, ExtensionsPanel)
 auto-discover via `GET /api/v1/tools` so no UI plumbing is needed.
 
@@ -165,7 +165,7 @@ Confluence v2 audit run live on 2026-05-28
 ### Test + coverage strategy
 
 - New unit tests follow the existing
-  [atlassian.test.ts](../../lib/tools/atlassian.test.ts) pattern:
+  [the package tests](../../packages/atlassian-langchain/test/) pattern:
   pure-helper unit tests + mocked-fetch tool-callback tests via
   `vi.stubGlobal("fetch", fake)`. ~70 new `it()` blocks split
   across `atlassian-agile.test.ts`, `atlassian-issue-extras.test.ts`,

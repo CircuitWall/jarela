@@ -19,7 +19,7 @@ dispatch; they never own persistence or rendering.
   modules. ESLint enforces the server-only import restriction for `hooks/`. Do
   not write `fetch` calls that bypass `@/api/client`; the two known holdouts
   (`hooks/useEnvSettings.ts`, `hooks/useMessageFilters.ts`) are debt, not
-  precedent.
+  precedent, and `npm run ui-data:check` prevents the count from growing.
 - Do not render UI or own component-private state. A controller hook owns
   loading, mutations, feedback, and resource lifetimes for its component; see
   the credential-editor ownership split in [the hook spec](../docs/ui-hook-api.md).

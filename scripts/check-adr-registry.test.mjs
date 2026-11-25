@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectAdrFiles, validateAdrRegistry } from "./check-adr-registry.mjs";
+import { collectAdrFiles, validateAdrLinks, validateAdrRegistry } from "./check-adr-registry.mjs";
 
 const roots = [];
 
@@ -68,5 +68,22 @@ describe("ADR registry", () => {
       "docs/CHANGELOG.md": "See ADR-9999.\n",
     });
     expect(validateAdrRegistry(repo)).toEqual([]);
+  });
+
+  it("validates relative links inside ADRs and ignores prose examples", () => {
+    const repo = fixtureRepo({
+      "docs/adr/0001-one.md": "See [two](./0002-two.md).\n\nSyntax: [label](url).\n",
+      "docs/adr/0002-two.md": "# Two\n",
+    });
+    expect(validateAdrLinks(repo)).toEqual([]);
+  });
+
+  it("fails a broken relative link inside an ADR", () => {
+    const repo = fixtureRepo({
+      "docs/adr/0001-one.md": "See [missing](./0002-two.md).\n",
+    });
+    expect(validateAdrLinks(repo)).toContain(
+      "docs/adr/0001-one.md: broken markdown link -> ./0002-two.md",
+    );
   });
 });

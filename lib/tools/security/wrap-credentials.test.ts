@@ -6,7 +6,7 @@ import {
 } from "./wrap-credentials";
 import {
   getCurrentToolCredentialContext,
-} from "./credential-context";
+} from "@/lib/security/credential-context";
 
 // Minimal stand-in for a LangChain tool. Only the bits the wrapper touches
 // (name + invoke) need to exist; the rest is reachable through the Proxy

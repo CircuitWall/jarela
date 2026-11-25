@@ -10,6 +10,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Download, RefreshCw, X } from "lucide-react";
+import { readBrowserValue, writeBrowserValue } from "@/lib/ui/browser-store";
 
 type UpdateInfo = {
   channel?: "stable" | "main";
@@ -93,10 +94,7 @@ function useAppUpdate() {
           j.channel === "main" && j.latestCommit?.sha
             ? `${j.latest}@${j.latestCommit.sha}`
             : j.latest;
-        const dismissedFor =
-          typeof localStorage !== "undefined"
-            ? localStorage.getItem(DISMISS_KEY)
-            : null;
+        const dismissedFor = readBrowserValue(DISMISS_KEY);
         if (dismissedFor === dismissKey) {
           setDismissed(true);
         }
@@ -198,7 +196,7 @@ function useAppUpdate() {
     const key = info?.channel === "main" && info.latestCommit?.sha
       ? `${info.latest}@${info.latestCommit.sha}`
       : info?.latest;
-    if (key) localStorage.setItem(DISMISS_KEY, key);
+    if (key) writeBrowserValue(DISMISS_KEY, key);
     setDismissed(true);
   }
 

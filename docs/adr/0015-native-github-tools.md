@@ -12,7 +12,7 @@ informed:
 
 The agent had no first-party way to read or write GitHub issues and pull requests. Users could install the GitHub MCP server through the picker (ADR-0014), but on the corporate networks where Jarela spends most of its life the MCP install path is regularly blocked — the registry, npm, and GitHub Container Registry are all popular block targets — and even when it works, install/restart adds friction for what is otherwise a simple authenticated REST surface.
 
-ADR-0010 (agent-led setup) and the existing Atlassian native tool ([lib/tools/atlassian.ts](../../lib/tools/atlassian.ts)) already solve this exact problem for Jira/Confluence. Should GitHub follow the same path, or stay MCP-only?
+ADR-0010 (agent-led setup) and the existing Atlassian native tool ([the Atlassian package](../../packages/atlassian-langchain/src/index.ts)) already solve this exact problem for Jira/Confluence. Should GitHub follow the same path, or stay MCP-only?
 
 ## Decision Drivers
 
@@ -63,6 +63,6 @@ Initial surface (7 tools): `github_search_issues`, `github_get_issue`, `github_c
 ## More Information
 
 * Builds on [ADR-0010 — agent-led setup and integration manifests](0010-agent-led-setup-and-integration-manifests.md).
-* Mirrors the Atlassian native-tool pattern at [lib/tools/atlassian.ts](../../lib/tools/atlassian.ts).
+* Mirrors the Atlassian native-tool pattern at [the Atlassian package](../../packages/atlassian-langchain/src/index.ts).
 * Coexists with the MCP path defined by [ADR-0014 — MCP registry online discovery](0014-mcp-registry-online-discovery.md).
 * Out of scope, deferred to follow-up ADRs if needed: file contents API, workflow runs, releases, GitHub App installation tokens, inbound webhooks (the latter would break the single-process invariant).
