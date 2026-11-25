@@ -65,6 +65,8 @@ interface Props {
   preferredThreadId?: string | null;
   onPickAgent: (agentId: string) => void;
   onCreateAgent: () => void;
+  agentsError?: string | null;
+  onRetryAgents?: () => void;
   // Boot picker is a chat-tab gate; suppress on non-chat tabs so it doesn't overlay them.
   suppressed?: boolean;
 }
@@ -81,7 +83,7 @@ interface Props {
 // Replaces the previous splash + ChatView empty-state agent picker. The
 // header (z-40) is hidden while this is visible so the user lands on a
 // focused, one-purpose screen.
-export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThreadId, onPickAgent, onCreateAgent, suppressed }: Props) {
+export function BootScreen({ agents, agentsLoaded, activeAgentId, preferredThreadId, onPickAgent, onCreateAgent, agentsError = null, onRetryAgents, suppressed }: Props) {
   const { pickedId, dismissing, done, steps, handlePick } = useBootSelection({ agentsLoaded, activeAgentId, preferredThreadId, onPickAgent });
 
 const defaultAgent = useMemo(
@@ -131,7 +133,9 @@ if (done) return null;
       ? activeStepLabel ?? "Loading your agents"
       : phase === "opening"
         ? activeStepLabel ?? `Opening ${focusAgent?.name ?? "agent"}`
-        : "Choose an agent to begin";
+        : agents.length === 0 && agentsError
+          ? "Could not load your agents"
+          : "Choose an agent to begin";
 
 const { tileAgent, showAdoption, adoptionBlocksTile, tileClickable, adoptionTitle, adoptionNeedsAttention } = bootPickerState({ focusAgent, defaultAgent, phase, adoption });
 
@@ -192,6 +196,8 @@ const { tileAgent, showAdoption, adoptionBlocksTile, tileClickable, adoptionTitl
           handleAdoptionAction={handleAdoptionAction}
           defaultAgent={defaultAgent}
           onCreateAgent={onCreateAgent}
+          agentsError={agentsError}
+          onRetryAgents={onRetryAgents}
         />
       </div>
       <div
@@ -435,7 +441,7 @@ function BootAgentChoices({
   phase, recentAgents, showAdoption, handlePick,
   adoption, adoptionTitle, adoptionLiveLabel, handleAdoptionItemRetry,
   adoptionBusy, adoptionNeedsAttention, handleAdoptionAction, defaultAgent,
-  onCreateAgent,
+  onCreateAgent, agentsError, onRetryAgents,
 }: {
   phase: "loading" | "pick" | "opening";
   recentAgents: AgentConfig[];
@@ -450,6 +456,8 @@ function BootAgentChoices({
   handleAdoptionAction: (action: VersionAdoptionAction) => Promise<void>;
   defaultAgent: AgentConfig | null;
   onCreateAgent: () => void;
+  agentsError: string | null;
+  onRetryAgents?: () => void;
 }) {
   return (<>
     {/*
@@ -517,18 +525,35 @@ function BootAgentChoices({
       {phase === "pick" &&
         !defaultAgent &&
         recentAgents.length === 0 && (
-          <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-2 px-3 text-center">
-            <p className="text-xs text-fg-faint">
-              Create an agent to start chatting.
-            </p>
-            <button
-              type="button"
-              onClick={onCreateAgent}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-fg transition-colors hover:bg-accent/20"
-            >
-              <Plus size={14} /> Create an agent
-            </button>
-          </div>
+          agentsError ? (
+            <div role="alert" className="absolute inset-x-0 top-0 flex flex-col items-center gap-2 px-3 text-center">
+              <p className="text-xs text-red-700 dark:text-red-400">
+                Could not load agents: {agentsError}
+              </p>
+              {onRetryAgents && (
+                <button
+                  type="button"
+                  onClick={onRetryAgents}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs font-medium text-fg transition-colors hover:bg-surface-3"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-2 px-3 text-center">
+              <p className="text-xs text-fg-faint">
+                Create an agent to start chatting.
+              </p>
+              <button
+                type="button"
+                onClick={onCreateAgent}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs font-medium text-fg transition-colors hover:bg-accent/20"
+              >
+                <Plus size={14} /> Create an agent
+              </button>
+            </div>
+          )
         )}
     </div>
 

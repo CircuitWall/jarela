@@ -118,7 +118,7 @@ export function AppShell() {
       className="app-shell flex flex-col text-fg overflow-hidden"
       style={{ height: "var(--actual-vh, 100dvh)" }}
     >
-      <SessionGates bootSeq={bootSeq} agents={agents} agentsLoaded={agentsLoaded} state={state} dispatch={dispatch} screenLocked={screenLocked} masterKeyLocked={masterKeyLocked} landOnAgentPicker={landOnAgentPicker} setScreenLocked={setScreenLocked} setMasterKeyLocked={setMasterKeyLocked} />
+      <SessionGates bootSeq={bootSeq} agents={agents} agentsLoaded={agentsLoaded} agentsError={agentsError} onRetryAgents={refreshAgents} state={state} dispatch={dispatch} screenLocked={screenLocked} masterKeyLocked={masterKeyLocked} landOnAgentPicker={landOnAgentPicker} setScreenLocked={setScreenLocked} setMasterKeyLocked={setMasterKeyLocked} />
       <Toaster />
       {/*
         Spacer reserving the slot the floating header visually occupies.
@@ -484,13 +484,15 @@ function useShellNotifications({ dispatch, state, unreadCount, showMenu, stateRe
 }
 
 function SessionGates({
-  bootSeq, agents, agentsLoaded, state,
+  bootSeq, agents, agentsLoaded, agentsError, onRetryAgents, state,
   dispatch, screenLocked, masterKeyLocked, landOnAgentPicker,
   setScreenLocked, setMasterKeyLocked,
 }: {
   bootSeq: number;
   agents: AgentConfig[];
   agentsLoaded: boolean;
+  agentsError: string | null;
+  onRetryAgents: () => Promise<void>;
   state: ReturnType<typeof useAppContext>["state"];
   dispatch: import("react").Dispatch<{ type: "SELECT_THREAD"; threadId: string; agentId: string; } | { type: "NEW_CHAT"; } | { type: "SET_AGENT"; agentId: string; } | { type: "SET_TAB"; tab: import("@/contexts/AppContext").Tab; } | { type: "SET_EXPERIENCE_MODE"; mode: import("@/contexts/AppContext").ExperienceMode; } | { type: "SET_FIRST_RUN_CHAT_KICKOFF"; kickoff: import("@/contexts/AppContext").FirstRunChatKickoff | null; } | { type: "SET_SELECTION"; tab: import("@/contexts/AppContext").Tab; itemId: string | null; }>;
   screenLocked: boolean;
@@ -504,6 +506,8 @@ function SessionGates({
       key={bootSeq}
       agents={agents}
       agentsLoaded={agentsLoaded}
+      agentsError={agentsError}
+      onRetryAgents={() => { void onRetryAgents(); }}
       activeAgentId={state.activeAgentId}
       preferredThreadId={state.activeThreadId}
       onPickAgent={(id) => {

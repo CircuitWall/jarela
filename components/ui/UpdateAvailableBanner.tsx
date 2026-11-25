@@ -152,15 +152,20 @@ function useAppUpdate() {
 
   async function waitForServerThenReload() {
     const deadline = Date.now() + HEALTH_POLL_TIMEOUT_MS;
+    // Require two consecutive healthy probes. A single success can still be
+    // the old process during shutdown; reloading then leaves the new page
+    // racing the supervisor restart and its first agent fetch can fail.
+    let healthyProbes = 0;
     while (Date.now() < deadline) {
       try {
         const r = await fetch("/api/v1/health", { cache: "no-store" });
-        if (r.ok) {
+        healthyProbes = r.ok ? healthyProbes + 1 : 0;
+        if (healthyProbes >= 2) {
           await clearCachesAndReload();
           return;
         }
       } catch {
-        /* server still down */
+        healthyProbes = 0;
       }
       await new Promise((res) => setTimeout(res, HEALTH_POLL_INTERVAL_MS));
     }

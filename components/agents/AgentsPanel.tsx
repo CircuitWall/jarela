@@ -50,7 +50,7 @@ function AgentAvatar({ icon, name, id }: { icon: string | null; name: string; id
 }
 
 export function AgentsPanel() {
-  const { agents, loading, error, create, update, remove, duplicate } = useAgents();
+  const { agents, loading, error, refresh, create, update, remove, duplicate } = useAgents();
   const { models } = useModels();
   const { state } = useAppContext();
   const [editing, setEditing] = useState<AgentConfig | null | "new">(null);
@@ -126,7 +126,18 @@ export function AgentsPanel() {
       {/* List */}
       <div ref={containerRef} className="flex-1 overflow-y-auto px-[calc(var(--workspace-gutter)/2)] pb-2">
         <AdvertisementSection global models={models} />
-        {error && <p role="alert" className="text-xs text-red-700 dark:text-red-400 py-2">{error}</p>}
+        {error && (
+          <div role="alert" className="flex items-center gap-2 py-2 text-xs text-red-700 dark:text-red-400">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => { void refresh(); }}
+              className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-fg transition-colors hover:bg-surface-3"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         {actionError && <p role="alert" className="text-xs text-red-700 dark:text-red-400 py-2">{actionError}</p>}
         {loading && (
           <p className="text-fg-faint text-xs text-center py-4">Loading…</p>
