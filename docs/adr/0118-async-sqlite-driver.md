@@ -74,4 +74,4 @@ receives a value or Promise.
 ## References
 
 - [ADR-0003: Use local SQLite](0003-sqlite-local-persistence.md)
-- [ADR-0034: Replace better-sqlite3 checkpointer with node:sqlite](0034-replace-better-sqlite3-checkpointer-with-node-sqlite.md)
+- [ADR-0129: Replace better-sqlite3 checkpointer with node:sqlite](0129-replace-better-sqlite3-checkpointer-with-node-sqlite.md)

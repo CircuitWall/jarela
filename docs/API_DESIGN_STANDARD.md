@@ -6,6 +6,15 @@ update does not advance the full documentation review baseline in [index.md](ind
 See [api.md](api.md) for individual endpoints and
 [architecture-patterns.json](architecture-patterns.json) for canonical operations.
 
+## Contract markers
+
+- A route is part of the app contract only when its source file carries a
+  `@public` JSDoc header, and it must appear in [api.md](api.md).
+- `@public-internal` is the loopback-only browser-extension surface. It is
+  stable for the paired extension, not for app integrations.
+- Everything else is UI-internal. `npm run api-docs:check` (part of
+  `npm run lint`) verifies that markers and documented endpoints agree.
+
 ## Compatibility first
 
 - Successful JSON responses retain their endpoint-specific shape: a resource,

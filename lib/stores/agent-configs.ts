@@ -45,9 +45,9 @@ export interface AgentConfigRow {
   voice_model: string;               // Gemini TTS model id
   voice_name: string;                // Gemini prebuilt voice name (Kore, Puck, …)
   voice_stt_model: string;           // Gemini multimodal model used for transcription
-  voice_stt_engine: string;          // ADR-0123: 'gemini' | 'browser' | 'whisper'
+  voice_stt_engine: string;          // ADR-0131: 'gemini' | 'browser' | 'whisper'
   voice_auto_speak: number;          // 1 = auto-play reply when user sent voice
-  voice_browser_voice: string;       // ADR-0124: device voice key; '' = device default
+  voice_browser_voice: string;       // ADR-0132: device voice key; '' = device default
   display_filters: string | null;    // JSON: Partial<DisplayFilters>; NULL = inherit defaults (ADR-0022)
   harness_id: string | null;         // ADR-0033: per-agent harness override; NULL = inherit global default
   delegate_targets: string | null;   // JSON string[] of agent ids this agent may delegate to; NULL/'[]' = none
@@ -172,10 +172,10 @@ export interface UpsertAgentInput {
   voice_model?: string;
   voice_name?: string;
   voice_stt_model?: string;
-  /** ADR-0123 voice input engine; omit to keep the row's value. */
+  /** ADR-0131 voice input engine; omit to keep the row's value. */
   voice_stt_engine?: SttEngine;
   voice_auto_speak?: boolean;
-  /** ADR-0124 device voice key; '' (or omit) = the device default. */
+  /** ADR-0132 device voice key; '' (or omit) = the device default. */
   voice_browser_voice?: string;
   harness_id?: string | null;
   delegate_targets?: string[];
@@ -340,7 +340,7 @@ function resolveAgentConfigValues(input: UpsertAgentInput, existing: AgentConfig
   const warmSummaryLimit = Number.isFinite(requestedWarmSummaryLimit)
     ? Math.max(0, Math.floor(requestedWarmSummaryLimit))
     : existing?.warm_summary_limit ?? 50;
-  // ADR-0123: unknown values fall back to the pre-existing Gemini path rather
+  // ADR-0131: unknown values fall back to the pre-existing Gemini path rather
   // than failing the whole upsert.
   const sttEngine = normalizeSttEngine(input.voice_stt_engine ?? existing?.voice_stt_engine);
   return {

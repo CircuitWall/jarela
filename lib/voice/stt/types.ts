@@ -1,6 +1,6 @@
-// Shared vocabulary for the voice input engines (ADR-0123).
+// Shared vocabulary for the voice input engines (ADR-0131).
 //
-// `gemini` keeps the pre-ADR-0123 behavior (multimodal Gemini transcription,
+// `gemini` keeps the pre-ADR-0131 behavior (multimodal Gemini transcription,
 // the default), `browser` uses the Web Speech API in the client, and
 // `whisper` runs the hash-pinned tiny ONNX model on the server. The value is
 // stored per agent and validated at every API boundary.
@@ -11,7 +11,7 @@ export type SttEngine = (typeof STT_ENGINES)[number];
 /** Sample rate Whisper expects; the browser resamples to it before upload. */
 export const WHISPER_SAMPLE_RATE = 16_000;
 
-/** Preserves the pre-ADR-0123 path for agents that never chose an engine. */
+/** Preserves the pre-ADR-0131 path for agents that never chose an engine. */
 export const DEFAULT_STT_ENGINE: SttEngine = "gemini";
 
 export function isSttEngine(value: unknown): value is SttEngine {

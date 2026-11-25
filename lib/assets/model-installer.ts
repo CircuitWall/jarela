@@ -1,6 +1,6 @@
 // Shared "find, download, expose readiness" state machine for local models.
 //
-// The embedding model (ADR-0101) and the Whisper input model (ADR-0123) have
+// The embedding model (ADR-0101) and the Whisper input model (ADR-0131) have
 // identical lifecycle rules: prefer a bundled copy, otherwise download once
 // into the data directory, fail fast with a transient error while the
 // download is in flight, back off after a failure, and expose a status object

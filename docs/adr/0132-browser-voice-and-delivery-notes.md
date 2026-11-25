@@ -1,16 +1,19 @@
-# ADR-0124: Per-agent device voice and browser-voice delivery notes
+# ADR-0132: Per-agent device voice and browser-voice delivery notes
+
+> Renumbered from ADR-0124 to resolve a duplicate identifier; the decision
+> date and content are unchanged.
 
 Status: **Accepted**
 
 Date: 2026-11-22
 
-Related: [ADR-0123](./0123-pluggable-voice-input-engines.md) (pluggable voice
+Related: [ADR-0131](./0131-pluggable-voice-input-engines.md) (pluggable voice
 engines and reply TTS that follows the engine), [ADR-0017](./0017-voice-via-gemini.md)
 (Gemini TTS, its free-form `style` argument).
 
 ## Context
 
-ADR-0123 splits reply speech by engine: Gemini input is read by Gemini TTS,
+ADR-0131 splits reply speech by engine: Gemini input is read by Gemini TTS,
 Browser and Whisper input by the operating system's voices through
 `speechSynthesis`. The device path had no voice control at all — every reply
 used whatever default the browser picked, which is often not the voice the user

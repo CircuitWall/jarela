@@ -109,6 +109,22 @@ const RULES = [
       "Run route/client tests for the touched endpoint.",
       "Check docs/api.md or README if the endpoint is documented.",
       "Update app/api/Agent.md when the response contract or validation pattern changes.",
+      "Run node scripts/check-api-docs.mjs; @public routes and docs/api.md must agree.",
+    ],
+  },
+  {
+    id: "architecture-decisions",
+    title: "Architecture decision or contract document changed",
+    patterns: [
+      /^docs\/adr\//,
+      /^docs\/api\.md$/,
+      /^docs\/ARCHITECTURE\.md$/,
+      /^docs\/architecture-patterns\.json$/,
+    ],
+    followUps: [
+      "Run npm run adr:check and npm run api-docs:check; ADR ids, citations, and public route docs are enforced.",
+      "Update ADR-NNNN citations in docs and code comments when an identifier changes.",
+      "Keep docs/ARCHITECTURE.md module ownership aligned with components/Agent.md.",
     ],
   },
   {

@@ -1374,7 +1374,7 @@ mutations in your own pipeline. Blessing arbitrary CSS overrides would turn
 internal class names into a public API.
 
 ADR: [0077](adr/0077-rebranding-overlay-contract.md), building on
-[0005](adr/0005-rebrand-jarela.md).
+[0128](adr/0128-rebrand-jarela.md).
 
 ---
 

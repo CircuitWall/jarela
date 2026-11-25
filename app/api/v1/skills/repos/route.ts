@@ -1,3 +1,8 @@
+/**
+ * @public — `GET /api/v1/skills/repos` (list), `POST` (add repo)
+ *
+ * The first repo added becomes writable unless `writable: false` is passed.
+ */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import path from "node:path";

@@ -10,7 +10,7 @@ informed:
 
 ## Context and Problem Statement
 
-ADR-0005 renamed LangGUI to Jarela with a hard rename and "no dual-name shims
+ADR-0128 renamed LangGUI to Jarela with a hard rename and "no dual-name shims
 at the code level". That settled *our* name, but it left downstream rebranding
 unspecified. Since then a partial mechanism accreted: `lib/env/app-config.ts`
 exposed `NEXT_PUBLIC_APP_NAME` / `_DESCRIPTION` / `_ISSUE_URL`, and
@@ -56,7 +56,7 @@ they rebrand without forking, and what — if anything — must survive a rebran
   and put the manifest behind a DB read on every request.
 * **C. Tell overlays to fork.** Zero upstream work, but every fork then carries
   a permanent rename diff that conflicts with each release — the exact cost
-  ADR-0005 avoided internally.
+  ADR-0128 avoided internally.
 * **D. Full theming system (arbitrary CSS injection, template overrides).**
   Maximum flexibility, but it turns every internal class name into a public
   API and blocks routine UI refactors.
@@ -140,7 +140,7 @@ target unchanged.
 Internal identifiers stay `jarela*` in both surfaces: DOM ids
 (`#__jarela-overlay`), `chrome.storage` keys (`jarelaConfig`), CSS class and
 keyframe names, `globalThis` keys, and DB table names. They are not product
-names, and renaming them orphans stored config — the same reasoning ADR-0005
+names, and renaming them orphans stored config — the same reasoning ADR-0128
 applied to DB tables.
 
 ## Consequences

@@ -1,4 +1,7 @@
-# ADR-0123: Pluggable voice input engines (browser, Whisper tiny, Gemini)
+# ADR-0131: Pluggable voice input engines (browser, Whisper tiny, Gemini)
+
+> Renumbered from ADR-0123 to resolve a duplicate identifier; the decision
+> date and content are unchanged.
 
 Status: **Accepted**
 

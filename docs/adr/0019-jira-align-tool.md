@@ -160,5 +160,5 @@ Delete is opt-in because Jira Align deletes are not undoable.
 * Tool: `lib/tools/jira-align.ts`.
 * Registration: `lib/tools/index.ts` (`JiraAlign` category, `Work` group).
 * Integration credentials: `lib/stores/integrations.ts` (`jira_align`).
-* Sibling reference: ADR-0007-ish note in [[atlassian.ts]] explaining
+* Sibling reference: the historical note in [[atlassian.ts]] explaining
   why we hit the REST API directly rather than running the public MCP.

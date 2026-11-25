@@ -1,3 +1,9 @@
+/**
+ * @public — `GET` / `PATCH` / `DELETE /api/v1/skills/repos/[id]`
+ *
+ * Fetch, update, or remove a configured skill repo. Setting `writable: true`
+ * clears the flag on every other repo.
+ */
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";

@@ -4,7 +4,10 @@ date: 2026-05-28
 deciders: example-user
 ---
 
-# ADR-0034: Replace better-sqlite3 checkpointer with node:sqlite
+# ADR-0129: Replace better-sqlite3 checkpointer with node:sqlite
+
+> Renumbered from ADR-0034 to resolve a duplicate identifier; the decision
+> date and content are unchanged.
 
 ## Context and Problem Statement
 

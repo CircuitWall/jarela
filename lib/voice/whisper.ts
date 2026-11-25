@@ -1,4 +1,4 @@
-// Whisper input engine (ADR-0123).
+// Whisper input engine (ADR-0131).
 //
 // Runs `Xenova/whisper-tiny` (quantized ONNX) through the same on-demand
 // `@huggingface/transformers` runtime the local embedding model uses, from

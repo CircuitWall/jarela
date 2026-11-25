@@ -1,3 +1,8 @@
+/**
+ * @public — `GET /api/v1/skills/[id]` (read), `PUT` (update), `DELETE`
+ *
+ * Writes always target the single writable skill repo.
+ */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { NextResponse } from "next/server";
