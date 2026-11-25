@@ -84,6 +84,11 @@ Agents continuously ensure patterns stay current:
 - **Dependency Changes** - APIs affecting patterns
 - **Coverage Analysis** - Patterns matching reality
 
+Structural drift is enforced: `npm run lint` runs
+`node scripts/check-agent-docs.mjs`, which verifies guide frontmatter, links,
+referenced paths, and declared module coverage. Use
+`npm run check:impact -- --staged` to see which module guides a change affects.
+
 Result: Agent.md files improve continuously.
 
 ---

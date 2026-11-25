@@ -17,8 +17,8 @@ standalone packages lets:
 2. **External users install only what they need** — e.g. a LangGraph user
    who wants Jira tools without the rest of Jarela.
 3. **Each package version independently**, since adapter packages
-   (e.g. `@circuitwall/jira-langchain`) move at LangChain's pace while the
-   underlying client (`@circuitwall/jira-client`) is stable.
+   (e.g. `@circuitwall/atlassian-langchain`) move at LangChain's pace while
+   the host application's adapters remain stable.
 
 ## Layout
 
@@ -42,10 +42,11 @@ Open an ADR first if the package is non-trivial. The general checklist:
 
 1. `mkdir packages/<name>` and add `package.json`, `tsconfig.json`,
    `README.md`, `CHANGELOG.md`.
-2. Inherit from the shared base configs (see existing packages for the
-   pattern).
-3. Add the package's test glob to the root `vitest.config.mts` include
-   array.
+2. Match the TypeScript options used by the existing packages; there is no
+   shared base `tsconfig` today.
+3. Add a `test` script to the package's `package.json`. The root
+   `npm run packages:test` runs it in each workspace; package tests are not
+   part of the root Vitest include globs.
 4. Register the npm package name with the `@circuitwall` org's OIDC
    Trusted Publishing config on npmjs.com (one-time manual step per new
    package name) before the first release.

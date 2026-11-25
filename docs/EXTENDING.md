@@ -761,7 +761,8 @@ Steps:
   `lib/providers/builtins.ts`. No separate provider-name map is needed.
 3. If the provider has known model context windows that the live API
    doesn't surface, register them in `lib/providers/known-context-windows.ts`.
-4. Document the new provider in the README "Providers" section.
+4. Document the new provider in the provider list in
+   [`docs/index.md`](./index.md).
 
 Reference contract: `lib/providers/types.ts` (the `ModelProvider`
 interface and its companion event/message types). See
@@ -1102,7 +1103,7 @@ Jarela's tool pool merges MCP-server tools with built-ins. To register a
 server:
 
 - **Via the UI.** App → Settings → MCP → Add server. Pick `stdio`
-  (subprocess) or `http` (remote SSE/HTTP), fill in the spec, save.
+  (subprocess) or `http` (remote streamable HTTP), fill in the spec, save.
 - **Programmatically.** Call `upsertMcpServer(...)` from
   [`lib/stores/mcp-servers.ts`](../lib/stores/mcp-servers.ts) with a
   `McpServerInput`. Spec env vars and headers are encrypted at rest
@@ -1164,7 +1165,9 @@ narrate the recipe and proposes the corresponding config changes.
 
 Steps:
 
-1. Add a manifest under [`lib/integrations/registry.ts`](../lib/integrations/registry.ts) with prerequisites, ordered steps, and troubleshooting hints.
+1. Add `lib/integrations/<name>/manifest.ts` with prerequisites, ordered
+   steps, and troubleshooting hints, then reference it from
+   [`lib/integrations/registry.ts`](../lib/integrations/registry.ts).
 2. Each step that triggers a config change names its `proposes` kind
    (e.g. `install_mcp`, `update_agent_tools`, `update_agent`).
 3. Each step that produces a verifiable side effect names its

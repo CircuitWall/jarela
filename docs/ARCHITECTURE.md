@@ -14,7 +14,7 @@ C4Container
       Container(routes, "API Routes", "Next.js Route Handlers", "REST + SSE endpoints under /api/v1")
       Container(agents, "Agent Runtime", "LangGraph + @langchain/*", "State-machine orchestration of LLM + tools; streams completions through providers")
       Container(advertisements, "Derived Agent Metadata", "lib/agents/advertisement-service + lib/stores", "Opt-in configured-model queue, encrypted fingerprints/state, bounded authorized catalog (Unreleased)")
-      Container(providers, "Provider Adapters", "lib/providers", "Per-vendor SDK glue (Anthropic, OpenAI, Google, Cohere, DeepSeek)")
+      Container(providers, "Provider Adapters", "lib/providers", "Per-vendor SDK glue (Anthropic, OpenAI, Gemini, DeepSeek, GitHub Copilot), the LangChain bridge (Cohere), and external .cjs plugins")
       Container(pricing, "Pricing and Model Updates", "lib/pricing + lib/stores/pricing + lib/stores/model-metadata", "Refreshes provider pricing, separate aggregator signals, and source-backed API model metadata")
       Container(embed, "Embeddings", "lib/embeddings", "Vector embedding generator for semantic memory recall")
       Container(docs, "Document RAG", "lib/documents (+ lib/documents/remote)", "Folder indexer + remote indexers for GitHub, Gmail, Outlook, iCloud, Jira, and Confluence; chunked + embedded into the documents tables; surfaced via documents_search (ADR-0024, ADR-0026, ADR-0029, ADR-0110)")
@@ -37,11 +37,13 @@ C4Container
     System_Ext(openai, "OpenAI", "GPT")
     System_Ext(google, "Google GenAI", "Gemini (LLM + STT/TTS)")
     System_Ext(deepseek, "DeepSeek", "Chat completions + optional standalone Search/Fetch APIs")
-    System_Ext(cohere, "Cohere", "Embeddings")
+    System_Ext(cohere, "Cohere", "Embeddings + text-only chat via the LangChain bridge")
     System_Ext(openrouter, "OpenRouter", "Model route pricing catalog")
     System_Ext(litellm, "LiteLLM", "Model pricing catalog")
-    System_Ext(mcps, "MCP Servers", "External tool providers (stdio / SSE)")
+    System_Ext(mcps, "MCP Servers", "External tool providers (stdio / streamable HTTP)")
     System_Ext(mcpreg, "MCP Registry", "registry.modelcontextprotocol.io — discovery only (ADR-0014)")
+    System_Ext(firecrawl, "Firecrawl", "Default web_search engine (optional API key)")
+    System_Ext(oauthproxy, "Jarela OAuth Proxy", "Cloud Run token proxy for the bundled Gmail client; BYO credentials bypass it")
     System_Ext(github, "GitHub API", "Issues / PRs / Repos (native github_* tools, ADR-0015) + Copilot OAuth (model provider)")
     System_Ext(atlassian, "Atlassian Cloud", "Jira REST + Confluence REST (tools + document-RAG ingest, ADR-0026)")
     System_Ext(mailproviders, "Mail Providers", "Gmail, Microsoft Graph, and iCloud Mail (remote document indexing)")
@@ -92,9 +94,11 @@ C4Container
     Rel(providers, google, "HTTPS")
     Rel(providers, deepseek, "HTTPS")
     Rel(agents, deepseek, "HTTPS via web tools, only with separate DeepSeek Search & Fetch opt-in")
+    Rel(agents, firecrawl, "HTTPS web search (optional)")
+    Rel(routes, oauthproxy, "HTTPS token exchange for the bundled Gmail client")
     Rel(voice, google, "HTTPS (Gemini STT/TTS); browser and Whisper engines skip it")
     Rel(embed, cohere, "HTTPS (embed)")
-    Rel(mcp, mcps, "stdio / SSE")
+    Rel(mcp, mcps, "stdio / streamable HTTP")
     Rel(routes, mcpreg, "HTTPS (picker search)")
     Rel(routes, github, "HTTPS")
     Rel(routes, atlassian, "HTTPS (tools)")
@@ -130,11 +134,14 @@ and the boundaries new code should use.
 | `lib/tools/`, `lib/mcp/` | Capability-aware tool registry and domains; MCP discovery and invocation. |
 | `lib/dependencies/` | Declaration, probing, and install plans for optional tool/integration dependencies (ADR-0121). |
 | `lib/stores/`, `lib/db/`, `lib/crypto/` | Persistent state, SQLite access, checkpoints, and encryption. |
-| `lib/scheduler/`, `lib/bridges/`, `lib/streaming/`, `lib/notifications/` | Background triggers, inbound transports, run updates, and alerts. |
+| `lib/scheduler/`, `lib/bridges/`, `lib/notifications/` | Background triggers, inbound transports, run updates, and alerts. |
 | `packages/` | Separately scoped npm workspace packages. |
 
 **Dependency direction:** UI → API routes → runtime modules → registries,
 adapters, and stores → local persistence or configured external services.
+ESLint enforces the UI half of that direction: `components/` and `hooks/` cannot
+import `lib/db`, `lib/stores`, `lib/crypto`, `lib/scheduler`, or
+`lib/notifications`.
 
 The unreleased credential editor keeps API dispatch and form state in
 `hooks/useIntegrationCredential.ts` and authorization sessions in
@@ -336,7 +343,7 @@ For tool folder placement and registration rules, see the
 
 ### Shared utilities
 
-Two cross-cutting helper layers sit underneath every container above. They
+Cross-cutting helper modules sit underneath every container above. They
 are not their own boundary on the diagram — every container reaches into
 them — but they are load-bearing:
 
@@ -349,6 +356,12 @@ them — but they are load-bearing:
 - **`lib/api/`** — `errorResponse` / `notFoundResponse` / `createdResponse`
   / `validateBody` and the per-resource `*ToResponse` row→JSON serializers
   shared between list and `[id]` route handlers.
+- **`lib/logging/`** — the in-process console capture ring, redaction and
+  subscribe surface behind the Logs view.
+- **`lib/assets/`** — hash-verified download and local model-installer helpers.
+- **`lib/cookies/`** — outbound cookie-jar helpers shared by proxied requests.
+- **`lib/dashboard/`** — pure formatting, grouping, geometry and sorting used by
+  Dashboard views; no persistence access.
 
 Unreleased runtime-operation consolidation also shares:
 
@@ -386,10 +399,11 @@ Before adding or reviewing a runtime operation, compare it with the curated
 [machine-readable architecture pattern catalog](architecture-patterns.json).
 It records common implementations, their behavior tests, and important
 exceptions for request validation, response serialization, tolerant JSON
-parsing, bounded caches, and built-in tool registration. The catalog is
-deliberately small: it guides searches and review decisions; it does not
-replace this module map, define every dependency rule, or prove that a new
-implementation is architecturally sound.
+parsing, bounded caches, built-in tool registration, hook list contracts,
+component controller ownership, transactional store writes, and the MCP
+connection manager. The catalog is deliberately small: it guides searches and
+review decisions; it does not replace this module map, define every dependency
+rule, or prove that a new implementation is architecturally sound.
 
 Reviewers should compare behavior and ownership, not just syntax. Reuse an
 existing helper when its contract fits; extract only when implementations
@@ -432,7 +446,7 @@ flowchart LR
     C --> XP[External providers<br/>~/.jarela/providers/*.cjs<br/>hot-loaded]
     D --> G[Built-in tools]
     D --> XT[External tools<br/>~/.jarela/tools/*.cjs<br/>hot-loaded]
-    D -."delegate_to_agent reaches Agent Runtime internals<br/>(run-thread, model-router, stream-collector) directly<br/>— the one intentional bidirectional edge".-> B
+    D -."delegate_to_agent calls run-thread, model-router and<br/>stream-collector; other tools import shared contracts<br/>(ToolPolicy types, proposal kinds, instruction edits,<br/>context boundary) without reaching run internals".-> B
     D --> EM[Embeddings<br/>lib/embeddings]
     D --> FS[File Store<br/>lib/files<br/>~/.jarela/files/]
     A --> V[Voice<br/>lib/voice<br/>STT + TTS]
@@ -658,7 +672,7 @@ enforced inside `applyAction`.
 
 ### Tool registry — category × capability
 
-Every built-in tool registers with the [tool registry](../lib/tools/registry.ts)
+Every built-in tool registers with the [tool registry](../lib/tools/runtime/registry.ts)
 on two orthogonal axes ([ADR-0038](./adr/0038-tool-capability-axis.md)):
 
 * **`ToolCategory`** — topical group (`Memory`, `Files`, `Mail`, `Atlassian`,
@@ -680,9 +694,10 @@ gmail, outlook, calendar) declare every capability bucket in a single
 call. `integrationId` names the INTEGRATIONS key backing the tools, so the
 permission layer can deny them when that integration is unconfigured
 ([ADR-0078](adr/0078-tool-integration-declaration.md)). External
-(`JARELA_TOOLS_DIR`) and MCP tools default to `execute` until a
-manifest field overrides it. Consumers — a planned per-capability approval
-gate, UI badges, the ADR-0037 validator's citation rules — switch on the
+(`JARELA_TOOLS_DIR`) and MCP tools default to `execute`; manifest-level
+capability overrides are deferred to an ADR-0038 follow-up. Consumers — a
+planned per-capability approval gate, UI badges, the ADR-0037 validator's
+citation rules — switch on the
 three values exhaustively. The `capability-coverage.test.ts` runtime check
 asserts every registered tool has a capability so a new tool cannot land
 uncategorised.
@@ -877,7 +892,7 @@ sequenceDiagram
     participant TL as lib/tools/web/browser-control
     participant Q as Command queue (lib/api/browser-control)
     participant SW as Extension service worker
-    participant EX as Dispatcher (lib/browser-control.mjs)
+    participant EX as Dispatcher (browser-extension/lib/browser-control.mjs)
     participant PG as Target tab
     participant DB as browser_command_log
 
@@ -918,7 +933,7 @@ routes through the approval gate before any DOM write.
 | Cold start (dev) | < 5 s | `npm run dev` |
 | First token latency | < 1.5 s p95 | Network-bound on provider |
 | Local-only operation | required | No telemetry, no required cloud backend |
-| Persistence | survive process restart | All state in `~/.jarela/*.sqlite` |
+| Persistence | survive process restart | SQLite in the configurable data directory (`JARELA_DB_DIR`); file-store artifacts under its `files/` subtree |
 | API key handling | never leave the host | Stored in DB or env, not synced |
 | Same-origin enforcement | required | CSRF / DNS-rebinding guard in `lib/auth/access.ts` |
 | Secrets at rest | required for sensitive namespaces | AES-GCM envelope, master key in OS keychain or `.secret-key` fallback |
@@ -949,10 +964,12 @@ state. See [ADR-0106](adr/0106-on-demand-release-documentation.md).
 
 | Dependency | Purpose | Failure mode |
 |---|---|---|
-| Anthropic / OpenAI / Google / Cohere | LLM inference | Surface provider error to UI; allow model switch |
+| Anthropic / OpenAI / Google / Cohere / DeepSeek / GitHub Copilot | LLM inference (Cohere via the LangChain bridge; DeepSeek also has optional Search/Fetch web tools) | Surface provider error to UI; allow model switch |
 | Google GenAI (Gemini) — STT + TTS endpoints | Gemini voice input engine (default), Gemini-engine spoken replies, and the `generate_voice` tool (ADR-0017, ADR-0123) | Gemini-engine input and Gemini spoken replies degrade; browser and Whisper input plus device-voice replies keep working |
 | Hugging Face model CDN (huggingface.co) | One-time hash-pinned download of the Whisper tiny model (ADR-0123) | Whisper input reports "not installed"; browser and Gemini engines keep working, chat continues |
 | MCP servers | External tools | Tool call returns error; agent can recover or skip |
+| Firecrawl (`api.firecrawl.dev`) | Default `web_search` engine; an API key is optional but rate-limited traffic needs one | Tool call returns the API error; agent can retry with a configured DeepSeek Search engine or skip |
+| Jarela OAuth proxy (Cloud Run) | Token exchange for the bundled Gmail OAuth client, so its secret is never shipped | OAuth connect/refresh fails with an actionable error; BYO client credentials or `JARELA_GOOGLE_TOKEN_PROXY` bypass the hosted proxy |
 | External provider/tool `.cjs` files (~/.jarela/{providers,tools}/) | User-authored extensions, hot-loaded | Validation errors surfaced in `GET /api/v1/extensions` and the Extensions tab; loader skips invalid files (ADR-0013) |
 | User shell rc (`~/.zshrc`/`~/.bashrc`) on macOS/Linux, User-scope env on Windows | Source for credential env vars (ADR-0016); probed at boot + on demand | Probe failure surfaces a warning, app falls back to whatever is already in `process.env`; tools surface "not configured" via the existing env-then-DB resolver |
 | GitHub API (`api.github.com`) | Native `github_*` tools — issues, PRs, repos (ADR-0015); Copilot OAuth for the model provider | Tool call returns the API error; agent can recover or skip |
@@ -961,4 +978,4 @@ state. See [ADR-0106](adr/0106-on-demand-release-documentation.md).
 
 ## Decisions
 
-See [`docs/adr/`](./docs/adr/). Significant choices on persistence, agent runtime, and provider strategy will be recorded as ADRs.
+See [`docs/adr/`](./adr/). Significant choices on persistence, agent runtime, and provider strategy will be recorded as ADRs.

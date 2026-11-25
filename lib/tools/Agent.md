@@ -131,45 +131,29 @@ export const streamFilesTool: Tool<ReadFileInputType, AsyncGenerator<string>> = 
 
 ---
 
-### Pattern 3: Tool with MCP Integration
+### Pattern 3: Consuming MCP Tools (Do Not Re-Register Them)
+
+MCP tools are discovered from enabled server rows, not authored as built-in
+`Tool` objects. The runtime merges them into the catalog with `source: "mcp"`;
+they are uniformly `execute` capability and are filtered out of read-only turns.
+Use [the MCP connection manager](../mcp/client.ts) as the only loading surface:
 
 ```typescript
-import { MCPClient } from "@/lib/mcp/client";
+import { getMcpTools } from "@/lib/mcp/client";
 
-const MCPToolInput = z.object({
-  server: z.string().describe("MCP server name"),
-  resource: z.string().describe("Resource identifier"),
-});
-
-export type MCPToolInputType = z.infer<typeof MCPToolInput>;
-
-export const mcpTool: Tool<MCPToolInputType, string> = {
-  name: "call_mcp_resource",
-  description: "Call a resource through MCP server",
-  inputSchema: MCPToolInput,
-  
-  execute: async (input: MCPToolInputType): Promise<string> => {
-    const mcp = new MCPClient();
-    
-    try {
-      // MCP operations might fail if server is unavailable
-      const result = await mcp.readResource(input.server, input.resource);
-      return JSON.stringify(result, null, 2);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("ECONNREFUSED")) {
-        return `Error: MCP server "${input.server}" is not available`;
-      }
-      return `Error: Failed to call MCP: ${error instanceof Error ? error.message : String(error)}`;
-    }
-  },
-};
+// Callers receive already-built LangChain tools from the shared cache.
+const tools = await getMcpTools();
 ```
 
-**Checklist:**
-- ✅ MCP client used, not embedded
-- ✅ Server availability errors handled
-- ✅ Connection errors identified
-- ✅ Output is JSON or structured text
+**Rules:**
+- ✅ Consume `getMcpTools()` / `getMcpToolMeta()`; never construct an
+  `MCPAdapter` in a tool module.
+- ✅ Call `invalidateMcpTools()` from every server CRUD/proposal mutation.
+- ✅ Keep capability policy in the runtime catalog; do not add a separate MCP
+  permission path.
+- ✅ Treat server-supplied annotations as display metadata, not authorization.
+- See [lib/mcp/Agent.md](../mcp/Agent.md) for transport, cache, and result
+  normalization contracts.
 
 ---
 
@@ -524,11 +508,11 @@ Before opening a PR with tool changes, verify:
 
 ## 🔗 Related
 
-- **Technical Debt:** See [TECHNICAL_DEBT_QUICK_WINS.md](../TECHNICAL_DEBT_QUICK_WINS.md) for tool extraction patterns
-- **Modular Agent Strategy:** See [MODULAR_AGENT_STRATEGY.md](../MODULAR_AGENT_STRATEGY.md) for module-level agent guidance
-- **Tool Types:** See `lib/tools/types.ts` for interface definitions
+- **Technical Debt:** See [CONTRIBUTING.md](../../CONTRIBUTING.md#api-design-and-technical-debt) for tool extraction patterns
+- **Modular Agent Strategy:** See [AGENTS.md](../../AGENTS.md) for module-level agent guidance
+- **Tool Types:** See `lib/tools/runtime/types.ts` for interface definitions
 - **Tool Registry:** See `lib/tools/runtime/registry.ts` for registration patterns
 
 ---
 
-**Questions?** See MODULAR_AGENT_STRATEGY.md or CONTRIBUTING.md for more context.
+**Questions?** See AGENTS.md or CONTRIBUTING.md for more context.

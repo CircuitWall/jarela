@@ -283,19 +283,39 @@ Healthy Agent.md files show:
 
 ---
 
-## Tier 2 Modules (Ready)
+## Tier 2 Modules (Complete)
 
-**components/Agent.md** - React component patterns  
-**hooks/Agent.md** - React hooks patterns  
-**lib/stores/Agent.md** - State management patterns
+**[components/Agent.md](./components/Agent.md)**
+- Panel/controller/view ownership, shared primitives, dialog and state contracts
+- Pattern reference, testing guide, frontier
+
+**[hooks/Agent.md](./hooks/Agent.md)**
+- Async supersede, subscription cleanup, command identity, list-state primitive
+- Pattern reference, testing guide, frontier
+
+**[lib/stores/Agent.md](./lib/stores/Agent.md)**
+- Transactional writes, encryption, tolerant decoding, retention and invalidation
+- Pattern reference, testing guide, frontier
 
 ---
 
-## Tier 3 Modules (Ready)
+## Tier 3 Modules (Complete)
 
-**lib/mcp/Agent.md** - MCP integration patterns  
-**scripts/Agent.md** - Automation patterns  
-**tests/Agent.md** - Testing patterns
+**[lib/mcp/Agent.md](./lib/mcp/Agent.md)**
+- Connection manager, transport selection, result normalization, registry bounds
+- Pattern reference, testing guide, frontier
+
+**[scripts/Agent.md](./scripts/Agent.md)**
+- Gate conventions, repo-root resolution, exit codes, stdout protocols
+- Pattern reference, testing guide, frontier
+
+**[tests/Agent.md](./tests/Agent.md)**
+- Unit/e2e/live layer ownership, isolation, selectors, validation gates
+- Pattern reference, testing guide, frontier
+
+`npm run lint` runs `node scripts/check-agent-docs.mjs`, which verifies guide
+frontmatter, links, referenced paths, and module coverage. See
+[Documentation Validation](./AGENTS.md#documentation-validation).
 
 ---
 
