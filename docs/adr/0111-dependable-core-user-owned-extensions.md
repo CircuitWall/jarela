@@ -29,7 +29,7 @@ product is complete or universally reliable.
 
 The 3.0 major boundary primarily reflects dropping Node 22 support: source/npm
 users need Node 24.15.0+ on 24.x or Node 26+. It does not establish a new extension
-architecture or sandbox. See the [3.0 changelog](../CHANGELOG.md#300-2026-10-27).
+architecture or sandbox. See the [3.0 changelog](../../CHANGELOG.md#300-2026-10-27).
 
 ## Decision drivers
 
