@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   empty: false,
   remove: vi.fn(),
   duplicate: vi.fn(),
+  refresh: vi.fn(),
   confirm: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ vi.mock("@/hooks/useAgents", () => ({
   useAgents: () => ({
     agents: mocks.empty ? [] : [mocks.agent], loading: false, error: mocks.listError,
     create: vi.fn(), update: vi.fn(), remove: mocks.remove, duplicate: mocks.duplicate,
+    refresh: mocks.refresh,
   }),
 }));
 vi.mock("@/hooks/useModels", () => ({ useModels: () => ({ models: [] }) }));
@@ -71,6 +73,8 @@ describe("agent panel feedback and access", () => {
     render(<AgentsPanel />);
     expect(screen.getByRole("alert").textContent).toContain("Synthetic load failure");
     expect(screen.queryByText(/No agents yet/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mocks.refresh).toHaveBeenCalledOnce();
   });
 
   it("offers a native edit button alongside separately named actions", () => {

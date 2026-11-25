@@ -200,3 +200,12 @@ describe("client cache shape-specific behavior", () => {
     }
   });
 });
+
+it("cache-busts the agent recovery read", async () => {
+  const { api } = await import("./client");
+  vi.spyOn(Date, "now").mockReturnValue(123_456);
+  const fetch = vi.fn().mockResolvedValue(json([]));
+  vi.stubGlobal("fetch", fetch);
+  await api.agents.list({ force: true, cacheBust: true });
+  expect(fetch.mock.calls[0][0]).toBe("/api/v1/agents?cacheBust=123456");
+});

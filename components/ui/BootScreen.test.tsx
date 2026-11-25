@@ -43,6 +43,27 @@ it("offers a direct path to create an agent when none are configured", () => {
   expect(onCreateAgent).toHaveBeenCalledOnce();
 });
 
+it("shows a retry instead of the create tile when the agent list failed", () => {
+  const onRetryAgents = vi.fn();
+  render(
+    <BootScreen
+      agents={[]}
+      agentsLoaded
+      agentsError="HTTP 503"
+      onRetryAgents={onRetryAgents}
+      activeAgentId={null}
+      onPickAgent={vi.fn()}
+      onCreateAgent={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByRole("alert").textContent).toContain("Could not load agents: HTTP 503");
+  expect(screen.getByText("Could not load your agents")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Create an agent" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(onRetryAgents).toHaveBeenCalledOnce();
+});
+
 it("shows one pulsing current-action line while agents load", () => {
   const { container } = render(
     <BootScreen agents={[]} agentsLoaded={false} activeAgentId={null} onPickAgent={vi.fn()} onCreateAgent={vi.fn()} />,

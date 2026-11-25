@@ -473,8 +473,12 @@ export const api = {
       `/workflows/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify(input), signal, timeoutMs: 120_000 }),
   },
   agents: {
-    list: (opts?: { force?: boolean }) =>
-      cachedList(agentListCache, () => request<AgentConfig[]>("/agents"), setAgentListCache, opts?.force === true),
+    list: (opts?: { force?: boolean; cacheBust?: boolean }) => {
+      // A cache-busted path also misses a stale service-worker entry left by
+      // an older build after an installation update.
+      const path = opts?.cacheBust ? `/agents?cacheBust=${Date.now()}` : "/agents";
+      return cachedList(agentListCache, () => request<AgentConfig[]>(path), setAgentListCache, opts?.force === true);
+    },
     recentReplies: () => {
       watchRecentAssistantReplies();
       return loadRecentAssistantReplies();
