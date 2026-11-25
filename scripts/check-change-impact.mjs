@@ -33,6 +33,7 @@ const RULES = [
       "Check capability/category registration, default package descriptors, and permission expectations.",
       "Add focused tool tests and a list_tools/catalog assertion when selection guidance changes.",
       "If behavior is user-visible, update README, package docs, or CHANGELOG.",
+      "Update lib/tools/Agent.md when registration, schema, or testing conventions change.",
     ],
   },
   {
@@ -61,6 +62,7 @@ const RULES = [
       "Run focused agent tests for prompt, retry, validation, and history behavior.",
       "Check whether built-in skills or harness presets need matching wording.",
       "If the change affects tool choice, update tool descriptions or workspace recommended_next_steps.",
+      "Update lib/agents/Agent.md when canonical files or invariants change.",
     ],
   },
   {
@@ -91,6 +93,7 @@ const RULES = [
       "Add or update migration/store tests and verify idempotent re-runs.",
       "Open or update an ADR before changing persistence schema or directory layout.",
       "Check release notes for operator-visible migration or compatibility impact.",
+      "Update lib/db/Agent.md or lib/stores/Agent.md when canonical files or invariants change.",
     ],
   },
   {
@@ -105,6 +108,7 @@ const RULES = [
       "Verify zod validation at the boundary and update shared api/types when payloads change.",
       "Run route/client tests for the touched endpoint.",
       "Check docs/api.md or README if the endpoint is documented.",
+      "Update app/api/Agent.md when the response contract or validation pattern changes.",
     ],
   },
   {
@@ -131,13 +135,30 @@ const RULES = [
       /^scripts\/.+\.(mjs|js|ps1|sh|cmd)$/,
       /^\.github\/workflows\/.+\.ya?ml$/,
       /^eslint\.config\.mjs$/,
-      /^vitest\.config\.ts$/,
+      /^vitest\.config\.mts$/,
       /^playwright\.config\.ts$/,
     ],
     followUps: [
       "Run the changed script directly with representative arguments before relying on it.",
       "Update package.json scripts or published files when the automation becomes a supported command.",
       "Check CI workflow wiring if the automation should run in pull requests or releases.",
+      "Update scripts/Agent.md when script conventions or gate wiring change.",
+    ],
+  },
+  {
+    id: "module-guidance",
+    title: "Module guidance or uncovered module source changed",
+    patterns: [
+      /^components\//,
+      /^hooks\//,
+      /^lib\/mcp\//,
+      /^tests\//,
+      /(^|\/)Agent\.md$/,
+    ],
+    followUps: [
+      "Check the owning Agent.md still matches the changed pattern, canonical files, and test references.",
+      "Run node scripts/check-agent-docs.mjs; broken guide links or undeclared module docs fail npm run lint.",
+      "Update AGENTS.md when a module boundary or guidance tier changes.",
     ],
   },
   {

@@ -189,6 +189,68 @@
       "exceptions": [
         "MCP and external tools have separate loading and policy boundaries; do not force them through the built-in registration lifecycle."
       ]
+    },
+    {
+      "id": "client-list-hook-contract",
+      "operation": "Build list/CRUD hooks on the shared useListState primitive so loading, request supersede, event invalidation, refresh, and command identity stay consistent.",
+      "canonicalSources": [
+        "hooks/useListState.ts"
+      ],
+      "validationSources": [
+        "hooks/unifiedHookContracts.test.ts",
+        "hooks/useListState.test.ts",
+        "hooks/useSSE.lifecycle.test.ts"
+      ],
+      "exceptions": [
+        "Utility hooks return a bare value or object rather than state/commands; component-private controllers do not expand the shared hook API."
+      ]
+    },
+    {
+      "id": "component-controller-ownership",
+      "operation": "Keep a component's loading, mutations, feedback, and resource lifetimes in a co-located useX controller while the view renders cohesive sections.",
+      "canonicalSources": [
+        "components/documents/useDocumentsPanel.ts",
+        "components/documents/DocumentsPanel.tsx",
+        "components/env/useRuntimeEnvSettings.ts"
+      ],
+      "validationSources": [
+        "components/documents/useDocumentsPanel.test.tsx",
+        "components/env/useRuntimeEnvSettings.test.tsx"
+      ],
+      "exceptions": [
+        "Presentational leaves and shared ui/ primitives own no async controller; cross-component credentials compose the shared hooks instead of adding component-local API dispatch."
+      ]
+    },
+    {
+      "id": "store-transactional-write",
+      "operation": "Perform multi-statement store writes inside withDbTransaction, encrypting secrets before binding and normalizing rows before return.",
+      "canonicalSources": [
+        "lib/db/transaction.ts",
+        "lib/stores/agent-configs.ts",
+        "lib/stores/credentials.ts"
+      ],
+      "validationSources": [
+        "lib/stores/agent-configs.test.ts",
+        "lib/stores/credentials.test.ts"
+      ],
+      "exceptions": [
+        "Store-owned schemas with injected DatabaseSync (workflow-runs) use explicit CAS transactions; the tool-stats manual transaction is known debt, not precedent."
+      ]
+    },
+    {
+      "id": "mcp-single-connection-manager",
+      "operation": "Load MCP tools through the singleton getMcpTools cache, isolate adapters per server, and invalidate on every server mutation.",
+      "canonicalSources": [
+        "lib/mcp/client.ts",
+        "lib/mcp/tool-results.ts"
+      ],
+      "validationSources": [
+        "lib/mcp/client.test.ts",
+        "lib/mcp/tool-results.test.ts"
+      ],
+      "exceptions": [
+        "MCP tools are merged into the runtime catalog as execute capability; they are not registered as built-in tools and do not gain a separate permission path."
+      ]
     }
   ]
 }

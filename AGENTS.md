@@ -17,12 +17,12 @@ These shared instructions apply to coding agents working in this repository. `CL
 - **Runtime:** Next.js 16 (App Router) on Node 24.15.0+ (24.x), or 26+
 - **UI:** React 19, Tailwind, lucide-react, react-markdown
 - **Agents:** LangGraph (`@langchain/langgraph` + SQLite checkpoint)
-- **Providers:** Anthropic, OpenAI, Google GenAI, Cohere
+- **Providers:** Anthropic, OpenAI, Google GenAI, DeepSeek, GitHub Copilot; Cohere via the LangChain bridge
 - **Tools:** MCP via `@langchain/mcp-adapters` + built-ins under `lib/tools/`
 - **Persistence:** SQLite under the platform data directory (`%LOCALAPPDATA%\Jarela` on Windows, `~/.jarela` on macOS/Linux; configurable via `JARELA_DB_DIR`)
 - **Validation:** zod
-- **Streaming:** ws + undici
-- **PWA:** next-pwa
+- **Streaming:** SSE (EventSource) + undici
+- **PWA:** Serwist (`@serwist/next`)
 
 ## Layout
 
@@ -39,9 +39,16 @@ lib/
 	mcp/              # MCP client / adapter glue
 	db/               # SQLite + checkpoint store
 	stores/           # Memory / settings stores
+	documents/        # Document RAG indexers and search
+	embeddings/       # Embedding adapters
+	integrations/     # Integration manifests and OAuth glue
+	pricing/          # Pricing catalog maintenance
+	skills/           # Skill discovery, policy, execution contracts
 	scheduler/        # cron-driven background jobs
-	streaming/        # WS / SSE plumbing
 	notifications/    # Local notifications
+	dependencies/     # Optional dependency probes and install plans
+	voice/            # STT / TTS engines
+	workflows/        # Durable workflow and authoring services
 public/             # Static + PWA manifest
 scripts/            # Maintenance / live tests
 ```
@@ -90,16 +97,18 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full rules. Summary:
 ## Repository Conventions
 
 - Persistent state goes through `lib/db` or `lib/stores`. Do not write ad-hoc state outside `JARELA_DB_DIR`.
-- New LLM providers need an adapter under `lib/providers/`, registration in the agent factory, and documentation in the README provider list.
+- UI modules (`components/`, `hooks/`) consume `api/client.ts` and hooks; ESLint blocks imports of `lib/db`, `lib/stores`, `lib/crypto`, `lib/scheduler`, and `lib/notifications` there.
+- New LLM providers need an adapter under `lib/providers/`, registration in `lib/providers/builtins.ts`, and documentation in the provider list in `docs/index.md`.
 - New tools go under `lib/tools/` and register in the tool registry. Network or external-resource tools must use an explicit capability.
 - Use zod schemas at API boundaries.
 - No telemetry, external analytics, or required cloud calls beyond providers the user explicitly configures.
+- The bundled Gmail OAuth client routes token exchange through a Jarela-hosted Cloud Run proxy. It is used only when that optional integration is enabled; BYO client credentials or `JARELA_GOOGLE_TOKEN_PROXY` bypass it.
 - Open an ADR before changing persistence schema or the data-directory layout, adding a provider, introducing another process, or adding an online-only feature.
 - This repository may be OneDrive-synced. Avoid committing large binaries; `.next/` and `node_modules/` are gitignored.
 
 ## Architecture
 
-- C4 Context: `README.md`.
+- Architecture at a glance: `README.md`.
 - C4 Container, Component, and sequence diagrams: `docs/ARCHITECTURE.md`.
 - Update both when component boundaries or external dependencies change.
 
@@ -116,9 +125,18 @@ See [AGENT_MD_SYSTEM.md](./AGENT_MD_SYSTEM.md) for complete pattern system docum
 Edit lib/agents/file.ts     → loads lib/agents/Agent.md
 Edit lib/providers/file.ts  → loads lib/providers/Agent.md
 Edit lib/db/file.ts         → loads lib/db/Agent.md
-Edit app/api/route.ts       → loads app/api/Agent.md
 Edit lib/tools/file.ts      → loads lib/tools/Agent.md
+Edit lib/stores/file.ts     → loads lib/stores/Agent.md
+Edit lib/mcp/file.ts        → loads lib/mcp/Agent.md
+Edit app/api/route.ts       → loads app/api/Agent.md
+Edit components/file.tsx    → loads components/Agent.md
+Edit hooks/file.ts          → loads hooks/Agent.md
+Edit scripts/file.mjs       → loads scripts/Agent.md
+Edit tests/file.ts          → loads tests/Agent.md
 ```
+
+Guides are verified by `npm run lint`; see
+[Documentation Validation](#documentation-validation).
 
 **Pattern References:**
 - Patterns: 5+ core implementations with examples
@@ -136,15 +154,15 @@ Edit lib/tools/file.ts      → loads lib/tools/Agent.md
 
 ### Tier 2: Components & State
 
-**components/Agent.md** - React component patterns
-**hooks/Agent.md** - React hooks patterns
-**lib/stores/Agent.md** - State management patterns
+**[components/Agent.md](./components/Agent.md)** - React component patterns
+**[hooks/Agent.md](./hooks/Agent.md)** - React hooks patterns
+**[lib/stores/Agent.md](./lib/stores/Agent.md)** - State management patterns
 
 ### Tier 3: Integration & Testing
 
-**lib/mcp/Agent.md** - MCP integration patterns
-**scripts/Agent.md** - Automation patterns
-**tests/Agent.md** - Testing patterns
+**[lib/mcp/Agent.md](./lib/mcp/Agent.md)** - MCP integration patterns
+**[scripts/Agent.md](./scripts/Agent.md)** - Automation patterns
+**[tests/Agent.md](./tests/Agent.md)** - Testing patterns
 
 ### Implementation Workflow
 
@@ -202,6 +220,8 @@ Agents detect when patterns need updates:
 3. Update Agent.md with pattern changes
 4. Update code examples to reflect current best approach
 5. Document change rationale in section notes
+6. Run `npm run agent-docs:check` (also part of `npm run lint`) and
+   `npm run check:impact -- --staged`
 
 **Validation Before Update:**
 
@@ -279,6 +299,10 @@ Agents maintain Agent.md accuracy through:
 - Scan for implementation patterns
 - Compare against documented patterns
 - Flag deviations or new approaches
+- Run `npm run check:impact -- --staged`; update the owning `Agent.md` when the
+  change moves a canonical file, invariant, or test
+- Run `npm run lint`; guide links, declared coverage, and catalog references
+  are enforced there
 
 **On Pattern Queries**
 - When agent needs pattern guidance
@@ -340,15 +364,36 @@ Emerging patterns documented until ready for standardization:
 
 ### Documentation Validation
 
-Agent.md quality checks:
+`npm run lint` runs `node scripts/check-agent-docs.mjs`, which enforces the
+structural contract for every module guide:
 
-- Code examples compile against current codebase
-- Links resolve to actual files and line numbers
-- Patterns reflect actual implementations in codebase
-- Anti-patterns match observed failure modes
-- No contradictions between patterns
-- Test requirements achievable
-- Performance claims supported by evidence
+- Every declared guide (`AGENTS.md` and each module `Agent.md`) exists and has
+  loader frontmatter (`description` starting with `Use when:`, `tools`,
+  `reasoning-effort`).
+- Every markdown link and inline repository path in a guide resolves. Fenced
+  code examples are exempt because they may be sketches.
+- Every guide linked from `AGENTS.md` resolves.
+- Relative links in `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`,
+  `docs/API_DESIGN_STANDARD.md`, `docs/EXTENDING.md`,
+  `docs/ui-hook-api.md`, and `packages/README.md` resolve.
+- Every `Agent.md` found under `app/`, `components/`, `hooks/`, `lib/`,
+  `scripts/`, or `tests/` is declared in the checker — a new module cannot ship
+  without guidance.
+
+`node scripts/check-architecture-patterns.mjs` separately verifies that every
+canonical source and validation source in
+[`docs/architecture-patterns.json`](./docs/architecture-patterns.json) exists.
+`node scripts/check-change-impact.mjs --staged` maps changed module files to
+follow-up checks, including updating the owning guide.
+
+These checks are necessary but not sufficient. Reviewers still verify:
+
+- Code examples compile against the current codebase.
+- Patterns reflect actual implementations, not aspirational designs.
+- Anti-patterns match observed failure modes.
+- No contradictions between patterns or with `docs/ARCHITECTURE.md`.
+- Test requirements are achievable and named tests exist.
+- Performance claims are supported by evidence.
 
 ### Success Indicators
 

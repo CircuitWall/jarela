@@ -520,7 +520,6 @@ try {
 - `stream-collector.ts` — Collect streaming chunks into messages
 - `tool-outcomes.ts` — Track tool execution results
 - `thread-activity.ts` — Detect active conversations
-- `tool-argument-delivery.ts` — Deliver tool arguments to tools
 
 ---
 
@@ -853,7 +852,7 @@ Before submitting a PR with agent changes, verify:
 
 **Q: How do I add a new agent to the system?**
 
-A: Create a config in the database via `lib/stores/agent-configs.ts`, implement any custom nodes in `lib/agents/`, and register the agent in `run-registry.ts`. See the adapter pattern in `app/api/agents/create` for the UI flow.
+A: Create a config in the database via `lib/stores/agent-configs.ts`, implement any custom nodes in `lib/agents/`, and register the agent in `run-registry.ts`. See the route adapter in `app/api/v1/agents/route.ts` for the UI flow.
 
 ---
 

@@ -539,12 +539,12 @@ export async function* toAnthropicMessages(
 ### Core Adapters
 - `anthropic.ts` — Anthropic Claude provider
 - `openai.ts` — OpenAI GPT provider
-- `google.ts` / `gemini.ts` — Google Gemini provider
+- `gemini.ts` — Google Gemini provider
 - `external.ts` — Custom external `~/.jarela/providers/*.cjs` providers
 - `github-copilot.ts` — GitHub Copilot provider
 - `deepseek.ts` — DeepSeek provider
 
-> There is no `cohere.ts`. Cohere runs through the LangChain bridge below
+> There is no dedicated Cohere adapter file. Cohere runs through the LangChain bridge below
 > (`provider: "langchain"`, `params.lc_class: "ChatCohere"`), which is text
 > only — `@langchain/cohere` rejects image/audio/file parts. Vision or audio
 > for Cohere requires a native adapter under this directory.

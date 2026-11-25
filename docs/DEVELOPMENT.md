@@ -7,6 +7,8 @@ This guide focuses on developer experience for UI/state work.
 - Install: `npm install`
 - Lint all: `npm run lint`
 - Lint hooks only: `npm run lint:hooks`
+- Check agent guides and architecture-doc links: `npm run agent-docs:check`
+- Change-impact audit: `npm run check:impact -- --staged`
 - Function-body ratchet (unreleased): `npm run lint:complexity`
 - Test all: `npm test`
 - Test hooks only: `npm run test:hooks`

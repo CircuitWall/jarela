@@ -106,6 +106,8 @@ The review identified these package-architecture gaps:
    now depends on a React context module for its shared route vocabulary.
    Confirmed boundary leak; assess whether the tab contract belongs in a
    neutral shared module before changing it.
+   **Resolved:** `lib/ui/navigate.ts` now imports the neutral
+   `lib/ui/tabs.ts` vocabulary.
 2. **Optional request body is a route-specific contract, not a confirmed
    validation violation.** `app/api/v1/agents/[id]/duplicate/route.ts` accepts
    an empty body before applying its schema. It is not equivalent to routes

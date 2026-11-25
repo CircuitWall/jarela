@@ -21,6 +21,21 @@ const NODE_BUILTINS = [
   "vm", "worker_threads", "zlib",
 ];
 
+const nodeBuiltinRestrictions = NODE_BUILTINS.map((name) => ({
+  name,
+  message: `Use "node:${name}" instead — Next.js edge runtime cannot resolve bare-specifier node builtins.`,
+}));
+
+// UI modules consume API contracts; persistence and server internals are
+// server-owned (docs/ARCHITECTURE.md, components/Agent.md, hooks/Agent.md).
+const SERVER_ONLY_UI_IMPORTS = [
+  "@/lib/db", "@/lib/db/*",
+  "@/lib/stores", "@/lib/stores/*",
+  "@/lib/crypto", "@/lib/crypto/*",
+  "@/lib/scheduler", "@/lib/scheduler/*",
+  "@/lib/notifications", "@/lib/notifications/*",
+];
+
 const config = [
   ...nextConfig,
   {
@@ -69,13 +84,25 @@ const config = [
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/refs": "off",
       "react-hooks/purity": "off",
+      "no-restricted-imports": ["error", { paths: nodeBuiltinRestrictions }],
+    },
+  },
+  {
+    // Must come after the shared rule block above; a later matching config
+    // replaces no-restricted-imports rather than merging it.
+    files: ["components/**/*.{ts,tsx}", "hooks/**/*.{ts,tsx}"],
+    rules: {
       "no-restricted-imports": [
         "error",
         {
-          paths: NODE_BUILTINS.map((name) => ({
-            name,
-            message: `Use "node:${name}" instead — Next.js edge runtime cannot resolve bare-specifier node builtins.`,
-          })),
+          paths: nodeBuiltinRestrictions,
+          patterns: [
+            {
+              group: SERVER_ONLY_UI_IMPORTS,
+              message:
+                "UI modules consume api/client and hooks, not persistence or server internals (AGENTS.md, docs/ARCHITECTURE.md).",
+            },
+          ],
         },
       ],
     },
