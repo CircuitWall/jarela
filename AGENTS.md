@@ -101,6 +101,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full rules. Summary:
 - New LLM providers need an adapter under `lib/providers/`, registration in `lib/providers/builtins.ts`, and documentation in the provider list in `docs/index.md`.
 - New tools go under `lib/tools/` and register in the tool registry. Network or external-resource tools must use an explicit capability.
 - Use zod schemas at API boundaries.
+- `package.json` is authoritative for dependency and engine versions; update README, AGENTS.md, and architecture claims in the same PR when a major version changes.
 - No telemetry, external analytics, or required cloud calls beyond providers the user explicitly configures.
 - The bundled Gmail OAuth client routes token exchange through a Jarela-hosted Cloud Run proxy. It is used only when that optional integration is enabled; BYO client credentials or `JARELA_GOOGLE_TOKEN_PROXY` bypass it.
 - Open an ADR before changing persistence schema or the data-directory layout, adding a provider, introducing another process, or adding an online-only feature.
@@ -390,7 +391,7 @@ every documented endpoint has a public marker, and that no public route is also
 listed as out-of-scope. `node scripts/check-adr-registry.mjs` verifies that ADR
 numbers are unique, every `ADR-NNNN` citation resolves, and ADR-relative links
 exist. `node scripts/check-ui-data-access.mjs` ratchets direct `fetch` /
-`localStorage` use in `components/` and `hooks/` against
+`localStorage` use in `components/`, `hooks/`, and `contexts/` against
 `scripts/ui-data-access-baseline.json`; move an endpoint into `api/client.ts`
 (or browser state into `lib/ui/browser-store.ts`) instead of raising a count.
 `node scripts/check-change-impact.mjs --staged` maps changed module files to

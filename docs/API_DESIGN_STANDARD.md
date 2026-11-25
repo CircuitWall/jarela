@@ -15,6 +15,15 @@ See [api.md](api.md) for individual endpoints and
 - Everything else is UI-internal. `npm run api-docs:check` (part of
   `npm run lint`) verifies that markers and documented endpoints agree.
 
+## Body validation
+
+Use `validateBody(req, schema)` for ordinary JSON request bodies; it returns
+parsed data or the shared 400 response, including malformed JSON. Direct
+`schema.safeParse()` remains correct for query/path parameters, optional-body
+endpoints with endpoint-specific defaults, and nested or derived contracts
+(pending-action choices, OAuth payloads) where `validateBody` would change the
+documented error shape. Do not migrate those mechanically.
+
 ## Compatibility first
 
 - Successful JSON responses retain their endpoint-specific shape: a resource,
@@ -95,6 +104,11 @@ It does not infer failures from arbitrary payload variables.
   the existing model mutation lock before resolving echoed secret masks.
   Collection and mutation responses use the same redaction policy; credential
   binding, metadata lookup and encrypted persistence retain their own owners.
+- Credential params are masked in API responses; proxy passwords are masked in
+  status and encrypted at rest. MCP server `spec.env` / `spec.headers` are
+  returned to the authenticated operator editor so it can edit and round-trip
+  them, but are encrypted at rest and must never be copied into logs,
+  agent-facing output, notifications, or unauthenticated responses.
 
 ## Client cache ownership (unreleased)
 

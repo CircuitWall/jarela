@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useReducer, type ReactNode } from "react";
 import type { Tab } from "@/lib/ui/tabs";
+import { readBrowserValue, writeBrowserValue } from "@/lib/ui/browser-store";
 
 export type { Tab } from "@/lib/ui/tabs";
 
@@ -112,7 +113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const pendingKickoff = readPendingFirstRunKickoff();
     if (pendingKickoff) dispatch({ type: "SET_FIRST_RUN_CHAT_KICKOFF", kickoff: pendingKickoff });
     try {
-      const stored = parseStoredMode(window.localStorage.getItem(EXPERIENCE_MODE_KEY));
+      const stored = parseStoredMode(readBrowserValue(EXPERIENCE_MODE_KEY));
       if (stored) {
         dispatch({ type: "SET_EXPERIENCE_MODE", mode: stored });
       }
@@ -123,7 +124,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(EXPERIENCE_MODE_KEY, state.experienceMode);
+      writeBrowserValue(EXPERIENCE_MODE_KEY, state.experienceMode);
     } catch {
       // ignore storage failures
     }

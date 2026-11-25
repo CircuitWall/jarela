@@ -107,8 +107,9 @@ labelled button. Prefer `getByRole`/`getByLabel` contract points over test ids.
   one of these flows. `npm run ui-data:check` ratchets the baseline so new
   direct calls fail lint.
 - **Direct `localStorage`** — route browser-only preferences through
-  `lib/ui/browser-store.ts`; the UI data-access ratchet treats direct
-  `localStorage` calls as new debt. Durable preferences belong in stores.
+  `lib/ui/browser-store.ts`, including theme and experience mode in
+  `contexts/`; the UI data-access ratchet treats direct calls as new debt.
+  Durable preferences belong in stores.
 - **Duplicating shared logic** — the avatar-gradient hash exists twice
   (`components/agents/AgentsPanel.tsx`, `components/ui/Toaster.tsx`); extract a
   shared helper instead of adding a third copy.
@@ -122,6 +123,10 @@ labelled button. Prefer `getByRole`/`getByLabel` contract points over test ids.
   `components/ui/Dialog.tsx` and `components/ui/ServerStatus.tsx` may portal.
 - **Rendering custom colors instead of tokens** — check the semantic token set
   before adding hex values or arbitrary Tailwind palette classes.
+- **Expanding the chat coupling surface** — `ChatView`, `useSSE`, and the chat
+  queue still use refs and render-order bridges. Do not add new public methods
+  or mirrored refs; split transport, content, and activity responsibilities in
+  small steps instead.
 
 ## File map
 
