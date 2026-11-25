@@ -262,6 +262,16 @@ and launched entries without cleanup proof are retained with an explicit reason.
 Do not delete those files while an owner may still run. Resolve external effects
 and inspect ownership before manual maintenance; never replay surviving files.
 
+Background work left behind by interrupted runs is diagnosable from
+`JARELA_DB_DIR/background-tasks/<async-key>.log`. One capped log (8 MiB) is
+written per call that reports output while it runs; the key matches the durable
+result retrieved with `tool_result_get`. Logs are plain text and may contain
+command output, so treat them as sensitive as the transcript and do not attach
+them to issues. A log is removed when its result is consumed, and idle logs
+older than 24 hours are pruned whenever a new one is created. Deleting a log
+for a call that is still pending loses history that will not be regenerated;
+the durable outcome is unaffected because it lives in SQLite (ADR-0127).
+
 ## Extension and contribution authoring (Unreleased)
 
 In **Skills**, open **Extension and contribution workflows**. Loading an

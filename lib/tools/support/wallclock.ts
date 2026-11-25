@@ -28,7 +28,9 @@ import { tool, type StructuredToolInterface } from "@langchain/core/tools";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import {
   startOwnedAsyncCall,
+  appendAsyncProgress,
   completeAsyncCall,
+  consumeAsyncResult,
   failAsyncCall,
 } from "./async-results";
 import { getStreamDefault } from "./tool-metadata";
@@ -53,19 +55,18 @@ export function getMaxDeadlineMs(): number {
 
 const DEADLINE_DESCRIPTION =
   "Optional wall-clock budget for this tool call in milliseconds (default 120000, hard ceiling 1800000 / 30 min). " +
-  "When the budget is exceeded the call returns a structured timeout result " +
-  "and the turn continues so you can recover — pick a value that matches " +
-  "the expected duration (5000-15000 for fast local ops, 30000-90000 for " +
+  "When the budget is exceeded a call that belongs to this conversation is moved to the background instead of " +
+  "discarded: you get a key, the work keeps running, and you follow it with tool_result_get. " +
+  "Pick a value that matches the expected duration (5000-15000 for fast local ops, 30000-90000 for " +
   "network/web calls, larger for shell commands that may build or install). " +
-  "Values above the ceiling are clamped; use `async_run: true` for work that genuinely needs more.";
+  "Values above the ceiling are clamped; use `async_run: true` when you already know the work is long.";
 
 const ASYNC_RUN_DESCRIPTION =
-  "Optional. Set true to fire this tool in the background and get back a " +
-  "tracking key immediately instead of waiting for the result. Use for " +
-  "long-running calls (large fetches, slow shell builds) when you want to " +
-  "keep the conversation moving. Retrieve the result later by calling " +
-  "`tool_result_get` with the returned key. The original `deadline_ms` " +
-  "still applies — it just runs in the background.";
+  "Optional. Set true to fire this tool in the background and get back a job_id immediately instead of " +
+  "waiting for the result. Use for long-running calls (large fetches, slow shell builds, test suites) when " +
+  "you want to keep the conversation moving and stay free to answer follow-up questions. Follow progress " +
+  "with tool_result_get (pass cursor and wait_ms) and retrieve the final result with the same key. " +
+  "The original `deadline_ms` still applies — it just runs in the background.";
 
 const STREAM_DESCRIPTION =
   "Optional. Controls whether this call's incremental progress (only " +
@@ -99,20 +100,48 @@ interface ConfigWithWriter {
  * generic hook that lets ANY tool's wall-clock budget become idle-based
  * ("reset on activity") just by adopting reportToolProgress — the wrapper
  * doesn't know or care which tool is doing it. See ADR-0073.
+ *
+ * Chunks tagged `kind: "output"` (reportToolOutput — stdout, stderr, file
+ * deltas) are forwarded and observed but never reset the budget: a chatty
+ * process is alive, not necessarily progressing.
  */
-function withActivityReset(config: unknown, onActivity: () => void, forward: boolean): unknown {
+function withActivityReset(
+  config: unknown,
+  onActivity: () => void,
+  forward: boolean,
+  onChunk?: (chunk: unknown) => void,
+): unknown {
   const c = config as ConfigWithWriter | undefined;
   const originalWriter = c?.writer;
   return {
     ...(c ?? {}),
     writer: (chunk: unknown) => {
-      // Activity always resets the idle timer, even when streaming is off
-      // for this call — "don't show it live" shouldn't also mean "treat
-      // the tool as stalled".
-      onActivity();
+      // Observation happens even when streaming is off for this call — a
+      // background job must be able to follow a call the user asked to keep
+      // quiet in the transcript.
+      onChunk?.(chunk);
+      if (!isBulkOutput(chunk)) {
+        // Activity always resets the idle timer, even when streaming is off
+        // for this call — "don't show it live" shouldn't also mean "treat
+        // the tool as stalled".
+        onActivity();
+      }
       if (forward) originalWriter?.(chunk);
     },
   };
+}
+
+function isBulkOutput(chunk: unknown): boolean {
+  return !!chunk && typeof chunk === "object" && (chunk as { kind?: unknown }).kind === "output";
+}
+
+/** Text a progress/output chunk contributes to a followed call's window. */
+function chunkText(chunk: unknown): string {
+  if (typeof chunk === "string") return chunk;
+  if (!chunk || typeof chunk !== "object") return "";
+  const text = (chunk as { text?: unknown }).text;
+  if (typeof text !== "string" || text.length === 0) return "";
+  return isBulkOutput(chunk) ? text : `${text}\n`;
 }
 
 interface JsonObjectSchema {
@@ -198,39 +227,7 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
       return runAsync(t, innerArgs, config, deadlineMs, streamOn);
     }
 
-    let timer!: ReturnType<typeof setTimeout>;
-    let resolveTimeout!: (v: string) => void;
-    const timeoutPromise = new Promise<string>((resolve) => { resolveTimeout = resolve; });
-    const armTimer = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        resolveTimeout(JSON.stringify({
-          ok: false,
-          error_code: "tool_timeout",
-          message:
-            `Tool "${t.name}" exceeded its wall-clock budget of ${deadlineMs}ms. ` +
-            `The call was abandoned; the underlying operation may still be running in the background. ` +
-            `Recover by trying a different approach, splitting the work, or moving on — do not retry the same call with the same arguments.`,
-          deadline_ms: deadlineMs,
-        }));
-      }, deadlineMs);
-      // Don't keep the event loop alive purely for a timeout race.
-      (timer as unknown as { unref?: () => void }).unref?.();
-    };
-    armTimer();
-    // Any config.writer() call from inside the tool (reportToolProgress)
-    // proves it's still active — reset the budget instead of abandoning it.
-    const configForInner = withActivityReset(config, armTimer, streamOn);
-
-    try {
-      // Cast: invoke accepts a typed input matching the original schema,
-      // but the wrapper is generic over all tools.
-      const work = (t as unknown as { invoke: (a: unknown, c?: unknown) => Promise<unknown> }).invoke(innerArgs, configForInner);
-      const result = await Promise.race([work, timeoutPromise]);
-      return postProcessToolResult(t.name, result);
-    } finally {
-      clearTimeout(timer);
-    }
+    return runForeground(t, innerArgs, config, deadlineMs, streamOn);
   };
 
   // Rebuild via the public `tool()` factory so we don't depend on
@@ -318,8 +315,13 @@ function runAsync<T extends StructuredToolInterface>(
   };
   armTimer();
   // Same idle-reset hook as the sync path — a config.writer() call from
-  // inside the tool (reportToolProgress) proves it's still active.
-  const configForInner = withActivityReset(config, armTimer, streamOn);
+  // inside the tool (reportToolProgress) proves it's still active. Output
+  // chunks are also parked on the record so the call can be followed while
+  // it runs.
+  const configForInner = withActivityReset(config, armTimer, streamOn, (chunk) => {
+    const text = chunkText(chunk);
+    if (text) appendAsyncProgress(key, text);
+  });
 
   void (async () => {
     try {
@@ -350,9 +352,157 @@ function runAsync<T extends StructuredToolInterface>(
     tool: t.name,
     started_at: startedAt,
     deadline_ms: deadlineMs,
-    hint: `Call tool_result_get with key="${key}" to retrieve the result. Pass wait_ms to short-poll.`,
+    hint:
+      `Follow it with tool_result_get(key="${key}") — pass wait_ms to wait for new output and the previous ` +
+      "next_offset as cursor to read only what changed. The final result uses the same key.",
   });
 }
 
 /** Exposed for the tests. */
 export const __DEFAULT_DEADLINE_MS = DEFAULT_DEADLINE_MS;
+
+/**
+ * Foreground path: race the call against its idle budget, and move it to the
+ * background when it outlives that budget instead of discarding the work.
+ */
+async function runForeground<T extends StructuredToolInterface>(
+  t: T,
+  innerArgs: unknown,
+  config: unknown,
+  deadlineMs: number,
+  streamOn: boolean,
+): Promise<unknown> {
+  let timer!: ReturnType<typeof setTimeout>;
+  let resolveTimeout!: (v: string) => void;
+  const timeoutPromise = new Promise<string>((resolve) => { resolveTimeout = resolve; });
+  const startedAt = Date.now();
+  const context = (config as { configurable?: { thread_id?: unknown; signal_continuation?: boolean } } | undefined)?.configurable;
+
+  // Output seen before a promotion primes the record's window, so the agent
+  // does not lose the part of the run that happened on the clock.
+  let pendingText = "";
+  let promotedKey: string | null = null;
+  const onChunk = (chunk: unknown) => {
+    const text = chunkText(chunk);
+    if (!text) return;
+    if (promotedKey) appendAsyncProgress(promotedKey, text);
+    else {
+      pendingText += text;
+      if (pendingText.length > 16 * 1024) pendingText = pendingText.slice(-16 * 1024);
+    }
+  };
+
+  /**
+   * A call that outlives its budget is moved to the background instead of
+   * being discarded. The in-flight promise keeps running, its outcome is
+   * still durably recorded, and the turn gets a receipt it can follow with
+   * `tool_result_get`. Promotion needs an owning thread: without one there
+   * is nobody to wake and no durable receipt, so the old timeout result is
+   * returned unchanged.
+   *
+   * Intent ordering (ADR-0091): every other async producer persists the
+   * operation row *before* starting external work. A promoted call is
+   * already in flight, so the row records that fact (`promoted`,
+   * `started_at`) instead of implying the work began at promotion time. A
+   * crash in that window leaves no operation row — the unanswered tool call
+   * in the transcript is the only trace, and nothing replays it.
+   */
+  const promote = (): string | null => {
+    const threadId = context?.thread_id;
+    if (typeof threadId !== "string" || !threadId) return null;
+    let tracked: { key: string; owned: boolean };
+    try {
+      tracked = startOwnedAsyncCall(t.name, threadId, context?.signal_continuation === true, {
+        promoted: true,
+        started_at: startedAt,
+        deadline_ms: deadlineMs,
+      });
+    } catch (error) {
+      // Intent persistence failed (for example the operation backlog is
+      // full). Keep the old receipt rather than hanging the turn on a
+      // timer callback that threw.
+      console.error("[wallclock] background promotion failed; returning the timeout receipt", { tool: t.name, error });
+      return null;
+    }
+    if (!tracked.owned) {
+      consumeAsyncResult(tracked.key);
+      return null;
+    }
+    promotedKey = tracked.key;
+    if (pendingText) appendAsyncProgress(tracked.key, pendingText);
+    pendingText = "";
+    return tracked.key;
+  };
+
+  const armTimer = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const key = promote();
+      if (!key) {
+        resolveTimeout(JSON.stringify({
+          ok: false,
+          error_code: "tool_timeout",
+          message:
+            `Tool "${t.name}" exceeded its wall-clock budget of ${deadlineMs}ms. ` +
+            `The call was abandoned; the underlying operation may still be running in the background. ` +
+            `Recover by trying a different approach, splitting the work, or moving on — do not retry the same call with the same arguments.`,
+          deadline_ms: deadlineMs,
+        }));
+        return;
+      }
+      resolveTimeout(JSON.stringify({
+        ok: true,
+        backgrounded: true,
+        job_id: key,
+        key,
+        tool: t.name,
+        started_at: startedAt,
+        deadline_ms: deadlineMs,
+        message:
+          `Tool "${t.name}" exceeded its wall-clock budget of ${deadlineMs}ms and was moved to the background. ` +
+          "It is still running. Do not repeat it. Follow it with tool_result_get(key, cursor, wait_ms) to read " +
+          "progress — pass the previous next_offset as cursor to see only new output — or arm schedule_wakeup " +
+          "to be nudged later. The final result uses the same key.",
+      }));
+    }, deadlineMs);
+    // Don't keep the event loop alive purely for a timeout race.
+    (timer as unknown as { unref?: () => void }).unref?.();
+  };
+  armTimer();
+  // Any config.writer() call from inside the tool (reportToolProgress)
+  // proves it's still active — reset the budget instead of abandoning it.
+  const configForInner = withActivityReset(config, armTimer, streamOn, onChunk);
+
+  const work = (t as unknown as { invoke: (a: unknown, c?: unknown) => Promise<unknown> }).invoke(innerArgs, configForInner);
+
+  // Settlement for a call that was promoted after the wrapper returned.
+  // Without a promotion this handler is inert: the race below already
+  // returned the real result (or the real rejection).
+  void work.then(
+    async (result) => {
+      if (!promotedKey) return;
+      const key = promotedKey;
+      try {
+        completeAsyncCall(key, await postProcessToolResult(t.name, result));
+      } catch (err) {
+        failAsyncCall(key, err);
+      } finally {
+        requestSystemSignalDispatch();
+      }
+    },
+    (err) => {
+      if (!promotedKey) return;
+      failAsyncCall(promotedKey, err);
+      requestSystemSignalDispatch();
+    },
+  );
+
+  try {
+    // Cast: invoke accepts a typed input matching the original schema,
+    // but the wrapper is generic over all tools.
+    const result = await Promise.race([work, timeoutPromise]);
+    return postProcessToolResult(t.name, result);
+  } finally {
+    clearTimeout(timer);
+  }
+}

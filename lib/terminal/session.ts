@@ -65,6 +65,8 @@ export class TerminalSession {
   private _closed = false;
   private _lastActivity = Date.now();
   private _cwd: string; // updated from sentinel after every exec
+  private readonly onOutput?: (chunk: string) => void;
+  private outputListener: ((chunk: string) => void) | null = null;
 
   // At most one exec waiter at a time — queued via promise chaining.
   private execChain: Promise<void> = Promise.resolve();
@@ -75,9 +77,16 @@ export class TerminalSession {
     cwd?: string;
     env?: Record<string, string>;
     workspaceRoot?: string;
+    /**
+     * Called with each stdout/stderr chunk as it arrives. Used to stream a
+     * long-running command's output to the transcript and to the background
+     * job window; the buffered readBuffer()/exec() results are unchanged.
+     */
+    onOutput?: (chunk: string) => void;
   }) {
     this.sessionId = opts.sessionId;
     this.shell = opts.shell ?? DEFAULT_SHELL;
+    this.onOutput = opts.onOutput;
 
     const resolved = resolveSubprocessEnv({ cwd: opts.cwd, env: opts.env, workspaceRoot: opts.workspaceRoot });
     this.startCwd = resolved.cwd;
@@ -99,6 +108,7 @@ export class TerminalSession {
       this.outBuf = clip(this.outBuf + t);
       this.pendingOut += t;
       this._lastActivity = Date.now();
+      this.emitOutput(t);
     });
 
     this.proc.stderr!.on("data", (chunk: Buffer) => {
@@ -106,9 +116,24 @@ export class TerminalSession {
       this.errBuf = clip(this.errBuf + t);
       this.pendingErr += t;
       this._lastActivity = Date.now();
+      this.emitOutput(t);
     });
 
     this.proc.on("close", () => { this._closed = true; });
+  }
+
+  private emitOutput(chunk: string): void {
+    try { this.onOutput?.(chunk); } catch { /* progress sinks must not break the session */ }
+    try { this.outputListener?.(chunk); } catch { /* progress sinks must not break the session */ }
+  }
+
+  /**
+   * Attach a transient output listener for the duration of one exec call.
+   * Persistent sessions are shared per thread, so the listener is set around
+   * the call rather than at construction.
+   */
+  setOutputListener(fn: ((chunk: string) => void) | null): void {
+    this.outputListener = fn;
   }
 
   /** Run a command and wait for its sentinel. Serialised — callers queue automatically. */
@@ -172,8 +197,7 @@ export class TerminalSession {
   }
 
   /** Send raw input to the running process's stdin (for interactive programs). */
-  send(input: string): void {
-    if (this._closed) throw new Error("session is closed");
+  send(input: string): void {    if (this._closed) throw new Error("session is closed");
     this.proc.stdin!.write(input);
     this._lastActivity = Date.now();
   }

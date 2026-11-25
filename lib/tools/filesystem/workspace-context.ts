@@ -66,6 +66,19 @@ export function reportToolProgress(config: ToolConfig | undefined, name: string,
   config?.writer?.({ id: config?.toolCallId ?? "", name, text });
 }
 
+/**
+ * Stream a tool's own output (stdout/stderr, file deltas) as it arrives.
+ *
+ * Deliberately distinct from reportToolProgress: bulk output proves the
+ * process is alive but does not prove it is making progress, so the wall-clock
+ * wrapper forwards it without resetting the idle budget. A long build that
+ * chatters forever still hits its deadline instead of running unbounded.
+ */
+export function reportToolOutput(config: ToolConfig | undefined, name: string, text: string): void {
+  if (!text) return;
+  config?.writer?.({ id: config?.toolCallId ?? "", name, text, kind: "output" });
+}
+
 function keyFor(config?: ToolConfig): string {
   const tid = config?.configurable?.thread_id;
   return typeof tid === "string" && tid ? tid : DEFAULT_KEY;

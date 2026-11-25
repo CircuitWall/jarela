@@ -104,15 +104,23 @@ describe("external tools get wallclock protection via getAllTools", () => {
     expect(JSON.parse(out as string)).toEqual({ ok: true });
   });
 
-  it("uses the external target's timeout through invoke_tool", async () => {
+  it("moves an external target that outlives its budget to the background through invoke_tool", async () => {
     upsertAgentConfig({ id: "external-proxy-agent", name: "External Proxy", identity: "test", instructions: "", tools: ["slow_ext_tool"] });
     const thread = createThread("external-proxy-agent");
     const out = await executeTool("invoke_tool", {
       name: "slow_ext_tool", deadline_ms: 20,
     }, { thread_id: thread.thread_id });
+    // The proxy turn stays alive: the call is promoted, not abandoned, and its
+    // receipt is readable through tool_result_get when it settles.
     expect(out).toMatchObject({
-      status: "done", tool: "slow_ext_tool",
-      result: { error_code: "tool_timeout", message: expect.stringContaining("slow_ext_tool"), deadline_ms: 20 },
+      status: "done",
+      tool: "slow_ext_tool",
+      result: {
+        backgrounded: true,
+        tool: "slow_ext_tool",
+        key: expect.stringMatching(/^async_[0-9a-f]{16}$/),
+        message: expect.stringContaining("moved to the background"),
+      },
     });
   });
 });
