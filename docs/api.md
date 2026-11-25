@@ -5,10 +5,13 @@ For client-side React integration contracts, see
 For response helpers, validation, compatibility, and transport exceptions, see
 the [API design standard](./API_DESIGN_STANDARD.md).
 
-This page lists every route that is part of Jarela's stable HTTP API. **A
-route is part of the contract only if its source file carries a `@public`
-JSDoc header**; everything else under `app/api/v1/*` is considered UI-internal
-and may change between minor versions.
+This page lists every route that is part of Jarela's stable HTTP API. A route
+is part of the app contract only if its source file carries a `@public` JSDoc
+header. Routes marked `@public-internal` are the browser-extension surface:
+they are stable for the paired extension, loopback-only, and may change with
+the extension's protocol. Everything else under `app/api/v1/*` is UI-internal
+and may change between minor versions. `npm run lint` runs
+`scripts/check-api-docs.mjs`, which keeps these markers and this page aligned.
 
 The contract follows the deprecation policy in
 [CONTRIBUTING.md → Public API surface](https://github.com/CircuitWall/jarela/blob/main/CONTRIBUTING.md#public-api-surface):
@@ -222,6 +225,43 @@ default name is `"<name> (copy)"`. Conversations are not copied. Returns
 
 ---
 
+## Credentials
+
+Typed credential rows used by model configs, TTS, integrations, and bridges.
+Secret params are write-only in responses: they are returned as `"***"`, and a
+`PUT` that echoes `"***"` keeps the stored value.
+
+### `GET /api/v1/credentials`
+
+List credentials, optionally filtered by `?type=` (`model`, `tts`,
+`integration`, `bridge`) or `?provider=`. Each row includes `type`, `provider`,
+`auth_method`, `label`, `is_default`, masked `params`, and timestamps. Cached
+for up to five seconds.
+
+### `POST /api/v1/credentials`
+
+Create a credential. Body:
+`{ id?, type, provider, auth_method?: "api_key"|"oauth", label?, is_default?, params? }`.
+Returns `201` with the masked row. By default the credential is probed
+synchronously and a rejected secret rolls the row back with
+`400 { error, code: "auth_failed" }`; pass `?force=1` to skip the probe.
+
+### `PUT /api/v1/credentials/[id]`
+
+Merge `params` into the stored credential; omitted fields stay unchanged and a
+secret posted as `"***"` is kept. Also accepts `provider`, `auth_method`,
+`label`, and `is_default`. Returns the masked row, `404` for an unknown id, or
+`400 auth_failed` after the failed edit is rolled back. `?force=1` skips the
+post-save probe.
+
+### `DELETE /api/v1/credentials/[id]`
+
+Delete a credential. Returns `{ deleted: true }`, `404` when missing, or `409
+{ error, code: "in_use" }` while any model config or agent tool binding still
+references it.
+
+---
+
 ## Tools
 
 ### `GET /api/v1/tools`
@@ -300,6 +340,17 @@ always target the one repo flagged `writable`, so the rest can be read-only
 clones; `POST /api/v1/skills` and friends 503 with "No writable skill repo is
 configured" until at least one repo exists (the first repo created becomes
 writable automatically unless `writable: false` is passed explicitly).
+
+### `GET` / `POST /api/v1/skills`
+
+List skills or create/overwrite one in the writable repo. Body:
+`{ id, content }`; ids are letters, digits, and hyphens. Returns `201` with the
+stored skill.
+
+### `GET` / `PUT` / `DELETE /api/v1/skills/[id]`
+
+Read, update, or delete one skill. Writes always target the single writable
+repo; missing ids return 404.
 
 ### `GET /api/v1/skills/repos`
 
@@ -407,6 +458,31 @@ See [ADR-0102](adr/0102-model-config-enable-toggle.md).
 
 - **Source:** [`app/api/v1/models/[name]/route.ts`](../app/api/v1/models/[name]/route.ts)
 
+### `PUT /api/v1/models/[name]`
+
+Create or replace a model config. Body:
+`{ provider, model_id, params?, is_default?, credential_id?: string|null }`.
+Echoed inline secret fields keep their stored values. Runs under the per-name
+model mutation lock; the response is the redacted model row with resolved
+metadata and `is_default`/`enabled` booleans.
+
+### `DELETE /api/v1/models/[name]`
+
+Delete a model config. Returns `{ deleted: true }`, or `404` when the config
+does not exist. Agents bound to the deleted config are cleared; if it was the
+default, the next enabled config is promoted when one exists.
+
+### `POST /api/v1/models/[name]/compact-threads`
+
+Pre-compact every thread bound to this model before switching it to a smaller
+context window. Body:
+`{ using: { provider, model_id, params? }, keep_last?: 1..50 }`; `using` is the
+old provider snapshot so the summaries are built with the model being replaced,
+and `keep_last` defaults to 8. Returns
+`{ compacted, skipped, errors: [{ thread_id, error }] }`. Skipped threads are
+already short or have a manual compaction running; one thread's failure does
+not abort the rest.
+
 ---
 
 ## Providers
@@ -434,6 +510,72 @@ endpoint settings not yet saved in the model config. These responses are not
 cached.
 
 - **Source:** [`app/api/v1/providers/[provider]/models/route.ts`](../app/api/v1/providers/[provider]/models/route.ts)
+
+### `POST /api/v1/providers/[provider]/probe`
+
+Send a one-token chat `ping` to confirm that `model_id` and the supplied
+params respond. Body:
+`{ model_id, params?, name?, credential_id? }`; params are layered
+saved credential → saved model config → request body. Returns HTTP 200 with
+`{ ok: true }` or `{ ok: false, error }` — probe failures are domain results,
+not HTTP errors. Times out after 15 seconds.
+
+- **Source:** [`app/api/v1/providers/[provider]/probe/route.ts`](../app/api/v1/providers/[provider]/probe/route.ts)
+
+---
+
+## Security and screen lock
+
+These routes broker the local at-rest PIN and the UI lock overlays. None
+returns key material or stored secrets.
+
+### `GET /api/v1/security/state`
+
+Returns `{ state, source, pin_enabled, screen_locked, idle_timeout_ms }` so the
+boot splash, Settings panel, and mobile PWA can decide which lock UI to show.
+
+### `POST /api/v1/security/pin`
+
+Enable, change, or disable the at-rest PIN (ADR-0063). Loopback only. Body is
+a discriminated union: `{ action: "enable", newPin }`,
+`{ action: "change", currentPin, newPin }`, or
+`{ action: "disable", currentPin }`. Success returns
+`{ ok: true, source }`; possible failures include `401 invalid-pin`,
+`409 wrong-state`, `423 locked`, and `429 rate-limited` with `Retry-After`.
+
+### `POST /api/v1/security/unlock`
+
+Decrypt the PIN-wrapped master key with `{ pin }`. Returns `409 not-locked`
+when the key is already open. Rate-limited per remote (three attempts, then
+exponential backoff capped at five minutes).
+
+### `POST /api/v1/security/verify-pin`
+
+Verify `{ pin }` for the screen-lock overlay without touching the in-memory
+master key. Returns `409 no-pin` when no PIN is configured and shares the
+`verify-pin` rate-limit bucket.
+
+### `GET` / `PATCH /api/v1/security/idle-timeout`
+
+Read or set the screen-lock idle timeout as `{ idle_timeout_ms }`, an integer
+from `0` (disabled) to 24 hours. The value persists in app settings.
+
+---
+
+## Redaction
+
+### `GET` / `PATCH /api/v1/redaction`
+
+`GET` returns the current outbound-redaction state: `{ enabled, config_path,
+config_exists, defaults, active }`. `PATCH` accepts `{ enabled: boolean }`
+and returns the new `{ enabled }` value. The active pattern file is read from
+the data directory and user edits are never rewritten; `redaction/init` only
+creates the file when it is absent.
+
+### `POST /api/v1/redaction/init`
+
+Materialize the default redaction-pattern file on disk. Idempotent: if the
+file already exists it is left untouched. Returns `{ path, created }`.
 
 ---
 
@@ -473,6 +615,37 @@ CORS preflight.
 
 ---
 
+## Browser-extension surface (`@public-internal`)
+
+These loopback-only routes are the contract between the Jarela server and the
+paired MV3 browser extension. They are stable for the extension's protocol, but
+they are not part of the app-integration contract and may change when the
+extension does.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/extension/agents` | Agents selectable from the extension |
+| `POST` | `/api/v1/extension/turn` | Generic turn request from the extension |
+| `POST` | `/api/v1/extension/fill` | Fill-form turn |
+| `POST` | `/api/v1/extension/refine` | Refine turn |
+| `POST` | `/api/v1/extension/form-submission` | Preference observation |
+| `POST` | `/api/v1/extension/browser/activate` | Focus a tab by id |
+| `GET` / `POST` / `DELETE` | `/api/v1/extension/browser/foreground` | Poll/record/retract the ambient foreground page |
+| `GET` | `/api/v1/extension/browser/history` | Sanitized command history |
+| `GET` / `POST` | `/api/v1/extension/browser/poll` | Long-poll for pending browser commands |
+| `POST` | `/api/v1/extension/browser/progress` | In-flight command heartbeat |
+| `POST` | `/api/v1/extension/browser/result` | Post a command outcome |
+| `POST` | `/api/v1/extension/browser/retry` | Retry a sanitized command |
+| `GET` | `/api/v1/extension/browser/status` | Extension connectivity and queue depth |
+| `GET` | `/api/v1/extension/browser/tabs` | Sanitized tab inventory |
+
+The extension dispatcher lives in
+[`browser-extension/lib/browser-control.mjs`](../browser-extension/lib/browser-control.mjs);
+the server side lives in [`lib/api/browser-control.ts`](../lib/api/browser-control.ts)
+and [`lib/stores/browser-command-log.ts`](../lib/stores/browser-command-log.ts).
+
+---
+
 ## Events (notification stream)
 
 ### `GET /api/v1/events`
@@ -500,8 +673,7 @@ serve the in-app UI and are subject to change without notice:
 - `/api/v1/threads/[thread_id]/context-pin`
 - `/api/v1/delegations/codex/[job_id]`
 - `/api/v1/agents/[id]/compact`, `/display-filters`, `/thread`
-- `/api/v1/models/[name]`
-- `/api/v1/providers/[provider]/models`, `/github-copilot/auth`
+- `/api/v1/providers/github-copilot/auth`
 - `/api/v1/extensions/...`
 - `/api/v1/integrations/...`
 - `/api/v1/mcp-servers/...`

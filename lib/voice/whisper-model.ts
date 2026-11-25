@@ -7,7 +7,7 @@ import {
   whisperModelDir,
 } from "./whisper-model-assets.mjs";
 
-// ADR-0123. The Whisper input model is fetched once into the data directory
+// ADR-0131. The Whisper input model is fetched once into the data directory
 // when the whisper STT engine is first used; it ships in offline bundles
 // under `.jarela-assets/whisper`. The lifecycle itself lives in
 // lib/assets/model-installer.ts, shared with the embedding model.

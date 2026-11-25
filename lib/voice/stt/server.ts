@@ -1,5 +1,5 @@
 // Server-backed speech recognition for the `whisper` and `gemini` engines
-// (ADR-0123). Both go through the same endpoint; only the payload differs —
+// (ADR-0131). Both go through the same endpoint; only the payload differs —
 // Gemini accepts the recorded container as-is, Whisper needs 16 kHz mono PCM16
 // WAV because the server has no opus decoder.
 import { blobToWhisperWav } from "./audio";

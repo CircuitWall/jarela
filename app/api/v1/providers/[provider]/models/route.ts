@@ -1,3 +1,10 @@
+/**
+ * @public — `GET` / `POST /api/v1/providers/[provider]/models`
+ *
+ * GET lists discoverable models with a per-provider cache (`?fresh=1`
+ * bypasses it). POST accepts form-time `{ params }` so the editor can list
+ * models before the config is saved; POST responses are never cached.
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getProvider } from "@/lib/providers";

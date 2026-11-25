@@ -1,4 +1,4 @@
-// Client-side audio conversion for the Whisper engine (ADR-0123).
+// Client-side audio conversion for the Whisper engine (ADR-0131).
 //
 // The server has no webm/opus decoder (and Jarela does not ship ffmpeg), so
 // the browser decodes its own recording and resamples it to the 16 kHz mono

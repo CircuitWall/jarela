@@ -182,7 +182,7 @@ export async function buildVariants(): Promise<Variant[]> {
       prompt: buildSystemPrompt({ ...base, agentCfg: agentCfg(), experienceMode: "essential" }),
     },
     {
-      // Voice output controls (ADR-0123) only render for voice-enabled agents,
+      // Voice output controls (ADR-0131) only render for voice-enabled agents,
       // so this variant keeps the section inside prompt verification.
       id: "voice-enabled",
       prompt: buildSystemPrompt({

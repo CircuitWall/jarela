@@ -70,7 +70,7 @@ describe("configuration lifecycle edge cases", () => {
     expect(getAgentTierProportions(configured)).toEqual({ hot: 0, warm: 20, facts: 80 });
     expect(parseDelegateTargets(configured.delegate_targets)).toEqual(["synthetic-other"]);
     expect(getAgentToolCredentials(configured)).toEqual({ synthetic: "synthetic-id" });
-    // ADR-0124: an omitted device voice keeps the stored one.
+    // ADR-0132: an omitted device voice keeps the stored one.
     expect(configured.voice_browser_voice).toBe("Microsoft Hazel - English (United Kingdom)");
     const cleared = upsertAgentConfig({
       ...base, never_reply: false, adaptive_persona_enabled: false, voice_enabled: false, voice_auto_speak: true,

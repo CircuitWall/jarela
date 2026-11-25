@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-Up to ADR-0007 the chat client had three transports for a single
+Before this ADR the chat client had three transports for a single
 "send a message and watch tokens stream back" interaction:
 
 1. **WebSocket sidecar** — a `ws` server bound on a separate port

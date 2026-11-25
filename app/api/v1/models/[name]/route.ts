@@ -1,3 +1,10 @@
+/**
+ * @public — `PUT` / `PATCH` / `DELETE /api/v1/models/[name]`
+ *
+ * Manage one model preset. PUT upserts and preserves echoed inline secrets;
+ * PATCH changes only `enabled` / `is_default`; DELETE removes the preset and
+ * clears agent bindings. All three run under the per-name mutation lock.
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {

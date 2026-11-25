@@ -8,6 +8,8 @@ This guide focuses on developer experience for UI/state work.
 - Lint all: `npm run lint`
 - Lint hooks only: `npm run lint:hooks`
 - Check agent guides and architecture-doc links: `npm run agent-docs:check`
+- Check public-route markers against `docs/api.md`: `npm run api-docs:check`
+- Check ADR uniqueness and citations: `npm run adr:check`
 - Change-impact audit: `npm run check:impact -- --staged`
 - Function-body ratchet (unreleased): `npm run lint:complexity`
 - Test all: `npm test`

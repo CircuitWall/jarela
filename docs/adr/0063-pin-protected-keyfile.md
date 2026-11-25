@@ -75,7 +75,7 @@ offset  bytes  field
 - **Why scrypt over argon2id:** both are memory-hard KDFs in the OWASP
   top tier; scrypt is shipped with Node 25 (`node:crypto.scrypt`), so
   picking it avoids adding a new native dependency to a codebase that
-  already keeps native deps deliberately minimal (see ADR-0034 on
+  already keeps native deps deliberately minimal (see ADR-0129 on
   dropping `better-sqlite3`). For a 6-digit PIN the difference in
   attacker-cost between the two at OWASP-recommended parameters is
   noise compared to the rate-limit + offline-only-after-data-dir-theft

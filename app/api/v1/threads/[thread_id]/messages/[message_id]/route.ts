@@ -1,3 +1,9 @@
+/**
+ * @public — `PATCH /api/v1/threads/[thread_id]/messages/[message_id]`
+ *
+ * Hide or restore a message in the chat transcript without deleting it.
+ * Body: `{ hidden_from_chat: boolean }`; returns `{ updated: true }` or 404.
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { validateBody, errorResponse } from "@/lib/api/responses";

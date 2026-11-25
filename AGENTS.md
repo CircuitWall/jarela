@@ -383,6 +383,11 @@ structural contract for every module guide:
 `node scripts/check-architecture-patterns.mjs` separately verifies that every
 canonical source and validation source in
 [`docs/architecture-patterns.json`](./docs/architecture-patterns.json) exists.
+`node scripts/check-api-docs.mjs` verifies that every `@public` and
+`@public-internal` route is documented in [`docs/api.md`](./docs/api.md), that
+every documented endpoint has a public marker, and that no public route is also
+listed as out-of-scope. `node scripts/check-adr-registry.mjs` verifies that ADR
+numbers are unique and every `ADR-NNNN` citation resolves to a file.
 `node scripts/check-change-impact.mjs --staged` maps changed module files to
 follow-up checks, including updating the owning guide.
 

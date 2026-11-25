@@ -1,3 +1,9 @@
+/**
+ * @public — `GET /api/v1/skills` (list), `POST /api/v1/skills` (create/overwrite)
+ *
+ * Skill content is served from the writable skill repo; reads include
+ * built-ins and every configured repo in layering order.
+ */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { cachedJson, createdResponse, validateBody, errorResponse } from "@/lib/api/responses";

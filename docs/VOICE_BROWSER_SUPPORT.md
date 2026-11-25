@@ -17,7 +17,7 @@ checks at the bottom of this page.
 | VS Code / Electron integrated browser | `SpeechRecognition` | `speechSynthesis` | voices often empty; device default is used |
 | Firefox | not supported | Gemini TTS only | no Web Speech recognition; read-aloud must not silently fail |
 
-Voice engines (`agent_configs.voice_stt_engine`, ADR-0123) map to backends:
+Voice engines (`agent_configs.voice_stt_engine`, ADR-0131) map to backends:
 
 | Engine | Dictation | Read-aloud |
 | --- | --- | --- |

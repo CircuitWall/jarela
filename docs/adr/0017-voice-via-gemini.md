@@ -8,7 +8,7 @@ informed:
 
 # Add voice (STT + TTS) using Gemini, gated by per-agent config
 
-> **Amended by [ADR-0123](./0123-pluggable-voice-input-engines.md).** The STT
+> **Amended by [ADR-0131](./0131-pluggable-voice-input-engines.md).** The STT
 > half of this decision is now pluggable per agent (`gemini`, `browser`, or
 > local `whisper`); Gemini remains the default and TTS is unchanged.
 >

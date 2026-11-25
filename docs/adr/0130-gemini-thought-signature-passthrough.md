@@ -1,6 +1,9 @@
-# 0065 — Thread Gemini `thoughtSignature` through tool-call replay
+# 0130 — Thread Gemini `thoughtSignature` through tool-call replay
 
 Date: 2026-11-16
+
+> Renumbered from ADR-0065 to resolve a duplicate identifier; the decision
+> date and content are unchanged.
 
 ## Status
 

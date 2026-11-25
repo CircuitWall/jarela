@@ -1,6 +1,9 @@
-# 5. Rebrand to Jarela
+# 128. Rebrand to Jarela
 
 Date: 2026-05-17
+
+> Renumbered from ADR-0005 to resolve a duplicate identifier; the decision
+> date and content are unchanged.
 
 ## Status
 

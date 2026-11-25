@@ -203,7 +203,7 @@ function buildVoiceInputContext(): string {
 }
 
 /**
- * Voice output controls (ADR-0123). Present only for agents whose owner turned
+ * Voice output controls (ADR-0131). Present only for agents whose owner turned
  * voice on: it is the only place a model learns the reply-level tone marker,
  * and it must stay in the agent-stable block so the cache survives turns.
  */
