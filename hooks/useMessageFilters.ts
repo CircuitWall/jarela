@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { UnifiedHookResult } from "@/hooks/useListState";
+import { readBrowserValue, removeBrowserValue, writeBrowserValue } from "@/lib/ui/browser-store";
 
 // ADR-0022: per-agent message-channel display filters.
 //
@@ -40,10 +41,9 @@ const DEFAULTS: MessageFilters = {
 };
 
 function readCache(agentId: string): MessageFilters | null {
-  if (typeof window === "undefined") return null;
+  const raw = readBrowserValue(CACHE_KEY_PREFIX + agentId);
+  if (!raw) return null;
   try {
-    const raw = window.localStorage.getItem(CACHE_KEY_PREFIX + agentId);
-    if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<MessageFilters>;
     return { ...DEFAULTS, ...parsed };
   } catch {
@@ -52,19 +52,13 @@ function readCache(agentId: string): MessageFilters | null {
 }
 
 function writeCache(agentId: string, filters: MessageFilters): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(CACHE_KEY_PREFIX + agentId, JSON.stringify(filters));
-  } catch {
-    /* private-mode quota; in-memory state remains correct */
-  }
+  writeBrowserValue(CACHE_KEY_PREFIX + agentId, JSON.stringify(filters));
 }
 
 function readLegacyGlobal(): Partial<MessageFilters> | null {
-  if (typeof window === "undefined") return null;
+  const raw = readBrowserValue(LEGACY_GLOBAL_KEY);
+  if (!raw) return null;
   try {
-    const raw = window.localStorage.getItem(LEGACY_GLOBAL_KEY);
-    if (!raw) return null;
     return JSON.parse(raw) as Partial<MessageFilters>;
   } catch {
     return null;
@@ -125,11 +119,7 @@ export function useMessageFilters(agentId?: string | null): UnifiedHookResult<
         // AND we haven't migrated yet, push it onto THIS agent (the user
         // is interacting with it now, so it's the most reasonable owner)
         // and clear both the global key and the flag's reverse case.
-        const legacy =
-          typeof window !== "undefined" &&
-          !window.localStorage.getItem(MIGRATION_FLAG_KEY)
-            ? readLegacyGlobal()
-            : null;
+        const legacy = !readBrowserValue(MIGRATION_FLAG_KEY) ? readLegacyGlobal() : null;
 
         if (legacy) {
           await fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/display-filters`, {
@@ -137,10 +127,8 @@ export function useMessageFilters(agentId?: string | null): UnifiedHookResult<
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ filters: legacy }),
           }).catch(() => {});
-          try {
-            window.localStorage.setItem(MIGRATION_FLAG_KEY, "1");
-            window.localStorage.removeItem(LEGACY_GLOBAL_KEY);
-          } catch {}
+          writeBrowserValue(MIGRATION_FLAG_KEY, "1");
+          removeBrowserValue(LEGACY_GLOBAL_KEY);
         }
 
         const res = await fetch(

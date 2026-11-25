@@ -161,3 +161,37 @@ The previously recorded findings about browser preference persistence, route
 validation conventions, plugin trust/capabilities, and chat composition remain
 open follow-ups and were not claimed as exhaustively verified by this
 class-focused pass.
+
+## Follow-up resolution — 2026-11-25
+
+Closed since the audits above:
+
+- **Module guidance:** added the six missing `Agent.md` files and lint gates for
+  guide frontmatter, links, inline paths, coverage, and architecture-document
+  links.
+- **API contract:** `docs/api.md` and `@public` / `@public-internal` route
+  markers are reconciled and checked by `check-api-docs.mjs`.
+- **ADR registry:** five duplicate identifiers were renumbered, citations and
+  links repaired, and `check-adr-registry.mjs` now checks uniqueness, citations,
+  and ADR-relative links.
+- **Model mutations:** `PATCH /models/[name]` now runs under the same keyed
+  mutation lock as PUT/DELETE through a store-owned operation.
+- **Boundaries:** the credential-routing context moved to `lib/security/`; the
+  runtime release-prompt copy moved to `lib/prompts/`; store cross-table
+  cascades are enumerated in `lib/stores/Agent.md`.
+- **Browser state:** UI `localStorage` access is centralized in
+  `lib/ui/browser-store.ts`; new direct `fetch`/`localStorage` use in
+  `components/` and `hooks/` is ratcheted by `check-ui-data-access.mjs`.
+- **Packages:** package-local rules live in `packages/AGENTS.md`.
+
+Still open by design:
+
+- Incremental UI direct-`fetch` migration (40 known call sites; the ratchet
+  prevents new ones).
+- Route-body validation migration (direct `safeParse` in existing routes).
+- Manifest-level capability overrides for external/MCP tools (ADR-0038
+  follow-up).
+- Chat runtime composition cleanup (`ChatView`/`useSSE` ref bridges).
+- Explicit hot-loaded plugin trust/signature policy.
+- Historical CHANGELOG citations to pre-renumber ADR filenames remain as
+  written; generated release history is not rewritten.

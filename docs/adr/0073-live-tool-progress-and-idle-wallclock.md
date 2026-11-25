@@ -10,9 +10,9 @@ informed:
 
 ## Context and Problem Statement
 
-`claude_delegate` ([lib/tools/claude-delegate.ts](../../lib/tools/claude-delegate.ts), ADR-0071) spawns a local `claude` CLI process that already parses its own `stream-json` output into turn-by-turn steps (`extractSteps`), but nothing surfaced those steps to the chat UI while the call was still running — the delegating agent only saw a final result once the call resolved (foreground), or had to manually poll `claude_delegate_status` and relay steps in its own prose (background).
+`claude_delegate` ([lib/tools/claude-delegate.ts](../../lib/tools/delegation/claude-delegate.ts), ADR-0071) spawns a local `claude` CLI process that already parses its own `stream-json` output into turn-by-turn steps (`extractSteps`), but nothing surfaced those steps to the chat UI while the call was still running — the delegating agent only saw a final result once the call resolved (foreground), or had to manually poll `claude_delegate_status` and relay steps in its own prose (background).
 
-Separately, `claude_delegate` has two independent timeout mechanisms, both fixed-total-duration rather than idle-based: its own subprocess SIGTERM timer (`spawnClaude`, keyed off `timeout_seconds`, default 600s) and the generic per-tool-call outer wrapper (`wrapWithWallclock` in [lib/tools/wallclock.ts](../../lib/tools/wallclock.ts), default 120s `deadline_ms`, abandons the JS promise without killing the subprocess). Both exist purely to catch a genuine stall — neither should cap a healthy long-running task that's still visibly doing work.
+Separately, `claude_delegate` has two independent timeout mechanisms, both fixed-total-duration rather than idle-based: its own subprocess SIGTERM timer (`spawnClaude`, keyed off `timeout_seconds`, default 600s) and the generic per-tool-call outer wrapper (`wrapWithWallclock` in [lib/tools/wallclock.ts](../../lib/tools/support/wallclock.ts), default 120s `deadline_ms`, abandons the JS promise without killing the subprocess). Both exist purely to catch a genuine stall — neither should cap a healthy long-running task that's still visibly doing work.
 
 ## Decision Drivers
 

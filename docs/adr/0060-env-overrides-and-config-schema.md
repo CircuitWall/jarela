@@ -148,4 +148,4 @@ Browser code can't read `process.env`. A new `/api/v1/config` GET endpoint retur
 
 ADR-0058 (logs panel — the previous stage in the same operator-tooling thread). ADR-0038 (tool safety tier — `JARELA_TOOL_SAFETY` lives in the same schema, requires_restart=true, agentWritable=false).
 
-[lib/env/schema.ts](../../lib/env/schema.ts) is the single source of truth. [lib/env/overrides.ts](../../lib/env/overrides.ts), [lib/env/config.ts](../../lib/env/config.ts), [app/api/v1/env/route.ts](../../app/api/v1/env/route.ts), [lib/tools/system_config.ts](../../lib/tools/system_config.ts), [components/env/EnvVarsPanel.tsx](../../components/env/EnvVarsPanel.tsx) all derive from it.
+[lib/env/schema.ts](../../lib/env/schema.ts) is the single source of truth. [lib/env/overrides.ts](../../lib/env/overrides.ts), [lib/env/config.ts](../../lib/env/config.ts), [app/api/v1/env/route.ts](../../app/api/v1/env/route.ts), [lib/tools/system_config.ts](../../lib/tools/system/system_config.ts), [components/env/EnvVarsPanel.tsx](../../components/env/EnvVarsPanel.tsx) all derive from it.

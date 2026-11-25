@@ -1,0 +1,29 @@
+{
+  "purpose": "Files under components/ and hooks/ that still call fetch directly instead of api/client. Counts may only decrease; add an endpoint to api/client instead of raising a count.",
+  "fetch": {
+    "components/agents/agent-editor/AdvertisementSection.tsx": 1,
+    "components/agents/agent-editor/VoiceFields.tsx": 2,
+    "components/chat/live-speech.ts": 1,
+    "components/chat/MessageBubble.tsx": 1,
+    "components/chat/MessageContent.tsx": 1,
+    "components/env/useRuntimeEnvSettings.ts": 4,
+    "components/layout/AppShell.tsx": 1,
+    "components/models/ModelsPanel.tsx": 3,
+    "components/profile/RedactionPanel.tsx": 3,
+    "components/profile/SecurityPanel.tsx": 2,
+    "components/profile/SkillExecutionSettings.tsx": 1,
+    "components/proposals/AuthoringOperationPreview.tsx": 1,
+    "components/proposals/SkillExecutionPreview.tsx": 1,
+    "components/setup/PinKeypad.tsx": 1,
+    "components/skills/AuthoringWorkflows.tsx": 2,
+    "components/skills/SkillRunner.tsx": 1,
+    "components/skills/WorkflowRunner.tsx": 1,
+    "components/ui/CryptoFallbackBanner.tsx": 1,
+    "components/ui/ServerStatus.tsx": 1,
+    "components/ui/UpdateAvailableBanner.tsx": 4,
+    "components/ui/VersionTag.tsx": 1,
+    "hooks/useEnvSettings.ts": 2,
+    "hooks/useMessageFilters.ts": 4
+  },
+  "localStorage": {}
+}

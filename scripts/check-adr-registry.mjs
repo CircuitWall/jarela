@@ -8,6 +8,7 @@
 // Verifies:
 //   1. Every docs/adr/<NNNN>-*.md prefix is unique.
 //   2. Every ADR-NNNN reference in project documentation resolves to a file.
+//   3. Every relative link inside an ADR resolves.
 //
 // The CHANGELOG is excluded: generated release notes are historical records and
 // may cite the identifier that was current at the time.
@@ -15,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import url from "node:url";
+import { extractMarkdownLinks } from "./check-agent-docs.mjs";
 
 const SELF_PATH = url.fileURLToPath(import.meta.url);
 export const REPO_ROOT = path.resolve(path.dirname(SELF_PATH), "..");
@@ -61,6 +63,25 @@ export function referenceDocuments(repoRoot) {
   return files.filter((file) => !file.endsWith("CHANGELOG.md"));
 }
 
+export function validateAdrLinks(repoRoot) {
+  const problems = [];
+  const directory = path.join(repoRoot, "docs", "adr");
+  for (const adr of collectAdrFiles(repoRoot)) {
+    const absolute = path.join(repoRoot, adr.file);
+    for (const link of extractMarkdownLinks(fs.readFileSync(absolute, "utf8"))) {
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(link)) continue;
+      const target = link.split("#")[0];
+      if (!target) continue;
+      // Inline examples such as [label](url) are prose, not file references.
+      if (!target.includes("/") && !/\.[a-z0-9]+$/i.test(target)) continue;
+      if (!fs.existsSync(path.join(directory, target))) {
+        fail(problems, `${adr.file}: broken markdown link -> ${link}`);
+      }
+    }
+  }
+  return problems;
+}
+
 export function validateAdrRegistry(repoRoot = REPO_ROOT) {
   const problems = [];
   const adrs = collectAdrFiles(repoRoot);
@@ -86,6 +107,7 @@ export function validateAdrRegistry(repoRoot = REPO_ROOT) {
     }
   }
 
+  problems.push(...validateAdrLinks(repoRoot));
   return problems;
 }
 
@@ -97,7 +119,9 @@ export function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`[adr-registry] ${collectAdrFiles(REPO_ROOT).length} ADRs with unique identifiers`);
+  console.log(
+    `[adr-registry] ${collectAdrFiles(REPO_ROOT).length} ADRs with unique identifiers and resolvable links`,
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === SELF_PATH) {

@@ -251,6 +251,34 @@
       "exceptions": [
         "MCP tools are merged into the runtime catalog as execute capability; they are not registered as built-in tools and do not gain a separate permission path."
       ]
+    },
+    {
+      "id": "model-config-state-mutation",
+      "operation": "Apply model enable/default state changes through one store operation held under the per-name keyed mutation lock, in a single transaction.",
+      "canonicalSources": [
+        "lib/stores/model-config.ts"
+      ],
+      "validationSources": [
+        "lib/stores/model-config.test.ts",
+        "app/api/v1/models/[name]/route.test.ts"
+      ],
+      "exceptions": [
+        "PUT re-upserts provider/params and DELETE removes the row; both keep their own store operations and the same keyed lock."
+      ]
+    },
+    {
+      "id": "ui-browser-cache-exception",
+      "operation": "Keep non-durable UI preferences in the single documented browser-store helper, with SSR-safe reads and swallowed quota failures.",
+      "canonicalSources": [
+        "lib/ui/browser-store.ts"
+      ],
+      "validationSources": [
+        "lib/ui/browser-store.test.ts",
+        "hooks/useMessageFilters.test.ts"
+      ],
+      "exceptions": [
+        "Durable or cross-device state belongs in lib/stores; notification cursors and banner dismissals remain browser-local caches."
+      ]
     }
   ]
 }

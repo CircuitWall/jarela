@@ -74,7 +74,7 @@ For the subprocess problem we considered:
 * Add `getInjectedSubprocessEnv()` that renders the encrypted store back
   into `Record<envVarName, value>` (defaults + override aliases). Wire
   it into both [lib/mcp/client.ts](../../lib/mcp/client.ts) `buildSubprocessEnv`
-  and [lib/tools/exec.ts](../../lib/tools/exec.ts) `runLocalCommand`,
+  and [lib/tools/exec.ts](../../lib/tools/general/exec.ts) `runLocalCommand`,
   layered between `process.env` and the explicit per-call/per-server env
   override so the explicit override always wins.
 

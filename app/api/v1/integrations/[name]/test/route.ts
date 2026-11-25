@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isIntegrationProbe, runProbe } from "@/lib/health/probes";
 import { getCredential } from "@/lib/stores/credentials";
-import { runWithToolCredentialContext } from "@/lib/tools/security/credential-context";
+import { runWithToolCredentialContext } from "@/lib/security/credential-context";
 import { errorResponse, errorJson } from "@/lib/api/responses";
 import { NOT_FOUND_ERRORS } from "@/lib/api/errors";
 

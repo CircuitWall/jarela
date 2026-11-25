@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { ShieldAlert, X } from "lucide-react";
 import { fetchHealthDetails } from "@/api/health";
+import { readBrowserValue, writeBrowserValue } from "@/lib/ui/browser-store";
 
 const DISMISS_KEY = "jarela:crypto-fallback-banner-dismissed";
 
@@ -17,7 +18,7 @@ export function CryptoFallbackBanner() {
   const [dismissed, setDismissed] = useState(true);
 
   useEffect(() => {
-    setDismissed(typeof localStorage !== "undefined" && localStorage.getItem(DISMISS_KEY) === "1");
+    setDismissed(readBrowserValue(DISMISS_KEY) === "1");
     let cancelled = false;
     fetch("/api/v1/health/liveness", { cache: "no-store" })
       .then((response) => {
@@ -54,7 +55,7 @@ export function CryptoFallbackBanner() {
       <button
         type="button"
         onClick={() => {
-          localStorage.setItem(DISMISS_KEY, "1");
+          writeBrowserValue(DISMISS_KEY, "1");
           setDismissed(true);
         }}
         className="shrink-0 rounded p-0.5 hover:bg-amber-200/70 dark:hover:bg-amber-800/40"

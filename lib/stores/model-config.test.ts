@@ -229,6 +229,17 @@ describe("model config enable/disable and atomic default", () => {
     reset(["run-a", "run-b"]);
   });
 
+  it("updateModelConfigState applies enable and default in one operation", async () => {
+    const { updateModelConfigState, listModelConfigs } = await load();
+    upsertModelConfig("state-a", "anthropic", "claude-x", {}, true);
+    upsertModelConfig("state-b", "anthropic", "claude-y", {}, false);
+    const row = updateModelConfigState("state-b", { enabled: true, is_default: true });
+    expect(row).toMatchObject({ name: "state-b", enabled: 1, is_default: 1 });
+    expect(listModelConfigs().filter((r) => r.is_default === 1).map((r) => r.name)).toEqual(["state-b"]);
+    expect(() => updateModelConfigState("missing-model", { enabled: true })).toThrow(/not found/);
+    reset(["state-a", "state-b"]);
+  });
+
   it("making a disabled config the default via upsert re-enables it", async () => {
     const { setModelConfigEnabled } = await load();
     upsertModelConfig("up-a", "anthropic", "claude-x", {}, true);

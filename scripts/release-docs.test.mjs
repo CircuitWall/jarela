@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { documentationPath, renderDocumentationPrompt, repository, reviewPath, validateRecord, versionOnlyChange } from "./release-docs.mjs";
+import { renderDocumentationPrompt as renderRuntimePrompt } from "../lib/prompts/release-docs";
 
 const roots = [];
 afterEach(() => {
@@ -255,5 +256,10 @@ describe("on-demand release wiring", () => {
       expect(prompt).toContain(value);
     }
     expect(prompt).not.toMatch(/undefined|NaN|\{\{/);
+  });
+
+  it("keeps the script and runtime prompt copies byte-identical", () => {
+    const context = { version: "1.0.1", previousTag: "v1.0.0", reviewedSha: "a".repeat(40) };
+    expect(renderRuntimePrompt(context)).toBe(renderDocumentationPrompt(context));
   });
 });

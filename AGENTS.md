@@ -375,7 +375,8 @@ structural contract for every module guide:
 - Every guide linked from `AGENTS.md` resolves.
 - Relative links in `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`,
   `docs/API_DESIGN_STANDARD.md`, `docs/EXTENDING.md`,
-  `docs/ui-hook-api.md`, and `packages/README.md` resolve.
+  `docs/ui-hook-api.md`, `packages/README.md`, and `packages/AGENTS.md`
+  resolve.
 - Every `Agent.md` found under `app/`, `components/`, `hooks/`, `lib/`,
   `scripts/`, or `tests/` is declared in the checker — a new module cannot ship
   without guidance.
@@ -387,7 +388,11 @@ canonical source and validation source in
 `@public-internal` route is documented in [`docs/api.md`](./docs/api.md), that
 every documented endpoint has a public marker, and that no public route is also
 listed as out-of-scope. `node scripts/check-adr-registry.mjs` verifies that ADR
-numbers are unique and every `ADR-NNNN` citation resolves to a file.
+numbers are unique, every `ADR-NNNN` citation resolves, and ADR-relative links
+exist. `node scripts/check-ui-data-access.mjs` ratchets direct `fetch` /
+`localStorage` use in `components/` and `hooks/` against
+`scripts/ui-data-access-baseline.json`; move an endpoint into `api/client.ts`
+(or browser state into `lib/ui/browser-store.ts`) instead of raising a count.
 `node scripts/check-change-impact.mjs --staged` maps changed module files to
 follow-up checks, including updating the owning guide.
 

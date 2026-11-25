@@ -24,7 +24,7 @@ const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 const { executeTool } = await import("../index");
 const { registerTools, registeredTools } = await import("../runtime/registry");
 const { getAsyncResult } = await import("../support/async-results");
-const { getCurrentToolCredentialContext } = await import("../security/credential-context");
+const { getCurrentToolCredentialContext } = await import("@/lib/security/credential-context");
 
 afterEach(() => {
   vi.useRealTimers();

@@ -10,7 +10,7 @@ informed:
 
 ## Context and Problem Statement
 
-When Jarela runs from an interactive `npm run dev` shell, every credential the user has exported in `~/.zshrc` / `~/.bashrc` is already in `process.env`, and the existing env-then-store fallback in [lib/tools/atlassian.ts](../../lib/tools/atlassian.ts) and [lib/tools/github.ts](../../lib/tools/github.ts) just works. But the production install path on macOS uses a `LaunchAgent` ([scripts/install-to-system.sh](../../scripts/install-to-system.sh)) and on Linux a systemd user unit — neither of which sources interactive shell rc files. The same user, same machine, same `.zshrc`, but the installed app doesn't see `GITHUB_TOKEN`. Users have to retype each token in the Integrations panel, then retype it again every time they rotate.
+When Jarela runs from an interactive `npm run dev` shell, every credential the user has exported in `~/.zshrc` / `~/.bashrc` is already in `process.env`, and the existing env-then-store fallback in [the Atlassian package](../../packages/atlassian-langchain/src/index.ts) and [the GitHub package](../../packages/github-langchain/src/index.ts) just works. But the production install path on macOS uses a `LaunchAgent` ([scripts/install-to-system.sh](../../scripts/install-to-system.sh)) and on Linux a systemd user unit — neither of which sources interactive shell rc files. The same user, same machine, same `.zshrc`, but the installed app doesn't see `GITHUB_TOKEN`. Users have to retype each token in the Integrations panel, then retype it again every time they rotate.
 
 Windows is the inverse: User-scope env vars set in *Settings → Edit environment variables* (registry-backed) are inherited by every process the user spawns, so the installed app already sees them. But values set only inside a PowerShell `$PROFILE` (`$env:FOO = …`) are session-local and *not* inherited.
 
@@ -46,7 +46,7 @@ Each integration field gets a `source` flag in [lib/stores/integration_meta.ts](
 ### Trigger points
 
 * **Boot, once per process** — [lib/db/index.ts](../../lib/db/index.ts) calls `runEnvSyncOnce()` after DB init, fire-and-forget. New installs auto-populate; rotation picks up on restart.
-* **Manual** — *Sync from environment* button in the built-in integrations section of the Connections tab ([components/integrations/IntegrationsPanel.tsx](../../components/integrations/IntegrationsPanel.tsx)) calls `POST /api/v1/env-sync`. Returns a `SyncResult` so the UI can explain *why* nothing changed (e.g. "field skipped because you edited it here").
+* **Manual** — *Sync from environment* button in the built-in integrations section of the Connections tab ([components/integrations/EnvSync.tsx](../../components/integrations/EnvSync.tsx)) calls `POST /api/v1/env-sync`. Returns a `SyncResult` so the UI can explain *why* nothing changed (e.g. "field skipped because you edited it here").
 
 ### Cross-platform probe
 

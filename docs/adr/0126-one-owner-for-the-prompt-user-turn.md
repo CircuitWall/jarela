@@ -4,8 +4,8 @@ Status: **Accepted**
 
 Date: 2026-11-20
 
-Related: [ADR-0039](./0039-agent-run-decomposition.md) (run decomposition),
-[ADR-0044](./0044-automation-channel-context.md) (context profiles),
+Related: [ADR-0039](./0039-prepare-thread-run-decomposition.md) (run decomposition),
+[ADR-0044](./0044-per-channel-warm-summary-and-attributed-context.md) (context profiles),
 [ADR-0089](./0089-abort-signal-reaches-provider-calls.md) (retry attempts),
 [ADR-0090](./0090-attachment-replay-only-newest-turn.md) (attachment replay).
 

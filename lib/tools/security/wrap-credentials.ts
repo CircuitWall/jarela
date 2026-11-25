@@ -10,7 +10,7 @@
 // properties the package surfaces) flow through unchanged.
 
 import type { StructuredToolInterface } from "@langchain/core/tools";
-import { runWithToolCredentialContext } from "@/lib/tools/security/credential-context";
+import { runWithToolCredentialContext } from "@/lib/security/credential-context";
 
 export function wrapToolForCredentialRouting(
   tool: StructuredToolInterface,

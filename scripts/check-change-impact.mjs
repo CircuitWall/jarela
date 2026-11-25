@@ -174,6 +174,7 @@ const RULES = [
     followUps: [
       "Check the owning Agent.md still matches the changed pattern, canonical files, and test references.",
       "Run node scripts/check-agent-docs.mjs; broken guide links or undeclared module docs fail npm run lint.",
+      "Run npm run ui-data:check when UI code changes; new direct fetch/localStorage use fails lint.",
       "Update AGENTS.md when a module boundary or guidance tier changes.",
     ],
   },

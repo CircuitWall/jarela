@@ -6,7 +6,7 @@ Date: 2026-11-20
 
 Related: [ADR-0003](./0003-sqlite-local-persistence.md) (local SQLite),
 [ADR-0118](./0118-async-sqlite-driver.md) (worker-backed reads),
-[ADR-0005](./0005-encrypted-secrets-at-rest.md) (master key / locked state).
+[ADR-0005](./0005-encrypt-secrets-at-rest.md) (master key / locked state).
 
 ## Context
 

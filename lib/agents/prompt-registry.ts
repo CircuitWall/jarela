@@ -24,7 +24,7 @@ import { buildActionEvidenceRetryNudge, buildFabricationNudge, buildCitationRetr
 import { buildFirstRunAgentInstructions, buildFirstRunKickoff } from "./first-run-onboarding";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { renderDocumentationPrompt } from "../../scripts/release-docs.mjs";
+import { renderDocumentationPrompt } from "@/lib/prompts/release-docs";
 import { RELEASE_DOCUMENTATION_GUIDANCE } from "@/lib/lifecycle/changesets";
 import { buildAdoptionPrompt } from "@/lib/stores/version-adoption";
 import { buildProposalResponseMessage } from "@/lib/proposals/response-message";
@@ -163,7 +163,7 @@ function listLifecyclePrompts(): StaticPrompt[] {
     },
     {
       id: "release.documentation-review",
-      source: "scripts/prompts/release-docs.txt",
+      source: "lib/prompts/release-docs.ts",
       purpose: "Proposes version-bound public documentation updates or a justified unnecessary decision for a human-reviewed release PR.",
       text: renderDocumentationPrompt({
         version: "2.5.4",

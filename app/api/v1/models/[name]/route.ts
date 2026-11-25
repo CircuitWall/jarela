@@ -12,12 +12,10 @@ import {
   getModelConfig,
   isModelConfigEnabled,
   ModelConfigStateError,
-  setDefaultModelConfig,
-  setModelConfigEnabled,
+  updateModelConfigState,
   upsertModelConfig,
   withModelConfigMutation,
 } from "@/lib/stores/model-config";
-import { withDbTransaction } from "@/lib/db/transaction";
 import { validateBody, errorJson, errorResponse } from "@/lib/api/responses";
 import { preserveInlineModelSecrets, redactInlineModelParams } from "@/lib/models/inline-params";
 import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
@@ -69,21 +67,17 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const { name } = await params;
   const body = await validateBody(req, PatchBody);
   if (body instanceof NextResponse) return body;
-  try {
-    const r = withDbTransaction(() => {
-      let row = getModelConfig(name);
-      if (!row) throw new ModelConfigStateError(`Model config "${name}" not found`, 404);
-      if (body.enabled !== undefined) row = setModelConfigEnabled(name, body.enabled);
-      if (body.is_default) row = setDefaultModelConfig(name);
-      return row;
-    });
-    return NextResponse.json(toResponse(r));
-  } catch (err) {
-    if (err instanceof ModelConfigStateError) {
-      return errorJson({ error: err.message }, { status: err.status });
+  return withModelConfigMutation(name, () => {
+    try {
+      const r = updateModelConfigState(name, body);
+      return NextResponse.json(toResponse(r));
+    } catch (err) {
+      if (err instanceof ModelConfigStateError) {
+        return errorJson({ error: err.message }, { status: err.status });
+      }
+      throw err;
     }
-    throw err;
-  }
+  });
 }
 
 function toResponse(r: NonNullable<ReturnType<typeof getModelConfig>>) {
