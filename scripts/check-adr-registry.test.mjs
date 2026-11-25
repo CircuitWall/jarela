@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -84,6 +85,18 @@ describe("ADR registry", () => {
     });
     expect(validateAdrLinks(repo)).toContain(
       "docs/adr/0001-one.md: broken markdown link -> ./0002-two.md",
+    );
+  });
+
+  it("fails a link to a generated file that is absent from a clean checkout", () => {
+    const repo = fixtureRepo({
+      ".gitignore": "docs/CHANGELOG.md\n",
+      "docs/CHANGELOG.md": "# Generated\n",
+      "docs/adr/0001-one.md": "See [changelog](../CHANGELOG.md).\n",
+    });
+    execFileSync("git", ["init", "--quiet"], { cwd: repo });
+    expect(validateAdrLinks(repo)).toContain(
+      "docs/adr/0001-one.md: link target is generated and not checked in -> ../CHANGELOG.md",
     );
   });
 });

@@ -15,6 +15,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import url from "node:url";
 import { extractMarkdownLinks } from "./check-agent-docs.mjs";
 
@@ -63,9 +64,26 @@ export function referenceDocuments(repoRoot) {
   return files.filter((file) => !file.endsWith("CHANGELOG.md"));
 }
 
+function ignoredPaths(repoRoot, targets) {
+  if (targets.length === 0) return new Set();
+  const result = spawnSync("git", ["check-ignore", "--stdin"], {
+    cwd: repoRoot,
+    input: targets.join("\n"),
+    encoding: "utf8",
+  });
+  if (result.error || result.status === 128) return new Set();
+  return new Set(
+    (result.stdout ?? "")
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((target) => target.split(path.sep).join("/")),
+  );
+}
+
 export function validateAdrLinks(repoRoot) {
   const problems = [];
   const directory = path.join(repoRoot, "docs", "adr");
+  const references = [];
   for (const adr of collectAdrFiles(repoRoot)) {
     const absolute = path.join(repoRoot, adr.file);
     for (const link of extractMarkdownLinks(fs.readFileSync(absolute, "utf8"))) {
@@ -74,9 +92,26 @@ export function validateAdrLinks(repoRoot) {
       if (!target) continue;
       // Inline examples such as [label](url) are prose, not file references.
       if (!target.includes("/") && !/\.[a-z0-9]+$/i.test(target)) continue;
-      if (!fs.existsSync(path.join(directory, target))) {
-        fail(problems, `${adr.file}: broken markdown link -> ${link}`);
-      }
+      references.push({ adr, link, absolute: path.join(directory, target) });
+    }
+  }
+
+  const candidates = references
+    .filter(({ absolute }) => fs.existsSync(absolute))
+    .map(({ absolute }) => path.relative(repoRoot, absolute).split(path.sep).join("/"))
+    .filter((target) => target && !target.startsWith(".."));
+  const ignored = ignoredPaths(repoRoot, candidates);
+
+  for (const { adr, link, absolute } of references) {
+    if (!fs.existsSync(absolute)) {
+      fail(problems, `${adr.file}: broken markdown link -> ${link}`);
+      continue;
+    }
+    // A generated file can exist locally while absent from a clean CI
+    // checkout, so a link to it is not a durable reference.
+    const relative = path.relative(repoRoot, absolute).split(path.sep).join("/");
+    if (ignored.has(relative)) {
+      fail(problems, `${adr.file}: link target is generated and not checked in -> ${link}`);
     }
   }
   return problems;
