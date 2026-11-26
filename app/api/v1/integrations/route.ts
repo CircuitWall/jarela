@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { INTEGRATIONS, listIntegrations, DYNAMIC_INTEGRATIONS_SNAPSHOT } from "@/lib/stores/integrations";
 import { refreshExternalProviderIntegrations } from "@/lib/providers/provider-integrations";
-import { getManifest, type IntegrationManifest } from "@/lib/integrations/registry";
+import { getManifest } from "@/lib/integrations/registry";
 
 // GET /api/v1/integrations
 // Returns a list of supported integrations with their schema (so the UI can
@@ -12,7 +12,9 @@ export function GET() {
 
   const staticDefs = Object.entries(INTEGRATIONS).map(([name, def]) => {
     const manifest = getManifest(name);
-    const authMethod = manifest?.steps?.some((s: IntegrationManifest["steps"][number]) => s.proposes === "start_oauth") ? "oauth" as const : undefined;
+    const authMethod = manifest?.steps?.some(
+      (s: { proposes?: string }) => s.proposes === "start_oauth",
+    ) ? "oauth" as const : undefined;
     return {
       name,
       label: def.label,
