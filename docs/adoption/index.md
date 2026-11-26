@@ -17,6 +17,51 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.9.0
+
+From 3.8.1 · 2026-11-26
+
+### Tools
+
+- `memory_read` — changed; description changed; params added: `include_history`, `include_revision`
+
+### Prompts
+
+- `static.skill.memory-organization` — changed (`lib/skills/builtins/memory-organization/SKILL.md`)
+
+    ```diff
+    + - The default agent's weekly background dream may merge validated
+    + near-duplicates in `facts` automatically. It archives duplicates and keeps
+    + revision history; it never deletes. This does not change the approval rule
+    + for a manual maintenance plan.
+    ```
+
+### Commits
+
+- fix(coverage): exclude untested atlassian-oauth.ts from coverage gate
+- test(atlassian): add atlassian oauth hook tests for provider and credential guard
+- fix(atlassian): import IntegrationManifest from manifest, not registry
+- fix(atlassian): correct import path and fix oauth test setup
+- feat(atlassian): add oauth button and wire agent-led authorization flow
+- feat(dreaming): add idle consolidation and weekly maintenance
+- feat(documents): add float32 binary embedding storage
+- fix(memory): expose read fingerprints and cap history bytes
+- fix(automation): keep scheduled-task failures across non-success runs
+- fix(documents): exclude vendored trees and report search coverage
+- fix(telemetry): route blocked tool denials to configuration problems
+- feat(documents): add index chunk lifecycle management
+- chore(architecture): remove completed audit and record guardrails
+- fix(agents): keep the first agent load through an update restart
+- fix(adr): keep links working in clean checkouts
+- refactor(architecture): fix remaining audit drift
+- feat(architecture): align contract docs and deduplicate decision records
+- feat(agent-docs): add module guides and drift enforcement
+- docs(voice): document chromium and safari support requirements
+- fix(voice): keep read-aloud working in every supported browser
+- fix(voice): prevent browser dictation duplicating transcripts
+- docs(process): require a current base before editing
+- feat(atlassian): add oauth 2.0 authorization code flow routes
+
 ## 3.8.1
 
 From 3.8.0 · 2026-11-25
