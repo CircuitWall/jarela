@@ -32,7 +32,7 @@ vi.mock("@/lib/stores/app-settings", () => ({
   getDocumentRecallPolicy: mocks.recallPolicy,
 }));
 
-const { searchDocuments } = await import("./search");
+const { searchDocuments, searchDocumentsWithMeta } = await import("./search");
 
 function row(id: string, score: number | null, text: string) {
   return {
@@ -54,9 +54,12 @@ describe("searchDocuments similarity threshold", () => {
     mocks.all.mockReset().mockImplementation(() => mocks.rows);
     mocks.run.mockClear();
     mocks.prepare.mockReset().mockImplementation(() => ({ all: mocks.all, run: mocks.run }));
-    mocks.readAppRows.mockReset().mockImplementation(async (sql: string) => (
-      sql.includes("> (?, ?)") ? [] : mocks.rows
-    ));
+    mocks.readAppRows.mockReset().mockImplementation(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes("SUM(d.chunk_count)")) return [{ total_chunks: mocks.rows.length }];
+      if (sql.includes("> (?, ?)")) return [];
+      const limit = Number(params[params.length - 1]) || mocks.rows.length;
+      return mocks.rows.slice(0, limit);
+    });
     mocks.localEmbeddingsEnabled.mockReturnValue(true);
     mocks.recallPolicy.mockReturnValue(defaultDocumentRecallPolicy());
     mocks.cosine.mockImplementation((_query, vector) => vector[0]);
@@ -159,11 +162,13 @@ describe("searchDocuments similarity threshold", () => {
 
   it.each([undefined, "synthetic-source"])("binds the source filter and page size: %s", async (sourceId) => {
     await searchDocuments("needle", { sourceId });
-    const sql = mocks.readAppRows.mock.calls[0][0] as string;
+    const candidate = mocks.readAppRows.mock.calls.find(
+      ([sql]) => String(sql).includes("ORDER BY dc.document_id, dc.chunk_index"),
+    );
+    expect(candidate).toBeDefined();
+    const [sql, params] = candidate as [string, unknown[]];
     expect(sql).toContain("ds.enabled = 1");
-    expect(sql).toContain("ORDER BY dc.document_id, dc.chunk_index");
     expect(sql).toContain("LIMIT ?");
-    const params = mocks.readAppRows.mock.calls[0][1] as unknown[];
     if (sourceId) {
       expect(sql).toContain("d.source_id = ?");
       expect(params).toEqual([sourceId, 2_000]);
@@ -174,17 +179,18 @@ describe("searchDocuments similarity threshold", () => {
   });
 
   it("scans past the first page so later chunks stay searchable", async () => {
-    let call = 0;
+    let cursorPages = 0;
     mocks.readAppRows.mockImplementation(async (sql: string) => {
-      call += 1;
+      if (sql.includes("SUM(d.chunk_count)")) return [{ total_chunks: 2 }];
       if (!sql.includes("> (?, ?)")) return [row("first-page", null, "nothing relevant")];
-      if (call === 2) return [row("second-page", null, "needle in a later chunk")];
+      cursorPages += 1;
+      if (cursorPages === 1) return [row("second-page", null, "needle in a later chunk")];
       return [];
     });
     expect(await searchDocuments("needle")).toMatchObject([
       { document_id: "doc-second-page", match: "substring" },
     ]);
-    expect(call).toBe(3);
+    expect(cursorPages).toBe(2);
   });
 
   it("executes both query forms against SQLite without returning disabled or other sources", async () => {
@@ -192,7 +198,7 @@ describe("searchDocuments similarity threshold", () => {
     try {
       db.exec(`
         CREATE TABLE document_sources (id TEXT, label TEXT, enabled INTEGER);
-        CREATE TABLE documents (id TEXT, source_id TEXT, rel_path TEXT, path TEXT);
+        CREATE TABLE documents (id TEXT, source_id TEXT, rel_path TEXT, path TEXT, chunk_count INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE document_chunks (
           id TEXT, document_id TEXT, chunk_index INTEGER, text TEXT,
           embedding TEXT, embedding_model_signature TEXT
@@ -200,9 +206,9 @@ describe("searchDocuments similarity threshold", () => {
         INSERT INTO document_sources VALUES
           ('source-a', 'A', 1), ('source-b', 'B', 1), ('source-off', 'Off', 0);
         INSERT INTO documents VALUES
-          ('doc-a', 'source-a', 'a.md', '/a.md'),
-          ('doc-b', 'source-b', 'b.md', '/b.md'),
-          ('doc-off', 'source-off', 'off.md', '/off.md');
+          ('doc-a', 'source-a', 'a.md', '/a.md', 1),
+          ('doc-b', 'source-b', 'b.md', '/b.md', 1),
+          ('doc-off', 'source-off', 'off.md', '/off.md', 1);
         INSERT INTO document_chunks VALUES
           ('a', 'doc-a', 0, 'needle', NULL, NULL),
           ('b', 'doc-b', 0, 'needle', NULL, NULL),
@@ -264,5 +270,28 @@ describe("searchDocuments similarity threshold", () => {
     mocks.rows = [{ ...row("blocked-mismatch", null, "needle"), embedding: "[1,0,0]" }];
     await expect(searchDocuments("needle")).rejects.toThrow("Document search blocked");
     expect(mocks.run).not.toHaveBeenCalled();
+  });
+
+  it("reports complete coverage when the scan reaches the end", async () => {
+    const result = await searchDocumentsWithMeta("needle");
+    expect(result.coverage).toEqual({
+      scanned_chunks: 3, total_chunks: 3, truncated: false, max_scanned_rows: 20_000,
+    });
+    expect(result.hits.map((hit) => hit.document_id)).toEqual(["doc-high", "doc-literal"]);
+  });
+
+  it("reports a capped scan as truncated instead of complete", async () => {
+    const result = await searchDocumentsWithMeta("needle", { maxScannedRows: 2 });
+    expect(result.coverage).toEqual({
+      scanned_chunks: 2, total_chunks: 3, truncated: true, max_scanned_rows: 2,
+    });
+  });
+
+  it("returns empty coverage for an empty query without scanning", async () => {
+    expect(await searchDocumentsWithMeta("   ")).toEqual({
+      hits: [],
+      coverage: { scanned_chunks: 0, total_chunks: 0, truncated: false, max_scanned_rows: 20_000 },
+    });
+    expect(mocks.readAppRows).not.toHaveBeenCalled();
   });
 });

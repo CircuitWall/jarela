@@ -37,6 +37,29 @@ export interface DocumentHit {
   excluded?: boolean;
 }
 
+export interface DocumentSearchCoverage {
+  scanned_chunks: number;
+  /** Sum of the maintained `documents.chunk_count` for the searched sources. */
+  total_chunks: number;
+  /** True when the scan stopped at its row cap before reaching every chunk. */
+  truncated: boolean;
+  max_scanned_rows: number;
+}
+
+export interface DocumentSearchResult {
+  hits: DocumentHit[];
+  coverage: DocumentSearchCoverage;
+}
+
+interface SearchOptions {
+  limit?: number;
+  sourceId?: string;
+  minSimilarity?: number;
+  includeExcluded?: boolean;
+  /** Test seam; production uses SEARCH_MAX_SCANNED_ROWS. */
+  maxScannedRows?: number;
+}
+
 interface Row {
   chunk_id: string;
   document_id: string;
@@ -52,11 +75,32 @@ interface Row {
 
 export async function searchDocuments(
   query: string,
-  opts?: { limit?: number; sourceId?: string; minSimilarity?: number; includeExcluded?: boolean },
+  opts?: SearchOptions,
 ): Promise<DocumentHit[]> {
+  return (await searchDocumentsWithMeta(query, opts)).hits;
+}
+
+/**
+ * Search with coverage metadata. The scan is capped; `coverage.truncated`
+ * tells callers when the cap stopped it before every candidate chunk was
+ * scored, so a tool result never presents a partial scan as complete.
+ */
+export async function searchDocumentsWithMeta(
+  query: string,
+  opts?: SearchOptions,
+): Promise<DocumentSearchResult> {
   const limit = Math.min(Math.max(opts?.limit ?? 8, 1), 25);
+  const requestedMax = opts?.maxScannedRows ?? SEARCH_MAX_SCANNED_ROWS;
+  const maxScannedRows = Number.isFinite(requestedMax)
+    ? Math.max(1, Math.floor(requestedMax))
+    : SEARCH_MAX_SCANNED_ROWS;
   const trimmed = query.trim();
-  if (trimmed.length === 0) return [];
+  if (trimmed.length === 0) {
+    return {
+      hits: [],
+      coverage: { scanned_chunks: 0, total_chunks: 0, truncated: false, max_scanned_rows: maxScannedRows },
+    };
+  }
 
   const policy = getDocumentRecallPolicy();
   const topicResult = !opts?.includeExcluded && policy.topics.length > 0
@@ -72,8 +116,11 @@ export async function searchDocuments(
   const lowered = trimmed.toLowerCase();
   const minSimilarity = Math.max(0, Math.min(1, opts?.minSimilarity ?? getDefaultDocumentMinSimilarity()));
   const mismatched = new Set<string>();
+  const totalChunks = await countCandidateChunks(opts?.sourceId);
+  let scannedChunks = 0;
 
-  for await (const page of readCandidatePages(opts?.sourceId)) {
+  for await (const page of readCandidatePages(opts?.sourceId, maxScannedRows)) {
+    scannedChunks += page.length;
     const candidates = page.map((row) => ({
       row,
       excluded: policy.excluded_documents.some(
@@ -141,7 +188,37 @@ export async function searchDocuments(
   }
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit);
+  return {
+    hits: scored.slice(0, limit),
+    coverage: {
+      scanned_chunks: scannedChunks,
+      total_chunks: totalChunks,
+      truncated: scannedChunks >= maxScannedRows && scannedChunks < totalChunks,
+      max_scanned_rows: maxScannedRows,
+    },
+  };
+}
+
+/**
+ * Candidate chunk total for the same source filter, from the maintained
+ * `documents.chunk_count` column. This is an index-only aggregate over
+ * `documents`; counting `document_chunks` rows reads the whole multi-GB table.
+ */
+async function countCandidateChunks(sourceId: string | undefined): Promise<number> {
+  const params: unknown[] = [];
+  let where = "WHERE ds.enabled = 1";
+  if (sourceId) {
+    where += " AND d.source_id = ?";
+    params.push(sourceId);
+  }
+  const rows = await readAppRows<{ total_chunks: number }>(
+    `SELECT COALESCE(SUM(d.chunk_count), 0) AS total_chunks
+       FROM documents d
+       JOIN document_sources ds ON ds.id = d.source_id
+       ${where}`,
+    params,
+  );
+  return Number(rows[0]?.total_chunks) || 0;
 }
 
 function validVector(value: number[] | null): value is number[] {
@@ -171,11 +248,14 @@ const SEARCH_MAX_SCANNED_ROWS = 20_000;
  * synchronous, so reading this corpus there froze the whole process; paging
  * also bounds peak memory to one page of embeddings at a time.
  */
-async function* readCandidatePages(sourceId: string | undefined): AsyncGenerator<Row[]> {
+async function* readCandidatePages(
+  sourceId: string | undefined,
+  maxScannedRows: number,
+): AsyncGenerator<Row[]> {
   let scanned = 0;
   let cursor: { document_id: string; chunk_index: number } | null = null;
-  while (scanned < SEARCH_MAX_SCANNED_ROWS) {
-    const pageSize = Math.min(SEARCH_PAGE_ROWS, SEARCH_MAX_SCANNED_ROWS - scanned);
+  while (scanned < maxScannedRows) {
+    const pageSize = Math.min(SEARCH_PAGE_ROWS, maxScannedRows - scanned);
     const params: unknown[] = [];
     let where = "WHERE ds.enabled = 1";
     if (sourceId) {

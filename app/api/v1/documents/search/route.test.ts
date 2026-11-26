@@ -3,12 +3,17 @@ import { NextRequest } from "next/server";
 
 const search = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/documents/search", () => ({
-  searchDocuments: search,
+  searchDocumentsWithMeta: search,
   getDefaultDocumentMinSimilarity: () => 0.86,
 }));
 const { GET } = await import("./route");
 const { DocumentExclusionUnavailableError } = await import("@/lib/documents/recall-policy");
-beforeEach(() => { search.mockReset().mockResolvedValue([]); });
+beforeEach(() => {
+  search.mockReset().mockResolvedValue({
+    hits: [],
+    coverage: { scanned_chunks: 0, total_chunks: 0, truncated: false, max_scanned_rows: 20_000 },
+  });
+});
 
 describe("document search preview exclusions", () => {
   it("does not bypass exclusions by default", async () => {
@@ -25,6 +30,19 @@ describe("document search preview exclusions", () => {
     const response = await GET(new NextRequest("http://localhost/api/v1/documents/search?q=notes&include_excluded=1"));
     expect(response.status).toBe(400);
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it("returns scan coverage so callers can identify partial results", async () => {
+    search.mockResolvedValue({
+      hits: [],
+      coverage: { scanned_chunks: 20_000, total_chunks: 244_590, truncated: true, max_scanned_rows: 20_000 },
+    });
+    const response = await GET(new NextRequest("http://localhost/api/v1/documents/search?q=notes"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      hits: [],
+      coverage: { scanned_chunks: 20_000, total_chunks: 244_590, truncated: true, max_scanned_rows: 20_000 },
+    });
   });
 
   it("returns an actionable failure instead of unchecked content", async () => {

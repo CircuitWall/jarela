@@ -1275,6 +1275,20 @@ export interface DocumentHit {
   excluded?: boolean;
 }
 
+export interface DocumentSearchCoverage {
+  scanned_chunks: number;
+  total_chunks: number;
+  truncated: boolean;
+  max_scanned_rows: number;
+}
+
+export interface DocumentSearchResponse {
+  query: string;
+  hits: DocumentHit[];
+  min_similarity: number;
+  coverage: DocumentSearchCoverage;
+}
+
 export interface DocumentReindexResult {
   source_id: string;
   stats: {

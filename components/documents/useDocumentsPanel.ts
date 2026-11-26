@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type {
-  DocumentHit,
   DocumentIndexLifecycleResponse,
+  DocumentSearchResponse,
   DocumentSource,
   DocumentSourceKind,
 } from "@/api/types";
@@ -23,7 +23,7 @@ export interface UseDocumentsPanelResult {
   reindex: (id: string) => Promise<void>;
   removeSource: (id: string, summary: string, kind: DocumentSourceKind) => Promise<void>;
   toggleSource: (s: DocumentSource) => Promise<void>;
-  search: (q: string, includeExcluded?: boolean) => Promise<DocumentHit[]>;
+  search: (q: string, includeExcluded?: boolean) => Promise<DocumentSearchResponse>;
   recallPolicy: DocumentRecallPolicy | null;
   localEmbeddings: boolean | null;
   configuredIntegrations: string[];
@@ -97,11 +97,10 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
     }
   }
 
-  async function search(q: string, includeExcluded = false): Promise<DocumentHit[]> {
+  async function search(q: string, includeExcluded = false): Promise<DocumentSearchResponse> {
     setError(null);
     try {
-      const res = await api.documents.search(q, { limit: 25, include_excluded: includeExcluded });
-      return res.hits;
+      return await api.documents.search(q, { limit: 25, include_excluded: includeExcluded });
     } catch (e) {
       setError(errorMessage(e));
       throw e;

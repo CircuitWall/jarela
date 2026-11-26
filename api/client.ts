@@ -45,6 +45,7 @@ import type {
   DocumentSettings,
   DocumentHit,
   DocumentReindexResult,
+  DocumentSearchResponse,
   DocumentIndexLifecyclePatch,
   DocumentIndexLifecycleResponse,
   DocumentIndexMaintenanceAccepted,
@@ -1254,7 +1255,7 @@ export const api = {
       if (opts?.source_id) p.set("source_id", opts.source_id);
       if (opts?.min_similarity !== undefined) p.set("min_similarity", String(opts.min_similarity));
       if (opts?.include_excluded) p.set("include_excluded", "true");
-      return request<{ query: string; hits: DocumentHit[]; min_similarity: number }>(`/documents/search?${p.toString()}`);
+      return request<DocumentSearchResponse>(`/documents/search?${p.toString()}`);
     },
     getSettings: () => request<DocumentSettings>("/documents/settings"),
     getRecallPolicy: () => request<{ policy: DocumentRecallPolicy; local_embeddings: boolean }>("/documents/recall-policy", { cache: "no-store" }),

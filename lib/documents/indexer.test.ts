@@ -32,7 +32,7 @@ vi.mock("@/lib/embeddings", () => ({
   resetMessageEmbedCache: () => {},
 }));
 
-const { backfillSourceEmbeddings, clearSourceEmbeddings, indexSource } = await import("./indexer");
+const { backfillSourceEmbeddings, clearSourceEmbeddings, indexSource, isSkippedFileName } = await import("./indexer");
 const { resetConfigCache } = await import("@/lib/env/config");
 const { getDb } = await import("@/lib/db");
 const { createDocumentSource } = await import("@/lib/stores/document-sources");
@@ -392,4 +392,51 @@ describe("indexSource — terminal vs transient embedding failures (issue #597)"
         .toEqual({ count: 2 });
     },
   );
+});
+
+describe("indexer ingestion denylist", () => {
+  it("skips vendored dependency trees and generated bundle files", async () => {
+    mkdirSync(join(sourceRoot, "vendor", "pkg"), { recursive: true });
+    mkdirSync(join(sourceRoot, "site-packages", "pkg"), { recursive: true });
+    mkdirSync(join(sourceRoot, "python_embeded"), { recursive: true });
+    mkdirSync(join(sourceRoot, "app"), { recursive: true });
+    writeFileSync(join(sourceRoot, "vendor", "pkg", "lib.py"), "vendored python");
+    writeFileSync(join(sourceRoot, "site-packages", "pkg", "mod.py"), "installed python");
+    writeFileSync(join(sourceRoot, "python_embeded", "runtime.py"), "portable runtime");
+    writeFileSync(join(sourceRoot, "app", "notes.md"), "# notes");
+    writeFileSync(join(sourceRoot, "app", "config.json"), '{"ok":true}');
+    writeFileSync(join(sourceRoot, "app", "main.js"), "console.log('kept')");
+    writeFileSync(join(sourceRoot, "app", "bundle.min.js"), "console.log('minified')");
+    writeFileSync(join(sourceRoot, "app", "styles.min.css"), "body{color:red}");
+    writeFileSync(join(sourceRoot, "app", "package-lock.json"), '{"lockfileVersion":3}');
+    writeFileSync(join(sourceRoot, "app", "tokenizer.json"), '{"vocab":{}}');
+    writeFileSync(join(sourceRoot, "app", "source.js.map"), '{"version":3}');
+
+    const stats = await indexSource(sourceRow, { maxFiles: Number.MAX_SAFE_INTEGER });
+
+    expect(stats.scanned).toBe(3);
+    expect(getDb().prepare("SELECT rel_path FROM documents WHERE source_id=? ORDER BY rel_path").all(sourceId))
+      .toEqual([
+        { rel_path: "app/config.json" },
+        { rel_path: "app/main.js" },
+        { rel_path: "app/notes.md" },
+      ]);
+  });
+
+  it.each([
+    ["bundle.min.js", true],
+    ["styles.min.css", true],
+    ["package-lock.json", true],
+    ["pnpm-lock.yaml", true],
+    ["tokenizer.json", true],
+    ["vocab.json", true],
+    ["merges.txt", true],
+    ["source.js.map", true],
+    ["api.pb.go", true],
+    ["app.js", false],
+    ["notes.md", false],
+    ["config.json", false],
+  ])("classifies %s as skipped=%s", (name, expected) => {
+    expect(isSkippedFileName(name)).toBe(expected);
+  });
 });
