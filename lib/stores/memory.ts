@@ -6,9 +6,12 @@ import { isLegacyStructuredMemoryRaw, memorySearchText, parseStructuredMemory, t
 import { isSkillExecutionPolicySetting } from "@/lib/skills/execution-policy";
 import { isAdvertisementMemory } from "@/lib/agents/advertisement-contract";
 
-// Older writes' history entries won't grow past this before the oldest
-// snapshot is dropped, so a long-lived key can't bloat the row forever.
+// History is bounded by both entry count and bytes. Each snapshot is a full
+// copy of the record's core fields, so 20 snapshots of a large record can
+// approach 20× the row size; the byte budget is what keeps a long-lived key
+// from bloating without bound. Keep the newest snapshots that fit.
 const MAX_MEMORY_HISTORY_ENTRIES = 20;
+const MAX_MEMORY_HISTORY_BYTES = 16 * 1024;
 
 const now = () => new Date().toISOString();
 
@@ -168,8 +171,23 @@ function normalizeStructuredMemoryValue(value: unknown, previous: StructuredMemo
   // Snapshot only the previous record's own fields — never its `history`
   // — so revisions can't nest inside one another and the row stays flat.
   const { history: previousHistory, ...previousSnapshot } = previous;
-  const history = [...previousHistory, { updated_at: updatedAt, record: previousSnapshot }].slice(-MAX_MEMORY_HISTORY_ENTRIES);
-  return { ...next, history };
+  return { ...next, history: boundedMemoryHistory([...previousHistory, { updated_at: updatedAt, record: previousSnapshot }]) };
+}
+
+/** Keep the newest snapshots within both the entry and byte budgets. */
+function boundedMemoryHistory(
+  history: StructuredMemoryRecord["history"],
+): StructuredMemoryRecord["history"] {
+  const kept: StructuredMemoryRecord["history"] = [];
+  let bytes = 0;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    const size = Buffer.byteLength(JSON.stringify(entry), "utf8");
+    if (kept.length >= MAX_MEMORY_HISTORY_ENTRIES || bytes + size > MAX_MEMORY_HISTORY_BYTES) break;
+    kept.unshift(entry);
+    bytes += size;
+  }
+  return kept;
 }
 
 export function putMemory(namespace: string, key: string, value: unknown): MemoryRow {

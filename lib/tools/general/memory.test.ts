@@ -15,7 +15,8 @@ afterAll(() => {
 
 const { memoryReadTool, memoryWriteTool, memoryUpsertTool, memoryDeleteTool, memoryListTool, memorySearchTool } =
   await import("./memory");
-const { putMemory, getMemory, listMemory, deleteMemory } = await import("@/lib/stores/memory");
+const { putMemory, getMemory, getStoredMemoryValue, listMemory, deleteMemory } = await import("@/lib/stores/memory");
+const { memoryFingerprint } = await import("@/lib/memory/maintenance");
 const { getDb } = await import("@/lib/db");
 
 beforeEach(() => {
@@ -224,5 +225,65 @@ describe("memory_search and memory_list share one search", () => {
 
     expect(found.map((r: { key: string }) => r.key)).toEqual(["alpha"]);
     expect(all).toHaveLength(2);
+  });
+});
+
+describe("memoryReadTool revision metadata", () => {
+  function readRecord(content: string) {
+    return {
+      version: 2 as const, kind: "fact" as const, subject: "Synthetic revision",
+      content, tags: [], confidence: "verified" as const, source: "import" as const,
+    };
+  }
+
+  it("omits maintenance-only history by default and includes it on request", async () => {
+    putMemory("facts", "revision-value", readRecord("first"));
+    putMemory("facts", "revision-value", readRecord("second"));
+
+    const plain = JSON.parse(await memoryReadTool.invoke({
+      namespace: "facts", key: "revision-value",
+    }) as string);
+    expect(plain.content).toBe("second");
+    expect(plain).not.toHaveProperty("history");
+
+    const full = JSON.parse(await memoryReadTool.invoke({
+      namespace: "facts", key: "revision-value", include_history: true,
+    }) as string);
+    expect(full.history).toHaveLength(1);
+    expect(full.history[0].record.content).toBe("first");
+  });
+
+  it("returns the raw-bytes fingerprint required by apply-maintenance", async () => {
+    putMemory("facts", "revision-fingerprint", readRecord("first"));
+    putMemory("facts", "revision-fingerprint", readRecord("second"));
+
+    const read = JSON.parse(await memoryReadTool.invoke({
+      namespace: "facts", key: "revision-fingerprint", include_revision: true,
+    }) as string);
+    const stored = getStoredMemoryValue("facts", "revision-fingerprint")!;
+
+    expect(read.updated_at).toBe(stored.updated_at);
+    expect(read.fingerprint).toBe(memoryFingerprint(stored.updated_at, stored.value));
+    expect(read.value.content).toBe("second");
+    expect(read.value).not.toHaveProperty("history");
+  });
+
+  it("fingerprints ciphertext while returning the decrypted value", async () => {
+    putMemory("tool-secrets", "secret-revision", readRecord("secret content"));
+
+    const read = JSON.parse(await memoryReadTool.invoke({
+      namespace: "tool-secrets", key: "secret-revision", include_revision: true,
+    }) as string);
+    const stored = getStoredMemoryValue("tool-secrets", "secret-revision")!;
+
+    expect(stored.value).toMatch(/^enc:v1:/);
+    expect(read.value.content).toBe("secret content");
+    expect(read.fingerprint).toBe(memoryFingerprint(stored.updated_at, stored.value));
+  });
+
+  it("keeps the value-only default for missing and plain values", async () => {
+    expect(await memoryReadTool.invoke({ namespace: "facts", key: "missing" })).toBe("null");
+    putMemory("facts", "plain-value", "plain text");
+    expect(await memoryReadTool.invoke({ namespace: "facts", key: "plain-value" })).toBe('"plain text"');
   });
 });

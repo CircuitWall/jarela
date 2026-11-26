@@ -72,6 +72,8 @@ export interface MemoryAuditRecordRef {
   confidence: string | null;
   expires_at: string | null;
   chars: number;
+  /** Serialized revision-history bytes; 0 for unstructured values. */
+  history_bytes: number;
   embedded: boolean;
 }
 
@@ -190,6 +192,7 @@ function recordRef(row: MemoryScanRow, record: StructuredMemoryRecord | null): M
     confidence: record?.confidence ?? null,
     expires_at: record?.expires_at ?? null,
     chars: record ? record.content.length : row.value.length,
+    history_bytes: record ? Buffer.byteLength(JSON.stringify(record.history), "utf8") : 0,
     embedded: row.embedded,
   };
 }
