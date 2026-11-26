@@ -96,6 +96,10 @@ describe("document index lifecycle route", () => {
   });
 
   it("accepts the supported actions with 202 and reports a busy conflict", async () => {
+    const rewrite = await POST(request("POST", { action: "rewrite_embeddings" }));
+    expect(rewrite.status).toBe(202);
+    expect(mocks.start).toHaveBeenCalledWith({ action: "rewrite_embeddings" });
+
     const accepted = await POST(request("POST", { action: "purge_source", source_id: "source" }));
     expect(accepted.status).toBe(202);
     expect(await accepted.json()).toMatchObject({ accepted: true });

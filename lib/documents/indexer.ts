@@ -21,6 +21,7 @@ import {
   type DocumentSourceRow,
 } from "@/lib/stores/document-sources";
 import { chunkText } from "./chunker";
+import { encodeEmbedding } from "./embedding-codec";
 import { refreshDocumentSourceStats } from "./source-stats-cache";
 import { isRemoteKind, runRemoteSource, type RemoteIndexStats } from "./remote";
 import { errorMessage } from "@/lib/utils/error";
@@ -253,7 +254,7 @@ function persistEmbedResults(
     for (let i = 0; i < chunkIds.length; i++) {
       const v = vectors[i];
       if (v != null) {
-        updateEmb.run(JSON.stringify(v), modelSignature ?? null, chunkIds[i]);
+        updateEmb.run(encodeEmbedding(v), modelSignature ?? null, chunkIds[i]);
         embedded++;
       } else if (terminal[i]) {
         markFailed.run(now, error, chunkIds[i]);

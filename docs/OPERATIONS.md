@@ -633,6 +633,13 @@ source's index automatically once its grace period ends. The default is `0`,
 which keeps it until you purge it. The scheduler evaluates the window every
 20 minutes and runs any due purge in the background.
 
+**Rewrite embeddings** converts index rows written before ADR-0134 from JSON
+decimal text to float32 BLOBs. Vectors are preserved at float32 precision and
+search keeps working while the rewrite runs; on the reported install this
+shrinks ~1.96 GB of embedding text to ~376 MB. The action is resumable — run it
+again if it stops before reporting completion. It writes in bounded batches on
+a worker connection, so the app stays responsive.
+
 **Reclaim space** returns freed pages to the filesystem in bounded batches on a
 worker connection. It requires incremental auto-vacuum. New databases enable it
 at creation; an existing database must be compacted once with **Compact

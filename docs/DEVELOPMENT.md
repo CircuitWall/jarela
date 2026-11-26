@@ -446,6 +446,12 @@ synchronous connection paid for it on the hot paths.
   the first 20k by rowid.
 - Embedding batches commit in a single transaction instead of one synchronous
   `UPDATE` per chunk.
+- Document embeddings are stored as little-endian float32 BLOBs
+  ([embedding-codec.ts](../lib/documents/embedding-codec.ts), ADR-0134).
+  Search still decodes legacy JSON text, so existing rows remain searchable;
+  the Index maintenance **Rewrite embeddings** action converts them in bounded,
+  resumable batches on the worker. A 384-dimension vector is 1,536 bytes
+  instead of ~7,996 characters.
 
 Any new read that scales with the corpus belongs on `readAppRows` from
 [lib/db/read-pool.ts](../lib/db/read-pool.ts), exposed as a typed `...Async`

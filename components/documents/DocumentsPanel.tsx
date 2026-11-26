@@ -106,6 +106,7 @@ export function DocumentsPanel({ embedded = false }: { embedded?: boolean } = {}
             onSaveRetention={panel.saveRetention}
             onPurgeDisabled={panel.purgeDisabledIndexes}
             onReclaim={panel.reclaimSpace}
+            onRewriteEmbeddings={panel.rewriteEmbeddings}
             onVacuum={panel.compactDatabase}
           />
         )}

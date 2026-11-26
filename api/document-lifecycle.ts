@@ -22,6 +22,7 @@ export const documentIndexMaintenanceActionSchema = z.discriminatedUnion("action
   z.object({ action: z.literal("purge_source"), source_id: z.string().min(1) }),
   z.object({ action: z.literal("purge_disabled") }),
   z.object({ action: z.literal("reclaim") }),
+  z.object({ action: z.literal("rewrite_embeddings") }),
   z.object({ action: z.literal("vacuum"), confirm: z.literal(true) }),
 ]);
 
@@ -42,6 +43,7 @@ export const DOCUMENT_INDEX_MAINTENANCE_ACTION_NAMES = [
   "purge_source",
   "purge_disabled",
   "reclaim",
+  "rewrite_embeddings",
   "vacuum",
   "lifecycle",
 ] as const;

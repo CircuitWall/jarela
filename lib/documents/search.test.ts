@@ -33,6 +33,7 @@ vi.mock("@/lib/stores/app-settings", () => ({
 }));
 
 const { searchDocuments, searchDocumentsWithMeta } = await import("./search");
+const { encodeEmbedding } = await import("./embedding-codec");
 
 function row(id: string, score: number | null, text: string) {
   return {
@@ -270,6 +271,22 @@ describe("searchDocuments similarity threshold", () => {
     mocks.rows = [{ ...row("blocked-mismatch", null, "needle"), embedding: "[1,0,0]" }];
     await expect(searchDocuments("needle")).rejects.toThrow("Document search blocked");
     expect(mocks.run).not.toHaveBeenCalled();
+  });
+
+  it("scores float32 BLOB and legacy JSON embeddings identically", async () => {
+    mocks.rows = [
+      { ...row("blob", 0.9, "needle blob"), embedding: encodeEmbedding([0.9, 0.1]) },
+      { ...row("legacy", 0.87, "needle legacy"), embedding: JSON.stringify([0.87, 0.13]) },
+    ];
+
+    const hits = await searchDocuments("needle");
+
+    expect(hits).toMatchObject([
+      { document_id: "doc-blob", match: "semantic" },
+      { document_id: "doc-legacy", match: "semantic" },
+    ]);
+    expect(hits[0].score).toBeCloseTo(0.9);
+    expect(hits[1].score).toBeCloseTo(0.87);
   });
 
   it("reports complete coverage when the scan reaches the end", async () => {

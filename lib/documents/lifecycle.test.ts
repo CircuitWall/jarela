@@ -9,6 +9,7 @@ process.env.JARELA_DB_DIR = root;
 const { closeDb, getDb } = await import("@/lib/db");
 const { closeReadPool } = await import("@/lib/db/read-pool");
 const lifecycle = await import("./lifecycle");
+const { decodeEmbedding } = await import("./embedding-codec");
 const {
   createDocumentSource, getDocumentSource, getDocumentSourceStats, updateDocumentSource,
 } = await import("@/lib/stores/document-sources");
@@ -134,6 +135,35 @@ describe("purging source indexes", () => {
     expect(renamed.disabled_at).toBe(disabled.disabled_at);
     const enabled = updateDocumentSource(source.id, { enabled: true })!;
     expect(enabled.disabled_at).toBeNull();
+  });
+});
+
+describe("embedding format rewrite", () => {
+  it("rewrites legacy JSON embeddings to BLOBs and is idempotent", async () => {
+    seedSource("legacy", { chunks: [] });
+    const db = getDb();
+    db.prepare("UPDATE documents SET chunk_count=2 WHERE id=?").run("doc-legacy");
+    const insert = db.prepare(
+      `INSERT INTO document_chunks
+       (id, document_id, chunk_index, text, start_offset, end_offset, embedding)
+       VALUES (?, ?, ?, ?, 0, 5, ?)`,
+    );
+    insert.run("legacy-0", "doc-legacy", 0, "first", JSON.stringify([0.123456789, -0.987654321, 0.5, 1]));
+    insert.run("legacy-1", "doc-legacy", 1, "second", JSON.stringify([0.314159265, 1, -1, 0.25]));
+
+    const first = await lifecycle.rewriteLegacyDocumentEmbeddings({ batchSize: 1, budgetMs: 10_000 });
+
+    expect(first).toMatchObject({ scanned: 2, rewritten: 2, skipped: 0, completed: true });
+    expect(first.bytes_before).toBeGreaterThan(first.bytes_after);
+    const rows = db.prepare(
+      "SELECT embedding, typeof(embedding) AS storage FROM document_chunks WHERE document_id=? ORDER BY chunk_index",
+    ).all("doc-legacy") as Array<{ embedding: Uint8Array; storage: string }>;
+    expect(rows.map((row) => row.storage)).toEqual(["blob", "blob"]);
+    expect(decodeEmbedding(rows[0].embedding)).toEqual([Math.fround(0.123456789), Math.fround(-0.987654321), 0.5, 1]);
+    expect(decodeEmbedding(rows[1].embedding)).toEqual([Math.fround(0.314159265), 1, -1, 0.25]);
+
+    expect(await lifecycle.rewriteLegacyDocumentEmbeddings({ batchSize: 1 }))
+      .toMatchObject({ scanned: 0, rewritten: 0, completed: true });
   });
 });
 

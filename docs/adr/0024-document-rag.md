@@ -25,6 +25,14 @@ auto-vacuum at creation; existing databases keep the default until an explicit,
 confirmed compaction. The UI section above now reports files and chunks per
 source and exposes these maintenance controls.
 
+### 2026-11-26 amendment — embedding storage format
+
+`document_chunks.embedding` is no longer written as JSON decimal text. New and
+re-embedded vectors are little-endian float32 BLOBs; search decodes both BLOBs
+and the legacy text so existing rows remain searchable.
+[ADR-0134](./0134-document-embedding-blob-storage.md) records the format, the
+explicit resumable rewrite action, and the forward-only downgrade behavior.
+
 ## Context
 
 Jarela's agents have rich access to live data (the web, Atlassian, Jira

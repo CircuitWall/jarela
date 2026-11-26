@@ -27,6 +27,7 @@ export interface UseDocumentIndexLifecycleResult {
   purgeSourceIndex: (id: string) => Promise<void>;
   purgeDisabledIndexes: () => Promise<void>;
   reclaimSpace: () => Promise<void>;
+  rewriteEmbeddings: () => Promise<void>;
   compactDatabase: () => Promise<void>;
 }
 
@@ -142,6 +143,14 @@ export function useDocumentIndexLifecycle({
     await runMaintenance({ action: "reclaim" });
   }
 
+  async function rewriteEmbeddings() {
+    if (!(await confirmAction({
+      message: "Rewrite legacy JSON embeddings to compact float32 storage? Vectors are preserved at float32 precision. This can take a while on a large index and writes to the database while search continues to work.",
+      confirmLabel: "Rewrite embeddings",
+    }))) return;
+    await runMaintenance({ action: "rewrite_embeddings" });
+  }
+
   async function compactDatabase() {
     if (!(await confirmAction({
       message: "Compacting rewrites the entire database and can take several minutes on a multi-GB file. Jarela stays responsive, but SQLite holds the write lock, so other writes may wait or fail until it finishes. Free disk space for a compacted copy is required. Continue?",
@@ -153,6 +162,6 @@ export function useDocumentIndexLifecycle({
 
   return {
     lifecycle, busy, load, refresh, saveRetention,
-    purgeSourceIndex, purgeDisabledIndexes, reclaimSpace, compactDatabase,
+    purgeSourceIndex, purgeDisabledIndexes, reclaimSpace, rewriteEmbeddings, compactDatabase,
   };
 }

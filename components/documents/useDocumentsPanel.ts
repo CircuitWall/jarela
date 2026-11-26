@@ -34,6 +34,7 @@ export interface UseDocumentsPanelResult {
   purgeSourceIndex: (id: string) => Promise<void>;
   purgeDisabledIndexes: () => Promise<void>;
   reclaimSpace: () => Promise<void>;
+  rewriteEmbeddings: () => Promise<void>;
   compactDatabase: () => Promise<void>;
   refreshLifecycle: () => Promise<void>;
 }
@@ -122,6 +123,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
     purgeSourceIndex,
     purgeDisabledIndexes: indexLifecycle.purgeDisabledIndexes,
     reclaimSpace: indexLifecycle.reclaimSpace,
+    rewriteEmbeddings: indexLifecycle.rewriteEmbeddings,
     compactDatabase: indexLifecycle.compactDatabase,
     refreshLifecycle: indexLifecycle.refresh,
   };
