@@ -264,6 +264,47 @@ describe("tool usefulness telemetry", () => {
     expect(rows).toEqual([expect.objectContaining({ normalized_reason: "network", failure_class: "transient_tool_failure", count: 2 })]);
   });
 
+  it("classifies blocked tool denials as configuration problems and repairs historical rows", () => {
+    const name = `proxy_blocked_${Date.now()}`;
+    const samples = [
+      ["integration", 'Tool "ms_graph_get" is not enabled for this agent (integration_unconfigured)', "tool_not_allowed", "integration_unconfigured"],
+      ["agent", 'Tool "github_get_pull" is not executable in this run (agent_not_allowed)', "tool_not_allowed", "agent_not_allowed"],
+      ["connection", "Error calling tool M365TeamsTeamsChannelListJoinedTeams: Error: Not connected", undefined, null],
+    ] as const;
+    for (const [id, error, errorCode, permissionReason] of samples) {
+      recordToolUsage([
+        { id, phase: "call", name, payload: { name: "target", args: {} } },
+        {
+          id,
+          phase: "result",
+          name,
+          payload: {
+            ok: false, tool: "target", status: "rejected", error,
+            ...(errorCode ? { error_code: errorCode } : {}),
+            permission: "disabled", permission_reason: permissionReason,
+          },
+        },
+      ], "");
+    }
+
+    expect(listToolFailureSamples(name)).toEqual([
+      expect.objectContaining({
+        normalized_reason: "blocked_tool",
+        failure_class: "configuration_problem",
+        count: 3,
+      }),
+    ]);
+
+    // Rows persisted before this classification are repaired on read without
+    // rewriting stored evidence.
+    getDb().prepare("UPDATE tool_failure_samples SET normalized_reason='other', failure_class='suspected_product_gap' WHERE tool_name=?").run(name);
+    expect(listToolFailureSamples(name)[0]).toMatchObject({
+      normalized_reason: "blocked_tool", failure_class: "configuration_problem",
+    });
+    expect(getDb().prepare("SELECT normalized_reason FROM tool_failure_samples WHERE tool_name=?").get(name))
+      .toMatchObject({ normalized_reason: "other" });
+  });
+
   it.each(["invalid_tool_arguments", "bad_args_json"])("recognizes structured caller errors (%s)", (code) => {
     for (const payload of [{ error_code: code, error: "invalid field" }, JSON.stringify({ error_code: code, error: "invalid field" })]) {
       const samples = summarizeToolFailureSamples([{ id: "typed", phase: "result", name: "invoke_tool", payload }]);
