@@ -107,6 +107,16 @@ describe("dreaming route", () => {
     expect(mocks.start).toHaveBeenCalledWith("agent-a", "deep", { force: true });
   });
 
+  it("defaults force to false and rejects malformed or unknown-kind triggers", async () => {
+    const accepted = await POST(request("POST", { agent_id: "agent-a", kind: "light" }));
+    expect(accepted.status).toBe(202);
+    expect(mocks.start).toHaveBeenCalledWith("agent-a", "light", { force: false });
+
+    expect((await POST(request("POST", { agent_id: "agent-a", kind: "nap" }))).status).toBe(400);
+    expect((await POST(request("POST", "{"))).status).toBe(400);
+    expect(mocks.start).toHaveBeenCalledOnce();
+  });
+
   it("reports a running dream and an ineligible agent as conflicts", async () => {
     mocks.start.mockReturnValueOnce({ started: false, reason: "dream_running" });
     const running = await POST(request("POST", { agent_id: "agent-a", kind: "light" }));

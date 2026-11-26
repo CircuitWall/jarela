@@ -104,6 +104,34 @@ describe("dream journal", () => {
     expect(store.sumDreamTokensSince("agent-a", "light", "2026-01-01T00:00:00.000Z")).toBe(50);
   });
 
+  it("handles missing runs, invalid stats, and oversized stats", () => {
+    expect(store.getDreamRun("missing-run")).toBeNull();
+
+    const run = store.createDreamRun({ agent_id: "agent-a", kind: "light" });
+    getDb().prepare("UPDATE agent_dream_runs SET stats='not json' WHERE id=?").run(run.id);
+    expect(store.parseDreamRunStats(store.getDreamRun(run.id)!)).toBeNull();
+
+    store.finishDreamRun(run.id, {
+      status: "completed",
+      stats: { oversized: "x".repeat(70_000) },
+    });
+    const stored = store.getDreamRun(run.id)!;
+    expect(store.parseDreamRunStats(stored)).toEqual({
+      truncated: true,
+      bytes: expect.any(Number),
+    });
+  });
+
+  it("counts only failed attempts in the retry window", () => {
+    const first = store.createDreamRun({ agent_id: "agent-a", kind: "light" });
+    store.finishDreamRun(first.id, { status: "failed" });
+    const second = store.createDreamRun({ agent_id: "agent-a", kind: "light" });
+    store.finishDreamRun(second.id, { status: "failed" });
+    const third = store.createDreamRun({ agent_id: "agent-a", kind: "light" });
+    store.finishDreamRun(third.id, { status: "completed" });
+    expect(store.countFailedDreamRunsSince("agent-a", "light", "2000-01-01T00:00:00.000Z")).toBe(2);
+  });
+
   it("recovers interrupted runs and enforces retention", () => {
     const old = store.createDreamRun({
       agent_id: "agent-a", kind: "deep", started_at: "2020-01-01T00:00:00.000Z",
