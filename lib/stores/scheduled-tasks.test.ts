@@ -12,6 +12,7 @@ const {
   getScheduledTask,
   deleteScheduledTask,
   updateScheduledTask,
+  markTaskRan,
   markTasksDeferred,
 } = await import("./scheduled-tasks");
 
@@ -200,6 +201,24 @@ describe("scheduled-tasks store (ADR-0032)", () => {
     it("returns 0 for an empty id list", () => {
       expect(markTasksDeferred([], "Deferred: locked")).toBe(0);
     });
+  });
+
+  it("markTaskRan keeps a failure across non-success runs and clears it on success", () => {
+    const t = createScheduledTask({
+      agent_id: "a",
+      prompt: "p",
+      kind: "cron",
+      schedule: "0 * * * *",
+    });
+
+    markTaskRan(t.id, "cron", "0 * * * *", "Synthetic failure");
+    expect(getScheduledTask(t.id)?.last_error).toBe("Synthetic failure");
+
+    markTaskRan(t.id, "cron", "0 * * * *", undefined, { success: false });
+    expect(getScheduledTask(t.id)?.last_error).toBe("Synthetic failure");
+
+    markTaskRan(t.id, "cron", "0 * * * *", undefined, { success: true });
+    expect(getScheduledTask(t.id)?.last_error).toBeNull();
   });
 
   it("updateScheduledTask: re-associates a task to a different agent without rescheduling", () => {
