@@ -35,6 +35,7 @@ it("keeps credential migration pending while locked and completes it after unloc
     { id: "3.0.0-baseline" },
     { id: "3.5.8-message-full-text" },
     { id: "3.7.1-voice-stt-engine" }, { id: "3.7.2-browser-voice" },
+    { id: "3.8.2-document-index-lifecycle" },
   ]);
   unlockMasterKey("123456");
   expect(db.prepare("SELECT id FROM jarela_migrations ORDER BY id").all()).toEqual([
@@ -43,6 +44,7 @@ it("keeps credential migration pending while locked and completes it after unloc
     { id: "3.0.0-deferred-crypto" },
     { id: "3.5.8-message-full-text" },
     { id: "3.7.1-voice-stt-engine" }, { id: "3.7.2-browser-voice" },
+    { id: "3.8.2-document-index-lifecycle" },
   ]);
   expect(db.prepare("SELECT credential_id FROM model_configs WHERE name='legacy'").get())
     .toEqual({ credential_id: "model-mock" });

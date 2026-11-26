@@ -12,6 +12,19 @@ Local sweeps, watcher-driven reindexing, and GitHub repository indexing use the
 same configured per-file ceiling. The per-tick indexing budget remains separate
 so increasing source capacity does not make one scheduled tick unbounded.
 
+### 2026-11-26 amendment — index lifecycle
+
+Disabled sources keep their documents and chunks; disabling only stops future
+ingestion. [ADR-0133](./0133-document-index-lifecycle.md) adds the missing
+lifecycle: `document_sources.disabled_at`, an opt-in retention window that
+purges a disabled source's index after a grace period, an explicit
+source-scoped purge that keeps the source configuration, per-source chunk
+counters derived from `documents.chunk_count`, and incremental/full space
+reclamation on a dedicated writer worker. New databases enable incremental
+auto-vacuum at creation; existing databases keep the default until an explicit,
+confirmed compaction. The UI section above now reports files and chunks per
+source and exposes these maintenance controls.
+
 ## Context
 
 Jarela's agents have rich access to live data (the web, Atlassian, Jira

@@ -25,8 +25,8 @@ afterAll(() => {
 function document(sourceId: string, id: string, embeddings: Array<string | null>) {
   const db = getDb();
   db.prepare(`INSERT INTO documents
-    (id, source_id, path, rel_path, mtime_ms, size_bytes, content_hash, last_indexed_at)
-    VALUES (?, ?, ?, ?, 0, 0, 'synthetic', '2026-10-30T00:00:00Z')`).run(id, sourceId, id, id);
+    (id, source_id, path, rel_path, mtime_ms, size_bytes, content_hash, last_indexed_at, chunk_count)
+    VALUES (?, ?, ?, ?, 0, 0, 'synthetic', '2026-10-30T00:00:00Z', ?)`).run(id, sourceId, id, id, embeddings.length);
   embeddings.forEach((embedding, index) => {
     db.prepare(`INSERT INTO document_chunks
       (id, document_id, chunk_index, text, start_offset, end_offset, embedding)
@@ -50,12 +50,12 @@ it("returns exact document counts for empty, populated, and disabled sources", (
   const rows = listDocumentSourcesWithStats();
   expect(rows.map(({ source }) => source)).toEqual([empty, populated, other]);
   expect(rows.map(({ stats }) => stats)).toEqual([
-    { source_id: empty.id, document_count: 0 },
-    { source_id: populated.id, document_count: 2 },
-    { source_id: other.id, document_count: 1 },
+    { source_id: empty.id, document_count: 0, chunk_count: 0 },
+    { source_id: populated.id, document_count: 2, chunk_count: 3 },
+    { source_id: other.id, document_count: 1, chunk_count: 1 },
   ]);
   for (const { source, stats } of rows) expect(getDocumentSourceStats(source.id)).toEqual(stats);
-  expect(getDocumentSourceStats("missing")).toEqual({ source_id: "missing", document_count: 0 });
+  expect(getDocumentSourceStats("missing")).toEqual({ source_id: "missing", document_count: 0, chunk_count: 0 });
 });
 
 it("executes one query for the collection regardless of source count", () => {

@@ -29,13 +29,15 @@ export const documentSourcePatchSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
-// Per-source counters are intentionally limited to what costs nothing to
-// compute: a document count is index-only (~ms for every source). Counting
-// chunks or embeddings reads the whole 2.8 GB chunk table (3–17 s measured),
-// so those numbers are gone rather than kept on a slow path.
+// Per-source counters stay index-only. The document count scans `documents`
+// (~35 ms for every source on a 51k-document corpus) and the chunk count is
+// the sum of the maintained `documents.chunk_count` column. Never count rows
+// in `document_chunks`: that reads the whole multi-GB table (3–17 s measured)
+// and made the sources page time out.
 export const documentSourceStatsSchema = z.object({
   source_id: z.string(),
   document_count: z.number().int().nonnegative(),
+  chunk_count: z.number().int().nonnegative(),
 });
 
 export type DocumentSourceKind = "local_folder" | typeof REMOTE_DOCUMENT_SOURCE_KINDS[number];

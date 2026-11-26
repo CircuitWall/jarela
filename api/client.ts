@@ -45,6 +45,10 @@ import type {
   DocumentSettings,
   DocumentHit,
   DocumentReindexResult,
+  DocumentIndexLifecyclePatch,
+  DocumentIndexLifecycleResponse,
+  DocumentIndexMaintenanceAccepted,
+  DocumentIndexMaintenanceAction,
   Skill,
   SkillWithContent,
   SkillListResponse,
@@ -1260,6 +1264,19 @@ export const api = {
       }),
     setSettings: (patch: DocumentSettings) =>
       request<DocumentSettings>("/documents/settings", { method: "PUT", body: JSON.stringify(patch) }),
+    // ADR-0133 lifecycle controls. GET is polled while a maintenance action
+    // runs, so it must bypass the HTTP cache; POST returns 202 while the
+    // action continues on the server's writer worker.
+    getIndexLifecycle: () =>
+      request<DocumentIndexLifecycleResponse>("/documents/lifecycle", { cache: "no-store" }),
+    setIndexLifecycle: (patch: DocumentIndexLifecyclePatch) =>
+      request<DocumentIndexLifecycleResponse>("/documents/lifecycle", {
+        method: "PATCH", body: JSON.stringify(patch),
+      }),
+    runIndexMaintenance: (action: DocumentIndexMaintenanceAction) =>
+      request<DocumentIndexMaintenanceAccepted>("/documents/lifecycle", {
+        method: "POST", body: JSON.stringify(action),
+      }),
   },
 
   // GETs pass `cache: "no-store"` — the server's short Cache-Control TTL

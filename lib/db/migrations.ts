@@ -54,6 +54,19 @@ const SCHEMA_MIGRATIONS: readonly Migration[] = [{
       db.exec("ALTER TABLE agent_configs ADD COLUMN voice_browser_voice TEXT NOT NULL DEFAULT ''");
     }
   },
+}, {
+  // ADR-0133. Disabled sources keep their chunks so re-enabling is instant.
+  // This records when the source was disabled so the opt-in retention sweep
+  // can purge an index only after its grace period. Existing disabled rows
+  // adopt their last update time, the best approximation available.
+  id: "3.8.2-document-index-lifecycle",
+  apply(db) {
+    const columns = db.prepare("SELECT name FROM pragma_table_info('document_sources')").all();
+    if (!columns.some((column) => column.name === "disabled_at")) {
+      db.exec("ALTER TABLE document_sources ADD COLUMN disabled_at TEXT");
+    }
+    db.exec("UPDATE document_sources SET disabled_at=updated_at WHERE enabled=0 AND disabled_at IS NULL");
+  },
 }];
 // Encryption commits as its own migration, separate from credential
 // reshaping below. Reshaping reads already-encrypted `memory_store` rows
@@ -134,6 +147,13 @@ function transaction(db: DatabaseSync, work: () => void): void {
 export function runMigrations(db: DatabaseSync): void {
   if (!appliedMigrations(db)) {
     clearStatementCache(db);
+    // ADR-0133: new databases opt into incremental auto-vacuum before the
+    // first table exists. The pragma cannot be enabled on an existing file
+    // without a full VACUUM, which stays an explicit maintenance action.
+    const hasTables = db.prepare(
+      "SELECT 1 FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
+    ).get();
+    if (!hasTables) db.exec("PRAGMA auto_vacuum = INCREMENTAL");
     transaction(db, () => {
       if (appliedMigrations(db)) return;
       const tables = db.prepare(

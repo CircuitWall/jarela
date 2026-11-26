@@ -4,6 +4,16 @@ import type { ModelMetadata } from "@/lib/stores/model-metadata";
 import type { SttEngine } from "@/lib/voice/stt/types";
 import type { DocumentSourceKind, DocumentSourceStats } from "./document-sources";
 export type { DocumentSourceIn, DocumentSourceKind, DocumentSourcePatch, DocumentSourceStats } from "./document-sources";
+export type {
+  DocumentIndexAutoVacuum,
+  DocumentIndexInventory,
+  DocumentIndexLifecyclePatch,
+  DocumentIndexLifecycleResponse,
+  DocumentIndexLifecycleSettings,
+  DocumentIndexMaintenanceAccepted,
+  DocumentIndexMaintenanceAction,
+  DocumentIndexMaintenanceStatus,
+} from "./document-lifecycle";
 
 export interface WorkflowRun {
   id: string;

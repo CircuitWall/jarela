@@ -27,6 +27,11 @@ it("preserves local defaults, nullable labels, and unknown-field stripping", () 
     .toEqual({ label: null, enabled: false });
 });
 
+it("accepts index-only source counters", () => {
+  expect(documentSourceStatsSchema.parse({ source_id: "synthetic", document_count: 1, chunk_count: 2 }))
+    .toEqual({ source_id: "synthetic", document_count: 1, chunk_count: 2 });
+});
+
 it("rejects malformed mutation and aggregate values", () => {
   expect(localDocumentSourceSchema.safeParse({ path: "" }).success).toBe(false);
   expect(remoteDocumentSourceSchema.safeParse({ kind: "on_demand_url", label: "Synthetic", config: {} }).success).toBe(false);

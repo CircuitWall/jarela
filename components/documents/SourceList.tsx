@@ -1,5 +1,5 @@
 "use client";
-import { Cloud, FolderOpen, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { Cloud, Eraser, FolderOpen, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import type { DocumentSource, DocumentSourceKind } from "@/api/types";
 import { summarizeRemote } from "./helpers";
 
@@ -10,9 +10,10 @@ interface Props {
   onReindex: (id: string) => void;
   onRemove: (id: string, summary: string, kind: DocumentSourceKind) => void;
   onToggle: (s: DocumentSource) => void;
+  onClearIndex: (id: string) => void;
 }
 
-export function SourceList({ sources, loading, busy, onReindex, onRemove, onToggle }: Props) {
+export function SourceList({ sources, loading, busy, onReindex, onRemove, onToggle, onClearIndex }: Props) {
   return (
     <section className="space-y-2">
       <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Indexed sources</label>
@@ -32,6 +33,7 @@ export function SourceList({ sources, loading, busy, onReindex, onRemove, onTogg
           onReindex={onReindex}
           onRemove={onRemove}
           onToggle={onToggle}
+          onClearIndex={onClearIndex}
         />
       ))}
     </section>
@@ -44,9 +46,10 @@ interface RowProps {
   onReindex: (id: string) => void;
   onRemove: (id: string, summary: string, kind: DocumentSourceKind) => void;
   onToggle: (s: DocumentSource) => void;
+  onClearIndex: (id: string) => void;
 }
 
-function SourceRow({ source: s, busy, onReindex, onRemove, onToggle }: RowProps) {
+function SourceRow({ source: s, busy, onReindex, onRemove, onToggle, onClearIndex }: RowProps) {
   const summary = s.kind === "local_folder" ? s.path : summarizeRemote(s);
   return (
     <div className="rounded-lg border border-border bg-surface-2 px-3 py-2.5 space-y-1.5">
@@ -75,6 +78,17 @@ function SourceRow({ source: s, busy, onReindex, onRemove, onToggle }: RowProps)
         >
           <RefreshCw size={13} className={busy ? "animate-spin" : ""} />
         </button>
+        {!s.enabled && s.stats.chunk_count > 0 && (
+          <button
+            onClick={() => onClearIndex(s.id)}
+            disabled={busy}
+            title="Delete this disabled source's indexed chunks"
+            aria-label="Delete indexed chunks"
+            className="p-1 text-fg-subtle hover:text-fg disabled:opacity-40"
+          >
+            <Eraser size={13} />
+          </button>
+        )}
         <button
           onClick={() => onRemove(s.id, summary, s.kind)}
           disabled={busy}
@@ -86,6 +100,7 @@ function SourceRow({ source: s, busy, onReindex, onRemove, onToggle }: RowProps)
       </div>
       <div className="text-[11px] text-fg-faint flex flex-wrap gap-x-3 gap-y-0.5">
         <span>{s.stats.document_count} files</span>
+        <span>{s.stats.chunk_count.toLocaleString()} chunks</span>
         {s.last_scan_at && <span>last scan: {new Date(s.last_scan_at).toLocaleString()}</span>}
       </div>
       {s.last_error && (

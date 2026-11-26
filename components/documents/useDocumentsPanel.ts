@@ -1,13 +1,17 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { DocumentHit, DocumentSource, DocumentSourceKind } from "@/api/types";
-import { isMailKind, summarizeRemote } from "./helpers";
+import type {
+  DocumentHit,
+  DocumentIndexLifecycleResponse,
+  DocumentSource,
+  DocumentSourceKind,
+} from "@/api/types";
+import { summarizeRemote } from "./helpers";
 import { errorMessage } from "@/lib/utils/error";
-import { pushToast } from "@/lib/ui/toasts";
-
-import { confirmAction } from "@/lib/ui/confirm";
 import type { DocumentRecallPolicy } from "@/lib/documents/recall-policy";
+import { useDocumentIndexLifecycle } from "./useDocumentIndexLifecycle";
+import { useDocumentSourceMutations } from "./useDocumentSourceMutations";
 
 export interface UseDocumentsPanelResult {
   sources: DocumentSource[];
@@ -24,6 +28,14 @@ export interface UseDocumentsPanelResult {
   localEmbeddings: boolean | null;
   configuredIntegrations: string[];
   saveRecallPolicy: (policy: DocumentRecallPolicy) => Promise<void>;
+  lifecycle: DocumentIndexLifecycleResponse | null;
+  lifecycleBusy: boolean;
+  saveRetention: (days: number) => Promise<void>;
+  purgeSourceIndex: (id: string) => Promise<void>;
+  purgeDisabledIndexes: () => Promise<void>;
+  reclaimSpace: () => Promise<void>;
+  compactDatabase: () => Promise<void>;
+  refreshLifecycle: () => Promise<void>;
 }
 
 export function useDocumentsPanel(): UseDocumentsPanelResult {
@@ -34,6 +46,12 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
   const [recallPolicy, setRecallPolicy] = useState<DocumentRecallPolicy | null>(null);
   const [localEmbeddings, setLocalEmbeddings] = useState<boolean | null>(null);
   const [configuredIntegrations, setConfiguredIntegrations] = useState<string[]>([]);
+  const indexLifecycle = useDocumentIndexLifecycle({
+    sources, onError: setError, onChanged: load,
+  });
+  const sourceMutations = useDocumentSourceMutations({
+    load, onError: setError, setLocalEmbeddings, setBusy,
+  });
 
   async function load() {
     setLoading(true);
@@ -41,6 +59,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
     try {
       const [sources, recall, integrations] = await Promise.all([
         api.documents.listSources(), api.documents.getRecallPolicy(), api.integrations.list(),
+        indexLifecycle.load(),
       ]);
       setSources(sources);
       setRecallPolicy(recall.policy);
@@ -53,16 +72,9 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
     }
   }
 
-  useEffect(() => { void load(); }, []);
-
-  async function confirmEmbeddingDisclosure(): Promise<boolean> {
-    const current = await api.documents.getRecallPolicy();
-    setLocalEmbeddings(current.local_embeddings);
-    return current.local_embeddings || confirmAction({
-      message: "The embedding provider is not Jarela Local. Indexed document content may be sent to an external service, including content later excluded from recall. Continue?",
-      confirmLabel: "Allow indexing",
-    });
-  }
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  useEffect(() => { void loadRef.current(); }, []);
 
   async function saveRecallPolicy(policy: DocumentRecallPolicy) {
     setError(null);
@@ -76,84 +88,12 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
     }
   }
 
-  async function addSource(payload: Parameters<typeof api.documents.createSource>[0]) {
-    setError(null);
-    try {
-      if (!(await confirmEmbeddingDisclosure())) return false;
-      await api.documents.createSource(payload);
-      await load();
-      return true;
-    } catch (e) {
-      setError(errorMessage(e));
-      throw e;
-    }
-  }
-
-  async function reindex(id: string) {
+  async function purgeSourceIndex(id: string) {
     setBusy((b) => ({ ...b, [id]: true }));
     try {
-      if (!(await confirmEmbeddingDisclosure())) return;
-      const result = await api.documents.reindex(id);
-      if ((result.stats.embed_failed ?? 0) > 0) {
-        setError(
-          `Embedding degraded: ${result.stats.embed_failed} chunk${result.stats.embed_failed === 1 ? "" : "s"} failed to embed` +
-          (result.stats.embed_error ? ` (${result.stats.embed_error})` : ""),
-        );
-      } else {
-        pushToast({
-          kind: "info",
-          source: "system",
-          sourceLabel: "Documents",
-          title: "Source re-indexed",
-          body: `Re-scanned ${result.stats.scanned} files (${result.stats.added} added, ${result.stats.updated} updated).`,
-          agent_id: null,
-          thread_id: null,
-          ttl: 4000,
-        });
-      }
-      await load();
-    } catch (e) {
-      setError(errorMessage(e));
+      await indexLifecycle.purgeSourceIndex(id);
     } finally {
       setBusy((b) => ({ ...b, [id]: false }));
-    }
-  }
-
-  async function removeSource(id: string, summary: string, kind: DocumentSourceKind) {
-    const tail = kind === "local_folder"
-      ? "Files on disk are untouched."
-      : isMailKind(kind)
-        ? "The upstream mailbox is untouched."
-        : "The upstream content is untouched.";
-    if (!(await confirmAction({ message: `Stop indexing ${summary}? This deletes all chunks for this source. ${tail}`, destructive: true, confirmLabel: "Stop indexing" }))) return;
-    setBusy((b) => ({ ...b, [id]: true }));
-    try {
-      await api.documents.deleteSource(id);
-      pushToast({
-        kind: "info",
-        source: "system",
-        sourceLabel: "Documents",
-        title: "Source removed",
-        body: `Stopped indexing "${summary}".`,
-        agent_id: null,
-        thread_id: null,
-        ttl: 3000,
-      });
-      await load();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy((b) => ({ ...b, [id]: false }));
-    }
-  }
-
-  async function toggleSource(s: DocumentSource) {
-    try {
-      if (!s.enabled && !(await confirmEmbeddingDisclosure())) return;
-      await api.documents.updateSource(s.id, { enabled: !s.enabled });
-      await load();
-    } catch (e) {
-      setError(errorMessage(e));
     }
   }
 
@@ -170,8 +110,21 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
 
   return {
     sources, loading, error, busy,
-    load, addSource, reindex, removeSource, toggleSource, search,
+    load,
+    addSource: sourceMutations.addSource,
+    reindex: sourceMutations.reindex,
+    removeSource: sourceMutations.removeSource,
+    toggleSource: sourceMutations.toggleSource,
+    search,
     recallPolicy, localEmbeddings, configuredIntegrations, saveRecallPolicy,
+    lifecycle: indexLifecycle.lifecycle,
+    lifecycleBusy: indexLifecycle.busy,
+    saveRetention: indexLifecycle.saveRetention,
+    purgeSourceIndex,
+    purgeDisabledIndexes: indexLifecycle.purgeDisabledIndexes,
+    reclaimSpace: indexLifecycle.reclaimSpace,
+    compactDatabase: indexLifecycle.compactDatabase,
+    refreshLifecycle: indexLifecycle.refresh,
   };
 }
 

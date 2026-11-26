@@ -4,6 +4,7 @@ import { HeaderAction, PanelHeader } from "@/components/ui/PanelHeader";
 import { useRef, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { AddSourceForm } from "./AddSourceForm";
+import { IndexMaintenance } from "./IndexMaintenance";
 import { SearchProbe } from "./SearchProbe";
 import { SourceList } from "./SourceList";
 import { useDocumentsPanel } from "./useDocumentsPanel";
@@ -91,7 +92,23 @@ export function DocumentsPanel({ embedded = false }: { embedded?: boolean } = {}
           onReindex={(id) => { void panel.reindex(id); }}
           onRemove={(id, summary, kind) => { void panel.removeSource(id, summary, kind); }}
           onToggle={(s) => { void panel.toggleSource(s); }}
+          onClearIndex={(id) => { void panel.purgeSourceIndex(id); }}
         />
+
+        {panel.lifecycle && (
+          <IndexMaintenance
+            lifecycle={panel.lifecycle}
+            busy={panel.lifecycleBusy}
+            disabledChunks={panel.sources
+              .filter((s) => !s.enabled)
+              .reduce((sum, s) => sum + s.stats.chunk_count, 0)}
+            onRefresh={() => { void panel.refreshLifecycle(); }}
+            onSaveRetention={panel.saveRetention}
+            onPurgeDisabled={panel.purgeDisabledIndexes}
+            onReclaim={panel.reclaimSpace}
+            onVacuum={panel.compactDatabase}
+          />
+        )}
 
         {panel.recallPolicy && (
           <>
