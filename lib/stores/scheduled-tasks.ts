@@ -246,7 +246,13 @@ export function updateScheduledTask(id: string, patch: UpdateScheduledTaskInput)
   return getScheduledTask(id);
 }
 
-export function markTaskRan(id: string, kind: ScheduleKind, schedule: string, error?: string): void {
+export function markTaskRan(
+  id: string,
+  kind: ScheduleKind,
+  schedule: string,
+  error?: string,
+  opts?: { success?: boolean },
+): void {
   const t = now();
   if (kind === "once") {
     // One-shot tasks delete themselves after firing.
@@ -263,9 +269,14 @@ export function markTaskRan(id: string, kind: ScheduleKind, schedule: string, er
       .run(t, `Cron parse failed: ${errorMessage(e)}`, t, id);
     return;
   }
+  // A cancelled/skipped/expired firing says nothing about health. Preserve the
+  // previous failure unless this run succeeded or recorded its own error.
+  const previousError = error === undefined && opts?.success !== true
+    ? (getScheduledTask(id)?.last_error ?? null)
+    : null;
   getDb()
     .prepare("UPDATE scheduled_tasks SET last_run_at=?, last_error=?, next_run_at=?, updated_at=? WHERE id=?")
-    .run(t, error ?? null, nextRun, t, id);
+    .run(t, error ?? previousError, nextRun, t, id);
 }
 
 // Stamp `last_error` on due tasks the scheduler cannot run right now

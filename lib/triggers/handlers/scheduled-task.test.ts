@@ -112,6 +112,29 @@ describe("scheduledTaskHandler (ADR-0032)", () => {
     expect(after.last_run_at).not.toBeNull();
   });
 
+  it("markFired preserves the last failure across skipped/cancelled runs", () => {
+    const t = createScheduledTask({
+      agent_id: "a",
+      kind: "cron",
+      schedule: "0 * * * *",
+      reaction_kind: "script",
+      reaction_script: "reaction.test",
+    });
+    const firing = firingForTaskId(t.id)!;
+
+    scheduledTaskHandler.markFired(firing, { status: "error", preview: "", threadId: "", error: "Synthetic failure" });
+    expect(getScheduledTask(t.id)?.last_error).toBe("Synthetic failure");
+
+    scheduledTaskHandler.markFired(firing, { status: "skipped", preview: "", threadId: "" });
+    expect(getScheduledTask(t.id)?.last_error).toBe("Synthetic failure");
+
+    scheduledTaskHandler.markFired(firing, { status: "cancelled", preview: "", threadId: "" });
+    expect(getScheduledTask(t.id)?.last_error).toBe("Synthetic failure");
+
+    scheduledTaskHandler.markFired(firing, { status: "done", preview: "", threadId: "" });
+    expect(getScheduledTask(t.id)?.last_error).toBeNull();
+  });
+
   it("markFired deletes one-shot tasks after firing (script mode)", () => {
     const t = createScheduledTask({
       agent_id: "a",

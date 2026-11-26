@@ -107,7 +107,9 @@ export const scheduledTaskHandler: TriggerHandler = {
     const schedule = (firing.meta?.schedule as string | undefined) ?? "";
     // Always advance the schedule (or delete the row for one-shots),
     // regardless of which firing mode we ran.
-    markTaskRan(firing.id, scheduleKind, schedule, outcome.error);
+    markTaskRan(firing.id, scheduleKind, schedule, outcome.error, {
+      success: outcome.status === "done",
+    });
 
     // Silent tasks still publish an event so open chats refresh their inline
     // activity row; the client suppresses its toast/OS-notification layer.
