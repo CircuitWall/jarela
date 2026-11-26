@@ -422,7 +422,7 @@ Standing rules from completed architecture audits:
 
 - **State ownership:** Durable state goes through `lib/stores`. Browser-local
   preferences go through `lib/ui/browser-store.ts`; the pre-paint theme script
-  is the only direct reader. `check-ui-data-access.mjs` ratchets remaining
+  is the only direct reader. `scripts/check-ui-data-access.mjs` ratchets remaining
   direct `fetch` debt in `components/`, `hooks/`, and `contexts/`.
 - **Route validation:** Use `validateBody()` for ordinary JSON bodies. Direct
   `safeParse()` remains intentional for query/path parameters, optional bodies

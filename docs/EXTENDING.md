@@ -831,14 +831,14 @@ Built-in tools register themselves at module load. Choose the narrowest domain
 folder under [`lib/tools/`](../lib/tools/) first. For example, a Gmail tool
 belongs in `lib/tools/communications/`, a filesystem tool in
 `lib/tools/filesystem/`, and a new uncategorized local tool in
-`lib/tools/general/`. Adding one is two files: the implementation and its
-colocated test.
+`lib/tools/general/`. Adding one is three changes: the implementation, its
+colocated test, and one side-effect import.
 
 1. Create `lib/tools/<domain>/<name>.ts`:
    ```ts
    import { tool } from "@langchain/core/tools";
    import { z } from "zod";
-    import { registerLangChainPackage } from "../packages/langchain-package";
+   import { registerLangChainPackage } from "../packages/langchain-package";
 
    export const myTool = tool(
      async ({ foo }) => JSON.stringify({ result: foo.toUpperCase() }),
@@ -860,6 +860,9 @@ colocated test.
 3. Add `<name>.test.ts` beside the implementation. Tests should import the
   implementation from the same folder; do not add a root-level forwarding
   file just to preserve an old internal path.
+
+Use `z.strictObject` when unknown keys must be rejected; `z.object` matches
+most existing modules, so follow the owning module's schema style.
 
 That's it — no central array, no parallel category map. The new tool is
 visible in `GET /api/v1/tools`, callable by every agent (subject to its
@@ -943,7 +946,7 @@ by default. See [ADR-0122](adr/0122-on-demand-heavy-runtimes.md).
 
 **Enabling obtains dependencies.** Prefer `ensureTarget` /
 `ensureNewlyEnabledTools` (`lib/dependencies/ensure.ts`,
-`ensure-tools.ts`) at the point where a capability is turned on, so the user's
+`lib/dependencies/ensure-tools.ts`) at the point where a capability is turned on, so the user's
 enable action installs what it needs instead of leaving the tool
 `dependency_missing`. Keep the enable endpoint fast: the ensure call is
 fire-and-forget, single-flight, and cools down for five minutes after a

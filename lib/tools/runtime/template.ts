@@ -2,16 +2,17 @@
  * Tool creation template for Jarela (LangGraph/LangChain.js standard).
  *
  * To add a new tool:
- *   1. Copy this file to lib/tools/your-tool.ts
+ *   1. Copy this file to lib/tools/<domain>/<name>.ts
  *   2. Rename `myTool`, update name/description/schema, implement the function
  *   3. Call `registerLangChainPackage({ category, tools: { read|write|execute: [myTool] } })`
  *      at the bottom (see below)
- *   4. Add `import "./your-tool";` to lib/tools/builtins.ts
+ *   4. Add `import "../<domain>/<name>";` to lib/tools/runtime/builtins.ts
  *
  * Tools follow the LangChain StructuredTool convention:
  *   - Schema defined with Zod (auto-converted to JSON Schema for the LLM)
  *   - Function returns a JSON string (serialize result with JSON.stringify)
- *   - Throw an Error to signal failure — the agent receives the message as the result
+ *   - Return the documented refusal shape for expected failures; throw for
+ *     unexpected failures — the agent receives the message as the result
  *   - Access thread_id via config?.configurable?.thread_id if needed
  */
 import { tool } from "@langchain/core/tools";
@@ -51,7 +52,7 @@ export const myTool = tool(
 
 // Pick the category (topical group) and capability (read/write/execute,
 // safety class — see ADR-0038) your tool belongs to. The full list lives in
-// lib/tools/registry.ts.
+// lib/tools/runtime/registry.ts (package subpath: ./lib/tools/registry).
 // registerLangChainPackage({
 //   category: "Web",
 //   tools: { read: [myTool] },

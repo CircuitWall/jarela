@@ -257,7 +257,8 @@ earlier than `0.(X+1).0`. Deprecation lives in JSDoc (`@deprecated since
 **Inside the source tree.** Files marked `@public` in their JSDoc header are
 the corresponding implementations. Functions/types tagged `@internal` are
 not part of the contract even if they happen to live in a `@public` file —
-see `lib/tools/registry.ts` for an example of mixed-tier exports.
+see the `./lib/tools/registry` package subpath for an example of mixed-tier
+exports.
 
 ## Release process
 

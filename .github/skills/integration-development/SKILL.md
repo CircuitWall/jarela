@@ -138,7 +138,7 @@ failure recovery work.
 - [ ] Add a manifest under `lib/integrations/<id>/manifest.ts`.
 - [ ] Import the manifest in `lib/integrations/registry.ts` and include it in
       the registry array.
-- [ ] Register package tools in `lib/tools/default-packages.ts`, or add the
+- [ ] Register package tools in `lib/tools/packages/default-packages.ts`, or add the
       built-in module side-effect import when that is the local pattern.
 - [ ] Connect the package resolver to Jarela's encrypted credential store.
 - [ ] Add environment fallbacks only when they are documented, namespaced, and
