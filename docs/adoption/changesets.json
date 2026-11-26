@@ -9864,6 +9864,69 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "3.9.0",
+      "previous_version": "3.8.1",
+      "date": "2026-11-26",
+      "hints": [],
+      "commits": [
+        "fix(coverage): exclude untested atlassian-oauth.ts from coverage gate",
+        "test(atlassian): add atlassian oauth hook tests for provider and credential guard",
+        "fix(atlassian): import IntegrationManifest from manifest, not registry",
+        "fix(atlassian): correct import path and fix oauth test setup",
+        "feat(atlassian): add oauth button and wire agent-led authorization flow",
+        "feat(dreaming): add idle consolidation and weekly maintenance",
+        "feat(documents): add float32 binary embedding storage",
+        "fix(memory): expose read fingerprints and cap history bytes",
+        "fix(automation): keep scheduled-task failures across non-success runs",
+        "fix(documents): exclude vendored trees and report search coverage",
+        "fix(telemetry): route blocked tool denials to configuration problems",
+        "feat(documents): add index chunk lifecycle management",
+        "chore(architecture): remove completed audit and record guardrails",
+        "fix(agents): keep the first agent load through an update restart",
+        "fix(adr): keep links working in clean checkouts",
+        "refactor(architecture): fix remaining audit drift",
+        "feat(architecture): align contract docs and deduplicate decision records",
+        "feat(agent-docs): add module guides and drift enforcement",
+        "docs(voice): document chromium and safari support requirements",
+        "fix(voice): keep read-aloud working in every supported browser",
+        "fix(voice): prevent browser dictation duplicating transcripts",
+        "docs(process): require a current base before editing",
+        "feat(atlassian): add oauth 2.0 authorization code flow routes"
+      ],
+      "prompts": [
+        {
+          "id": "static.skill.memory-organization",
+          "source": "lib/skills/builtins/memory-organization/SKILL.md",
+          "change": "changed",
+          "added_lines": [
+            "- The default agent's weekly background dream may merge validated",
+            "near-duplicates in `facts` automatically. It archives duplicates and keeps",
+            "revision history; it never deletes. This does not change the approval rule",
+            "for a manual maintenance plan."
+          ],
+          "removed_lines": [],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "memory_read",
+          "change": "changed",
+          "description_changed": true,
+          "description": "Read a value from long-term memory by namespace and key. Returns null if not found. Structured records omit their revision history by default. Set include_revision=true to also return updated_at and the fingerprint required by memory_apply_maintenance; set include_history=true to include history.",
+          "previous_description": "Read a value from long-term memory by namespace and key. Returns null if not found.",
+          "params_added": [
+            "include_history",
+            "include_revision"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }

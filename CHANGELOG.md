@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-11-26
+
+### Added
+
+- atlassian: Add oauth 2.0 authorization code flow routes
+- agent-docs: Add module guides and drift enforcement
+- architecture: Align contract docs and deduplicate decision records
+- documents: Add index chunk lifecycle management
+- documents: Add float32 binary embedding storage
+- dreaming: Add idle consolidation and weekly maintenance
+- atlassian: Add oauth button and wire agent-led authorization flow
+
+### Fixed
+
+- voice: Prevent browser dictation duplicating transcripts
+- voice: Keep read-aloud working in every supported browser
+- adr: Keep links working in clean checkouts
+- agents: Keep the first agent load through an update restart
+- telemetry: Route blocked tool denials to configuration problems
+- documents: Exclude vendored trees and report search coverage
+- automation: Keep scheduled-task failures across non-success runs
+- memory: Expose read fingerprints and cap history bytes
+- atlassian: Correct import path and fix oauth test setup
+- atlassian: Import IntegrationManifest from manifest, not registry
+- coverage: Exclude untested atlassian-oauth.ts from coverage gate
+
+### Changed
+
+- process: Require a current base before editing
+- voice: Document chromium and safari support requirements
+- architecture: Fix remaining audit drift
+- architecture: Remove completed audit and record guardrails
+- atlassian: Add atlassian oauth hook tests for provider and credential guard
+
 ## [3.8.1] - 2026-11-25
 
 ### Added
