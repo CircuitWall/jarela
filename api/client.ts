@@ -1143,6 +1143,15 @@ export const api = {
       request<{ status: "pending" | "done" | "error" | "unknown"; error?: string }>(
         `/integrations/outlook/oauth/status?state=${encodeURIComponent(state)}`,
       ),
+    atlassianOauthStart: (creds: { client_id?: string; client_secret?: string; credential_id?: string }) =>
+      request<{ authorize_url: string; state: string; redirect_uri: string }>(
+        `/integrations/atlassian/oauth/start`,
+        { method: "POST", body: JSON.stringify(creds) },
+      ),
+    atlassianOauthStatus: (state: string) =>
+      request<{ status: "pending" | "done" | "error" | "unknown"; error?: string }>(
+        `/integrations/atlassian/oauth/status?state=${encodeURIComponent(state)}`,
+      ),
   },
 
   envSync: {

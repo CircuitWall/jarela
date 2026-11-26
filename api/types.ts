@@ -1119,6 +1119,8 @@ export interface IntegrationDefinition {
    * back-compat with older clients.
    */
   category?: "llm" | "mail" | "calendar" | "issue-tracker" | "chat" | "infrastructure" | "other";
+  /** Whether the integration offers OAuth-based authentication. */
+  auth_method?: "api_key" | "oauth";
 }
 
 export interface IntegrationStatus {

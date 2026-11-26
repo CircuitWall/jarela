@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { INTEGRATIONS, listIntegrations, DYNAMIC_INTEGRATIONS_SNAPSHOT } from "@/lib/stores/integrations";
 import { refreshExternalProviderIntegrations } from "@/lib/providers/provider-integrations";
+import { getManifest } from "@/lib/integrations/manifest";
 
 // GET /api/v1/integrations
 // Returns a list of supported integrations with their schema (so the UI can
@@ -9,13 +10,18 @@ import { refreshExternalProviderIntegrations } from "@/lib/providers/provider-in
 export function GET() {
   refreshExternalProviderIntegrations();
 
-  const staticDefs = Object.entries(INTEGRATIONS).map(([name, def]) => ({
-    name,
-    label: def.label,
-    description: def.description,
-    fields: def.fields,
-    category: def.category,
-  }));
+  const staticDefs = Object.entries(INTEGRATIONS).map(([name, def]) => {
+    const manifest = getManifest(name);
+    const authMethod = manifest?.steps?.some(s => s.proposes === "start_oauth") ? "oauth" as const : undefined;
+    return {
+      name,
+      label: def.label,
+      description: def.description,
+      fields: def.fields,
+      category: def.category,
+      auth_method: authMethod,
+    };
+  });
   const dynamicDefs = DYNAMIC_INTEGRATIONS_SNAPSHOT().map(([name, def]) => ({
     name,
     label: def.label,

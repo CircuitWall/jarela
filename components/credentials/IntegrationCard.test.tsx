@@ -58,11 +58,13 @@ describe("IntegrationCard", () => {
     expect(screen.getByLabelText(/Run in background by default/)).toHaveProperty("value", "true");
   });
 
-  function mailDefinition(provider: "gmail" | "outlook"): IntegrationDefinition {
+  function mailDefinition(provider: "gmail" | "outlook" | "atlassian"): IntegrationDefinition {
+    const isAtlassian = provider === "atlassian";
     return {
-      name: provider,
-      label: provider === "gmail" ? "Gmail" : "Outlook",
+      name: isAtlassian ? "Atlassian (Jira + Confluence)" : provider,
+      label: isAtlassian ? "Atlassian (Jira + Confluence)" : provider === "gmail" ? "Gmail" : "Outlook",
       description: "Synthetic mail integration",
+      auth_method: "oauth",
       fields: [
         { key: "client_id", label: "Client ID", secret: false, required: false },
         { key: "client_secret", label: "Client secret", secret: true, required: false },
@@ -71,7 +73,7 @@ describe("IntegrationCard", () => {
     };
   }
 
-  function mailCredential(provider: "gmail" | "outlook"): Credential {
+  function mailCredential(provider: string): Credential {
     return {
       id: `integration-${provider}-work`,
       type: "integration",
@@ -106,8 +108,10 @@ describe("IntegrationCard", () => {
       vi.spyOn(window, "close").mockImplementation(closePopup);
       vi.spyOn(api.integrations, "gmailOauthStart").mockResolvedValue(startResult);
       vi.spyOn(api.integrations, "outlookOauthStart").mockResolvedValue(startResult);
+      vi.spyOn(api.integrations, "atlassianOauthStart").mockResolvedValue(startResult);
       vi.spyOn(api.integrations, "gmailOauthStatus").mockResolvedValue({ status: "pending" });
       vi.spyOn(api.integrations, "outlookOauthStatus").mockResolvedValue({ status: "pending" });
+      vi.spyOn(api.integrations, "atlassianOauthStatus").mockResolvedValue({ status: "pending" });
     });
 
     afterEach(() => {
@@ -117,9 +121,12 @@ describe("IntegrationCard", () => {
       vi.clearAllMocks();
     });
 
-    async function connect(provider: "gmail" | "outlook" = "gmail") {
+    async function connect(provider: "gmail" | "outlook" | "atlassian" = "gmail") {
+      const btn = provider === "gmail" ? "Connect Gmail"
+        : provider === "outlook" ? "Connect Outlook"
+        : "Connect Atlassian";
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: provider === "gmail" ? "Connect Gmail" : "Connect Outlook" }));
+        fireEvent.click(screen.getByRole("button", { name: btn }));
       });
     }
 
@@ -141,11 +148,31 @@ describe("IntegrationCard", () => {
       expect(api.integrations.gmailOauthStatus).toHaveBeenCalledWith(startResult.state);
     });
 
+    it("starts Atlassian OAuth with Connect Atlassian button and polls status", async () => {
+      render(<IntegrationCard definition={mailDefinition("atlassian")} onChanged={onChanged} />);
+      await connect("atlassian");
+      expect(api.integrations.atlassianOauthStart).toHaveBeenCalledWith({
+        client_id: undefined, client_secret: undefined, credential_id: undefined,
+      });
+      expect(window.open).toHaveBeenCalledWith(startResult.authorize_url, "jarela-atlassian-oauth", "width=560,height=720");
+      expect(screen.getByRole("button", { name: "Waiting…" })).toHaveProperty("disabled", true);
+      await poll(1500);
+      expect(api.integrations.atlassianOauthStatus).toHaveBeenCalledWith(startResult.state);
+    });
+
     it("requires Outlook app credentials for an unconfigured integration", async () => {
       render(<IntegrationCard definition={mailDefinition("outlook")} onChanged={onChanged} />);
       await connect("outlook");
       expect(screen.getByText("Enter the OAuth client ID and client secret first.")).toBeTruthy();
       expect(api.integrations.outlookOauthStart).not.toHaveBeenCalled();
+      expect(window.open).not.toHaveBeenCalled();
+    });
+
+    it("requires Atlassian app credentials for an unconfigured integration", async () => {
+      render(<IntegrationCard definition={mailDefinition("atlassian")} onChanged={onChanged} />);
+      await connect("atlassian");
+      expect(screen.getByText("Enter the OAuth client ID and client secret first.")).toBeTruthy();
+      expect(api.integrations.atlassianOauthStart).not.toHaveBeenCalled();
       expect(window.open).not.toHaveBeenCalled();
     });
 

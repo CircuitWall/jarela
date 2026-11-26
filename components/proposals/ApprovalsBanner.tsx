@@ -192,6 +192,14 @@ function approvalToastTarget(action: PendingAction): { href: string; hrefLabel: 
   }
 }
 
+// Integrations with a dedicated typed OAuth start endpoint. Add an entry here
+// (and an `api.integrations.<id>OauthStart`) when a new OAuth integration ships.
+const OAUTH_STARTERS: Record<string, (creds: Record<string, never>) => Promise<{ authorize_url: string }>> = {
+  gmail: (creds) => api.integrations.gmailOauthStart(creds),
+  outlook: (creds) => api.integrations.outlookOauthStart(creds),
+  atlassian: (creds) => api.integrations.atlassianOauthStart(creds),
+};
+
 function pushApprovalToast(action: PendingAction) {
   const t = approvalToastTarget(action);
   if (!t) return;
@@ -332,10 +340,10 @@ function useApprovalSecrets(queue: ReturnType<typeof useApprovalQueue>) {
   const { markBusy, recordOutcome, deny, plainApprove, setErrors } = queue;
   const [secretForm, setSecretForm] = useState<SecretFormState | null>(null);
   // Approve a `start_oauth` proposal: the apply step returns a kickoff_path
-  // and we have to actually open the vendor authorize URL. Today both gmail
-  // and outlook expose dedicated start endpoints — we dispatch on
-  // integration_id rather than blindly POSTing to kickoff_path so the typed
-  // API client stays the contract.
+  // and we have to actually open the vendor authorize URL. gmail, outlook and
+  // atlassian expose dedicated start endpoints — we dispatch on integration_id
+  // via OAUTH_STARTERS rather than blindly POSTing to kickoff_path so the typed
+  // API client stays the contract. Unknown ids surface an error, not a no-op.
   async function approveStartOauth(action: PendingAction) {
     const integrationId = (action.payload as { integration_id?: string }).integration_id;
     markBusy(action.id, true);
@@ -345,10 +353,14 @@ function useApprovalSecrets(queue: ReturnType<typeof useApprovalQueue>) {
         await recordOutcome(result);
         return;
       }
-      let resp: { authorize_url: string } | null = null;
-      if (integrationId === "gmail") resp = await api.integrations.gmailOauthStart({});
-      else if (integrationId === "outlook") resp = await api.integrations.outlookOauthStart({});
-      if (resp?.authorize_url) window.open(resp.authorize_url, "_blank", "noopener,noreferrer");
+      const start = integrationId && Object.hasOwn(OAUTH_STARTERS, integrationId)
+        ? OAUTH_STARTERS[integrationId]
+        : undefined;
+      if (!start) {
+        throw new Error(`No OAuth start flow for "${integrationId ?? "unknown"}"`);
+      }
+      const resp = await start({});
+      if (resp.authorize_url) window.open(resp.authorize_url, "_blank", "noopener,noreferrer");
       pushApprovalToast(result);
       await recordOutcome(result);
     } catch (error) {
