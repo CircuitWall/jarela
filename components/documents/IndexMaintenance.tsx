@@ -12,6 +12,7 @@ interface Props {
   onSaveRetention: (days: number) => Promise<void>;
   onPurgeDisabled: () => Promise<void>;
   onReclaim: () => Promise<void>;
+  onRewriteEmbeddings: () => Promise<void>;
   onVacuum: () => Promise<void>;
 }
 
@@ -37,7 +38,8 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function IndexMaintenance({
-  lifecycle, busy, disabledChunks, onRefresh, onSaveRetention, onPurgeDisabled, onReclaim, onVacuum,
+  lifecycle, busy, disabledChunks, onRefresh, onSaveRetention, onPurgeDisabled, onReclaim,
+  onRewriteEmbeddings, onVacuum,
 }: Props) {
   const { inventory, settings, status } = lifecycle;
   const [days, setDays] = useState(settings.purge_disabled_after_days);
@@ -48,11 +50,13 @@ export function IndexMaintenance({
     ? "Purging indexed chunks…"
     : status.action === "vacuum"
       ? "Compacting the database…"
-      : status.action === "lifecycle"
-        ? "Running index lifecycle…"
-        : status.action === "reclaim"
-          ? "Reclaiming free pages…"
-          : "Maintenance running…";
+      : status.action === "rewrite_embeddings"
+        ? "Rewriting embeddings…"
+        : status.action === "lifecycle"
+          ? "Running index lifecycle…"
+          : status.action === "reclaim"
+            ? "Reclaiming free pages…"
+            : "Maintenance running…";
 
   return (
     <section className="space-y-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5">
@@ -123,6 +127,15 @@ export function IndexMaintenance({
           className="text-xs px-3 py-1.5 rounded-lg border border-border bg-surface-3 hover:bg-surface-2 text-fg disabled:opacity-50"
         >
           Reclaim space
+        </button>
+        <button
+          type="button"
+          onClick={() => void onRewriteEmbeddings()}
+          disabled={busy}
+          title="Convert legacy JSON embeddings to compact float32 storage"
+          className="text-xs px-3 py-1.5 rounded-lg border border-border bg-surface-3 hover:bg-surface-2 text-fg disabled:opacity-50"
+        >
+          Rewrite embeddings
         </button>
         <button
           type="button"

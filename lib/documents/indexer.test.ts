@@ -33,6 +33,7 @@ vi.mock("@/lib/embeddings", () => ({
 }));
 
 const { backfillSourceEmbeddings, clearSourceEmbeddings, indexSource, isSkippedFileName } = await import("./indexer");
+const { decodeEmbedding } = await import("./embedding-codec");
 const { resetConfigCache } = await import("@/lib/env/config");
 const { getDb } = await import("@/lib/db");
 const { createDocumentSource } = await import("@/lib/stores/document-sources");
@@ -65,7 +66,7 @@ afterAll(() => {
   try { rmSync(sourceRoot, { recursive: true, force: true }); } catch {}
 });
 
-function chunkRows(): Array<{ embedding: string | null; embed_failed_at: string | null }> {
+function chunkRows(): Array<{ embedding: string | Uint8Array | null; embed_failed_at: string | null }> {
   return getDb()
     .prepare(
       `SELECT c.embedding, c.embed_failed_at
@@ -200,7 +201,7 @@ describe("indexSource — terminal vs transient embedding failures (issue #597)"
     writeFileSync(abs, "stable content whose embedding model will change");
 
     await indexSource(sourceRow);
-    expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.1]);
+    expect(decodeEmbedding(chunkRows()[0].embedding)).toEqual([Math.fround(0.1)]);
 
     embedBestEffortSpy.mockClear();
     embedImpl = (texts) => ({
@@ -212,7 +213,7 @@ describe("indexSource — terminal vs transient embedding failures (issue #597)"
     const stats = await indexSource(sourceRow, { maxFiles: Number.MAX_SAFE_INTEGER, forceReembed: true });
 
     expect(embedBestEffortSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.9]);
+    expect(decodeEmbedding(chunkRows()[0].embedding)).toEqual([Math.fround(0.9)]);
     expect(stats.updated).toBe(1);
   });
 
@@ -220,7 +221,7 @@ describe("indexSource — terminal vs transient embedding failures (issue #597)"
     const abs = join(sourceRoot, "remote-like.txt");
     writeFileSync(abs, "document content with an existing vector");
     await indexSource(sourceRow);
-    expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.1]);
+    expect(decodeEmbedding(chunkRows()[0].embedding)).toEqual([Math.fround(0.1)]);
 
     expect(clearSourceEmbeddings(sourceId)).toBe(1);
     expect(chunkRows()[0].embedding).toBeNull();
@@ -233,7 +234,7 @@ describe("indexSource — terminal vs transient embedding failures (issue #597)"
 
     const result = await backfillSourceEmbeddings(sourceId);
     expect(result).toEqual({ chunks: 1, embedded: 1, failed: 0, error: null });
-    expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.75]);
+    expect(decodeEmbedding(chunkRows()[0].embedding)).toEqual([0.75]);
   });
 
   it.each([false, true])("preserves chunks and backfills unchanged content (touched=%s)", async (touched) => {

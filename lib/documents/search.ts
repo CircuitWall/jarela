@@ -13,6 +13,7 @@ import { readAppRows } from "@/lib/db/read-pool";
 import { embedQueryOne, embedQueryWithSignature, cosine } from "@/lib/embeddings";
 import { getDocumentRecallPolicy, isLocalEmbeddingsEnabled } from "@/lib/stores/app-settings";
 import { withBlockingWork } from "@/lib/diagnostics/event-loop";
+import { decodeEmbedding, type StoredEmbedding } from "./embedding-codec";
 import { DocumentExclusionUnavailableError } from "./recall-policy";
 
 // Track documents we've already queued for reindexing this session to avoid
@@ -65,7 +66,7 @@ interface Row {
   document_id: string;
   chunk_index: number;
   text: string;
-  embedding: string | null;
+  embedding: StoredEmbedding;
   embedding_model_signature: string | null;
   source_id: string;
   source_label: string | null;
@@ -142,8 +143,7 @@ export async function searchDocumentsWithMeta(
         let score = 0;
         let match: "semantic" | "substring" = "semantic";
         if (qVec && r.embedding) {
-          let vec: number[] | null = null;
-          try { vec = JSON.parse(r.embedding) as number[]; } catch { vec = null; }
+          const vec = decodeEmbedding(r.embedding);
           if (vec && vec.length === qVec.length) {
             score = cosine(qVec, vec);
             // A weak positive semantic match must not bypass the floor via text.
@@ -225,14 +225,9 @@ function validVector(value: number[] | null): value is number[] {
   return value !== null && value.length > 0 && value.every(Number.isFinite) && value.some((n) => n !== 0);
 }
 
-function parseVector(value: string | null): number[] | null {
-  if (!value) return null;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) && parsed.every((n) => typeof n === "number") && validVector(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+function parseVector(value: StoredEmbedding): number[] | null {
+  const vector = decodeEmbedding(value);
+  return vector && validVector(vector) ? vector : null;
 }
 
 const SEARCH_PAGE_ROWS = 2_000;

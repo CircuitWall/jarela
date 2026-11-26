@@ -29,6 +29,7 @@ function renderPanel(lifecycle = state(), disabledChunks = 4_592) {
     onSaveRetention: vi.fn().mockResolvedValue(undefined),
     onPurgeDisabled: vi.fn().mockResolvedValue(undefined),
     onReclaim: vi.fn().mockResolvedValue(undefined),
+    onRewriteEmbeddings: vi.fn().mockResolvedValue(undefined),
     onVacuum: vi.fn().mockResolvedValue(undefined),
   };
   render(
@@ -69,6 +70,9 @@ it("saves retention and runs the explicit maintenance actions", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Reclaim space" }));
   expect(handlers.onReclaim).toHaveBeenCalledOnce();
+
+  fireEvent.click(screen.getByRole("button", { name: "Rewrite embeddings" }));
+  expect(handlers.onRewriteEmbeddings).toHaveBeenCalledOnce();
 
   fireEvent.click(screen.getByRole("button", { name: "Compact database" }));
   expect(handlers.onVacuum).toHaveBeenCalledOnce();

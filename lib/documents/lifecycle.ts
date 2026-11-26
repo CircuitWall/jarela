@@ -35,6 +35,7 @@ import type {
   DocumentIndexMaintenanceActionName,
   DocumentIndexMaintenanceStatus,
 } from "@/api/document-lifecycle";
+import { decodeEmbedding, encodeEmbedding } from "./embedding-codec";
 import { refreshDocumentSourceStats } from "./source-stats-cache";
 
 type MaintenancePool = Awaited<ReturnType<typeof sqlite3Type.pool>>;
@@ -249,6 +250,91 @@ export function disabledSourcesPastRetention(
 }
 
 // ---------------------------------------------------------------------------
+// Embedding storage format (ADR-0134)
+// ---------------------------------------------------------------------------
+
+export interface RewriteEmbeddingFormatResult {
+  scanned: number;
+  rewritten: number;
+  skipped: number;
+  bytes_before: number;
+  bytes_after: number;
+  completed: boolean;
+}
+
+const REWRITE_BATCH_ROWS = 500;
+const DEFAULT_REWRITE_BUDGET_MS = 60_000;
+
+/**
+ * Rewrite legacy JSON-text embeddings as float32 BLOBs. New writes use the
+ * compact format already; this converts existing rows in bounded batches on
+ * the worker so search keeps working while it runs. Resumable: a partial run
+ * returns `completed: false` and the next call continues from the start of the
+ * remaining text rows.
+ */
+export async function rewriteLegacyDocumentEmbeddings(opts?: {
+  batchSize?: number;
+  budgetMs?: number;
+}): Promise<RewriteEmbeddingFormatResult> {
+  const pool = await maintenancePool();
+  const requestedBatch = opts?.batchSize;
+  const batchSize = typeof requestedBatch === "number" && Number.isFinite(requestedBatch)
+    ? Math.max(1, Math.min(Math.floor(requestedBatch), 5_000))
+    : REWRITE_BATCH_ROWS;
+  const deadline = Date.now() + (opts?.budgetMs ?? DEFAULT_REWRITE_BUDGET_MS);
+  const result: RewriteEmbeddingFormatResult = {
+    scanned: 0, rewritten: 0, skipped: 0, bytes_before: 0, bytes_after: 0, completed: false,
+  };
+  let cursor = "";
+  while (Date.now() < deadline) {
+    const rows = await pool.read(
+      `SELECT id, embedding FROM document_chunks
+        WHERE typeof(embedding)='text' AND id > ?
+        ORDER BY id LIMIT ?`,
+      [cursor, batchSize],
+    ) as Array<{ id: string; embedding: string | Uint8Array }>;
+    if (rows.length === 0) {
+      result.completed = true;
+      break;
+    }
+    result.scanned += rows.length;
+    cursor = String(rows[rows.length - 1].id);
+    const updates: Array<{ id: string; blob: Uint8Array; before: number }> = [];
+    for (const row of rows) {
+      const vector = decodeEmbedding(row.embedding);
+      if (!vector) {
+        result.skipped += 1;
+        continue;
+      }
+      const before = typeof row.embedding === "string" ? Buffer.byteLength(row.embedding, "utf8") : 0;
+      updates.push({ id: String(row.id), blob: encodeEmbedding(vector), before });
+    }
+    if (updates.length > 0) {
+      result.rewritten += await pool.transaction(async (tx) => {
+        let changed = 0;
+        for (const update of updates) {
+          const written = await tx.write(
+            "UPDATE document_chunks SET embedding=? WHERE id=? AND typeof(embedding)='text'",
+            [update.blob, update.id],
+          );
+          if (Number(written.changes) > 0) {
+            changed += 1;
+            result.bytes_before += update.before;
+            result.bytes_after += update.blob.byteLength;
+          }
+        }
+        return changed;
+      }, { mode: "immediate" });
+    }
+    if (rows.length < batchSize) {
+      result.completed = true;
+      break;
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Space reclamation
 // ---------------------------------------------------------------------------
 
@@ -418,6 +504,10 @@ async function runMaintenance(job: MaintenanceJob): Promise<string> {
       const result = await reclaimIndexSpace();
       return summarizeReclaim(result);
     }
+    case "rewrite_embeddings": {
+      const result = await rewriteLegacyDocumentEmbeddings();
+      return summarizeRewrite(result, await reclaimQuietly(POST_PURGE_RECLAIM_BUDGET_MS));
+    }
     case "vacuum": {
       const result = await vacuumIndexDatabase();
       return `Compacted the database: ${formatBytes(result.reclaimed_bytes)} reclaimed.`;
@@ -465,6 +555,23 @@ function summarizePurge(
 function summarizeReclaim(result: ReclaimIndexSpaceResult): string {
   const pending = result.completed ? "" : ` ${formatBytes(result.free_bytes_after)} still pending; run it again to continue.`;
   return `Reclaimed ${formatBytes(result.reclaimed_bytes)}.${pending}`;
+}
+
+function summarizeRewrite(
+  result: RewriteEmbeddingFormatResult,
+  reclaimed: ReclaimIndexSpaceResult | null,
+): string {
+  if (result.scanned === 0) return "No legacy JSON embeddings remain.";
+  const skipped = result.skipped > 0 ? `; ${result.skipped.toLocaleString()} invalid rows skipped` : "";
+  const base = `Rewrote ${result.rewritten.toLocaleString()} of ${result.scanned.toLocaleString()} legacy embeddings `
+    + `(${formatBytes(result.bytes_before)} → ${formatBytes(result.bytes_after)})${skipped}.`;
+  if (!result.completed) return `${base} Run it again to continue.`;
+  if (reclaimed === null) {
+    return `${base} Run database compaction to return the freed pages to the filesystem.`;
+  }
+  return reclaimed.reclaimed_bytes > 0
+    ? `${base} Reclaimed ${formatBytes(reclaimed.reclaimed_bytes)}.`
+    : base;
 }
 
 /**
