@@ -133,6 +133,17 @@ describe("Dreams panel", () => {
     expect(screen.getAllByRole("button", { name: /Deep/ })).toHaveLength(1);
   });
 
+  it("shows the empty journal and a load failure", async () => {
+    mocks.overview.mockResolvedValueOnce(overview({ runs: [] }));
+    render(<DreamsPanel />);
+    expect(await screen.findByText("No dreams yet.")).toBeTruthy();
+    cleanup();
+
+    mocks.overview.mockRejectedValueOnce(new Error("dream status unavailable"));
+    render(<DreamsPanel />);
+    expect((await screen.findByRole("alert")).textContent).toContain("dream status unavailable");
+  });
+
   it("shows the running state", async () => {
     mocks.overview.mockResolvedValue(overview({
       running: { agent_id: "agent-b", kind: "light", started_at: "2026-11-20T04:00:00.000Z" },

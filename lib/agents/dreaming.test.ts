@@ -62,6 +62,7 @@ const {
   CURRENT_STRUCTURED_MEMORY_VERSION, parseStructuredMemory,
 } = await import("@/lib/memory/record");
 const engine = await import("./dreaming");
+const { runTrackedCompaction } = await import("./thread-compaction-state");
 
 const OLD = "2026-01-01T00:00:00.000Z";
 
@@ -103,7 +104,12 @@ function eligible(): ReturnType<typeof engine.evaluateLightDream> {
   return engine.evaluateLightDream(getAgentConfig("agent-a")!, getDreamingSettings());
 }
 
-function seedFact(key: string, content: string, confidence: "explicit" | "inferred" | "verified"): void {
+function seedFact(
+  key: string,
+  content: string,
+  confidence: "explicit" | "inferred" | "verified",
+  expiresAt: string | null = null,
+): void {
   putMemory("facts", key, {
     version: CURRENT_STRUCTURED_MEMORY_VERSION,
     kind: "preference",
@@ -113,7 +119,7 @@ function seedFact(key: string, content: string, confidence: "explicit" | "inferr
     confidence,
     source: "conversation",
     observed_at: null,
-    expires_at: null,
+    expires_at: expiresAt,
     summary: null,
     aliases: [],
     status: "active",
@@ -221,6 +227,59 @@ describe("light-dream preflight", () => {
     expect(eligible().readiness.reason).toBe("budget_exhausted");
   });
 
+  it("skips when dreaming is globally disabled or the agent has no thread", () => {
+    setDreamingSettings({ enabled: false });
+    seedThread("agent-a", true);
+    expect(eligible().readiness.reason).toBe("disabled");
+
+    setDreamingSettings({ ...DREAMING_SETTINGS_DEFAULTS });
+    getDb().prepare("DELETE FROM threads").run();
+    seedAgent("agent-a", true);
+    expect(eligible().readiness.reason).toBe("no_thread");
+  });
+
+  it("skips a thread with no messages and one with an in-progress user turn", () => {
+    seedAgent("agent-a", true);
+    getOrCreateAgentThread("agent-a");
+    expect(eligible().readiness.reason).toBe("no_messages");
+
+    const threadId = seedThread("agent-a", true);
+    addMessage(threadId, "user", "still sending", null, null, null, "in_progress");
+    expect(eligible().readiness.reason).toBe("queued_turn");
+  });
+
+  it("skips while another compaction holds the thread", async () => {
+    const threadId = seedThread("agent-a", true);
+    let release: (() => void) | undefined;
+    const pending = runTrackedCompaction(threadId, "dream", 1, () => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+    try {
+      expect(eligible().readiness.reason).toBe("compaction_in_flight");
+    } finally {
+      release?.();
+      await pending;
+    }
+  });
+
+  it("stops retrying after two failed light attempts in the same idle window", () => {
+    const threadId = seedThread("agent-a", true);
+    const latest = getLatestForegroundUserMessage(threadId)!;
+    for (let index = 0; index < 2; index += 1) {
+      const run = store.createDreamRun({
+        agent_id: "agent-a", kind: "light", started_at: latest.created_at,
+      });
+      store.finishDreamRun(run.id, { status: "failed", error: "synthetic failure" });
+    }
+    expect(eligible().readiness.reason).toBe("retry_cooldown");
+  });
+
+  it("skips when the estimated light budget would be exceeded", () => {
+    seedThread("agent-a", true);
+    setDreamingSettings({ ...DREAMING_SETTINGS_DEFAULTS, light_daily_token_budget: 1 });
+    expect(eligible().readiness.reason).toBe("budget_exhausted");
+  });
+
   it("does not dream a thread with only one exchange", () => {
     seedThread("agent-a", true, 1);
     expect(eligible().readiness.reason).toBe("too_few_turns");
@@ -286,6 +345,35 @@ describe("light-dream execution", () => {
     await engine.waitForDreaming();
   });
 
+  it("records a skipped run when the compaction resolves as a no-op", async () => {
+    const threadId = seedThread("agent-a", true);
+    const latestUser = getLatestForegroundUserMessage(threadId)!;
+    mocks.compact.mockImplementation(async () => {
+      getDb().prepare(
+        `UPDATE threads SET hot_since_seq=?, warm_summary_before_seq=?,
+           warm_summary=?, warm_summary_computed_at=? WHERE thread_id=?`,
+      ).run(
+        latestUser.seq, latestUser.seq, "recap", new Date().toISOString(), threadId,
+      );
+      return null;
+    });
+
+    expect(engine.startDream("agent-a", "light", { force: true }).started).toBe(true);
+    await engine.waitForDreaming();
+
+    const run = store.listDreamRuns({ agentId: "agent-a" })[0];
+    expect(run.status).toBe("skipped");
+    expect(run.stats).toContain("no_op");
+    expect(store.getAgentDreamState("agent-a")?.last_light_boundary_seq).toBe(latestUser.seq);
+  });
+
+  it("rejects an unknown agent before starting", () => {
+    expect(engine.startDream("missing-agent", "light")).toEqual({
+      started: false,
+      reason: "agent_not_found",
+    });
+  });
+
   it("records a failure without touching the last successful boundary", async () => {
     seedThread("agent-a", true);
     mocks.compact.mockRejectedValue(new Error("provider down"));
@@ -316,6 +404,52 @@ describe("deep-dream scheduling", () => {
       .toBe("deep_not_due");
     expect(engine.evaluateDeepDream(getAgentConfig("agent-b")!, settings).readiness.reason)
       .toBe("not_default_agent");
+  });
+
+  it("skips deep work when globally or weekly disabled", () => {
+    seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    setDreamingSettings({ ...DREAMING_SETTINGS_DEFAULTS, enabled: false });
+    expect(engine.evaluateDeepDream(getAgentConfig("agent-a")!, getDreamingSettings()).readiness.reason)
+      .toBe("disabled");
+    setDreamingSettings({ ...DREAMING_SETTINGS_DEFAULTS, deep_enabled: false });
+    expect(engine.evaluateDeepDream(getAgentConfig("agent-a")!, getDreamingSettings()).readiness.reason)
+      .toBe("disabled");
+  });
+
+  it("skips deep work when locked, busy, opted out, or retrying", () => {
+    seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    mocks.isLocked.mockReturnValueOnce(true);
+    expect(engine.evaluateDeepDream(getAgentConfig("agent-a")!, getDreamingSettings()).readiness.reason)
+      .toBe("locked");
+
+    mocks.getActiveRunCount.mockReturnValueOnce(1);
+    expect(engine.evaluateDeepDream(getAgentConfig("agent-a")!, getDreamingSettings()).readiness.reason)
+      .toBe("active_run");
+
+    store.setAgentDreamEnabled("agent-a", false);
+    expect(engine.evaluateDeepDream(getAgentConfig("agent-a")!, getDreamingSettings()).readiness.reason)
+      .toBe("agent_disabled");
+    store.setAgentDreamEnabled("agent-a", true);
+
+    store.markDeepDreamAttempt("agent-a");
+    expect(engine.evaluateDeepDream(getAgentConfig("agent-a")!, getDreamingSettings()).readiness.reason)
+      .toBe("retry_cooldown");
+  });
+
+  it("skips deep work while the user is recently active, but manual force bypasses it", () => {
+    const threadId = seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    addMessage(threadId, "user", "current foreground activity");
+    expect(engine.evaluateDeepDream(getAgentConfig("agent-a")!, getDreamingSettings()).readiness.reason)
+      .toBe("not_idle");
+    expect(engine.evaluateDeepDream(
+      getAgentConfig("agent-a")!,
+      getDreamingSettings(),
+      new Date(),
+      { force: true },
+    ).readiness.eligible).toBe(true);
   });
 
   it("does not treat automation traffic as foreground user activity", () => {
@@ -435,6 +569,181 @@ describe("deep-dream scheduling", () => {
     expect(merges).toMatchObject({ merged: 0, skipped: 1 });
     expect(fact("theme-a").status).toBe("active");
     expect(fact("theme-b").status).toBe("active");
+  });
+
+  it("rejects an invalid merge response and keeps both records", async () => {
+    seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    seedFact("theme-a", "The user prefers the dark color theme for the editor.", "explicit");
+    seedFact("theme-b", "The user prefers the dark color theme for the code editor.", "inferred");
+    mocks.getProvider.mockReturnValue({
+      chat: vi.fn(async (_modelId: string, messages: Array<{ content: unknown }>) => {
+        const system = typeof messages[0]?.content === "string" ? messages[0].content : "";
+        return {
+          stream: (async function* () {
+            yield system.includes("memory consolidation step") ? "not json" : "Weekly consolidation note.";
+          })(),
+        };
+      }),
+    });
+
+    await engine.runDreamingSweep();
+    await engine.waitForDreaming();
+    const run = store.listDreamRuns({ agentId: "agent-a" }).find((candidate) => candidate.kind === "deep")!;
+    const stats = store.parseDreamRunStats(run)!;
+    expect((stats.merges as { merged: number; skipped: number })).toMatchObject({ merged: 0, skipped: 1 });
+    expect(fact("theme-a").status).toBe("active");
+    expect(fact("theme-b").status).toBe("active");
+  });
+
+  it("rejects a merge whose survivor key is not in the group", async () => {
+    seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    seedFact("theme-a", "The user prefers the dark color theme for the editor.", "explicit");
+    seedFact("theme-b", "The user prefers the dark color theme for the code editor.", "inferred");
+    mocks.getProvider.mockReturnValue({
+      chat: vi.fn(async (_modelId: string, messages: Array<{ content: unknown }>) => {
+        const system = typeof messages[0]?.content === "string" ? messages[0].content : "";
+        const text = system.includes("memory consolidation step")
+          ? JSON.stringify({ merge: true, survivor_key: "missing", content: "merged" })
+          : "Weekly consolidation note.";
+        return { stream: (async function* () { yield text; })() };
+      }),
+    });
+
+    await engine.runDreamingSweep();
+    await engine.waitForDreaming();
+    const run = store.listDreamRuns({ agentId: "agent-a" }).find((candidate) => candidate.kind === "deep")!;
+    expect((store.parseDreamRunStats(run)!.merges as { merged: number }).merged).toBe(0);
+    expect(fact("theme-a").content).toBe("The user prefers the dark color theme for the editor.");
+    expect(fact("theme-b").status).toBe("active");
+  });
+
+  it("does not merge records with conflicting expiries", async () => {
+    seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    seedFact(
+      "theme-a",
+      "The user prefers the dark color theme for the editor.",
+      "explicit",
+      "2026-12-01T00:00:00.000Z",
+    );
+    seedFact(
+      "theme-b",
+      "The user prefers the dark color theme for the code editor.",
+      "inferred",
+      "2027-01-01T00:00:00.000Z",
+    );
+    const chat = vi.fn(async (_modelId: string, messages: Array<{ content: unknown }>) => {
+      const system = typeof messages[0]?.content === "string" ? messages[0].content : "";
+      return {
+        stream: (async function* () {
+          yield system.includes("memory consolidation step")
+            ? JSON.stringify({ merge: true, survivor_key: "theme-a", content: "merged" })
+            : "Weekly consolidation note.";
+        })(),
+      };
+    });
+    mocks.getProvider.mockReturnValue({ chat });
+
+    await engine.runDreamingSweep();
+    await engine.waitForDreaming();
+    expect(chat.mock.calls.some(([, messages]) =>
+      String(messages[0]?.content).includes("memory consolidation step"))).toBe(false);
+    expect(fact("theme-a").expires_at).toBe("2026-12-01T00:00:00.000Z");
+    expect(fact("theme-b").status).toBe("active");
+  });
+
+  it("skips the merge model when the weekly token budget is already exhausted", async () => {
+    seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    seedFact("theme-a", "The user prefers the dark color theme for the editor.", "explicit");
+    seedFact("theme-b", "The user prefers the dark color theme for the code editor.", "inferred");
+    setDreamingSettings({ ...DREAMING_SETTINGS_DEFAULTS, deep_weekly_token_budget: 1 });
+
+    await engine.runDreamingSweep();
+    await engine.waitForDreaming();
+    const run = store.listDreamRuns({ agentId: "agent-a" }).find((candidate) => candidate.kind === "deep")!;
+    expect((store.parseDreamRunStats(run)!.merges as { merged: number }).merged).toBe(0);
+    expect(mocks.getProvider).not.toHaveBeenCalled();
+    expect(fact("theme-a").status).toBe("active");
+    expect(fact("theme-b").status).toBe("active");
+  });
+
+  it("records provider failures in the merge phase without failing the dream", async () => {
+    seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    seedFact("theme-a", "The user prefers the dark color theme for the editor.", "explicit");
+    seedFact("theme-b", "The user prefers the dark color theme for the code editor.", "inferred");
+    mocks.getProvider.mockReturnValue({
+      chat: vi.fn(async (_modelId: string, messages: Array<{ content: unknown }>) => {
+        const system = typeof messages[0]?.content === "string" ? messages[0].content : "";
+        if (system.includes("memory consolidation step")) throw new Error("merge provider down");
+        return { stream: (async function* () { yield "Weekly consolidation note."; })() };
+      }),
+    });
+
+    await engine.runDreamingSweep();
+    await engine.waitForDreaming();
+    const run = store.listDreamRuns({ agentId: "agent-a" }).find((candidate) => candidate.kind === "deep")!;
+    const stats = store.parseDreamRunStats(run)!;
+    expect(run.status).toBe("completed");
+    expect((stats.merges as { errors: string[] }).errors[0]).toContain("merge provider down");
+    expect(stats.review).toBeTruthy();
+    expect(fact("theme-a").status).toBe("active");
+    expect(fact("theme-b").status).toBe("active");
+  });
+
+  it("skips a truncated near-duplicate group instead of merging only part of it", async () => {
+    seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    for (let index = 0; index < 6; index += 1) {
+      seedFact(
+        `theme-${index}`,
+        `The user prefers the dark color theme for the code editor ${index}.`,
+        "inferred",
+      );
+    }
+    mocks.getProvider.mockReturnValue({
+      chat: vi.fn(async (_modelId: string, messages: Array<{ content: unknown }>) => {
+        const system = typeof messages[0]?.content === "string" ? messages[0].content : "";
+        return {
+          stream: (async function* () {
+            yield system.includes("memory consolidation step")
+              ? JSON.stringify({ merge: true, survivor_key: "theme-0", content: "merged" })
+              : "Weekly consolidation note.";
+          })(),
+        };
+      }),
+    });
+
+    await engine.runDreamingSweep();
+    await engine.waitForDreaming();
+    const run = store.listDreamRuns({ agentId: "agent-a" }).find((candidate) => candidate.kind === "deep")!;
+    const merges = store.parseDreamRunStats(run)!.merges as { merged: number; groups: Array<{ reason?: string }> };
+    expect(merges.merged).toBe(0);
+    expect(merges.groups.some((group) => group.reason === "group_truncated")).toBe(true);
+  });
+
+  it("isolates embedding, document, and weekly-review failures", async () => {
+    seedThread("agent-a", true);
+    makeDeepDue("agent-a");
+    mocks.reembed.mockRejectedValueOnce(new Error("embedding down"));
+    mocks.rewrite.mockRejectedValueOnce(new Error("rewrite down"));
+    mocks.reclaim.mockRejectedValueOnce(new Error("reclaim down"));
+    mocks.getProvider.mockReturnValue({
+      chat: vi.fn(async () => { throw new Error("review down"); }),
+    });
+
+    await engine.runDreamingSweep();
+    await engine.waitForDreaming();
+    const run = store.listDreamRuns({ agentId: "agent-a" }).find((candidate) => candidate.kind === "deep")!;
+    const stats = store.parseDreamRunStats(run)!;
+    expect(run.status).toBe("completed");
+    expect(JSON.stringify(stats)).toContain("embedding refresh");
+    expect(JSON.stringify(stats)).toContain("document embeddings");
+    expect(JSON.stringify(stats)).toContain("reclaim");
+    expect(JSON.stringify(stats)).toContain("weekly review");
   });
 
   it("skips deep maintenance while document maintenance is running", () => {

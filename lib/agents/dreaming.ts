@@ -547,14 +547,17 @@ interface DeepStats {
 
 async function runEmbeddingPhase(stats: DeepStats, deadline: number): Promise<void> {
   let finished = false;
-  try {
-    const work = reembedStaleVectors().then(() => { finished = true; });
-    await settleWithinBudget(work, Math.max(1_000, deadline - Date.now()), undefined);
-    stats.embedding_refresh = finished ? "completed" : "continuing_in_background";
-  } catch (err) {
+  let failure: unknown = null;
+  const work = reembedStaleVectors()
+    .then(() => { finished = true; })
+    .catch((err: unknown) => { failure = err; });
+  await settleWithinBudget(work, Math.max(1_000, deadline - Date.now()), undefined);
+  if (failure) {
     stats.embedding_refresh = "failed";
-    stats.errors.push(`embedding refresh: ${errorMessage(err)}`);
+    stats.errors.push(`embedding refresh: ${errorMessage(failure)}`);
+    return;
   }
+  stats.embedding_refresh = finished ? "completed" : "continuing_in_background";
 }
 
 async function runDocumentPhases(
