@@ -7,9 +7,13 @@ const mocks = vi.hoisted(() => ({
   overview: vi.fn(),
   update: vi.fn(),
   run: vi.fn(),
+  models: vi.fn(),
 }));
 vi.mock("@/api/client", () => ({
-  api: { dreaming: { getOverview: mocks.overview, update: mocks.update, run: mocks.run } },
+  api: {
+    dreaming: { getOverview: mocks.overview, update: mocks.update, run: mocks.run },
+    models: { list: mocks.models },
+  },
 }));
 
 const { DreamsPanel } = await import("./DreamsPanel");
@@ -66,6 +70,14 @@ beforeEach(() => {
   mocks.update.mockImplementation(async (patch: { settings?: Record<string, unknown> }) =>
     overview({ settings: { ...DREAMING_SETTINGS_DEFAULTS, ...(patch.settings ?? {}) } }));
   mocks.run.mockResolvedValue({ accepted: true, run: { ...run, status: "running", finished_at: null } });
+  mocks.models.mockResolvedValue([{
+    name: "dream-model",
+    provider: "openai",
+    model_id: "gpt-4o-mini",
+    params: {},
+    is_default: false,
+    enabled: true,
+  }]);
 });
 afterEach(cleanup);
 
@@ -114,6 +126,34 @@ describe("Dreams panel", () => {
         deep_weekly_token_budget: DREAMING_SETTINGS_DEFAULTS.deep_weekly_token_budget,
         deep_weekday: DREAMING_SETTINGS_DEFAULTS.deep_weekday,
         deep_hour: DREAMING_SETTINGS_DEFAULTS.deep_hour,
+      },
+    }));
+  });
+
+  it("exposes advanced limits and the dream model override", async () => {
+    render(<DreamsPanel />);
+    await screen.findByText("Agent A");
+    fireEvent.click(screen.getByText("Advanced settings"));
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Min new turns/ }), {
+      target: { value: "3" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Dream model" }), {
+      target: { value: "dream-model" },
+    });
+    await waitFor(() => expect(
+      (screen.getByRole("button", { name: "Save advanced" }) as HTMLButtonElement).disabled,
+    ).toBe(false), { timeout: 5_000 });
+    fireEvent.click(screen.getByRole("button", { name: "Save advanced" }));
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledWith({
+      settings: {
+        light_min_user_turns: 3,
+        light_max_per_day: DREAMING_SETTINGS_DEFAULTS.light_max_per_day,
+        deep_idle_minutes: DREAMING_SETTINGS_DEFAULTS.deep_idle_minutes,
+        deep_budget_ms: DREAMING_SETTINGS_DEFAULTS.deep_budget_ms,
+        deep_document_budget_ms: DREAMING_SETTINGS_DEFAULTS.deep_document_budget_ms,
+        deep_reclaim_budget_ms: DREAMING_SETTINGS_DEFAULTS.deep_reclaim_budget_ms,
+        deep_merge_max_groups: DREAMING_SETTINGS_DEFAULTS.deep_merge_max_groups,
+        deep_model_config_name: "dream-model",
       },
     }));
   });

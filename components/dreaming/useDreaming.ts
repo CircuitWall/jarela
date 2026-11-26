@@ -6,11 +6,13 @@ import type {
   DreamingOverview,
   DreamingPatch,
   DreamingSettingsPatch,
+  ModelConfig,
 } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
 
 export interface UseDreamingResult {
   overview: DreamingOverview | null;
+  models: ModelConfig[];
   loading: boolean;
   busy: boolean;
   error: string | null;
@@ -22,6 +24,7 @@ export interface UseDreamingResult {
 
 export function useDreaming(): UseDreamingResult {
   const [overview, setOverview] = useState<DreamingOverview | null>(null);
+  const [models, setModels] = useState<ModelConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +45,14 @@ export function useDreaming(): UseDreamingResult {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.models.list()
+      .then((next) => { if (!cancelled) setModels(next.filter((model) => model.enabled !== false)); })
+      .catch(() => { /* the model picker falls back to inherit */ });
+    return () => { cancelled = true; };
+  }, []);
 
   // A dream runs server-side; poll only while one is actually running. The
   // effect keys on the run's start time so a 2s poll does not restart itself
@@ -94,5 +105,5 @@ export function useDreaming(): UseDreamingResult {
     }
   }, [load]);
 
-  return { overview, loading, busy, error, refresh: load, saveSettings, setAgentEnabled, dreamNow };
+  return { overview, models, loading, busy, error, refresh: load, saveSettings, setAgentEnabled, dreamNow };
 }

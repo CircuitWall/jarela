@@ -7,6 +7,7 @@ import type {
   DreamingAgentStatus,
   DreamingSettings,
   DreamingSettingsPatch,
+  ModelConfig,
 } from "@/api/types";
 import { useDreaming } from "./useDreaming";
 
@@ -98,12 +99,138 @@ function NumberField({
   );
 }
 
-function DreamSettingsEditor({
+function advancedMinutes(ms: number): number {
+  return Math.max(1, Math.round(ms / 60_000));
+}
+
+function DreamAdvancedSettings({
   settings,
+  models,
   busy,
   onSave,
 }: {
   settings: DreamingSettings;
+  models: ModelConfig[];
+  busy: boolean;
+  onSave: (patch: DreamingSettingsPatch) => Promise<void>;
+}) {
+  const [minTurns, setMinTurns] = useState(settings.light_min_user_turns);
+  const [maxPerDay, setMaxPerDay] = useState(settings.light_max_per_day);
+  const [deepIdle, setDeepIdle] = useState(settings.deep_idle_minutes);
+  const [deepBudget, setDeepBudget] = useState(advancedMinutes(settings.deep_budget_ms));
+  const [docBudget, setDocBudget] = useState(advancedMinutes(settings.deep_document_budget_ms));
+  const [reclaimBudget, setReclaimBudget] = useState(advancedMinutes(settings.deep_reclaim_budget_ms));
+  const [mergeGroups, setMergeGroups] = useState(settings.deep_merge_max_groups);
+  const [modelName, setModelName] = useState(settings.deep_model_config_name ?? "");
+
+  useEffect(() => {
+    setMinTurns(settings.light_min_user_turns);
+    setMaxPerDay(settings.light_max_per_day);
+    setDeepIdle(settings.deep_idle_minutes);
+    setDeepBudget(advancedMinutes(settings.deep_budget_ms));
+    setDocBudget(advancedMinutes(settings.deep_document_budget_ms));
+    setReclaimBudget(advancedMinutes(settings.deep_reclaim_budget_ms));
+    setMergeGroups(settings.deep_merge_max_groups);
+    setModelName(settings.deep_model_config_name ?? "");
+  }, [
+    settings.light_min_user_turns,
+    settings.light_max_per_day,
+    settings.deep_idle_minutes,
+    settings.deep_budget_ms,
+    settings.deep_document_budget_ms,
+    settings.deep_reclaim_budget_ms,
+    settings.deep_merge_max_groups,
+    settings.deep_model_config_name,
+  ]);
+
+  const changed = minTurns !== settings.light_min_user_turns
+    || maxPerDay !== settings.light_max_per_day
+    || deepIdle !== settings.deep_idle_minutes
+    || deepBudget !== advancedMinutes(settings.deep_budget_ms)
+    || docBudget !== advancedMinutes(settings.deep_document_budget_ms)
+    || reclaimBudget !== advancedMinutes(settings.deep_reclaim_budget_ms)
+    || mergeGroups !== settings.deep_merge_max_groups
+    || modelName !== (settings.deep_model_config_name ?? "");
+
+  return (
+    <details className="rounded-lg border border-border/60 bg-surface-3 px-2 py-1.5">
+      <summary className="cursor-pointer select-none text-[11px] font-medium text-fg-muted">
+        Advanced settings
+      </summary>
+      <div className="grid grid-cols-2 gap-2 text-xs pt-2">
+        <NumberField
+          label="Min new turns" value={minTurns} min={1} max={20} suffix="turns"
+          disabled={busy} onChange={setMinTurns}
+        />
+        <NumberField
+          label="Max light runs" value={maxPerDay} min={1} max={48} suffix="/day"
+          disabled={busy} onChange={setMaxPerDay}
+        />
+        <NumberField
+          label="Deep idle" value={deepIdle} min={15} max={1440} suffix="min"
+          disabled={busy} onChange={setDeepIdle}
+        />
+        <NumberField
+          label="Deep run budget" value={deepBudget} min={1} max={60} suffix="min"
+          disabled={busy} onChange={setDeepBudget}
+        />
+        <NumberField
+          label="Document budget" value={docBudget} min={1} max={60} suffix="min"
+          disabled={busy} onChange={setDocBudget}
+        />
+        <NumberField
+          label="Reclaim budget" value={reclaimBudget} min={1} max={60} suffix="min"
+          disabled={busy} onChange={setReclaimBudget}
+        />
+        <NumberField
+          label="Merge groups" value={mergeGroups} min={1} max={20} suffix="/run"
+          disabled={busy} onChange={setMergeGroups}
+        />
+        <label className="col-span-2 flex items-center justify-between gap-2">
+          <span className="text-fg-muted">Dream model</span>
+          <select
+            value={modelName}
+            disabled={busy}
+            onChange={(event) => setModelName(event.target.value)}
+            className="max-w-56 px-1.5 py-1 rounded border border-border bg-surface-2 text-fg"
+            aria-label="Dream model"
+          >
+            <option value="">Inherit agent model</option>
+            {models.map((model) => (
+              <option key={model.name} value={model.name}>{model.name}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <button
+        type="button"
+        onClick={() => void onSave({
+          light_min_user_turns: minTurns,
+          light_max_per_day: maxPerDay,
+          deep_idle_minutes: deepIdle,
+          deep_budget_ms: deepBudget * 60_000,
+          deep_document_budget_ms: docBudget * 60_000,
+          deep_reclaim_budget_ms: reclaimBudget * 60_000,
+          deep_merge_max_groups: mergeGroups,
+          deep_model_config_name: modelName || null,
+        })}
+        disabled={!changed || busy}
+        className="mt-2 text-xs px-3 py-1.5 rounded-lg border border-border bg-surface-2 hover:bg-surface-3 text-fg disabled:opacity-50"
+      >
+        Save advanced
+      </button>
+    </details>
+  );
+}
+
+function DreamSettingsEditor({
+  settings,
+  models,
+  busy,
+  onSave,
+}: {
+  settings: DreamingSettings;
+  models: ModelConfig[];
   busy: boolean;
   onSave: (patch: DreamingSettingsPatch) => Promise<void>;
 }) {
@@ -152,7 +279,8 @@ function DreamSettingsEditor({
       <p className="text-[11px] text-fg-faint leading-relaxed">
         After an idle stretch the agent folds earlier context into a warm recap and wakes with a clean hot window.
         The default agent also consolidates memory and the document index weekly. Dreams never delete conversation
-        history and never write chat messages.
+        history and never write chat messages. Database auto-vacuum is a file setting: after a legacy embedding
+        rewrite, run <strong>Compact database</strong> once in <em>Documents → Index maintenance</em>.
       </p>
 
       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -225,6 +353,8 @@ function DreamSettingsEditor({
           Weekly note
         </label>
       </div>
+
+      <DreamAdvancedSettings settings={settings} models={models} busy={busy} onSave={onSave} />
 
       <button
         type="button"
@@ -333,7 +463,7 @@ function DreamRunList({ runs }: { runs: DreamRun[] }) {
 }
 
 export function DreamsPanel({ embedded = false }: { embedded?: boolean } = {}) {
-  const { overview, loading, busy, error, refresh, saveSettings, setAgentEnabled, dreamNow } = useDreaming();
+  const { overview, models, loading, busy, error, refresh, saveSettings, setAgentEnabled, dreamNow } = useDreaming();
 
   return (
     <div className="workspace-gutter py-3 space-y-4">
@@ -386,7 +516,7 @@ export function DreamsPanel({ embedded = false }: { embedded?: boolean } = {}) {
               {overview.running.kind === "deep" ? "Deep dream" : "Light dream"} running — started {when(overview.running.started_at)}
             </div>
           )}
-          <DreamSettingsEditor settings={overview.settings} busy={busy} onSave={saveSettings} />
+          <DreamSettingsEditor settings={overview.settings} models={models} busy={busy} onSave={saveSettings} />
           <DreamAgentList
             agents={overview.agents}
             busy={busy}
