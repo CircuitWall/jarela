@@ -198,11 +198,20 @@ export function listToolFailureSamples(toolName?: string): ToolFailureSampleRow[
   const rows = (toolName
     ? getDb().prepare(sql).all(toolName)
     : getDb().prepare(sql).all()) as unknown as ToolFailureSampleRow[];
-  return rows.map((row) => isCallerArgumentError(row.sample_error, undefined)
-    ? { ...row, normalized_reason: "caller_arguments", failure_class: "caller_argument_error" }
-    : isUnknownToolError(row.sample_error, undefined)
-      ? { ...row, normalized_reason: "unknown_tool", failure_class: "caller_argument_error" }
-      : row);
+  return rows.map((row) => {
+    if (isCallerArgumentError(row.sample_error, undefined)) {
+      return { ...row, normalized_reason: "caller_arguments", failure_class: "caller_argument_error" };
+    }
+    if (isUnknownToolError(row.sample_error, undefined)) {
+      return { ...row, normalized_reason: "unknown_tool", failure_class: "caller_argument_error" };
+    }
+    // Reclassify rows persisted before blocked-tool denials were recognized,
+    // so an upgrade stops escalating them instead of waiting out the sample TTL.
+    if (row.failure_class === "suspected_product_gap" && isBlockedToolError(row.sample_error, undefined)) {
+      return { ...row, normalized_reason: "blocked_tool", failure_class: "configuration_problem" };
+    }
+    return row;
+  });
 }
 
 export function getToolFailurePatterns(
@@ -434,6 +443,29 @@ function isUnknownToolError(text: string, payload: unknown): boolean {
   return errorCodeOf(payload) === "unknown_tool" || /^(?:Error:\s*)?Unknown tool\b/i.test(text.trim());
 }
 
+// invoke_tool rejects targets blocked by agent permissions or integration
+// configuration with `tool_not_allowed` / `tool_unavailable` and a reason such
+// as `agent_not_allowed` or `integration_unconfigured`. Those are expected
+// denials the model is told to stop retrying, not tool defects; classifying
+// them as suspected product gaps refiled "Blocked tool escalation" issues
+// (#951-#966, #982-#1018) for the same configuration state.
+const BLOCKED_TOOL_CODES: ReadonlySet<string> = new Set([
+  "tool_not_allowed",
+  "tool_unavailable",
+  "recursive_invoke_tool",
+]);
+
+const BLOCKED_TOOL_REASONS =
+  /\b(?:agent_not_allowed|category_disabled|dropin_tool_disabled|integration_unconfigured|credentials_missing|dependency_missing|dependency_manual)\b/;
+
+function isBlockedToolError(text: string, payload: unknown): boolean {
+  const code = errorCodeOf(payload);
+  if (code && BLOCKED_TOOL_CODES.has(code)) return true;
+  const lower = text.toLowerCase();
+  return /\bnot (?:enabled|executable|connected|configured)\b/.test(lower)
+    || BLOCKED_TOOL_REASONS.test(lower);
+}
+
 // Only the message and the structured error code describe the failure. The
 // rest of a tool result envelope carries field names — invoke_tool returns
 // `permission: "enabled"` on every rejection, so classifying against the raw
@@ -447,6 +479,7 @@ function classificationPayload(payload: unknown): unknown {
 function normalizeFailureReason(text: string, payload: unknown): string {
   if (isCallerArgumentError(text, payload)) return "caller_arguments";
   if (isUnknownToolError(text, payload)) return "unknown_tool";
+  if (isBlockedToolError(text, payload)) return "blocked_tool";
   const lower = `${text} ${stringifyPayload(classificationPayload(payload))}`.toLowerCase();
   if (/auth|token|credential|unauthorized|401|master key|locked/.test(lower)) return "auth";
   if (/permission|forbidden|denied|403/.test(lower)) return "permission";
@@ -480,7 +513,13 @@ function classifyFailure(text: string, payload: unknown): ToolFailureClass {
   ) {
     return "transient_tool_failure";
   }
-  if (reason === "auth" || reason === "permission" || reason === "not_found" || /not configured|disabled/.test(lower)) {
+  if (
+    reason === "auth"
+    || reason === "permission"
+    || reason === "not_found"
+    || reason === "blocked_tool"
+    || /not configured|disabled/.test(lower)
+  ) {
     return "configuration_problem";
   }
   return "suspected_product_gap";

@@ -225,6 +225,36 @@ describe("report_tool_telemetry_issue", () => {
     expect(result.reason).toBe("threshold_not_met");
   });
 
+  it("does not escalate blocked invoke_tool denials, including legacy rows", async () => {
+    process.env.GH_TOKEN = "ghp_test";
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    for (let i = 0; i < 3; i += 1) {
+      recordToolUsage([
+        { id: `blocked-${i}`, phase: "call", name: "invoke_tool", payload: { name: "ms_graph_get", args: {} } },
+        {
+          id: `blocked-${i}`,
+          phase: "result",
+          name: "invoke_tool",
+          payload: {
+            ok: false, tool: "ms_graph_get", status: "rejected",
+            error: 'Tool "ms_graph_get" is not enabled for this agent (integration_unconfigured)',
+            error_code: "tool_not_allowed",
+            permission: "disabled", permission_reason: "integration_unconfigured",
+          },
+        },
+      ], "");
+    }
+    // Simulate rows persisted before blocked-tool denials were recognized.
+    getDb().prepare("UPDATE tool_failure_samples SET normalized_reason='other', failure_class='suspected_product_gap' WHERE tool_name='invoke_tool'").run();
+
+    const result = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-03T12:00:00.000Z"), {
+      failureThreshold: 100_000, patternFailureThreshold: 1,
+    });
+
+    expect(result).toMatchObject({ skipped: true, reason: "threshold_not_met" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it.each([1, 2, 3])("requires the pattern threshold for internal validation failures (count=%s)", async (count) => {
     process.env.GH_TOKEN = "ghp_test";
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
