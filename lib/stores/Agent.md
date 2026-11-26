@@ -26,6 +26,39 @@ never touch tables directly.
   Migrations live under `lib/db`; a store that manages its own schema (the
   workflow-runs exception) must state why in code and architecture docs.
 
+## Store authoring conventions
+
+- **Rows mirror columns; domain shapes do not.** An exported `<Thing>Row`
+  interface matches the SQL columns exactly: snake_case names, SQLite storage
+  types, `0 | 1` booleans, JSON columns as `string | null`, credentials as
+  encrypted strings. Convert to camelCase domain objects, parsed enums, and
+  typed JSON in named `parse*`/`to*` helpers at the store boundary.
+- **Timestamps are ISO-8601 strings** created with `new Date().toISOString()`
+  (see `now()` in [agent-configs.ts](./agent-configs.ts)); do not store epoch
+  numbers or `Date` objects in new columns.
+- **Absence is not an error.** `get*` returns `null`, `list*` returns `[]`, and
+  case-insensitive lookups normalize explicitly. Throw only for constraint
+  violations, corruption, or failed invariants.
+- **Writes return only what callers need.** Use `void` for fire-and-forget
+  mutations, the updated row when the caller renders it, and an explicit
+  `created` result when insert-and-return is the contract. Upserts are
+  idempotent; conflicting inserts fail rather than overwrite silently.
+- **One logical write, one transaction.** Open `withDbTransaction` around the
+  full read-modify-write, read derived values back inside it, and perform no
+  network or filesystem IO while it is open.
+- **SQL lives here.** Routes and UI never import SQL or call `.prepare`. Prepare
+  once at module scope (or use `cachedRead` on hot reads) and bind every value.
+  Add an index for every filter/sort a public store function exposes.
+- **Secrets stay encrypted.** Encrypt before binding, decrypt only in the
+  function that must return plaintext, and never log row values. `tool-config`
+  remains the reviewed plaintext exception.
+- **Every growing collection has a lifecycle.** Name the cap, TTL, or retention
+  rule in the store, and call the invalidation hook on writes that change
+  derived data.
+- **A new store ships complete:** row interface, verb-named exports, tests,
+  a [file-map](#file-map) row, an ADR when it adds or changes schema, and a
+  documented retention rule.
+
 ## Standard patterns
 
 ### 1. Export typed row functions
@@ -94,8 +127,7 @@ Writes that invalidate derived data must call the existing invalidation hook:
 ### 7. Reuse statements on hot paths
 
 Use `cachedRead` from [statement-cache.ts](../db/statement-cache.ts) and hoist
-prepares out of loops. See [DEVELOPMENT.md](../../docs/DEVELOPMENT.md) for the
-statement-reuse contract and [threads.ts](./threads.ts) for the reference use.
+prepares out of loops; [threads.ts](./threads.ts) is the reference use.
 
 ## Anti-patterns
 
@@ -131,6 +163,17 @@ be listed here:
 Anything else must go through the owning store's exported functions. Adding a
 new exception requires updating this table, a test that covers the cascade,
 and review of the owning store's schema.
+
+## Review checks
+
+- [ ] The store owns its tables; cross-store access is listed in the exception table.
+- [ ] Row interfaces mirror SQL columns; domain conversion lives in named helpers.
+- [ ] Multi-statement writes use `withDbTransaction`; no network or filesystem IO inside.
+- [ ] Every value is bound; new filters and sorts are indexed.
+- [ ] Secrets are encrypted before binding and never logged.
+- [ ] Growth is bounded and invalidation hooks fire on derived-data writes.
+- [ ] Tests cover round-trip, rollback, encryption, retention, and tolerant/strict decode.
+- [ ] Focused store tests, `npx tsc --noEmit`, and `npm run lint` pass.
 
 ## Testing requirements
 

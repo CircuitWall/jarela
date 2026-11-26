@@ -6,513 +6,177 @@ reasoning-effort: high
 
 # Tools Module Agent
 
-**Specialization:** Building and testing tool implementations for the LangGraph agent runtime.
+Scope: `lib/tools/` — built-in tool definitions, registration metadata,
+categories and capabilities, dependency declarations, package bundles, and MCP
+catalog integration.
 
-**Scope:** `lib/tools/` directory and related `lib/tools/runtime/` files. Individual tool functions and the registry system.
+Follow [AGENTS.md](../../AGENTS.md) and the [MCP guide](../mcp/Agent.md).
+Public consumers import from [index.ts](./index.ts) and
+[runtime/types.ts](./runtime/types.ts); keep that facade stable.
 
----
+## Boundary
 
-## 🎯 Domain Context
+- `lib/tools/` owns built-in definitions and their category/capability/
+  integration/dependency metadata. The runtime catalog applies agent
+  permissions; tools never authorize themselves.
+- Registration happens at module load. Adding a built-in touches the tool file
+  and one side-effect import in [runtime/builtins.ts](./runtime/builtins.ts).
+  There is no central tool map.
+- MCP tools are discovered in `lib/mcp/` and merged into the catalog with
+  `source: "mcp"`; they are not re-registered here.
+- The public surface is `Capability`, `ToolCategory`, `ToolGroup`,
+  `BuiltinCategory`, and `registerTools` from [runtime/registry.ts](./runtime/registry.ts);
+  everything else there is internal runtime API.
 
-### What Tools Are
+## Tool contract and description quality
 
-Tools are the **executable capabilities** that LangGraph agents use:
-- Input: Zod-validated, typed request
-- Output: Typed result (string, JSON, or AsyncGenerator for streaming)
-- Purpose: Bridge agent decisions to actions (file ops, web requests, calculations, etc.)
+The tool name, description, schema, and output are the model-facing interface;
+treat them as product surface.
 
-### Key Principles
+- **Name:** snake_case `verb_object`, globally unique. A rename is a catalog
+  breaking change: update permissions, allowlists, tests, and docs together.
+- **Description:** state what it does, when to use it, when *not* to use it,
+  input semantics, output shape, side effects, and refusal behavior. Explicit
+  negative constraints are part of the contract — see
+  [authoring-operations.ts](./general/authoring-operations.ts) for the
+  "pending is not success" and "does not approve" style. Do not write a
+  one-line description for a tool with side effects.
+- **Schema:** `z.strictObject` with bounded strings, arrays, and numbers; reject
+  unknown fields; never accept an untyped record or a parameter that grants
+  authority the tool does not own (publication, approval, installation).
+- **Output:** return a JSON string (or `AsyncGenerator<string>` when streaming)
+  with stable named fields. Refusals return the documented structured shape;
+  they are not silent success. Never return `undefined`, bare prose, or a
+  success shape for failed work.
+- **Capability:** register the narrowest true class — `read` has no side
+  effects, `write` mutates persisted or user-visible state, `execute` runs
+  external commands or effects. Mixed bundles register per capability bucket.
+- **Scope:** no module-level mutable state. Read thread/agent identity from the
+  LangGraph `config`; write idempotently or read back after the write.
+- **Secrets:** resolve credentials inside the owning integration/auth helper.
+  Never put a secret in the description, output, or error message.
 
-1. **Type Safety First**
-   - Every tool has Zod input schema + TypeScript types
-   - Output type must be explicit (not `any`)
-   - Compile-time safety prevents runtime failures
+## Standard patterns
 
-2. **Registration Mandatory**
-   - Tools must register in `lib/tools/runtime/registry.ts`
-   - Registry is the single source of truth
-   - Unregistered tools are unreachable
-
-3. **Streaming Optional**
-   - Simple tools return `Promise<OutputT>`
-   - Streaming tools return `AsyncGenerator<string>`
-   - Agents can render streaming output progressively
-
-4. **Error Boundaries Required**
-   - All tools must handle errors gracefully
-   - Errors should be structured and informative
-   - Timeouts, permissions, and missing resources expected
-
-5. **Pure or Request-Scoped**
-   - Tools should not modify global state
-   - Side effects must be documented
-   - Multiple concurrent executions must not interfere
-
----
-
-## 📋 Coding Patterns
-
-### Pattern 1: Basic Synchronous Tool
+### 1. Define and register a built-in
 
 ```typescript
-import { Tool } from "@/lib/tools/types";
+import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { getMemory } from "@/lib/stores/memory";
+import { registerLangChainPackage } from "../packages/langchain-package";
 
-// 1. Define input schema with Zod
-const SearchFilesInput = z.object({
-  pattern: z.string().describe("Glob pattern (e.g., **/*.tsx)"),
-  maxResults: z.number().int().positive().optional().describe("Max results to return"),
-});
+const schema = z.strictObject({ namespace: z.string(), key: z.string() });
 
-export type SearchFilesInputType = z.infer<typeof SearchFilesInput>;
-
-// 2. Implement tool with strict typing
-export const searchFilesTool: Tool<SearchFilesInputType, string> = {
-  name: "search_files",
-  description: "Search for files matching a glob pattern in the repository",
-  inputSchema: SearchFilesInput,
-  
-  execute: async (input: SearchFilesInputType): Promise<string> => {
-    try {
-      // Implementation
-      const files = await findFiles(input.pattern, input.maxResults);
-      return files.join("\n");
-    } catch (error) {
-      // Return structured error message
-      if (error instanceof Error && error.message.includes("Permission denied")) {
-        return `Error: Permission denied. Cannot search in protected directory.`;
-      }
-      return `Error: Failed to search files: ${error instanceof Error ? error.message : String(error)}`;
-    }
+export const memoryReadTool = tool(
+  async ({ namespace, key }) => getMemory(namespace, key)?.value ?? "null",
+  {
+    name: "memory_read",
+    description: "Read one memory value. Does not create or modify memory.",
+    schema,
   },
-};
+);
+
+registerLangChainPackage({ category: "Memory", tools: { read: [memoryReadTool] } });
 ```
 
-**Checklist:**
-- ✅ Input schema defined with Zod
-- ✅ Type exported for reuse
-- ✅ Tool name is snake_case
-- ✅ Description is user-facing and clear
-- ✅ Error handling with try/catch
-- ✅ Error messages are human-readable
-
----
-
-### Pattern 2: Streaming Tool
-
-```typescript
-export const streamFilesTool: Tool<ReadFileInputType, AsyncGenerator<string>> = {
-  name: "read_file_stream",
-  description: "Read a file and stream output in chunks",
-  inputSchema: ReadFileInput,
-  
-  // Use async generator function
-  execute: async function* (input: ReadFileInputType): AsyncGenerator<string> {
-    try {
-      const content = await fs.readFile(input.path, "utf-8");
-      const chunkSize = 1024;
-      
-      // Yield content in chunks
-      for (let i = 0; i < content.length; i += chunkSize) {
-        yield content.substring(i, i + chunkSize);
-      }
-    } catch (error) {
-      yield `Error: Failed to read file: ${error instanceof Error ? error.message : String(error)}`;
-    }
-  },
-};
-```
-
-**Checklist:**
-- ✅ Function is declared as `async function*`
-- ✅ Return type is `AsyncGenerator<string>`
-- ✅ Yields chunks progressively (not all at once)
-- ✅ Error handling included within generator
-
----
-
-### Pattern 3: Consuming MCP Tools (Do Not Re-Register Them)
-
-MCP tools are discovered from enabled server rows, not authored as built-in
-`Tool` objects. The runtime merges them into the catalog with `source: "mcp"`;
-they are uniformly `execute` capability and are filtered out of read-only turns.
-Use [the MCP connection manager](../mcp/client.ts) as the only loading surface:
-
-```typescript
-import { getMcpTools } from "@/lib/mcp/client";
-
-// Callers receive already-built LangChain tools from the shared cache.
-const tools = await getMcpTools();
-```
-
-**Rules:**
-- ✅ Consume `getMcpTools()` / `getMcpToolMeta()`; never construct an
-  `MCPAdapter` in a tool module.
-- ✅ Call `invalidateMcpTools()` from every server CRUD/proposal mutation.
-- ✅ Keep capability policy in the runtime catalog; do not add a separate MCP
-  permission path.
-- ✅ Treat server-supplied annotations as display metadata, not authorization.
-- See [lib/mcp/Agent.md](../mcp/Agent.md) for transport, cache, and result
-  normalization contracts.
-
----
-
-## 🚫 Anti-Patterns (AVOID THESE)
-
-### ❌ Anti-Pattern 1: Untyped Input
-
-```typescript
-// WRONG - No Zod schema, input type is implicit
-export const badTool: Tool = {
-  name: "bad_tool",
-  execute: async (input) => {
-    // What shape is input? Unclear!
-    return input.something;  // Might crash
-  },
-};
-```
-
-**Why?** At runtime, agent might pass wrong input shape → crash.
-
-**Fix:** Always define Zod schema first, then derive TypeScript type.
-
----
-
-### ❌ Anti-Pattern 2: Tool Not Registered
-
-```typescript
-// Tool defined but...
-export const orphanTool: Tool = { /* ... */ };
-
-// ❌ Not in registry.ts - Agent can't find it!
-```
-
-**Why?** Tool exists but agent can't discover it. Wasted code.
-
-**Fix:** Add to `lib/tools/runtime/registry.ts`:
-```typescript
-export const TOOLS_CATALOG = {
-  // ... other tools
-  orphan_tool: orphanTool,  // ✅ Now discoverable
-};
-```
-
----
-
-### ❌ Anti-Pattern 3: No Error Handling
-
-```typescript
-export const dangerousTool: Tool<InputT, string> = {
-  name: "dangerous",
-  execute: async (input) => {
-    // No try/catch - if this throws, agent crashes
-    return JSON.stringify(await externalAPI(input));
-  },
-};
-```
-
-**Why?** External APIs fail, files don't exist, permissions denied → unhandled errors crash everything.
-
-**Fix:** Wrap in try/catch, return error message as string:
-```typescript
-execute: async (input) => {
-  try {
-    return JSON.stringify(await externalAPI(input));
-  } catch (error) {
-    return `Error: API call failed: ${error instanceof Error ? error.message : "Unknown error"}`;
-  }
-},
-```
-
----
-
-### ❌ Anti-Pattern 4: Type Mismatch in Streaming
-
-```typescript
-// ❌ WRONG - Says AsyncGenerator but returns Promise
-export const badStreaming: Tool<InputT, AsyncGenerator<string>> = {
-  execute: async (input) => {  // This is async function, not async generator!
-    return "result";
-  },
-};
-```
-
-**Why?** Agent expects streaming but gets single value → type error, won't work.
-
-**Fix:** Use `async function*` and `yield`:
-```typescript
-export const goodStreaming: Tool<InputT, AsyncGenerator<string>> = {
-  execute: async function* (input) {
-    yield "chunk1";
-    yield "chunk2";
-  },
-};
-```
-
----
-
-### ❌ Anti-Pattern 5: Tool Modifies Global State
-
-```typescript
-let callCount = 0;  // ❌ Global state
-
-export const statefulTool: Tool = {
-  execute: async (input) => {
-    callCount++;  // ❌ Concurrent calls interfere!
-    return `Call #${callCount}`;
-  },
-};
-```
-
-**Why?** Multiple agents calling simultaneously → race conditions → unpredictable results.
-
-**Fix:** Use only parameters and local state:
-```typescript
-export const statelessTool: Tool<InputT, string> = {
-  execute: async (input) => {
-    // All state comes from input
-    // Local variables are safe
-    const count = input.count + 1;
-    return `Call #${count}`;
-  },
-};
-```
-
----
-
-## 📁 File Structure
-
-```
-lib/tools/
-├── types.ts                  ← Tool interface: type Tool<I, O>
-├── registry.ts               ← Tool registry + catalog
-├── runtime/
-│   ├── types.ts              ← Runtime types for public API
-│   ├── registry.ts           ← Runtime registry (re-exported)
-│   └── index.ts              ← Public exports (lib/tools/runtime/*)
-│
-├── files.ts                  ← File operations (read, write, move, delete)
-├── web.ts                    ← Web operations (fetch, search, render)
-├── wallclock.ts              ← Timing wrapper for tool execution
-├── [db-operations].ts        ← Database queries (if needed)
-├── [custom-tools].ts         ← Domain-specific tools
-│
-└── __tests__/
-    ├── files.test.ts         ← Tests for files.ts
-    ├── web.test.ts           ← Tests for web.ts
-    └── [tool].test.ts        ← Tests for each tool
-```
-
-**Rule:** Each `*.ts` tool file should be ~50-100 lines. Larger tools should be split into multiple files or extracted into services.
-
----
-
-## ✅ Testing Requirements
-
-### Requirement 1: Input Validation Test
-
-Every tool must validate that bad input is rejected:
-
-```typescript
-describe("searchFilesTool", () => {
-  it("rejects invalid pattern", () => {
-    expect(() => {
-      SearchFilesInput.parse({ pattern: null });
-    }).toThrow();
-  });
-
-  it("accepts valid pattern", () => {
-    expect(() => {
-      SearchFilesInput.parse({ pattern: "**/*.ts" });
-    }).not.toThrow();
-  });
-});
-```
-
-### Requirement 2: Happy Path Test
-
-Normal usage should work correctly:
-
-```typescript
-it("finds matching files", async () => {
-  const result = await searchFilesTool.execute({
-    pattern: "**/*.test.ts",
-    maxResults: 10,
-  });
-  
-  expect(result).toContain(".test.ts");
-  expect(result.split("\n").length).toBeLessThanOrEqual(10);
-});
-```
-
-### Requirement 3: Error Handling Test
-
-Edge cases should be handled gracefully:
-
-```typescript
-it("handles missing directory gracefully", async () => {
-  const result = await searchFilesTool.execute({
-    pattern: "/nonexistent/path/**",
-  });
-  
-  expect(result).toContain("Error");
-  expect(result).not.toThrow(); // Returns error message, not thrown
-});
-```
-
-### Requirement 4: Streaming Test (If Applicable)
-
-Streaming tools must yield progressively:
-
-```typescript
-it("streams file content in chunks", async () => {
-  const chunks: string[] = [];
-  
-  for await (const chunk of streamFilesTool.execute({ path: "large-file.txt" })) {
-    chunks.push(chunk);
-  }
-  
-  expect(chunks.length).toBeGreaterThan(1);  // Multiple chunks
-  expect(chunks.join("")).toMatch(/expected content/);
-});
-```
-
----
-
-## ⚠️ Common Mistakes in This Module
-
-### Mistake 1: Using `JSON.parse()` Without Try/Catch
-
-```typescript
-// ❌ BAD - Throws if JSON is invalid
-const data = JSON.parse(input.json);
-
-// ✅ GOOD - Handle parse errors
-const data = (() => {
-  try {
-    return JSON.parse(input.json);
-  } catch (e) {
-    throw new Error(`Invalid JSON: ${e.message}`);
-  }
-})();
-```
-
-### Mistake 2: Returning `any` Type
-
-```typescript
-// ❌ BAD - Type is too loose
-execute: async (input): Promise<any> => {
-  // Anything could be returned
-  return { whatever: true };
-};
-
-// ✅ GOOD - Explicit return type
-execute: async (input): Promise<string> => {
-  return JSON.stringify({ status: "success" });
-};
-```
-
-### Mistake 3: Forgetting Input Validation in Description
-
-```typescript
-// ❌ BAD - Agent doesn't know constraints
-const SearchInput = z.object({
-  query: z.string(),
-  limit: z.number(),  // No validation range!
-});
-
-// ✅ GOOD - Clear constraints
-const SearchInput = z.object({
-  query: z.string().min(1).max(500).describe("Search query"),
-  limit: z.number().int().min(1).max(100).describe("Max results (1-100)"),
-});
-```
-
-### Mistake 4: Not Exporting Tool Type
-
-```typescript
-// ❌ BAD - Type is internal
-const SearchInput = z.object({ /* ... */ });
-export const searchTool: Tool<typeof SearchInput, string> = { /* ... */ };
-
-// ✅ GOOD - Type exported for reuse
-export const SearchInput = z.object({ /* ... */ });
-export type SearchInputType = z.infer<typeof SearchInput>;
-export const searchTool: Tool<SearchInputType, string> = { /* ... */ };
-```
-
-### Mistake 5: Console.log() in Production
-
-```typescript
-// ❌ BAD - Logs to console, hard to debug
-execute: async (input) => {
-  console.log("Input:", input);
-  const result = await process(input);
-  console.log("Result:", result);
-  return result;
-};
-
-// ✅ GOOD - Use structured logging or return info in output
-execute: async (input) => {
-  // Debug info can be included in output if needed
-  const result = await process(input);
-  return result;
-};
-```
-
----
-
-## 📋 Alignment Checklist
-
-Before opening a PR with tool changes, verify:
-
-### Code Quality
-- [ ] Zod schema defined for input (not inferred types)
-- [ ] Tool type exported: `Tool<InputT, OutputT>`
-- [ ] Output type is explicit (never `any` or `unknown`)
-- [ ] Implements `Tool` interface correctly
-
-### Error Handling
-- [ ] All async operations wrapped in try/catch
-- [ ] Errors returned as strings (never thrown)
-- [ ] Error messages are user-friendly (not stack traces)
-- [ ] Timeout/rate-limit errors handled
-- [ ] Permission errors identified clearly
-
-### Testing
-- [ ] Input validation tests pass
-- [ ] Happy path test covers normal usage
-- [ ] Error case test covers edge cases
-- [ ] Streaming test passes (if applicable)
-- [ ] Test coverage >80%
-
-### Registration & Exports
-- [ ] Tool exported from `lib/tools/runtime/registry.ts`
-- [ ] Tool name is unique and snake_case
-- [ ] Tool added to `TOOLS_CATALOG` object
-- [ ] Input type exported for reuse
-
-### Documentation
-- [ ] JSDoc comments on tool and execute function
-- [ ] Zod field descriptions are clear
-- [ ] README updated if tool is user-facing
-- [ ] Examples provided in comments
-
-### No Regressions
-- [ ] Existing tests still pass
-- [ ] No new global state
-- [ ] No console.log() statements
-- [ ] No circular imports
-
----
-
-## 🔗 Related
-
-- **Technical Debt:** See [CONTRIBUTING.md](../../CONTRIBUTING.md#api-design-and-technical-debt) for tool extraction patterns
-- **Modular Agent Strategy:** See [AGENTS.md](../../AGENTS.md) for module-level agent guidance
-- **Tool Types:** See `lib/tools/runtime/types.ts` for interface definitions
-- **Tool Registry:** See `lib/tools/runtime/registry.ts` for registration patterns
-
----
-
-**Questions?** See AGENTS.md or CONTRIBUTING.md for more context.
+Then append `import "../general/memory";` (or the new module) to
+[runtime/builtins.ts](./runtime/builtins.ts). Duplicate names throw at
+registration; that is a bug, not a warning. `registerTools(category,
+capability, tools, integration?, dependencies?)` is the lower-level entry point
+used by the package loader.
+
+### 2. Stream output
+
+Return an `AsyncGenerator<string>` and register under the correct capability.
+The registry wraps every built-in with the wall-clock guard in
+[support/wallclock.ts](./support/wallclock.ts); do not add a second timeout
+wrapper or a manual abort loop.
+
+### 3. Register package bundles
+
+Use [langchain-package.ts](./packages/langchain-package.ts) with read, write,
+and execute buckets. It also wires the optional auth bridge (environment first,
+then the encrypted integration store, then a not-configured error) and
+dependency declarations. Declare binaries/packages with `DependencySpec` so the
+catalog marks the tool unavailable instead of failing mid-call (ADR-0121).
+
+### 4. Consume MCP tools
+
+`getMcpTools()` and `getMcpToolMeta()` in [lib/mcp/client.ts](../mcp/client.ts)
+are the only loading surface. Never construct an `MCPAdapter` in a tool module,
+and call `invalidateMcpTools()` from every server CRUD or proposal mutation.
+MCP tools are uniformly `execute`; do not add a tool-local permission path.
+
+### 5. Let the catalog apply policy
+
+Permissions, capability filtering, hot-load selection, and the tool bind budget
+are applied in [runtime/catalog.ts](./runtime/catalog.ts). A tool receives only
+the calls that survived those filters; it must not re-read agent configuration
+or grant itself access.
+
+## Anti-patterns
+
+- **Loose input schema** — a permissive object or `any` lets the model send
+  malformed arguments. Use `z.strictObject` with bounds.
+- **Orphan tool** — a tool without its side-effect import in
+  [runtime/builtins.ts](./runtime/builtins.ts) is unreachable. Do not invent a
+  central `TOOLS_CATALOG`; registration is the registry call plus that import.
+- **Success-shaped refusal** — returning `{ ok: true }`, an empty string, or
+  prose when work failed hides the failure from the agent and the UI.
+- **Streaming type mismatch** — a function declared as an async generator must
+  actually `yield`; an `async` function returning one value is a contract bug.
+- **Global mutable state** — concurrent calls interfere. Use parameters and
+  request-scoped state.
+- **Authority parameters or self-approval** — tools must not accept
+  publication/approval/installation grants they do not own, and must not treat
+  an acknowledgement as proof of downstream completion.
+- **Re-registering MCP tools** — they are discovered at runtime; registering
+  them as built-ins duplicates the catalog and bypasses MCP policy.
+- **Secrets in descriptions or output** — they end up in prompts, logs, and
+  transcripts.
+- **Per-tool timeout wrappers** — the wall-clock guard already bounds every
+  built-in call.
+
+## File map
+
+| Concern | Files |
+| --- | --- |
+| Public facade | [index.ts](./index.ts), [runtime/types.ts](./runtime/types.ts), [core/index.ts](./core/index.ts) |
+| Registry and catalog | [runtime/registry.ts](./runtime/registry.ts), [runtime/catalog.ts](./runtime/catalog.ts), [runtime/runtime.ts](./runtime/runtime.ts), [runtime/categories.ts](./runtime/categories.ts) |
+| Built-in barrel | [runtime/builtins.ts](./runtime/builtins.ts) |
+| Domain tools | [general/](./general/), [filesystem/](./filesystem/), [web/](./web/), [communications/](./communications/), [delegation/](./delegation/), [security/](./security/), [system/](./system/) |
+| Packages | [packages/langchain-package.ts](./packages/langchain-package.ts), [packages/langchain-packages.ts](./packages/langchain-packages.ts), [packages/default-packages.ts](./packages/default-packages.ts) |
+| Support | [support/wallclock.ts](./support/wallclock.ts) |
+
+Tests are co-located with each tool module (for example
+[general/authoring.test.ts](./general/authoring.test.ts)) and with the runtime
+(for example [runtime/registry.test.ts](./runtime/registry.test.ts),
+[runtime/capability-coverage.test.ts](./runtime/capability-coverage.test.ts),
+[runtime/dependency-gating.test.ts](./runtime/dependency-gating.test.ts)).
+
+## Testing requirements
+
+- Registration: assert `registeredCapability()` and `registeredCategory()` for
+  every new tool; use `_resetRegistry()` when a test registers fixtures.
+- Schema: `convertToOpenAITool()` must show `additionalProperties: false`, and
+  unknown or authority-granting parameters must be rejected.
+- Behavior: cover the happy path, the documented refusal shape, error handling,
+  and read-back for writes.
+- Streaming: assert multiple ordered chunks and cleanup on early consumer exit.
+- Isolation: use temporary directories and mocked network/MCP boundaries; never
+  spawn a real MCP server in a unit test.
+- Run the focused Vitest files, `npx tsc --noEmit`, and `npm run lint`.
+
+## Review checks
+
+- [ ] Tool name is unique, snake_case, and unchanged unless a rename was
+      coordinated.
+- [ ] `z.strictObject` schema with bounds and no authority parameters.
+- [ ] Description states when to use and when not to use the tool.
+- [ ] Output is a documented string/stream shape; refusals are explicit.
+- [ ] Capability and category are the narrowest true values.
+- [ ] Tool module is imported from `runtime/builtins.ts`.
+- [ ] MCP tools are consumed, not re-registered.
+- [ ] Registration, schema, behavior, and streaming tests pass.
+- [ ] `npx tsc --noEmit` and `npm run lint` pass.

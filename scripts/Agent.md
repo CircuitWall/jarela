@@ -26,6 +26,34 @@ operator automation — not application runtime code.
   `JARELA_DB_DIR` or a dedicated temporary directory; never the user's real
   database.
 
+## Script classes and portability
+
+| Class | Examples | Extra rules |
+| --- | --- | --- |
+| Gates | `check-*.mjs` | Read-only, repo-root resolved, exit 0/1/2, wired to lint/CI, positive + negative fixtures |
+| Release/package | [nightly-release.mjs](./nightly-release.mjs), [release-docker.mjs](./release-docker.mjs) | CI-owned; never publish from a developer machine; `package.json` is the version source |
+| Install/service | [jarela-bin.mjs](./jarela-bin.mjs), [service-install.mjs](./service-install.mjs), [update.mjs](./update.mjs) | Published/runtime entry points; no dev-only imports; guarded targets |
+| Build/docs | [postbuild.mjs](./postbuild.mjs), [sync-docs-assets.mjs](./sync-docs-assets.mjs), [generate-project-history.mjs](./generate-project-history.mjs) | Fixed outputs; reproducible from a clean checkout |
+| Test orchestration | [live-test.mjs](./live-test.mjs), [e2e-servers.mjs](./e2e-servers.mjs), [e2e-isolation.mjs](./e2e-isolation.mjs) | Isolated data dirs and ports; live/LLM work is opt-in |
+| Maintenance | [snapshot-pricing.mjs](./snapshot-pricing.mjs), [benchmark-database-reads.mjs](./benchmark-database-reads.mjs) | Bounded work; no application state |
+
+Portability rules:
+
+- Support Windows and POSIX with the same code path. No `shell: true`, no
+  bash-isms, no hardcoded `/` or `\` separators; use `path.join`/`path.resolve`.
+  Invoke npm through its `.cmd` shim or `ComSpec`, and prefer `process.execPath`
+  for Node child processes.
+- Keep the exit contract: `0` success, `1` failed check/runtime error, `2` usage
+  or precondition failure. Document any exception in the script's `usage()`.
+- Keep stdout clean for machine consumers. Human diagnostics and failures go to
+  stderr with a stable tag; file lists use NUL delimiters when names may contain
+  spaces or newlines.
+- Write UTF-8 and handle CRLF in fixtures and generated text. Do not depend on
+  executable bits, symlinks, or case-sensitive paths.
+- Online-only or destructive behavior is opt-in, bounded by a timeout, and
+  guarded by an explicit target/precondition. No telemetry or required cloud
+  call beyond the user's configured provider.
+
 ## Standard patterns
 
 ### 1. Resolve the repository root from the module URL
@@ -113,7 +141,7 @@ exit path directly with representative arguments.
 
 | Group | Scripts |
 | --- | --- |
-| Gates | [check-architecture-patterns.mjs](./check-architecture-patterns.mjs), [check-agent-docs.mjs](./check-agent-docs.mjs) (guides + architecture-document links), [check-api-docs.mjs](./check-api-docs.mjs) (public routes ↔ docs/api.md), [check-adr-registry.mjs](./check-adr-registry.mjs) (unique ADR ids, citations, links), [check-ui-data-access.mjs](./check-ui-data-access.mjs) (direct fetch/storage ratchet), [check-integration-manifests.mjs](./check-integration-manifests.mjs), [check-dockerfile-workspaces.mjs](./check-dockerfile-workspaces.mjs), [check-ci-workflows.mjs](./check-ci-workflows.mjs), [check-function-complexity.mjs](./check-function-complexity.mjs), [check-change-impact.mjs](./check-change-impact.mjs), [check-git-conventions.mjs](./check-git-conventions.mjs) |
+| Gates | [check-architecture-patterns.mjs](./check-architecture-patterns.mjs), [check-agent-docs.mjs](./check-agent-docs.mjs) (guides + architecture-document links), [check-api-docs.mjs](./check-api-docs.mjs) (public routes ↔ docs/api.md), [check-adr-registry.mjs](./check-adr-registry.mjs) (unique ADR ids, citations, links), [check-ui-data-access.mjs](./check-ui-data-access.mjs) (direct fetch/storage ratchet), [check-integration-manifests.mjs](./check-integration-manifests.mjs), [check-dockerfile-workspaces.mjs](./check-dockerfile-workspaces.mjs), [check-ci-workflows.mjs](./check-ci-workflows.mjs), [check-function-complexity.mjs](./check-function-complexity.mjs), [check-change-impact.mjs](./check-change-impact.mjs), [check-module-review.mjs](./check-module-review.mjs) (change-scoped module review), [check-git-conventions.mjs](./check-git-conventions.mjs) |
 | Security/package | [scan-secrets.mjs](./scan-secrets.mjs), [scan-sensitive-terms.mjs](./scan-sensitive-terms.mjs), [check-route-bundles.mjs](./check-route-bundles.mjs), [check-npm-package.mjs](./check-npm-package.mjs), [check-link-preview-version.mjs](./check-link-preview-version.mjs) |
 | Hooks/tests | [select-precommit-tests.mjs](./select-precommit-tests.mjs), [setup-git-hooks.mjs](./setup-git-hooks.mjs), [live-test.mjs](./live-test.mjs), [live-test-isolated.mjs](./live-test-isolated.mjs), [isolated-dev.mjs](./isolated-dev.mjs), [e2e-servers.mjs](./e2e-servers.mjs), [e2e-isolation.mjs](./e2e-isolation.mjs) |
 | Release/package | [nightly-release.mjs](./nightly-release.mjs), [approve-release-ci.mjs](./approve-release-ci.mjs), [ci-release-metadata.mjs](./ci-release-metadata.mjs), [release-changeset.mjs](./release-changeset.mjs), [release-docs.mjs](./release-docs.mjs), [release-docker.mjs](./release-docker.mjs), [rewrite-workspace-deps.mjs](./rewrite-workspace-deps.mjs), [prune-npm-source-maps.mjs](./prune-npm-source-maps.mjs), [standalone-footprint.mjs](./standalone-footprint.mjs) |
@@ -141,19 +169,23 @@ exit path directly with representative arguments.
 - `npm run lint` runs ESLint, the complexity ratchet, architecture patterns,
   agent docs, integration manifests, Dockerfile workspaces, and CI workflows
   (`package.json`).
-- `.githooks/pre-commit` runs `check-git-conventions.mjs --branch` and
+- `.githooks/pre-commit` runs `check-git-conventions.mjs --branch`,
+  `check-module-review.mjs` on the staged change, and
   `select-precommit-tests.mjs`; `.githooks/commit-msg` enforces the commit
   subject.
-- CI runs lint, unit/coverage, live tests, and e2e; release workflows call the
-  release scripts. Update the workflow when a gate becomes required.
+- PR CI runs `check-module-review.mjs` against the pull-request range, plus
+  lint, unit/coverage, live tests, and e2e; release workflows call the release
+  scripts. Update the workflow when a gate becomes required.
 
-## Pre-PR checklist
+## Review checks
 
 - [ ] Repo root resolved from the module URL; no CWD assumptions.
 - [ ] Unknown args rejected; `--help` documents usage and exit codes.
 - [ ] Diagnostics tagged and sent to the right stream; machine stdout clean.
 - [ ] No `shell: true`; no undeclared dependency.
-- [ ] Destructive paths are guarded.
+- [ ] Runs on Windows and POSIX without shell-specific syntax.
+- [ ] Destructive and online-only paths are opt-in, bounded, and guarded.
+- [ ] Exit codes and machine stdout are documented and tested.
 - [ ] Gate added to `package.json`/guide inventory and covered by a fixture test.
 
 ## Frontier

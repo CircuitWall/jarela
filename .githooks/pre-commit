@@ -25,6 +25,11 @@ unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_PREFIX GIT_CEILING_DIRECTORIES GIT_QU
 echo "[pre-commit] git conventions"
 node scripts/check-git-conventions.mjs --branch
 
+# Print the owning guide's review checks for touched modules and block the
+# mechanical boundary/registration violations. Warnings stay advisory.
+echo "[pre-commit] module review"
+node scripts/check-module-review.mjs --name-status-file "$staged"
+
 # Only staged unit tests and direct sibling unit tests run locally. CI runs
 # lint, typecheck, transitive test coverage, and the full regression suite.
 # A read loop rather than `mapfile -d` keeps this working on macOS Bash 3.2.

@@ -127,6 +127,7 @@
     "security:ci": "npm run security:audit && npm run security:secrets && npm run security:terms && npm run security:link-preview",
     "check:conventions": "node scripts/check-git-conventions.mjs --branch",
     "check:impact": "node scripts/check-change-impact.mjs",
+    "review:module": "node scripts/check-module-review.mjs",
     "pricing:snapshot": "node scripts/snapshot-pricing.mjs",
     "prompts:dump": "node scripts/dump-prompts.mjs",
     "release:changeset": "node scripts/release-changeset.mjs",
