@@ -80,6 +80,27 @@ limit, caches with a TTL, and distinguishes archived/non-latest entries.
 Discovery failures degrade to an empty/fresh result, never an unbounded retry.
 See [ADR-0014](../../docs/adr/0014-mcp-registry-online-discovery.md).
 
+## Configuration and result contract
+
+- **Spec validation.** Server rows carry a name, transport (`stdio` or
+  streamable HTTP), and a spec object. Validate at the API boundary; a stdio
+  spec needs `command` plus bounded `args`/`env`, and an HTTP spec needs a URL
+  plus optional headers. Keep legacy SSE out of new imports.
+- **Variables.** `${VAR}` substitution goes through `applyVariables` in
+  [registry.ts](./registry.ts); do not add a second syntax or resolve at call
+  time.
+- **Secrets.** `spec.env` and `spec.headers` are encrypted at rest in
+  [mcp-servers.ts](../stores/mcp-servers.ts), may round-trip to the
+  authenticated operator editor, and never appear in logs, prompts,
+  notifications, tool output, or unauthenticated responses.
+- **Name policy.** Server-name prefixes are disabled, so two servers can expose
+  the same tool name. Surface the collision in the catalog; never silently
+  overwrite one tool with another.
+
+Cache identity, failure isolation, result normalization, and child-environment
+layering are specified in the patterns above; keep new code consistent with
+them.
+
 ## Anti-patterns
 
 - **Spawning a server per tool call** — use the singleton cache; rebuild only
@@ -134,12 +155,15 @@ Consumers: `lib/tools/runtime/runtime.ts` and
   and result-hook shapes when touching [client.ts](./client.ts).
 - Run focused Vitest files, `npx tsc --noEmit`, and `npm run lint`.
 
-## Pre-PR checklist
+## Review checks
 
 - [ ] No new adapter construction outside [client.ts](./client.ts).
 - [ ] Every mutation path invalidates the tool cache.
 - [ ] Failure isolation and cleanup cover success, failure, and invalidation.
 - [ ] External input is validated and bounded; secrets stay out of logs.
+- [ ] Spec env/headers are encrypted at rest and never reach prompts or output.
+- [ ] Cache identity covers transport + spec changes; every mutation invalidates.
+- [ ] Tool-name collisions are surfaced, not silently overwritten.
 - [ ] Capability remains `execute`; no permission bypass.
 
 ## Frontier

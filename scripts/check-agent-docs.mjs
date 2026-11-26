@@ -224,6 +224,10 @@ export function validateGuide(repoRoot, guide, { format = "module" } = {}) {
     fail(problems, `${guide}: needs a Testing or Validation section`);
   }
 
+  if (format === "module" && !/^##\s+Review checks\s*$/im.test(body)) {
+    fail(problems, `${guide}: needs a Review checks section`);
+  }
+
   return problems;
 }
 

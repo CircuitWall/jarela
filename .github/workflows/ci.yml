@@ -41,6 +41,13 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: node scripts/check-git-conventions.mjs --subject-env PR_TITLE --label "pull request title"
 
+      - name: Module review
+        if: github.event_name == 'pull_request'
+        run: >-
+          node scripts/check-module-review.mjs
+          --base "${{ github.event.pull_request.base.sha }}"
+          --head "${{ github.event.pull_request.head.sha }}"
+
       - name: Check pushed commit subjects
         if: github.event_name == 'push'
         env:

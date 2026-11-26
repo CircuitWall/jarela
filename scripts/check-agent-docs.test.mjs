@@ -38,6 +38,10 @@ reasoning-effort: high
 
 Read [the contract](../AGENTS.md) and \`widgets/core.ts\`.
 
+## Review checks
+
+- [ ] Reused \`widgets/core.ts\`.
+
 ## Testing Requirements
 
 Run \`widgets/core.test.ts\`.
@@ -133,6 +137,16 @@ describe("agent doc references", () => {
     });
     const problems = validateGuide(repo, "widgets/Agent.md");
     expect(problems).toContain("widgets/Agent.md: needs a Testing or Validation section");
+  });
+
+  it("fails when a guide has no Review checks section", () => {
+    const repo = fixtureRepo({
+      "widgets/Agent.md": validGuide.replace("## Review checks", "## Notes"),
+      "widgets/core.ts": "export {};\n",
+      "widgets/core.test.ts": "import { it } from \"vitest\";\n",
+    });
+    const problems = validateGuide(repo, "widgets/Agent.md");
+    expect(problems).toContain("widgets/Agent.md: needs a Review checks section");
   });
 });
 

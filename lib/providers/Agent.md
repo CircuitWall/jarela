@@ -6,898 +6,186 @@ reasoning-effort: high
 
 # LLM Provider Adapter Agent
 
-**Specialization:** Building and maintaining LLM provider integrations (Anthropic, OpenAI, Google, Cohere, etc.) with proper credential handling, streaming, error recovery, and capability management.
+Scope: `lib/providers/` — provider adapters, credential resolution, streaming,
+error classification, rate limiting, capabilities, and model limits.
 
-**Scope:** `lib/providers/` directory — provider adapters, credential resolution, streaming implementations, rate-limit handling, and capability tracking.
+Follow [AGENTS.md](../../AGENTS.md) and the
+[provider list in docs/index.md](../../docs/index.md). [types.ts](./types.ts) is
+the `@public` extension contract for in-tree adapters and
+`~/.jarela/providers/*.cjs` plugins; breaking it requires the deprecation
+process in [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
----
+## Architecture
 
-## 🎯 Domain Context
-
-### What Provider Adapters Are
-
-A provider adapter bridges Jarela's agent runtime to an external LLM API:
-- **Input:** Standardized messages (system, user, assistant, tool results)
-- **Output:** Token stream or structured tool calls
-- **Job:** Handle provider-specific auth, message formats, error codes, and rate limits
-
-### Jarela's Provider Architecture
-
-```
-Agent (lib/agents/llm.ts)
-  ↓ (standardized call)
-Provider Interface (lib/providers/types.ts - ModelProvider)
-  ↓ (provider-specific format)
-Provider Adapter (lib/providers/anthropic.ts, openai.ts, etc.)
-  ↓ (provider SDK)
-External LLM API (Anthropic, OpenAI, etc.)
+```text
+Agent runtime (lib/agents/llm.ts)
+  ↓ standardized messages and params
+ModelProvider (types.ts)
+  ↓ provider-specific SDK/fetch
+External LLM API
 ```
 
-### Key Principles
-
-1. **Credential Isolation**
-   - API keys never in logs, prompts, or model context
-   - Resolved at runtime via `resolveProviderApiKey()`
-   - Per-integration credential storage in `lib/stores/integrations.ts`
-
-2. **Streaming is Lazy**
-   - Generators (AsyncIterable) for memory efficiency
-   - Token-by-token to client (no buffering)
-   - Errors can appear mid-stream
-
-3. **Errors are Typed**
-   - Auth errors → ProviderAuthError (requires reconfiguration)
-   - Rate limits → RateLimitError (retry with backoff)
-   - Transient → ProviderStreamError (retry immediately)
-   - Permanent → fatal (fail)
-
-4. **Capabilities are Explicit**
-   - Each provider declares what it can do (vision, tools, JSON mode, etc.)
-   - Agent uses this to choose models and request format
-   - Unknown capability → fall back to safe default
-
-5. **Message Formats Convert**
-   - Jarela uses LangChain message format (universal)
-   - Providers use native formats (Anthropic, OpenAI, Google, etc.)
-   - Adapters convert one direction (messages → provider format)
-   - Adapters convert back (provider output → events)
-
----
-
-## 📋 Coding Patterns
-
-### Pattern 1: Basic Provider Adapter
-
-Every provider implements the `ModelProvider` interface:
-
-```typescript
-// lib/providers/anthropic.ts
-import Anthropic from "@anthropic-ai/sdk";
-import type { ModelProvider, ProviderMessage, ProviderParams } from "./types";
-
-function resolveApiKey(params: ProviderParams): string | undefined {
-  return resolveProviderApiKey("anthropic", params);
-}
-
-export const anthropicProvider: ModelProvider = {
-  name: "anthropic",
-  
-  async chat(
-    modelId: string,
-    messages: ProviderMessage[],
-    params: ProviderParams,
-  ) {
-    // 1. Create client with API key
-    const client = new Anthropic({
-      apiKey: resolveApiKey(params),
-      baseURL: params.base_url,
-    });
-
-    // 2. Convert messages to Anthropic format
-    const anthropicMessages = messages.map(msg => ({
-      role: msg.role === "system" ? "user" : msg.role,
-      content: typeof msg.content === "string" 
-        ? msg.content 
-        : msg.content.map(part => ...), // Convert ContentPart[]
-    }));
-
-    // 3. Call provider API
-    const response = await client.messages.create({
-      model: modelId,
-      max_tokens: params.max_tokens ?? 4096,
-      messages: anthropicMessages,
-      system: extractSystemPrompt(messages),
-      temperature: params.temperature,
-      // ... other params
-    });
-
-    // 4. Return streaming result
-    return {
-      stream: toTokenStream(response),
-    };
-  },
-};
-
-// Helper: convert streaming response to token stream
-async function* toTokenStream(response: Anthropic.Message): AsyncIterable<string> {
-  for (const block of response.content) {
-    if (block.type === "text") {
-      yield block.text;
-    }
-  }
-}
-```
-
-**When to use:** Adding a new provider (Anthropic, OpenAI, Google, etc.)
-
----
-
-### Pattern 2: Streaming Tool Calls
-
-Many providers stream tool arguments incrementally:
-
-```typescript
-// lib/providers/openai.ts
-export async function* streamInvoke(
-  modelId: string,
-  messages: InvokeMessage[],
-  params: ProviderParams,
-  tools: OpenAITool[],
-): AsyncIterable<ProviderStreamEvent> {
-  const client = makeClient(params);
-
-  // 1. Build request
-  const request = {
-    model: modelId,
-    messages: messages.map(toOpenAIMessage),
-    tools: tools.map(t => ({ type: "function", function: t })),
-    stream: true,
-    ...pickOpenAICompatOptions(params),
-  };
-
-  // 2. Stream from API
-  const stream = await client.chat.completions.create(request as any);
-
-  // 3. Yield typed events
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta;
-    
-    if (delta?.content) {
-      yield { type: "text", delta: delta.content };
-    }
-
-    if (delta?.tool_calls) {
-      for (const toolCall of delta.tool_calls) {
-        yield {
-          type: "tool_call_chunk",
-          index: toolCall.index,
-          id: toolCall.id,
-          name: toolCall.function?.name,
-          args_delta: toolCall.function?.arguments,
-        };
-      }
-    }
-
-    if (chunk.usage) {
-      yield {
-        type: "usage",
-        input_tokens: chunk.usage.prompt_tokens,
-        output_tokens: chunk.usage.completion_tokens,
-      };
-    }
-  }
-}
-```
-
-**When to use:** Streaming tool calls or thinking tokens from API responses
-
----
-
-### Pattern 3: Error Handling & Retry Logic
-
-Every provider must classify errors for intelligent retry:
-
-```typescript
-// lib/providers/errors.ts
-export class ProviderAuthError extends Error {
-  constructor(
-    message: string,
-    public provider: string,
-    public originalError?: Error,
-  ) {
-    super(message);
-    this.name = "ProviderAuthError";
-  }
-}
-
-export class RateLimitError extends Error {
-  constructor(
-    message: string,
-    public retryAfterMs?: number,
-  ) {
-    super(message);
-    this.name = "RateLimitError";
-  }
-}
-
-export class ProviderStreamError extends Error {
-  constructor(
-    message: string,
-    public retryable: boolean,
-  ) {
-    super(message);
-    this.name = "ProviderStreamError";
-  }
-}
-
-// In provider adapter:
-export async function* streamWithErrorHandling(
-  config: AgentRunConfig,
-): AsyncIterable<ProviderStreamEvent> {
-  try {
-    yield* provider.streamInvoke(...);
-  } catch (error) {
-    // 1. Auth errors - don't retry, user must reconfigure
-    if (error.status === 401 || error.status === 403) {
-      throw new ProviderAuthError(
-        `${provider} authorization failed: ${error.message}`,
-        provider,
-        error,
-      );
-    }
-
-    // 2. Rate limits - retry with backoff
-    if (error.status === 429) {
-      const retryAfter = parseRetryAfter(error.headers);
-      throw new RateLimitError(
-        `${provider} rate limited`,
-        retryAfter,
-      );
-    }
-
-    // 3. Transient errors - retry immediately
-    if ([408, 500, 502, 503, 504].includes(error.status)) {
-      throw new ProviderStreamError(
-        `${provider} temporary error: ${error.message}`,
-        true, // retryable
-      );
-    }
-
-    // 4. Other errors - fail
-    throw new ProviderStreamError(
-      `${provider} error: ${error.message}`,
-      false,
-    );
-  }
-}
-```
-
-**When to use:** Wrapping provider calls to handle auth failures, rate limits, and transient errors
-
----
-
-### Pattern 4: Capability Declaration
-
-Let the agent know what this provider can do:
-
-```typescript
-// lib/providers/capabilities.ts
-export function modelCapabilities(providerId: string, modelId: string) {
-  const capabilities = {
-    vision: false,
-    tools: false,
-    streaming: true,
-    json_mode: false,
-    web_search: false,
-    audio: false,
-    files: false,
-  };
-
-  // Anthropic capabilities
-  if (providerId === "anthropic") {
-    if (modelId.includes("opus") || modelId.includes("sonnet")) {
-      capabilities.tools = true;
-      capabilities.json_mode = true;
-      capabilities.vision = true;
-    }
-  }
-
-  // OpenAI capabilities
-  if (providerId === "openai") {
-    if (modelId.includes("gpt-4") || modelId.includes("gpt-5")) {
-      capabilities.tools = true;
-      capabilities.json_mode = true;
-      capabilities.vision = true;
-    }
-  }
-
-  return capabilities;
-}
-
-// Agent uses this:
-const caps = modelCapabilities("anthropic", "claude-opus-5");
-if (caps.tools) {
-  // Can use tool_use blocks
-} else {
-  // Use function_calling alternative
-}
-```
-
-**When to use:** Declaring what features a model supports
-
----
-
-### Pattern 5: Credential Resolution with Fallbacks
-
-Resolve API keys from environment, config, or store:
-
-```typescript
-// lib/providers/credentials.ts
-export function resolveProviderApiKey(
-  providerId: string,
-  params: ProviderParams,
-): string | undefined {
-  // 1. Explicit params (highest priority)
-  if (params.api_key) return params.api_key;
-
-  // 2. Environment variables (namespaced by provider)
-  const envKey = `${providerId.toUpperCase()}_API_KEY`;
-  if (process.env[envKey]) return process.env[envKey];
-
-  // 3. Credential store (per-integration)
-  const stored = getStoredCredential(providerId);
-  if (stored?.apiKey) return stored.apiKey;
-
-  // 4. Not found
-  throw new ProviderAuthError(
-    `No API key found for ${providerId}. ` +
-    `Set JARELA_${envKey} or configure in settings.`,
-    providerId,
-  );
-}
-```
-
-**When to use:** Resolving secrets safely without exposing them
-
----
-
-## ⚠️ Anti-Patterns (What NOT to Do)
-
-### Anti-Pattern 1: API Keys in Code or Logs
-
-❌ **Wrong:**
-```typescript
-// NEVER hardcode keys
-const anthropicKey = "sk-ant-xxx";
-
-// NEVER log them
-console.log("Using API key:", apiKey);
-
-// NEVER expose in error messages
-throw new Error(`Auth failed with key ${apiKey}: ${error}`);
-```
-
-✅ **Right:**
-```typescript
-// Always resolve from secure source
-const apiKey = resolveProviderApiKey(providerId, params);
-
-// Never log the key itself
-if (DEBUG) console.log(`Auth attempt for provider: ${providerId}`);
-
-// Error messages don't mention the key
-throw new ProviderAuthError(`${providerId} authentication failed`, providerId);
-```
-
-**Why:** Keys in logs persist forever. They can be found in backups, caches, or version control.
-
----
-
-### Anti-Pattern 2: Assuming Message Format
-
-❌ **Wrong:**
-```typescript
-// Assuming all messages have a "content" string
-const anthropicMessages = messages.map(m => ({
-  role: m.role,
-  content: m.content, // ContentPart[] won't serialize!
-}));
-```
-
-✅ **Right:**
-```typescript
-// Handle both string and ContentPart[]
-const anthropicMessages = messages.map(m => ({
-  role: m.role,
-  content: typeof m.content === "string"
-    ? m.content
-    : m.content.map(part => toAnthropicContent(part)),
-}));
-
-function toAnthropicContent(part: ContentPart): Anthropic.ContentBlockParam {
-  if (part.type === "text") {
-    return { type: "text", text: part.text };
-  } else if (part.type === "image") {
-    return {
-      type: "image",
-      source: { type: "url", url: part.url },
-    };
-  }
-  // ... handle other types
-}
-```
-
-**Why:** Providers support different content types. Always convert explicitly.
-
----
-
-### Anti-Pattern 3: Not Classifying Errors
-
-❌ **Wrong:**
-```typescript
-// Same retry strategy for all errors
-try {
-  yield* provider.streamInvoke(...);
-} catch (error) {
-  // Retry everything?
-  throw error;
-}
-```
-
-✅ **Right:**
-```typescript
-// Classify errors before deciding to retry
-try {
-  yield* provider.streamInvoke(...);
-} catch (error) {
-  if (error.status === 401) {
-    throw new ProviderAuthError(...); // Don't retry
-  } else if (error.status === 429) {
-    throw new RateLimitError(..., retryAfter); // Retry with backoff
-  } else if ([500, 502, 503].includes(error.status)) {
-    throw new ProviderStreamError(..., true); // Retry immediately
-  } else {
-    throw new ProviderStreamError(..., false); // Don't retry
-  }
-}
-```
-
-**Why:** Retrying auth errors wastes time and may trigger account locks.
-
----
-
-### Anti-Pattern 4: Buffering Entire Streams
-
-❌ **Wrong:**
-```typescript
-// Buffering all tokens before returning
-const allTokens = [];
-for await (const token of stream) {
-  allTokens.push(token);
-}
-return allTokens.join(""); // OOM on large responses
-```
-
-✅ **Right:**
-```typescript
-// Streaming tokens progressively
-async function* streamTokens(apiStream) {
-  for await (const chunk of apiStream) {
-    for (const token of chunk.tokens) {
-      yield token; // Yield immediately
-    }
-  }
-}
-```
-
-**When to use:** Large streaming responses
-
----
-
-### Anti-Pattern 5: Ignoring Provider-Specific Formats
-
-❌ **Wrong:**
-```typescript
-// Treating all messages the same
-const request = {
-  messages: messages.map(m => ({ role: m.role, content: m.content })),
-};
-
-// Each provider has different expectations:
-// - Anthropic: separate "system" parameter
-// - OpenAI: system message in messages array
-// - Google: different format for images
-```
-
-✅ **Right:**
-```typescript
-// Provider-specific formatting
-export async function* toAnthropicMessages(
-  messages: ProviderMessage[],
-): { system?: string; messages: Anthropic.Message[] } {
-  let system: string | undefined;
-  const rest: Anthropic.Message[] = [];
-
-  for (const msg of messages) {
-    if (msg.role === "system") {
-      system = msg.content as string;
-    } else {
-      rest.push(toAnthropicMessage(msg));
-    }
-  }
-
-  return { system, messages: rest };
-}
-```
-
-**Why:** Providers have different APIs. Respecting them prevents subtle bugs.
-
----
-
-## 📁 File Structure
-
-### Core Adapters
-- `anthropic.ts` — Anthropic Claude provider
-- `openai.ts` — OpenAI GPT provider
-- `gemini.ts` — Google Gemini provider
-- `external.ts` — Custom external `~/.jarela/providers/*.cjs` providers
-- `github-copilot.ts` — GitHub Copilot provider
-- `deepseek.ts` — DeepSeek provider
-
-> There is no dedicated Cohere adapter file. Cohere runs through the LangChain bridge below
-> (`provider: "langchain"`, `params.lc_class: "ChatCohere"`), which is text
-> only — `@langchain/cohere` rejects image/audio/file parts. Vision or audio
-> for Cohere requires a native adapter under this directory.
-
-### Infrastructure
-- `types.ts` — `ModelProvider` interface and types (public API)
-- `credentials.ts` — API key resolution with fallbacks
-- `errors.ts` — Error classification (auth, rate limit, transient)
-- `rate-limit.ts` — Rate limit tracking and backoff calculation
-- `capabilities.ts` — Model capability discovery and declarations
-- `known-context-windows.ts` — Context/output token limits per model
-
-### Integration & Helpers
-- `index.ts` — Provider registry and getProvider() factory
-- `registry.ts` — In-tree and external provider loading
-- `jarela-chat-model.ts` — LangChain adapter (wraps providers for LangGraph)
-- `langchain.ts` — LangChain bridge for vendor-only integrations (text only; multimodal parts are rejected with a clear error)
-- `streaming.ts` — Common streaming utilities
-- `tool-arguments.ts` — Tool argument parsing and truncation
-- `tool-limit.ts` — Per-provider tool limit enforcement
-- `provider-integration-map.ts` — Credential mapping
-
-### Testing & Examples
-- `*.test.ts` — Unit tests for each provider
-- `template-external.cjs.example` — Template for external provider plugins
-
----
-
-## 🧪 Testing Requirements
-
-### Unit Tests: Provider Adapter
-
-Every provider needs focused tests:
-
-```typescript
-// lib/providers/anthropic.test.ts
-import { anthropicProvider } from "@/lib/providers/anthropic";
-import type { ProviderMessage } from "@/lib/providers/types";
-
-describe("anthropic provider", () => {
-  it("converts messages to Anthropic format", async () => {
-    const messages: ProviderMessage[] = [
-      { role: "user", content: "Hello" },
-    ];
-
-    const { stream } = await anthropicProvider.chat(
-      "claude-opus-5",
-      messages,
-      { api_key: "test" },
-    );
-
-    // Should create AsyncIterable<string>
-    const tokens = [];
-    for await (const token of stream) {
-      tokens.push(token);
-    }
-
-    expect(tokens.length).toBeGreaterThan(0);
-  });
-
-  it("handles system messages", async () => {
-    const messages: ProviderMessage[] = [
-      { role: "system", content: "You are helpful." },
-      { role: "user", content: "Hello" },
-    ];
-
-    const { stream } = await anthropicProvider.chat(
-      "claude-opus-5",
-      messages,
-      { api_key: "test" },
-    );
-
-    // System message should be extracted
-    // (verify by mocking Anthropic SDK)
-  });
-});
-```
-
-### Unit Tests: Error Handling
-
-```typescript
-// lib/providers/errors.test.ts
-import { ProviderAuthError, RateLimitError } from "@/lib/providers/errors";
-
-describe("error classification", () => {
-  it("identifies 401 as ProviderAuthError", () => {
-    const error = createMockApiError(401);
-    const classified = classifyProviderError(error);
-
-    expect(classified).toBeInstanceOf(ProviderAuthError);
-    expect(classified.retryable).toBe(false);
-  });
-
-  it("identifies 429 as RateLimitError", () => {
-    const error = createMockApiError(429, { "retry-after": "60" });
-    const classified = classifyProviderError(error);
-
-    expect(classified).toBeInstanceOf(RateLimitError);
-    expect(classified.retryAfterMs).toBe(60000);
-  });
-});
-```
-
-### Integration Tests: Streaming
-
-```typescript
-// lib/providers/integration.test.ts
-describe("streaming providers", () => {
-  it("yields events in order", async () => {
-    const events = [];
-    for await (const evt of provider.streamInvoke(...)) {
-      events.push(evt.type);
-    }
-
-    // Should see text, usage, stop in order
-    expect(events).toContain("text");
-    expect(events[events.length - 1]).toBe("stop");
-  });
-
-  it("handles mid-stream errors", async () => {
-    const errorStream = mockStreamError(500, "Internal Server Error");
-
-    let errorCaught = false;
-    try {
-      for await (const evt of errorStream) {
-        // Keep consuming
-      }
-    } catch (error) {
-      errorCaught = true;
-      expect(error).toBeInstanceOf(ProviderStreamError);
-    }
-
-    expect(errorCaught).toBe(true);
-  });
-});
-```
-
----
-
-## 🎓 Common Mistakes & Fixes
-
-### Mistake 1: Forgetting to Resolve Credentials
-
-**Problem:**
-```typescript
-// Using undefined API key
-const client = new Anthropic({ apiKey: params.api_key }); // undefined!
-// Error: "No API key provided"
-```
-
-**Fix:**
-```typescript
-// Always resolve before using
-const apiKey = resolveProviderApiKey("anthropic", params);
-if (!apiKey) {
-  throw new ProviderAuthError("No Anthropic API key configured", "anthropic");
-}
-
-const client = new Anthropic({ apiKey });
-```
-
----
-
-### Mistake 2: Converting Message Formats Incorrectly
-
-**Problem:**
-```typescript
-// Assuming all messages are strings
-const openaiMessages = messages.map(m => ({
-  role: m.role,
-  content: m.content, // Breaks if ContentPart[]
-}));
-```
-
-**Fix:**
-```typescript
-// Handle all content types
-const openaiMessages = messages.map(m => ({
-  role: m.role,
-  content: toOpenAIContent(m.content), // Convert explicitly
-}));
-
-function toOpenAIContent(content: string | ContentPart[]): OpenAI.ChatCompletionContentPart[] {
-  if (typeof content === "string") {
-    return [{ type: "text", text: content }];
-  }
-  return content.map(part => {
-    if (part.type === "text") return { type: "text", text: part.text };
-    if (part.type === "image") return { type: "image_url", image_url: { url: part.url } };
-    // ...
-  });
-}
-```
-
----
-
-### Mistake 3: Not Handling Streaming Errors
-
-**Problem:**
-```typescript
-// Error mid-stream is silently dropped
-for await (const chunk of stream) {
-  yield chunk;
-  // If error occurs here, it's lost
-}
-```
-
-**Fix:**
-```typescript
-// Catch and classify errors
-try {
-  for await (const chunk of stream) {
-    yield chunk;
-  }
-} catch (error) {
-  if (error.status === 401) {
-    throw new ProviderAuthError(...);
-  } else if (error.status === 429) {
-    throw new RateLimitError(...);
-  } else {
-    throw new ProviderStreamError(...);
-  }
-}
-```
-
----
-
-### Mistake 4: Exposing Secrets in Error Messages
-
-**Problem:**
-```typescript
-// Key leaked in error log
-console.error(`Failed with key ${apiKey}: ${error.message}`);
-```
-
-**Fix:**
-```typescript
-// Never mention the key
-console.error(`Authentication failed for ${providerId}. Check credentials.`);
-```
-
----
-
-### Mistake 5: Not Testing Error Paths
-
-**Problem:**
-```typescript
-// Only testing happy path
-const tokens = [];
-for await (const token of provider.chat(...)) {
-  tokens.push(token);
-}
-// Never tested what happens if provider returns 429
-```
-
-**Fix:**
-```typescript
-// Test error scenarios
-it("retries on 429", async () => {
-  const stream = mockProviderError(429);
-  expect(() => provider.chat(...)).toThrow(RateLimitError);
-});
-
-it("doesn't retry on 401", async () => {
-  const stream = mockProviderError(401);
-  expect(() => provider.chat(...)).toThrow(ProviderAuthError);
-});
-```
-
----
-
-## ✅ Pre-PR Alignment Checklist
-
-Before submitting a PR with provider changes, verify:
-
-- [ ] **Credentials are never exposed**
-  - [ ] No API keys in code, logs, or error messages
-  - [ ] resolveProviderApiKey() used for all secrets
-  - [ ] No credential objects passed to tools
-
-- [ ] **Message conversion is complete**
-  - [ ] All content types handled (text, image, file, etc.)
-  - [ ] Provider-specific format applied correctly
-  - [ ] System prompts extracted/positioned per provider
-
-- [ ] **Error handling is comprehensive**
-  - [ ] Auth errors (401/403) detected and not retried
-  - [ ] Rate limits (429) detected with retry-after parsed
-  - [ ] Transient errors (5xx) detected and retried
-  - [ ] Permanent errors fail cleanly with context
-
-- [ ] **Streaming is efficient**
-  - [ ] No buffering (tokens yielded immediately)
-  - [ ] Errors caught mid-stream
-  - [ ] Tool calls streamed as fragments
-  - [ ] Usage events emitted
-
-- [ ] **Capabilities are declared**
-  - [ ] modelCapabilities() returns accurate flags
-  - [ ] Unsupported capabilities default safely
-  - [ ] Agent can query capabilities before using
-
-- [ ] **Rate limits are tracked**
-  - [ ] Rate limit headers parsed and stored
-  - [ ] Next-available-slot calculated
-  - [ ] Multiple concurrent requests coordinated
-
-- [ ] **Tests are thorough**
-  - [ ] Happy path: message conversion, token streaming
-  - [ ] Error paths: all classified errors tested
-  - [ ] Edge cases: empty messages, large content, mid-stream failure
-  - [ ] Credentials: ensure no leaks in test output
-
-- [ ] **Documentation is complete**
-  - [ ] API key setup documented
-  - [ ] Capabilities list up-to-date
-  - [ ] Known issues or workarounds noted
-  - [ ] Provider-specific quirks explained
-
-- [ ] **Backwards compatibility**
-  - [ ] External provider plugins still work
-  - [ ] No breaking changes to ModelProvider interface
-  - [ ] Existing model configs still load
-
----
-
-## ❓ FAQ
-
-**Q: How do I add a new provider?**
-
-A: Create `lib/providers/[name].ts` implementing `ModelProvider`. Register it in `lib/providers/registry.ts`. Add tests in `lib/providers/[name].test.ts`. See anthropic.ts as a template.
-
----
-
-**Q: How do I debug a streaming provider issue?**
-
-A: Enable debug logging via `DEBUG=jarela:providers:*`. Check: (1) Is API key resolved? (2) Is message format correct? (3) Is error classified? (4) Is stream consumed correctly?
-
----
-
-**Q: How do I support tool calling for a new provider?**
-
-A: Implement `invoke()` and `streamInvoke()` in ModelProvider. Convert tools to provider format. Yield `tool_call_chunk` events as arguments stream. See openai.ts and anthropic.ts for examples.
-
----
-
-**Q: How do I handle provider-specific parameters?**
-
-A: Add to `ProviderParams` interface. Use `pickProviderOptions()` to extract params. Convert to provider SDK format. Example: `temperature` → `Anthropic.temperate`, `thinking` → `output_config.effort`.
-
----
-
-**Q: Can I use a custom/self-hosted model endpoint?**
-
-A: Yes, via `params.base_url`. Most providers support `base_url` override. Create a custom provider adapter in `~/.jarela/providers/[name].cjs` if needed. See `template-external.cjs.example`.
-
+## Key principles
+
+- **Credential isolation.** Keys are resolved at runtime, never logged, never
+  placed in prompts, and never passed to tools.
+- **Streaming is lazy.** Yield deltas and tool fragments as they arrive; do not
+  buffer a response to return it whole.
+- **Failures are classified.** Auth is permanent; rate limits carry retry
+  metadata; transient stream failures are retryable.
+- **Capabilities are explicit.** Adapters and the catalog declare vision, tools,
+  JSON mode, search, audio, and files rather than guessing per call.
+- **Formats convert once.** Each adapter maps Jarela messages to its provider
+  and maps provider output back to the typed event union.
+- **The outer boundary is mandatory.** Callers use `getProvider()`, which applies
+  rate limiting and redaction; direct adapter construction bypasses both.
+
+## Adapter surface and stream contract
+
+- `name` and `chat()` are required. `invoke()`, `streamInvoke()`, `embed()`,
+  `listModels()`, and `credentialProbe` are optional: an omitted method means
+  the capability is absent, not that a generic fallback exists.
+- The trailing `signal?: AbortSignal` is optional so older external plugins stay
+  valid (ADR-0089). In-tree adapters must pass it through to the SDK/fetch so
+  cancellation reaches the network, not just the consumer loop.
+- `chat()` returns `{ stream: AsyncIterable<string> }` of text deltas.
+  `streamInvoke()` is the structured path and yields the event union below.
+
+| Event | Contract |
+| --- | --- |
+| `text` / `thinking` | Append the delta in order; thinking is not user-visible prose. |
+| `tool_call_chunk` | First fragment carries `id` + `name`; later fragments carry `args_delta`. Assemble by `index`; preserve `provider_meta` for round-trips. |
+| `citation` | Optional source/snippet/url; never fabricate a URL from an index. |
+| `usage` | Map only fields the provider reports. Anthropic/OpenAI `thinking_tokens` are informational (already in `output_tokens`); Gemini's are disjoint and priced separately. |
+| `audio_chunk` | Base64 payload plus MIME type; do not transcode in the adapter. |
+| `provider_event` | Namespaced provider-specific payload; consumers must tolerate unknown names. |
+| `stop` | Exactly one terminal event with `stop \| tool_use \| length`. Do not emit text after it. |
+
+Malformed tool arguments are an error, not `{}`. Empty messages, oversized
+content, and mid-stream failures are explicit cases in adapter tests.
+
+## Provider change map
+
+| Change | Required surfaces |
+| --- | --- |
+| New provider | Adapter module beside [builtins.ts](./builtins.ts), static registration there, runtime access through [index.ts](./index.ts) (rate-limited and redacted), catalog/limits/capability coverage, [docs/index.md](../../docs/index.md) provider list, co-located tests |
+| New stream event | [types.ts](./types.ts) union, every adapter that can emit it, collectors/consumers, event-shape tests |
+| New credential path | [credentials.ts](./credentials.ts), [provider-integrations.ts](./provider-integrations.ts), probe definition, doc-safety test |
+| New model/limit | [known-context-windows.ts](./known-context-windows.ts), [capabilities.ts](./capabilities.ts), pricing snapshot when cost-visible |
+| Retry/rate-limit change | [errors.ts](./errors.ts), [rate-limit.ts](./rate-limit.ts), stream and non-stream tests |
+
+## Standard patterns
+
+### 1. Implement the adapter
+
+Provide `name` and `chat()`; add `invoke()` and `streamInvoke()` only when the
+provider supports structured tool calls, `embed()` for embeddings, and
+`listModels()` for a live catalog. Pass the trailing `signal` to the SDK or
+`fetch`. Honor `params.base_url` where the SDK allows a self-hosted or
+compatible endpoint. Register the adapter with a static import in
+[builtins.ts](./builtins.ts); callers reach it through `getProvider()`.
+
+### 2. Stream staged events
+
+Yield `text` / `thinking` deltas immediately. Emit tool calls as
+`tool_call_chunk` fragments (id and name first, then `args_delta`) and let the
+consumer assemble them. Emit `usage` only for fields the provider reports, and
+exactly one terminal `stop`. Preserve `provider_meta` where a round-trip needs
+it.
+
+### 3. Classify failures
+
+Use [errors.ts](./errors.ts): `ProviderAuthError` for permanent auth failures,
+`isAuthHttpStatus()` / `isAuthErrorMessage()` for classification, and
+`isRetryableProviderStreamError()` for transient stream failures.
+[rate-limit.ts](./rate-limit.ts) parses overrides and enforces concurrency.
+Never retry auth failures, and never put request headers, keys, or provider
+payloads in an error message.
+
+### 4. Declare capabilities and limits
+
+`modelCapabilities(provider, modelId)` returns the best-effort flags for saved
+models; `listModels()` returns `ProviderCatalogModel` rows when a live catalog
+exists. Known context and output limits come from
+[known-context-windows.ts](./known-context-windows.ts) via
+`getKnownModelLimits()`, `getKnownContextLength()`, and
+`getKnownMaxOutputTokens()`. Unknown models must fall back safely rather than
+claim unsupported capabilities.
+
+### 5. Resolve credentials
+
+`resolveProviderApiKey(provider, params)` in [credentials.ts](./credentials.ts)
+uses this order: explicit `params.api_key` → the integration credential row →
+the provider environment variable. Return `undefined` for missing
+configuration; let the caller produce the auth error. Never log the value or
+include it in a URL.
+
+### 6. Stay inside the outer boundary
+
+`getProvider()` in [index.ts](./index.ts) wraps every provider with
+`withProviderRateLimits()` and `withRedaction()` from
+[lib/redaction/mask-provider.ts](../redaction/mask-provider.ts). Application
+code must use it; constructing an adapter directly bypasses both protections.
+
+## Anti-patterns
+
+- **Keys in code, logs, errors, or prompts** — they persist in backups, caches,
+  and transcripts.
+- **Assuming a message shape** — `content` is a string or `ContentPart[]`;
+  convert every part type explicitly.
+- **Retrying auth or treating all errors alike** — wastes time and can lock an
+  account. Classify first.
+- **Buffering a whole stream** — defeats streaming and risks memory blowups.
+- **Provider-specific shortcuts in shared code** — request shaping belongs in
+  the adapter, not in agents or tool code.
+- **Bypassing `getProvider()`** — skips rate limiting and redaction.
+- **Breaking the `@public` interface** — external plugins depend on optional
+  methods and the trailing signal; use the deprecation process.
+
+## File map
+
+| Concern | Files |
+| --- | --- |
+| Adapters | [anthropic.ts](./anthropic.ts), [openai.ts](./openai.ts), [gemini.ts](./gemini.ts), [deepseek.ts](./deepseek.ts), [github-copilot.ts](./github-copilot.ts), [langchain.ts](./langchain.ts), [external.ts](./external.ts), [mock.ts](./mock.ts) |
+| Contract and registry | [types.ts](./types.ts), [registry.ts](./registry.ts), [index.ts](./index.ts), [builtins.ts](./builtins.ts) |
+| Credentials and errors | [credentials.ts](./credentials.ts), [provider-integration-map.ts](./provider-integration-map.ts), [provider-integrations.ts](./provider-integrations.ts), [errors.ts](./errors.ts), [rate-limit.ts](./rate-limit.ts) |
+| Capabilities and limits | [capabilities.ts](./capabilities.ts), [known-context-windows.ts](./known-context-windows.ts) |
+| Streaming and tools | [streaming.ts](./streaming.ts), [tool-arguments.ts](./tool-arguments.ts), [tool-limit.ts](./tool-limit.ts), [jarela-chat-model.ts](./jarela-chat-model.ts) |
+| External template | [template-external.cjs.example](./template-external.cjs.example) |
+
+Cohere has no dedicated adapter: it runs through [langchain.ts](./langchain.ts)
+(`provider: "langchain"`, `params.lc_class: "ChatCohere"`), which is text-only —
+`@langchain/cohere` rejects image, audio, and file parts.
+
+## Testing requirements
+
+- Adapter tests are co-located: [anthropic.test.ts](./anthropic.test.ts),
+  [openai.test.ts](./openai.test.ts), [gemini.test.ts](./gemini.test.ts),
+  [github-copilot.test.ts](./github-copilot.test.ts),
+  [langchain.test.ts](./langchain.test.ts), [mock.test.ts](./mock.test.ts).
+  DeepSeek shares the OpenAI-compatible adapter coverage; add a dedicated test
+  when its request shaping diverges.
+- Error classification: [errors.test.ts](./errors.test.ts); rate limiting:
+  [rate-limit.test.ts](./rate-limit.test.ts).
+- Capabilities and limits: [capabilities.test.ts](./capabilities.test.ts),
+  [known-context-windows.test.ts](./known-context-windows.test.ts).
+- Registry, external-plugin compatibility, and redaction/rate-limit wrapping:
+  [index.test.ts](./index.test.ts), [registry.test.ts](./registry.test.ts),
+  [external.test.ts](./external.test.ts).
+- Credential mapping: [provider-integrations.test.ts](./provider-integrations.test.ts).
+- Mock the SDK or `fetch`; never call a live provider in unit tests. Cover
+  message conversion, event order, tool fragments, usage, `stop`, mid-stream
+  failure, and abort.
+- Run the focused Vitest files, `npx tsc --noEmit`, and `npm run lint`.
+
+## Review checks
+
+- [ ] No secret appears in code, logs, errors, or prompts.
+- [ ] Message and content-part conversion is complete.
+- [ ] Auth, rate-limit, transient, and permanent failures are classified.
+- [ ] The stream yields deltas/fragments progressively and ends with one `stop`.
+- [ ] Capabilities and known limits are accurate; unknown models fall back.
+- [ ] Credentials resolve in params → integration → env order.
+- [ ] Provider access goes through `getProvider()`.
+- [ ] External plugin compatibility and `@public` types are preserved.
+- [ ] Focused tests, `npx tsc --noEmit`, and `npm run lint` pass.

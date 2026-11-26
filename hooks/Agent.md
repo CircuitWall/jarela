@@ -17,7 +17,7 @@ dispatch; they never own persistence or rendering.
   stores ([module map](../docs/ARCHITECTURE.md)).
 - Do not import `lib/db`, `lib/stores`, SQLite, `server-only`, or app route
   modules. ESLint enforces the server-only import restriction for `hooks/`. Do
-  not write `fetch` calls that bypass `@/api/client`; the two known holdouts
+  not write `fetch` calls that bypass `@/api/client`; the known holdouts
   (`hooks/useEnvSettings.ts`, `hooks/useMessageFilters.ts`) are debt, not
   precedent, and `npm run ui-data:check` prevents the count from growing.
 - Do not render UI or own component-private state. A controller hook owns
@@ -99,6 +99,63 @@ Hooks touched during SSR or tests must guard `window`, `localStorage`,
 snapshot. Canonical: [useReducedMotion.ts](./useReducedMotion.ts) and
 [useEventNotifications.ts](./useEventNotifications.ts).
 
+### 7. Choose the smallest ownership boundary
+
+Walk this ladder before adding or growing a hook:
+
+1. **Derived value** — compute it in the component; do not mirror it in state.
+2. **One component tree** — a private controller beside the view, as described
+   in the [hook spec](../docs/ui-hook-api.md).
+3. **Shared across panels or part of an extension contract** — a hook in
+   [hooks/](./) with a contract test.
+4. **Persistence** — never in a hook; go through `@/api/client`.
+
+A hook is not a place to share one line of logic. Shared hooks carry lifecycle,
+cancellation, and compatibility obligations; component-local controllers do not.
+
+### 8. Options and return contract
+
+- Stateful hooks return `{ state, commands }` plus flat compatibility fields.
+  New hooks spread `...state, ...commands`; preserve each existing hook's flat
+  contract until a deprecation cycle.
+- Never return JSX or DOM nodes. A hook exposes data, flags, and commands only.
+- Prefer one options object with stable names when a hook takes more than one
+  argument, and document defaults. Keep type-only imports from components as
+  the documented exception, not a pattern.
+- Commands are `useCallback`-stable, safe to call repeatedly, and read
+  late-changing options through refs. Consumers must be able to depend on them
+  without re-subscribing.
+- State is read-only to consumers; mutation happens through commands. `error`
+  is `string | null` and `loading` is boolean — never a union of empty success
+  and failure.
+
+### 9. Effect and invalidation discipline
+
+- One refresh/invalidation path per resource. Cross-panel invalidation uses the
+  `jarela:<resource>-changed` window events, dispatched and consumed through the
+  hook rather than ad-hoc listeners.
+- Every effect that starts async work returns cleanup and drops late results
+  with a request id, session token, or active flag. One request in flight per
+  identity where the API allows.
+- Separate lifetime from identity: re-run setup when the selected agent,
+  credential, scope, or thread changes, and reset per-identity state explicitly.
+- Do not suppress the exhaustive-deps rule without a comment naming the
+  intentionally excluded identity; prefer a latest-callback ref.
+- Abort requests on unmount or identity change with `AbortController` where the
+  client supports a signal. Aborting does not roll back an already-issued
+  server write — surface that distinction.
+
+### 10. Optimistic updates and rollback
+
+- Apply optimistic state only when the UI does not need the server result to
+  render. Keep a snapshot and restore it on failure while surfacing the error.
+- Clear pending flags on success, failure, and supersede. A failed or cancelled
+  request must not leave a permanent spinner.
+- After a mutation, use the hook's one refresh/invalidation path instead of
+  patching several cached lists independently.
+- Replace optimistic placeholders with server-returned IDs and masks; never
+  treat a local placeholder as authoritative.
+
 ## Anti-patterns
 
 - **Fire-and-forget requests without cancellation** — untracked loads can apply
@@ -115,6 +172,18 @@ snapshot. Canonical: [useReducedMotion.ts](./useReducedMotion.ts) and
 - **Adding `eslint-disable react-hooks/exhaustive-deps` without evidence** —
   existing suppressions are deliberate and ref-latched; new ones need a comment
   explaining which identity is intentionally excluded.
+- **Hooks that render** — returning JSX, class names, or components turns a
+  data/lifecycle module into an untestable view. Keep rendering in the component.
+- **Mirrored state** — copying props or command results into local state without
+  a synchronization rule. Derive it, or document exactly when it reseeds.
+- **Effect chains that synchronize state** — `useEffect` writing state that
+  another effect reads is a race. Compute during render or move it into a
+  controller command.
+- **Per-component copies of shared controller logic** — duplicated fetch,
+  cancellation, and invalidation code drifts. Compose `useListState` or the
+  owning shared hook instead.
+- **Treating aborts as errors** — cancellation is expected on unmount and
+  identity change; do not surface it as a failed request.
 
 ## File map
 
@@ -139,13 +208,16 @@ fields explicitly — preserve the module's existing contract per hook.
 - Mock `@/api/client` with `vi.mock` or spy on the real client; do not hit the
   network. Stub `EventSource`, `matchMedia`, `FileReader`, and timers explicitly.
 - Cover: initial load, error state, superseded/late results, unmount cleanup,
-  and command identity when the hook exposes commands.
+  identity change, repeated command calls, and optimistic rollback when the
+  hook writes.
+- Assert cleanup precisely: timers return to zero, subscriptions close, and no
+  state update lands after unmount.
 - [unifiedHookContracts.test.ts](./unifiedHookContracts.test.ts) is the
   cross-cutting contract suite: a stateful hook must expose callable commands,
   flat aliases that mirror canonical fields, and one refresh/invalidation path.
 - Run `npm run test:hooks`, `npm run lint:hooks`, and `npx tsc --noEmit`.
 
-## Pre-PR checklist
+## Review checks
 
 - [ ] No store/SQLite/server imports and no new inline `fetch`.
 - [ ] Every subscription, timer, listener, and request has a cleanup or

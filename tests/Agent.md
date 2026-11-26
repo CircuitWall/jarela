@@ -27,6 +27,38 @@ Vitest only includes `lib/`, `api/`, `app/`, `hooks/`, `components/`,
 ([vitest.config.mts](../vitest.config.mts)). Do not add Vitest unit tests under
 `tests/` — they will not run.
 
+## Test selection and assertion contract
+
+Choose the narrowest layer that can fail for the change:
+
+| Change | Layer |
+| --- | --- |
+| Pure function, parser, policy, schema | Co-located Vitest unit test |
+| Hook, controller, async state | Co-located hook test (`jsdom` only when DOM APIs are used) |
+| Component behavior, accessibility, focus | RTL component test |
+| Route body/status/header contract | Route test against the handler + a client-parity assertion |
+| Browser flow across panels or servers | Playwright e2e spec |
+| Server bootstrap, provider boundary, install | `npm run test:live` (full only with explicit credentials) |
+| Repository gate or automation | `scripts/*.test.mjs` fixture test |
+
+Assertion rules:
+
+- Assert the complete success payload/status or the exact failure
+  status/code/message. Read back side effects instead of trusting a success
+  boolean.
+- One behavior per test, named for the behavior. Cover the failure path in the
+  same change as the happy path.
+- Prefer user-visible selectors (role, label, text) over structure. Snapshots
+  and computed-style assertions belong only in deliberate contract tests.
+- Never weaken or delete an assertion to get green. A skip needs a reason
+  string.
+- Mock only at boundaries: network at the client/module seam, time and timers
+  explicitly, filesystem in temp directories, randomness/IDs injected. No live
+  network in unit tests and no global mutable state across tests.
+- CI retries (`playwright.config.ts` sets 2 on CI) are diagnostics, not
+  permission: a retry-hidden flake must be fixed or quarantined with a tracked
+  reason.
+
 ## Standard patterns
 
 ### 1. Isolate persistent state per test file and per worker
@@ -103,7 +135,7 @@ default wait strategy.
 - [global-setup.ts](./e2e/global-setup.ts) — cross-server isolation probe.
 - [fixtures.ts](./e2e/fixtures.ts) — worker `baseURL` and `workerRequest`.
 - [helpers.ts](./e2e/helpers.ts) — seeding and app-readiness helpers.
-- [e2e/](./e2e/) — 24 Playwright specs covering shell, panels, credentials,
+- [e2e/](./e2e/) — Playwright specs covering shell, panels, credentials,
   documents, tasks, skills, and execution policy.
 - E2E orchestration lives in `scripts/e2e-servers.mjs` and
   `scripts/e2e-isolation.mjs`; its conventions are owned by
@@ -122,12 +154,15 @@ Run the narrowest layer that can fail for the change, then the gate:
 5. `npx tsc --noEmit`, `npm run lint`, and the production build for
    cross-cutting changes.
 
-## Pre-PR checklist
+## Review checks
 
 - [ ] Test lives in the correct layer and include glob.
 - [ ] Data directory, server port, and external state are isolated.
 - [ ] Selectors use role/label unless a test id is justified.
 - [ ] Failure path is covered, not only the happy path.
+- [ ] Side effects are read back; a success flag alone is not evidence.
+- [ ] Mocks stop at network/timer/filesystem boundaries; no live calls.
+- [ ] A CI retry would not hide a real race or an unhandled promise.
 - [ ] No sleeps, shared residue, or weakened assertions were introduced.
 
 ## Frontier
