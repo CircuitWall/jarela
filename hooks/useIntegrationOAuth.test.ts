@@ -23,6 +23,8 @@ describe("useIntegrationOAuth contract", () => {
     vi.spyOn(window, "close").mockImplementation(() => {});
     vi.spyOn(api.integrations, "gmailOauthStart").mockResolvedValue(start);
     vi.spyOn(api.integrations, "gmailOauthStatus").mockResolvedValue({ status: "done" });
+    vi.spyOn(api.integrations, "atlassianOauthStart").mockResolvedValue(start);
+    vi.spyOn(api.integrations, "atlassianOauthStatus").mockResolvedValue({ status: "done" });
   });
 
   afterEach(() => {
@@ -60,6 +62,29 @@ describe("useIntegrationOAuth contract", () => {
     expect(api.integrations.gmailOauthStart).toHaveBeenCalledOnce();
     expect(window.open).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it("calls the atlassian start/status provider and reports the connection", async () => {
+    const { result } = renderHook(() => useIntegrationOAuth({
+      integrationName: "atlassian", credentialId: null, configured: true, values: {},
+      onChanged, onError, onResult,
+    }));
+    await act(async () => { await result.current.commands.connectOAuth("atlassian"); });
+    expect(api.integrations.atlassianOauthStart).toHaveBeenCalledWith({
+      client_id: undefined, client_secret: undefined, credential_id: undefined,
+    });
+    expect(window.open).toHaveBeenCalledWith(start.authorize_url, "jarela-atlassian-oauth", "width=560,height=720");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(api.integrations.atlassianOauthStatus).toHaveBeenCalledWith(start.state);
+    expect(onResult).toHaveBeenLastCalledWith({ ok: true, message: "Connected to Atlassian. Refresh token saved." });
+  });
+
+  it("requires saved credentials for atlassian (no bundled client)", async () => {
+    const { result } = renderHook(() => useIntegrationOAuth(options));
+    await act(async () => { await result.current.commands.connectOAuth("atlassian"); });
+    expect(onError).toHaveBeenLastCalledWith("Enter the OAuth client ID and client secret first.");
+    expect(api.integrations.atlassianOauthStart).not.toHaveBeenCalled();
+    expect(window.open).not.toHaveBeenCalled();
   });
 
   it("allows retry after a start request fails", async () => {
