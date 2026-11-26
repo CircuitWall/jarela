@@ -166,6 +166,7 @@ export default defineConfig({
         "lib/integrations/categories.ts",
         "lib/integrations/gmail-oauth.ts",
         "lib/integrations/microsoft-oauth.ts",
+        "lib/integrations/atlassian-oauth.ts",
         // OAuth authorization-code exchange and callback persistence are
         // route/integration concerns; package and probe behavior is tested
         // separately without adding a second SQLite-backed OAuth fixture.
