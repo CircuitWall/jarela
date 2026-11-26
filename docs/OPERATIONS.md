@@ -643,10 +643,18 @@ two depths:
 
 Open **Knowledge → Dreams** to enable or disable dreaming, set the idle
 threshold and daily/weekly estimated-token budgets, choose the weekly day and
-hour, opt an agent out, or start a light/deep dream immediately. **Light** and
-**Deep** buttons bypass the idle and due-time checks, but never the safety
-gates or token budget. The dream journal shows the last 20 runs with status,
-summary, estimated tokens, and any error.
+hour, opt an agent out, or start a light/deep dream immediately. **Advanced
+settings** exposes the minimum new user turns, the daily light-run cap, the
+deep activity-idle window and wall-clock budgets, the near-duplicate merge group
+cap, and an optional dream model override. **Light** and **Deep** buttons bypass
+the idle and due-time checks, but never the safety gates or token budget. The
+dream journal shows the last 20 runs with status, summary, estimated tokens,
+and any error.
+
+Database auto-vacuum is a file setting rather than a dreaming setting. A
+database still on `auto_vacuum = none` needs the one-time **Compact database**
+action in **Documents → Index maintenance**; until then the deep dream records
+its reclaim phase as skipped.
 
 The scheduler evaluates dreaming every five minutes and starts at most one
 dream globally. A deep dream is a not-before weekly slot: it runs at the next
