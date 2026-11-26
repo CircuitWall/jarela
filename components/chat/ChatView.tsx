@@ -175,7 +175,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         handleSubmit, handleQueue, agentConfig, handleVoiceTranscript, sessionCompacting, sessionLoading,
         thread, threadId, currentThreadIdRef, currentThreadMessages,
         idleChoiceEnabled: !!threadId && !hideInternalOperations && !thread.messagesLoading && !sessionLoading
-          && !sse.streaming && !sessionCompacting && !thread.compactionPending && !thread.warmSummaryPending,
+          && !sse.streaming && !sessionCompacting && !thread.compactionPending && !thread.warmSummaryPending
+          // ADR-0135: when the server owns idle compaction, the old 3-hour
+          // question is suppressed. It remains available when dreaming is off
+          // for this agent.
+          && thread.dreamingEnabled === false,
       }} />
 </div>
   );

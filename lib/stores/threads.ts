@@ -322,6 +322,71 @@ function buildRecentMessagesWindowQuery(
   return { sql, params };
 }
 
+// The newest completed foreground (chat) row. Dreaming uses this for its idle
+// clock instead of threads.updated_at, which also moves for bridge, watcher and
+// scheduled-task traffic that a light dream does not compact.
+export function getLatestForegroundMessage(thread_id: string): MessageRow | null {
+  const row = cachedRead(
+    getDb(),
+    MSG_COLS_SQL
+      + " WHERE thread_id=?"
+      + " AND transcript_status != 'in_progress'"
+      + " AND (category IS NULL OR category != 'run_error')"
+      + " AND (metadata IS NULL OR instr(metadata, '\"automation_activity\"') = 0)"
+      + " AND " + foregroundCategoryGuardSql()
+      + " ORDER BY rowid DESC LIMIT 1",
+  ).get(thread_id, ...FOREGROUND_EXCLUDED_CATEGORIES) as unknown as MessageRow | undefined;
+  return row ?? null;
+}
+
+// The newest completed foreground user turn. This is the boundary a light
+// dream anchors on: everything before it becomes warm, the turn itself stays
+// hot, and the next exchange starts with an exact cursor.
+export function getLatestForegroundUserMessage(thread_id: string): MessageRow | null {
+  const row = cachedRead(
+    getDb(),
+    MSG_COLS_SQL
+      + " WHERE thread_id=? AND role='user'"
+      + " AND transcript_status != 'in_progress'"
+      + " AND " + foregroundCategoryGuardSql()
+      + " ORDER BY rowid DESC LIMIT 1",
+  ).get(thread_id, ...FOREGROUND_EXCLUDED_CATEGORIES) as unknown as MessageRow | undefined;
+  return row ?? null;
+}
+
+/**
+ * Newest real user turn across every thread. Deep dreaming uses this instead
+ * of `threads.updated_at`: automation traffic (scheduled tasks, watchers,
+ * bridges) touches that column and would otherwise keep maintenance starved
+ * forever on an install with a frequent recurring task.
+ */
+export function latestForegroundUserActivityAt(): string | null {
+  const row = getDb()
+    .prepare(
+      `SELECT created_at FROM messages
+       WHERE role='user' AND category IS NULL
+       ORDER BY created_at DESC LIMIT 1`,
+    )
+    .get() as { created_at: string } | undefined;
+  return row?.created_at ?? null;
+}
+
+export function countForegroundUserMessagesAfterSeq(thread_id: string, seq: number): number {
+  const row = cachedRead(
+    getDb(),
+    "SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid > ? AND role='user'"
+      + " AND transcript_status != 'in_progress'"
+      + " AND " + foregroundCategoryGuardSql(),
+  ).get(thread_id, seq, ...FOREGROUND_EXCLUDED_CATEGORIES) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
+export function hasInProgressUserMessage(thread_id: string): boolean {
+  return !!getDb()
+    .prepare("SELECT 1 FROM messages WHERE thread_id=? AND role='user' AND transcript_status='in_progress' LIMIT 1")
+    .get(thread_id);
+}
+
 export function getRecentMessagesWindow(
   thread_id: string,
   limit: number,

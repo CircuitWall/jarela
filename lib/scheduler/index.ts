@@ -5,6 +5,7 @@
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { indexAllSources } from "@/lib/documents/indexer";
 import { runDocumentIndexLifecycleSweep } from "@/lib/documents/lifecycle";
+import { runDreamingSweep } from "@/lib/agents/dreaming";
 import { runTriggerTick, runScheduledTaskFiringNow } from "@/lib/triggers";
 import { runAllHealthProbes } from "@/lib/health/runner";
 import { maybeAutoFileToolTelemetryIssue } from "@/lib/tools/system/tool-telemetry-issue";
@@ -37,6 +38,10 @@ const FILE_GC_EVERY_TICKS = 120;
 // ADR-0133: purge disabled sources past their retention window and reclaim
 // freed pages incrementally. 40 ticks × 30s = 20 min; each pass is bounded.
 const DOCUMENT_LIFECYCLE_EVERY_TICKS = 40;
+// ADR-0135. Ten ticks × 30 s = 5 min. The idle threshold is hours, so this
+// granularity is plenty; the counter starts at the last slot so the first
+// tick after boot evaluates a dream that came due while the app was closed.
+const DREAM_SWEEP_EVERY_TICKS = 10;
 
 interface SchedulerState {
   started: boolean;
@@ -46,6 +51,7 @@ interface SchedulerState {
   healthTickCount: number;
   fileGcTickCount: number;
   documentLifecycleTickCount: number;
+  dreamTickCount: number;
   // Count of scheduled tasks deferred on the previous locked tick. Only
   // log the deferral when this transitions (0 → N, N → M) so a long
   // lock window doesn't spam the console every 30s.
@@ -59,6 +65,7 @@ const state = getOrCreateGlobal<SchedulerState>("__jarela_scheduler", () => ({
   healthTickCount: 0,
   fileGcTickCount: 0,
   documentLifecycleTickCount: 0,
+  dreamTickCount: DREAM_SWEEP_EVERY_TICKS - 1,
   lastDeferredCount: 0,
 }));
 
@@ -167,6 +174,18 @@ async function tick(): Promise<void> {
           "[scheduler] document index lifecycle sweep failed:",
           errorMessage(err),
         );
+      }
+    }
+
+    // Agent dreaming (ADR-0135): one light dream for an idle agent, or the
+    // default agent's weekly deep maintenance. Evaluation is local reads; the
+    // started dream runs in the background and holds the global dream lock.
+    state.dreamTickCount = (state.dreamTickCount + 1) % DREAM_SWEEP_EVERY_TICKS;
+    if (state.dreamTickCount === 0) {
+      try {
+        if (await runDreamingSweep()) console.log("[scheduler] agent dream started");
+      } catch (err) {
+        console.error("[scheduler] dreaming sweep failed:", errorMessage(err));
       }
     }
 

@@ -320,6 +320,48 @@ export function buildHistoryWindow(
 
 ---
 
+### Pattern 6: Idle Dreaming (ADR-0135)
+
+Consolidate context and shared stores without a user turn:
+
+```typescript
+// lib/agents/dreaming.ts
+// Light: zero-token preflight, then a "dream" compaction attempt.
+const evaluation = evaluateLightDream(agent, getDreamingSettings(), now);
+if (evaluation.readiness.eligible) {
+  await runTrackedCompaction(threadId, "dream", boundarySeq, (attempt) =>
+    compactThreadWarmContext(threadId, boundarySeq, {
+      expectedHotSinceSeq: thread.hot_since_seq ?? null,
+      alignTopicBoundary: true,
+      allowEmptySummary: false,
+      attempt,
+    }));
+}
+```
+
+**Rules:**
+- Light dreams move the context boundary through the exact-boundary service and
+  never prune messages. Retention stays cap-driven.
+- The preflight is local-only: no running/queued turn, no pending compaction,
+  unlocked, idle long enough, at least the configured number of new user turns,
+  not already dreamed in this idle window, and within the daily run/token
+  budget.
+- Deep maintenance runs only for the default agent, archives (never deletes)
+  expired/exact-duplicate facts, and bounds every document phase with a
+  wall-clock budget.
+- Near-duplicate merges are an explicit model step: the model returns a strict
+  JSON proposal, code validates the survivor key, schema, weakest confidence,
+  expiry agreement, and fingerprints, then dry-runs and applies
+  `upsert`+`archive` through `applyMemoryMaintenance`. Toggle with
+  `deep_merge_enabled`; the weekly token budget covers these calls.
+- Write state and outcomes to `agent_dream_state` / `agent_dream_runs`; never
+  write a chat row or notification from a dream.
+
+**When to use:** Idle consolidation, weekly memory/knowledge maintenance, or a
+manual "Dream now" action.
+
+---
+
 ## ⚠️ Anti-Patterns (What NOT to Do)
 
 ### Anti-Pattern 1: Unregistered Agents or Tools
@@ -488,6 +530,7 @@ try {
 - `conversation-summary.ts` — Thread text extraction
 - `thread-compaction.ts` — Message pruning and summarization
 - `warm-summary-background.ts` — Background refresh of old-message summaries
+- `dreaming.ts` — Idle light dreams and weekly deep maintenance (ADR-0135)
 
 ### Tool & Permission Management
 - (Tool binding happens in `run-thread.ts`)

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/documents/indexer", () => ({ indexAllSources: vi.fn() }));
 vi.mock("@/lib/documents/lifecycle", () => ({ runDocumentIndexLifecycleSweep: vi.fn() }));
+vi.mock("@/lib/agents/dreaming", () => ({ runDreamingSweep: vi.fn().mockResolvedValue(false) }));
 vi.mock("@/lib/triggers", () => ({ runTriggerTick: mocks.triggers, runScheduledTaskFiringNow: vi.fn() }));
 vi.mock("@/lib/health/runner", () => ({ runAllHealthProbes: mocks.health }));
 vi.mock("@/lib/tools/system/tool-telemetry-issue", () => ({ maybeAutoFileToolTelemetryIssue: vi.fn() }));

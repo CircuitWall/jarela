@@ -541,6 +541,44 @@ describe("prepareThreadRun auto context boundary", () => {
     expect(prompt).not.toContain("--- Conversation gap ---");
   });
 
+  it("omits the gap hint when a dream already committed a fresh recap", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-gap-dreamed",
+      name: "Gap Dreamed",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 0,
+    });
+    const thread = createThread("agent-gap-dreamed");
+    addMessage(thread.thread_id, "user", "earlier topic");
+    const lastUser = addMessage(thread.thread_id, "user", "earlier follow-up");
+    addMessage(thread.thread_id, "assistant", "earlier answer");
+    ageThreadMessages(thread.thread_id, 4);
+    getDb().prepare(
+      `UPDATE threads SET hot_since=?, hot_since_seq=?, warm_summary=?,
+         warm_summary_before=?, warm_summary_before_seq=?, warm_summary_computed_at=?,
+         warm_summary_source_messages=?, warm_summary_source_chars=?
+       WHERE thread_id=?`,
+    ).run(
+      lastUser.created_at, lastUser.seq, "earlier recap",
+      lastUser.created_at, lastUser.seq, new Date().toISOString(),
+      2, 100, thread.thread_id,
+    );
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "hey",
+      context_profile: { include_hot: true, include_warm: true, include_facts: false, include_recall: false },
+    });
+
+    const options = streamWithConfigMock.mock.calls[0][2] as { agent_run_config: { system_prompt: string } };
+    expect(options.agent_run_config.system_prompt).not.toContain("--- Conversation gap ---");
+    expect(getThread(thread.thread_id)?.hot_since_seq).toBe(lastUser.seq);
+  });
+
   it("starts topic-aware compaction when the hot-turn limit is exceeded", async () => {
     process.env.JARELA_MAX_THREAD_MESSAGES = "100";
     resetConfigCache();

@@ -67,6 +67,60 @@ const SCHEMA_MIGRATIONS: readonly Migration[] = [{
     }
     db.exec("UPDATE document_sources SET disabled_at=updated_at WHERE enabled=0 AND disabled_at IS NULL");
   },
+}, {
+  // ADR-0135. Idle consolidation is a first-class scheduled workload, not a
+  // scheduled task: it must be silent, bounded, and opted out per agent.
+  id: "3.8.3-agent-dreaming",
+  apply(db) {
+    const tables = new Set(
+      db.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().map((row) => row.name),
+    );
+    if (!tables.has("agent_dream_state")) {
+      db.exec(`CREATE TABLE agent_dream_state (
+  agent_id TEXT PRIMARY KEY NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_light_dream_at TEXT,
+  last_light_attempt_at TEXT,
+  last_light_boundary_seq INTEGER,
+  last_deep_dream_at TEXT,
+  last_deep_attempt_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`);
+    }
+    if (!tables.has("agent_dream_runs")) {
+      db.exec(`CREATE TABLE agent_dream_runs (
+  id TEXT PRIMARY KEY NOT NULL,
+  agent_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('light','deep')),
+  status TEXT NOT NULL CHECK (status IN ('running','completed','partial','failed','skipped')),
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  summary TEXT,
+  stats TEXT,
+  estimated_input_tokens INTEGER NOT NULL DEFAULT 0,
+  estimated_output_tokens INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+)`);
+    }
+    // The deep-dream idle check asks for the newest foreground user turn across
+    // every thread. A partial index keeps that cheap on automation-heavy
+    // installs instead of scanning backwards through scheduled-task rows.
+    if (!db.prepare("SELECT 1 FROM sqlite_schema WHERE type='index' AND name='idx_messages_foreground_user_created_at'").get()) {
+      db.exec("CREATE INDEX idx_messages_foreground_user_created_at ON messages(created_at DESC) WHERE role='user' AND category IS NULL");
+    }
+    const indexes = new Set(
+      db.prepare("SELECT name FROM sqlite_schema WHERE type='index' AND name LIKE 'idx_agent_dream%'")
+        .all().map((row) => row.name),
+    );
+    if (!indexes.has("idx_agent_dream_runs_agent_started")) {
+      db.exec("CREATE INDEX idx_agent_dream_runs_agent_started ON agent_dream_runs(agent_id, started_at DESC)");
+    }
+    if (!indexes.has("idx_agent_dream_runs_started")) {
+      db.exec("CREATE INDEX idx_agent_dream_runs_started ON agent_dream_runs(started_at)");
+    }
+  },
 }];
 // Encryption commits as its own migration, separate from credential
 // reshaping below. Reshaping reads already-encrypted `memory_store` rows

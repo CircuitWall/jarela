@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Brain, ChevronRight, FolderSearch, Loader2, Search } from "lucide-react";
+import { Brain, ChevronRight, FolderSearch, Loader2, Moon, Search } from "lucide-react";
 import type { DocumentHit, MemorySearchHit } from "@/api/types";
 import { api } from "@/api/client";
 import { Select } from "@/components/ui/Select";
@@ -10,6 +10,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { LocalFileAction } from "@/components/ui/LocalFileAction";
 import { MemoryPanel } from "./MemoryPanel";
 import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
+import { DreamsPanel } from "@/components/dreaming/DreamsPanel";
 
 type ChannelFilter = "all" | "documents" | "chats";
 type PassageMatch = "semantic" | "substring" | "keyword" | "literal";
@@ -229,6 +230,14 @@ export function UnifiedMemoryPanel() {
             Documents
           </summary>
           <DocumentsPanel embedded />
+        </details>
+        <details className="group border-t border-border">
+          <summary className="workspace-gutter flex items-center gap-2 py-3 cursor-pointer select-none text-sm font-medium text-fg hover:bg-surface-3/30">
+            <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+            <Moon size={14} className="text-fg-faint" />
+            Dreams
+          </summary>
+          <DreamsPanel embedded />
         </details>
       </div>
     </div>

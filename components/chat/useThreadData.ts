@@ -24,6 +24,7 @@ interface ThreadMetadata {
   compactionPending: boolean;
   manualCompactionPending: boolean;
   contextWindowTokens: number | null;
+  dreamingEnabled: boolean | null;
 }
 
 export interface ThreadDataApi extends ThreadMetadata {
@@ -57,6 +58,7 @@ function emptyThreadMetadata(): ThreadMetadata {
     compactionPending: false,
     manualCompactionPending: false,
     contextWindowTokens: null,
+    dreamingEnabled: null,
   };
 }
 
@@ -82,6 +84,7 @@ function useThreadMetadata(threadId: string | null) {
       setCompactionPending: setter("compactionPending"),
       setManualCompactionPending: setter("manualCompactionPending"),
       setContextWindowTokens: setter("contextWindowTokens"),
+      setDreamingEnabled: setter("dreamingEnabled"),
     };
   }, []);
   const reset = useCallback(() => {

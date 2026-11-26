@@ -457,6 +457,38 @@ Any new read that scales with the corpus belongs on `readAppRows` from
 [lib/db/read-pool.ts](../lib/db/read-pool.ts), exposed as a typed `...Async`
 store method.
 
+## Agent dreaming
+
+ADR-0135 adds a silent, bounded consolidation workload in
+[lib/agents/dreaming.ts](../lib/agents/dreaming.ts). It is not a scheduled task:
+dream rows never enter the chat transcript, and the scheduler starts at most one
+dream globally. Two invariants matter when changing it:
+
+- **A light dream is context management, not deletion.** It must go through the
+  exact-boundary compaction service (`compactThreadWarmContext` with
+  `alignTopicBoundary` and `allowEmptySummary`) under a `dream` compaction
+  attempt, and it must never call the retention prune. The preflight is
+  zero-token: check run/queue/compaction state, the lock, the idle clock, the
+  user-turn count after the current boundary, the already-dreamed watermark, and
+  the run/token budgets before any provider call. A current boundary means the
+  pass is unnecessary even if the clock has elapsed.
+- **Deep maintenance is owned by the default agent.** Memory and document
+  stores are installation-wide, so concurrent per-agent audits, bulk archives,
+  and vacuums would race and multiply cost. Deterministic writes are archive
+  only. Near-duplicate merges are an explicit model step: the model proposes a
+  strict JSON record, code validates the survivor key, schema, confidence
+  floor, expiry agreement, and fingerprints, dry-runs the operations, and then
+  archives the duplicates so the old values stay recoverable. Document phases
+  use their own wall-clock budgets and are resumable where the underlying
+  operation is.
+
+Dream state and the journal live in `agent_dream_state` and
+`agent_dream_runs`. They deliberately have no cascading foreign key to
+`agent_configs`, which is written with `INSERT OR REPLACE`; orphaned rows are
+pruned by the sweep instead. `lib/agents/dreaming.test.ts` covers every skip
+reason, the checkpoint boundary, budget enforcement, the global lock, deep
+scheduling/catch-up, and failure isolation.
+
 ## LLM provider rate limiting
 
 `getProvider()` applies a process-wide `p-queue` limiter to chat, structured

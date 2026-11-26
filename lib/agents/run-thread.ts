@@ -1051,6 +1051,21 @@ async function prepareTurnContext(
   };
 }
 
+// After a committed compaction (manual or a dream), the warm recap already
+// covers the earlier conversation. Re-asking whether to start fresh at the
+// next 3-hour gap defeats the point of dreaming, so suppress the hint while
+// the boundary and its coverage cursor agree and the recap is non-empty.
+function gapContextForTurn(threadId: string, idleMs: number | null): string {
+  const thread = getThread(threadId);
+  const alreadySummarized = thread?.hot_since_seq != null
+    && thread.warm_summary_before_seq === thread.hot_since_seq
+    && !!thread.warm_summary?.trim();
+  return buildConversationGapContext(
+    alreadySummarized ? null : idleMs,
+    CONVERSATION_GAP_HINT_MS,
+  );
+}
+
 function createPreparedTurn(
   req: ThreadRunRequest,
   admission: TurnAdmission,
@@ -1094,7 +1109,7 @@ function createPreparedTurn(
     systemSignals: signalDelivery.signals,
     runtimeInstanceId: runtimeInstanceId(),
     surroundingsCtx,
-    conversationGapCtx: buildConversationGapContext(idleMsBeforeTurn, CONVERSATION_GAP_HINT_MS),
+    conversationGapCtx: gapContextForTurn(req.thread_id, idleMsBeforeTurn),
     experienceMode: resolveExperienceMode(req.options),
     delegateRosterLines,
     sourceManifest,

@@ -68,6 +68,7 @@ export interface ThreadMetaApplier {
   setWarmSummaryTopics?: (v: SummaryTopicSegment[] | null) => void;
   setWarmChannelSummaries?: (v: WarmChannelSummary[]) => void;
   setContextWindowTokens: (v: number | null) => void;
+  setDreamingEnabled?: (v: boolean) => void;
   setWarmSummaryPending?: (v: boolean) => void;
   setCompactionPending?: (v: boolean) => void;
   setManualCompactionPending?: (v: boolean) => void;
@@ -88,6 +89,7 @@ export interface ThreadGetPayload {
   pending_hot_since_seq?: number | null;
   manual_compaction_pending?: boolean;
   context_window_tokens?: number | null;
+  dreaming_enabled?: boolean;
 }
 
 // Append-with-reconcile. Merges server-persisted rows into the local list
@@ -178,6 +180,7 @@ export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPaylo
   meta.setWarmSummaryTopics?.(payload.warm_summary_topics ?? null);
   meta.setWarmChannelSummaries?.(payload.warm_channel_summaries ?? []);
   meta.setContextWindowTokens(payload.context_window_tokens ?? null);
+  if (payload.dreaming_enabled !== undefined) meta.setDreamingEnabled?.(payload.dreaming_enabled);
   const summaryFresh = hotSinceSeq !== null && summaryBeforeSeq === hotSinceSeq;
   meta.setWarmSummaryPending?.(hotSinceSeq !== null && !summaryFresh);
   meta.setCompactionPending?.(payload.pending_hot_since_seq != null);

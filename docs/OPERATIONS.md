@@ -570,11 +570,13 @@ checking code's verdicts, not live model behaviour.
 Chat is the per-agent workspace for conversations and their results. Keep related follow-up work in the same thread so its existing context remains available.
 
 After three hours without foreground conversation activity, chat (Unreleased)
-asks whether to compact the thread. Choosing Yes schedules topic-aware compaction,
-which moves older messages into the bounded warm summary; No keeps the current
-context and dismisses the prompt. New foreground activity starts the idle timer
-again. Independently, the app requests automatic compaction when hot history
-reaches 50 foreground message rows.
+compacts the thread automatically. The agent no longer asks whether to continue:
+the runtime folds earlier messages into the bounded topic-aware warm summary and
+wakes with a clean hot window. Conversation rows are never deleted by this idle
+pass; the normal retention cap still owns pruning. New foreground activity
+starts the idle timer again. Independently, the app requests automatic
+compaction when hot history reaches 50 foreground message rows. See
+[Agent dreaming](#agent-dreaming) below.
 
 An asynchronous tool handoff means work is still running, not that its effect
 has been verified. The runtime keeps these calls out of successful-tool
@@ -611,6 +613,66 @@ Historical chat rows are reused during streamed token updates; message edits,
 filters, context boundaries, and load-older navigation still update normally.
 
 ![Jarela chat showing an agent conversation](assets/operations-chat.png)
+
+## Agent dreaming
+
+**Unreleased — ADR-0135.** Dreaming is Jarela's idle consolidation cycle. It has
+two depths:
+
+- **Light dream.** Every agent may compact its own thread after the configured
+  idle threshold (default three hours). The dream anchors at the last completed
+  user turn, builds the topic-aware warm summary, and commits the boundary and
+  its coverage cursors together. It never prunes history and never writes a chat
+  message. A zero-token preflight skips the pass when a turn or compaction is
+  active, the app is locked, the thread has fewer than two new user turns, the
+  boundary is already current, the agent has already dreamed this idle window,
+  or the daily run/token budget is exhausted.
+- **Deep dream.** The default agent owns weekly maintenance of the shared
+  memory and document stores, because those stores are installation-wide. It
+  archives expired and exact-duplicate facts (archive only, never delete),
+  refreshes stale embeddings, rewrites legacy document embeddings, and reclaims
+  free pages. It also makes explicit model calls for up to five near-duplicate
+  fact groups: the model proposes a merged record, code validates the survivor
+  key, schema, confidence floor, expiry agreement, and fingerprints, then
+  archives the duplicates and keeps the survivor's revision history. The
+  **Merge near-duplicates** toggle turns this off; **Weekly note** controls the
+  short model-written consolidation note, which is labeled as model-generated
+  and never writes facts. The document phases and model calls have wall-clock
+  budgets; the memory scans are bounded synchronous passes. A run that reaches
+  its total budget is recorded as `partial` with every completed change kept.
+
+Open **Knowledge → Dreams** to enable or disable dreaming, set the idle
+threshold and daily/weekly estimated-token budgets, choose the weekly day and
+hour, opt an agent out, or start a light/deep dream immediately. **Light** and
+**Deep** buttons bypass the idle and due-time checks, but never the safety
+gates or token budget. The dream journal shows the last 20 runs with status,
+summary, estimated tokens, and any error.
+
+The scheduler evaluates dreaming every five minutes and starts at most one
+dream globally. A deep dream is a not-before weekly slot: it runs at the next
+idle window rather than interrupting active work, and a missed week is caught up
+once on the next eligible idle tick. Failed attempts cool down for 15 minutes
+(light) or six hours (deep); two failed light attempts in the same idle window
+stop further retries until new messages arrive. Dreams are silent by default:
+they add no notifications, scheduled-task entries, or chat rows.
+
+Token budgets are estimated from transcript and summary characters (about four
+characters per token) because the streaming provider interface does not expose
+a usage stream. The journal labels them as estimates. The defaults are
+deliberately generous — 250,000 estimated tokens per agent per day for light
+dreams and 500,000 per week for all deep model work (merge calls plus the
+weekly note) — and can be raised in the panel. A zero budget removes that
+ceiling; turn off merges with **Merge near-duplicates**, the weekly note with
+**Weekly note**, and all dreaming with the main **Enabled** checkbox. Dream logs use the `[dream]` and `[scheduler] agent dream started`
+prefixes.
+
+The old in-chat three-hour question is hidden while dreaming is enabled for the
+agent; it returns when dreaming is disabled for that agent. When a dream cannot
+run (provider unavailable, not enough new turns, or dreaming is off), the
+previous conversation-gap hint remains as a fallback and may ask whether to
+start fresh. After a committed compaction — manual or dreamed — the hint is
+suppressed on later turns because the warm recap already covers the earlier
+context.
 
 ## Document source controls
 

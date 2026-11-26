@@ -7,7 +7,7 @@ import { getOrCreateGlobal } from "@/lib/utils/global-state";
 // and bounded by a deadline so a stalled provider can't leave a thread
 // "compacting" until the next restart.
 
-export type CompactionKind = "manual" | "auto" | "refresh";
+export type CompactionKind = "manual" | "auto" | "dream" | "refresh";
 
 export interface CompactionAttempt {
   readonly threadId: string;
@@ -54,7 +54,7 @@ export function isCompactionRunning(threadId: string, kind?: CompactionKind): bo
   return kind ? slot.has(kind) : slot.size > 0;
 }
 
-const KIND_PRIORITY: readonly CompactionKind[] = ["manual", "auto", "refresh"];
+const KIND_PRIORITY: readonly CompactionKind[] = ["manual", "auto", "dream", "refresh"];
 
 /** The most significant compaction running on the thread, if any. */
 export function currentCompaction(threadId: string): CompactionAttempt | null {
