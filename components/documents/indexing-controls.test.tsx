@@ -122,7 +122,10 @@ describe("global exclusions", () => {
       rel_path: "Synthetic note", abs_path: "gmail://synthetic", chunk_index: 0,
       text: "Synthetic private text", score: 0.95, match: "semantic",
     };
-    const search = vi.fn().mockResolvedValue([hit]);
+    const search = vi.fn().mockResolvedValue({
+      hits: [hit],
+      coverage: { scanned_chunks: 1, total_chunks: 1, truncated: false, max_scanned_rows: 20_000 },
+    });
     const exclude = vi.fn().mockResolvedValue(undefined);
     render(<SearchProbe onSearch={search} onExclude={exclude} />);
     fireEvent.change(screen.getByPlaceholderText(/Ask something/), { target: { value: "private topic" } });
@@ -133,5 +136,18 @@ describe("global exclusions", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     await waitFor(() => expect(search).toHaveBeenLastCalledWith("private topic", true));
+  });
+
+  it("surfaces a capped scan instead of presenting it as complete", async () => {
+    const search = vi.fn().mockResolvedValue({
+      hits: [],
+      coverage: { scanned_chunks: 20_000, total_chunks: 244_590, truncated: true, max_scanned_rows: 20_000 },
+    });
+    render(<SearchProbe onSearch={search} onExclude={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/Ask something/), { target: { value: "wide topic" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    const note = await screen.findByRole("status");
+    expect(note.textContent).toContain("these results are partial");
+    expect(note.textContent?.replace(/\D/g, "")).toContain("20000244590");
   });
 });

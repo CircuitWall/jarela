@@ -9,7 +9,7 @@ import { promises as fs } from "node:fs";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { withStreamDefault } from "../support/tool-metadata";
-import { searchDocuments } from "@/lib/documents/search";
+import { searchDocumentsWithMeta, type DocumentHit } from "@/lib/documents/search";
 import {
   createDocumentSource,
   deleteDocumentSource,
@@ -26,7 +26,7 @@ const DOCUMENT_SEARCH_MAX_FILES = 5;
 const DOCUMENT_SEARCH_MAX_PASSAGES_PER_FILE = 2;
 const DOCUMENT_SEARCH_MAX_PASSAGE_CHARS = 1_200;
 
-function groupDocumentHits(hits: Awaited<ReturnType<typeof searchDocuments>>, maxFiles: number) {
+function groupDocumentHits(hits: DocumentHit[], maxFiles: number) {
   const groups = new Map<string, {
     source: string;
     path: string;
@@ -74,14 +74,23 @@ export const documentsSearch = tool(
       });
     }
     const maxFiles = Math.min(limit ?? DOCUMENT_SEARCH_MAX_FILES, 10);
-    const hits = await searchDocuments(query, {
+    const result = await searchDocumentsWithMeta(query, {
       limit: Math.min(maxFiles * 5, 25),
       sourceId: source_id,
       minSimilarity: min_similarity,
     });
     return JSON.stringify({
       query,
-      hits: groupDocumentHits(hits, maxFiles),
+      hits: groupDocumentHits(result.hits, maxFiles),
+      coverage: result.coverage,
+      ...(result.coverage.truncated
+        ? {
+            warning:
+              `Scored ${result.coverage.scanned_chunks.toLocaleString()} of ` +
+              `${result.coverage.total_chunks.toLocaleString()} candidate chunks; these results are partial. ` +
+              "Narrow the search with source_id or a more specific query.",
+          }
+        : {}),
     });
   },
   {

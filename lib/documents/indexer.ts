@@ -44,12 +44,36 @@ const SKIP_DIRS = new Set([
   "__pycache__", ".pytest_cache", ".mypy_cache",
   ".idea", ".vscode", ".vs",
   "coverage", ".nyc_output",
+  // Vendored dependency and portable-runtime trees. One extracted app's
+  // `site-packages` accounted for 158k chunks (64% of a measured index).
+  // Dot-directories are already skipped by the walker; they stay listed so
+  // the denylist still holds if that convention changes.
+  "site-packages", "python_embeded", "vendor", "Pods", "bower_components",
+  ".tox", ".nox", ".gradle", ".nuget", ".terraform", ".cargo", ".stack-work",
 ]);
+// Generated or bundled artefacts that pass the extension allowlist but are
+// never useful as semantic documents. Lockfiles and tokenizer/vocab files were
+// among the largest non-prose entries in the measured corpus.
+const SKIP_FILE_NAMES = new Set([
+  "tokenizer.json", "vocab.json", "merges.txt",
+]);
+const SKIP_FILE_PATTERNS: readonly RegExp[] = [
+  /\.min\.(?:js|css)$/i,
+  /\.map$/i,
+  /\.pb\.go$/i,
+  /-lock\.(?:json|ya?ml)$/i,
+];
 // Per-call cap so a freshly-added source with thousands of files doesn't
 // block the scheduler tick for minutes. Subsequent ticks pick up the rest.
 const MAX_INDEX_PER_TICK_PER_SOURCE = 50;
 
-export { ALLOWED_EXT, SKIP_DIRS };
+export { ALLOWED_EXT, SKIP_DIRS, SKIP_FILE_NAMES, SKIP_FILE_PATTERNS };
+
+/** True for generated/bundled filenames the indexer should not ingest. */
+export function isSkippedFileName(name: string): boolean {
+  if (SKIP_FILE_NAMES.has(name)) return true;
+  return SKIP_FILE_PATTERNS.some((pattern) => pattern.test(name));
+}
 
 export function lowerExt(name: string): string {
   const i = name.lastIndexOf(".");
@@ -113,6 +137,7 @@ async function walk(root: string): Promise<{ files: FileEntry[]; truncated: bool
       } else if (e.isFile()) {
         const ext = lowerExt(e.name);
         if (!ALLOWED_EXT.has(ext)) continue;
+        if (isSkippedFileName(e.name)) continue;
         if (seen.has(abs)) continue;
         seen.add(abs);
         let st;

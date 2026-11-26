@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getDefaultDocumentMinSimilarity, searchDocuments } from "@/lib/documents/search";
+import { getDefaultDocumentMinSimilarity, searchDocumentsWithMeta } from "@/lib/documents/search";
 import { DocumentExclusionUnavailableError } from "@/lib/documents/recall-policy";
 import { errorResponse } from "@/lib/api/responses";
 
@@ -24,9 +24,9 @@ export async function GET(req: NextRequest) {
   if (!parsed.success) {
     return errorResponse(parsed.error.issues[0]?.message ?? "invalid input", 400);
   }
-  let hits: Awaited<ReturnType<typeof searchDocuments>>;
+  let result: Awaited<ReturnType<typeof searchDocumentsWithMeta>>;
   try {
-    hits = await searchDocuments(parsed.data.q, {
+    result = await searchDocumentsWithMeta(parsed.data.q, {
       limit: parsed.data.limit,
       sourceId: parsed.data.source_id,
       minSimilarity: parsed.data.min_similarity,
@@ -40,7 +40,8 @@ export async function GET(req: NextRequest) {
   }
   return NextResponse.json({
     query: parsed.data.q,
-    hits,
+    hits: result.hits,
     min_similarity: parsed.data.min_similarity ?? getDefaultDocumentMinSimilarity(),
+    coverage: result.coverage,
   });
 }

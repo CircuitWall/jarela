@@ -1,10 +1,10 @@
 "use client";
 import { Search } from "lucide-react";
 import { useState } from "react";
-import type { DocumentHit } from "@/api/types";
+import type { DocumentHit, DocumentSearchCoverage, DocumentSearchResponse } from "@/api/types";
 
 interface Props {
-  onSearch: (query: string, includeExcluded?: boolean) => Promise<DocumentHit[]>;
+  onSearch: (query: string, includeExcluded?: boolean) => Promise<DocumentSearchResponse>;
   onExclude: (hit: DocumentHit) => Promise<void>;
 }
 
@@ -37,6 +37,7 @@ function groupPreviewHits(hits: DocumentHit[]): PreviewGroup[] {
 export function SearchProbe({ onSearch, onExclude }: Props) {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<DocumentHit[]>([]);
+  const [coverage, setCoverage] = useState<DocumentSearchCoverage | null>(null);
   const [searching, setSearching] = useState(false);
   const [includeExcluded, setIncludeExcluded] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -44,14 +45,17 @@ export function SearchProbe({ onSearch, onExclude }: Props) {
 
   async function runSearch() {
     const q = query.trim();
-    if (!q) { setHits([]); return; }
+    if (!q) { setHits([]); setCoverage(null); return; }
     setSearching(true);
     setSearched(false);
     try {
-      setHits(await onSearch(q, includeExcluded));
+      const result = await onSearch(q, includeExcluded);
+      setHits(result.hits);
+      setCoverage(result.coverage);
       setSearched(true);
     } catch {
       setHits([]);
+      setCoverage(null);
       // The panel surfaces search errors.
     } finally {
       setSearching(false);
@@ -91,6 +95,12 @@ export function SearchProbe({ onSearch, onExclude }: Props) {
           <Search size={13} /> Search
         </button>
       </div>
+      {coverage?.truncated && (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400" role="status">
+          Scored {coverage.scanned_chunks.toLocaleString()} of {coverage.total_chunks.toLocaleString()} candidate chunks;
+          these results are partial. Narrow the search with a source scope or a more specific query.
+        </p>
+      )}
       {hits.length > 0 && (
         <div className="space-y-2">
           {groups.map((group) => (

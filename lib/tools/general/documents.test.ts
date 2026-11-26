@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-doc-tools-"));
 process.env.JARELA_DB_DIR = join(tmpRoot, "db");
 
-const searchMocks = vi.hoisted(() => ({ searchDocuments: vi.fn() }));
+const searchMocks = vi.hoisted(() => ({ searchDocumentsWithMeta: vi.fn() }));
 vi.mock("@/lib/documents/search", () => searchMocks);
 
 const { documentsAddLocalSource, documentsListSources, documentsSearch } = await import("./documents");
@@ -76,23 +76,42 @@ describe("documents_add_local_source", () => {
 
   it("groups agent results by file and caps passages and excerpt size", async () => {
     const text = "x".repeat(1_500);
-    searchMocks.searchDocuments.mockResolvedValue([
-      { document_id: "doc-a", source_id: "source-a", source_label: "Docs", rel_path: "guide.md", abs_path: "", chunk_index: 0, text, score: 0.9, match: "semantic" },
-      { document_id: "doc-a", source_id: "source-a", source_label: "Docs", rel_path: "guide.md", abs_path: "", chunk_index: 1, text: "second passage", score: 0.8, match: "semantic" },
-      { document_id: "doc-a", source_id: "source-a", source_label: "Docs", rel_path: "guide.md", abs_path: "", chunk_index: 2, text: "third passage", score: 0.7, match: "substring" },
-      { document_id: "doc-b", source_id: "source-b", source_label: null, rel_path: "notes.txt", abs_path: "", chunk_index: 0, text: "other file", score: 0.6, match: "semantic" },
-    ]);
+    searchMocks.searchDocumentsWithMeta.mockResolvedValue({
+      hits: [
+        { document_id: "doc-a", source_id: "source-a", source_label: "Docs", rel_path: "guide.md", abs_path: "", chunk_index: 0, text, score: 0.9, match: "semantic" },
+        { document_id: "doc-a", source_id: "source-a", source_label: "Docs", rel_path: "guide.md", abs_path: "", chunk_index: 1, text: "second passage", score: 0.8, match: "semantic" },
+        { document_id: "doc-a", source_id: "source-a", source_label: "Docs", rel_path: "guide.md", abs_path: "", chunk_index: 2, text: "third passage", score: 0.7, match: "substring" },
+        { document_id: "doc-b", source_id: "source-b", source_label: null, rel_path: "notes.txt", abs_path: "", chunk_index: 0, text: "other file", score: 0.6, match: "semantic" },
+      ],
+      coverage: { scanned_chunks: 4, total_chunks: 4, truncated: false, max_scanned_rows: 20_000 },
+    });
 
     const out = JSON.parse(await documentsSearch.invoke({ query: "term", limit: 2 })) as {
       hits: Array<{ path: string; passages: Array<{ chunk_index: number; text: string }> }>;
     };
 
-    expect(searchMocks.searchDocuments).toHaveBeenCalledWith("term", { limit: 10, sourceId: undefined, minSimilarity: undefined });
+    expect(searchMocks.searchDocumentsWithMeta).toHaveBeenCalledWith("term", { limit: 10, sourceId: undefined, minSimilarity: undefined });
     expect(out.hits).toHaveLength(2);
     expect(out.hits[0].path).toBe("guide.md");
     expect(out.hits[0].passages.map((passage) => passage.chunk_index)).toEqual([0, 1]);
     expect(out.hits[0].passages[0].text).toHaveLength(1_200);
     expect(out.hits[1].path).toBe("notes.txt");
+  });
+
+  it("warns when the scan cap makes results partial", async () => {
+    searchMocks.searchDocumentsWithMeta.mockResolvedValue({
+      hits: [],
+      coverage: { scanned_chunks: 20_000, total_chunks: 244_590, truncated: true, max_scanned_rows: 20_000 },
+    });
+
+    const out = JSON.parse(await documentsSearch.invoke({ query: "wide topic" })) as {
+      coverage: { truncated: boolean; scanned_chunks: number; total_chunks: number };
+      warning?: string;
+    };
+
+    expect(out.coverage).toMatchObject({ truncated: true, scanned_chunks: 20_000, total_chunks: 244_590 });
+    expect(out.warning).toContain("these results are partial");
+    expect(out.warning).toContain("candidate chunks");
   });
 
   it("does not expose an exclusion override to the model", () => {
