@@ -4,6 +4,8 @@ import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
 import type { CredentialEditorMode, useIntegrationCredential } from "@/hooks/useIntegrationCredential";
 import type { useIntegrationOAuth } from "@/hooks/useIntegrationOAuth";
 
+type OAuthProvider = "gmail" | "outlook" | "atlassian";
+
 export function IntegrationCredentialActions({
   definition: def, status, mode, editor, oauth, disableTesting,
 }: {
@@ -20,8 +22,18 @@ export function IntegrationCredentialActions({
   const credential = mode.kind === "edit" ? mode.credential : null;
   const configured = mode.kind !== "default" || status?.configured;
   const creating = mode.kind === "create";
-  const oauthProvider = def.name === "gmail" || def.name === "outlook" ? def.name : null;
-  const oauthLabel = oauthProvider === "gmail" ? "Gmail" : "Outlook";
+  // Map integration names to OAuth provider keys used by the OAuth hook.
+  // An integration supports OAuth if def.auth_method === "oauth".
+  const oauthNameMap: Record<string, OAuthProvider> = {
+    gmail: "gmail",
+    outlook: "outlook",
+    "Atlassian (Jira + Confluence)": "atlassian",
+  };
+  const oauthProvider = def.auth_method === "oauth" ? (oauthNameMap[def.name] ?? null) : null;
+  const oauthLabel = oauthProvider === "gmail" ? "Gmail"
+    : oauthProvider === "outlook" ? "Outlook"
+    : oauthProvider === "atlassian" ? "Atlassian"
+    : null;
 
   return (
     <div className="sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-2 border-t border-border bg-surface-2/95 px-1 py-2 backdrop-blur">
@@ -39,7 +51,11 @@ export function IntegrationCredentialActions({
         <button onClick={() => oauth.commands.connectOAuth(oauthProvider)} disabled={connecting || creating}
           title={creating
             ? `Save this credential first, then connect ${oauthLabel}`
-            : `Authorize ${oauthLabel} + Calendar via ${oauthProvider === "gmail" ? "Google" : "Microsoft"} OAuth — opens a browser window`}
+            : {
+                gmail: "Authorize Gmail + Calendar via Google OAuth — opens a browser window",
+                outlook: "Authorize Outlook + Calendar via Microsoft OAuth — opens a browser window",
+                atlassian: "Authorize Atlassian (Jira + Confluence) via Atlassian OAuth — opens a browser window",
+              }[oauthProvider]}
           className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed">
           {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
           {connecting ? "Waiting…" : `Connect ${oauthLabel}`}
