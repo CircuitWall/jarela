@@ -50,6 +50,10 @@ import type {
   DocumentIndexLifecycleResponse,
   DocumentIndexMaintenanceAccepted,
   DocumentIndexMaintenanceAction,
+  DreamingOverview,
+  DreamingPatch,
+  DreamTrigger,
+  DreamTriggerResponse,
   Skill,
   SkillWithContent,
   SkillListResponse,
@@ -1278,6 +1282,17 @@ export const api = {
       request<DocumentIndexMaintenanceAccepted>("/documents/lifecycle", {
         method: "POST", body: JSON.stringify(action),
       }),
+  },
+
+  // Agent dreaming (ADR-0135). GET is polled while a dream runs; POST starts
+  // one dream and returns 202. The journal is included in the overview so the
+  // Knowledge panel does not need a second request.
+  dreaming: {
+    getOverview: () => request<DreamingOverview>("/dreaming", { cache: "no-store" }),
+    update: (patch: DreamingPatch) =>
+      request<DreamingOverview>("/dreaming", { method: "PATCH", body: JSON.stringify(patch) }),
+    run: (input: DreamTrigger) =>
+      request<DreamTriggerResponse>("/dreaming", { method: "POST", body: JSON.stringify(input) }),
   },
 
   // GETs pass `cache: "no-store"` — the server's short Cache-Control TTL

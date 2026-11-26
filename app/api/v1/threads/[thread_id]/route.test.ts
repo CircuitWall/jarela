@@ -13,7 +13,8 @@ const { FILES_DIR } = await import("@/lib/files");
 const { getThread } = await import("@/lib/stores/threads");
 const { putMemory } = await import("@/lib/stores/memory");
 const { SENSITIVE_MEMORY_NAMESPACES } = await import("@/lib/crypto/sensitive");
-const { DELETE } = await import("./route");
+const { setDreamingSettings } = await import("@/lib/stores/app-settings");
+const { DELETE, GET } = await import("./route");
 
 afterAll(() => {
   try { rmSync(TMP_ROOT, { recursive: true, force: true }); } catch {}
@@ -38,6 +39,24 @@ const del = (threadId: string) =>
   DELETE(new NextRequest(`http://localhost/api/v1/threads/${threadId}`, { method: "DELETE" }), {
     params: Promise.resolve({ thread_id: threadId }),
   });
+
+describe("GET /api/v1/threads/[thread_id] dreaming flag", () => {
+  it("reports whether server dreaming owns idle compaction for this agent", async () => {
+    const threadId = seedThread("idle context");
+    const get = () => GET(
+      new NextRequest(`http://localhost/api/v1/threads/${threadId}?view=metadata`),
+      { params: Promise.resolve({ thread_id: threadId }) },
+    );
+
+    expect((await (await get()).json()).dreaming_enabled).toBe(true);
+    setDreamingSettings({ enabled: false });
+    try {
+      expect((await (await get()).json()).dreaming_enabled).toBe(false);
+    } finally {
+      setDreamingSettings({ enabled: true });
+    }
+  });
+});
 
 describe("DELETE /api/v1/threads/[thread_id] privacy cleanup", () => {
   it("removes attachment files that only the deleted conversation referenced", async () => {

@@ -238,6 +238,10 @@ If a write result is uncertain, read back before any retry.
   that looks like app or system state.
 - Archive is the default retirement action. Permanent deletion requires the
   user's explicit request for that data.
+- The default agent's weekly background dream may merge validated
+  near-duplicates in `facts` automatically. It archives duplicates and keeps
+  revision history; it never deletes. This does not change the approval rule
+  for a manual maintenance plan.
 - Do not change the memory policy from this procedure. If the user asks to
   change it, explain the retention/noise tradeoff and point them to the Memory
   panel.

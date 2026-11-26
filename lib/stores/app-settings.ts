@@ -11,6 +11,11 @@ import {
   defaultDocumentRecallPolicy, DocumentRecallPolicySchema, type DocumentRecallPolicy,
 } from "@/lib/documents/recall-policy";
 import type { DocumentIndexLifecycleSettings } from "@/api/document-lifecycle";
+import {
+  DREAMING_SETTINGS_DEFAULTS,
+  type DreamingSettings,
+  type DreamingSettingsPatch,
+} from "@/api/dreaming";
 
 const now = () => new Date().toISOString();
 
@@ -23,6 +28,7 @@ const REDACTION_ENABLED_KEY = "redaction_enabled";
 const AMBIENT_CONTEXT_KEY = "ambient_context_enabled";
 const ARTIFACT_LIFECYCLE_KEY = "artifact_lifecycle";
 const DOCUMENT_INDEX_LIFECYCLE_KEY = "document_index_lifecycle";
+const DREAMING_KEY = "agent_dreaming";
 const MEMORY_POLICY_KEY = "memory_policy";
 const DOCUMENT_RECALL_POLICY_KEY = "document_recall_policy";
 
@@ -198,6 +204,22 @@ export function setDocumentIndexLifecycleSettings(
   return next;
 }
 
+// Agent dreaming (ADR-0135). Defaults are intentionally generous: the weekly
+// deep budget is a ceiling for consolidation, not a spending target.
+export function getDreamingSettings(): DreamingSettings {
+  const raw = readJsonSetting<Partial<DreamingSettings>>(DREAMING_KEY);
+  return normalizeDreamingSettings(raw ?? {});
+}
+
+export function setDreamingSettings(input: DreamingSettingsPatch): DreamingSettings {
+  const next = normalizeDreamingSettings({
+    ...getDreamingSettings(),
+    ...input,
+  });
+  writeJsonSetting(DREAMING_KEY, next);
+  return next;
+}
+
 export function getArtifactLifecycleSettings(): ArtifactLifecycleSettings {
   const raw = readJsonSetting<Partial<ArtifactLifecycleSettings>>(ARTIFACT_LIFECYCLE_KEY);
   return normalizeArtifactLifecycleSettings(raw ?? {});
@@ -232,6 +254,60 @@ function normalizeDocumentIndexLifecycleSettings(
     purge_disabled_after_days: Number.isFinite(days)
       ? Math.max(0, Math.min(3650, Math.floor(days)))
       : DEFAULT_DOCUMENT_INDEX_LIFECYCLE_SETTINGS.purge_disabled_after_days,
+  };
+}
+
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.floor(number))) : fallback;
+}
+
+function boolSetting(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function normalizeDreamingSettings(input: Partial<DreamingSettings>): DreamingSettings {
+  const model = typeof input.deep_model_config_name === "string"
+    ? input.deep_model_config_name.trim().slice(0, 200)
+    : null;
+  return {
+    enabled: boolSetting(input.enabled, DREAMING_SETTINGS_DEFAULTS.enabled),
+    light_idle_minutes: clampInt(
+      input.light_idle_minutes, DREAMING_SETTINGS_DEFAULTS.light_idle_minutes, 15, 1440,
+    ),
+    light_min_user_turns: clampInt(
+      input.light_min_user_turns, DREAMING_SETTINGS_DEFAULTS.light_min_user_turns, 1, 20,
+    ),
+    light_max_per_day: clampInt(
+      input.light_max_per_day, DREAMING_SETTINGS_DEFAULTS.light_max_per_day, 1, 48,
+    ),
+    light_daily_token_budget: clampInt(
+      input.light_daily_token_budget, DREAMING_SETTINGS_DEFAULTS.light_daily_token_budget, 0, 20_000_000,
+    ),
+    deep_enabled: boolSetting(input.deep_enabled, DREAMING_SETTINGS_DEFAULTS.deep_enabled),
+    deep_weekday: clampInt(input.deep_weekday, DREAMING_SETTINGS_DEFAULTS.deep_weekday, 0, 6),
+    deep_hour: clampInt(input.deep_hour, DREAMING_SETTINGS_DEFAULTS.deep_hour, 0, 23),
+    deep_idle_minutes: clampInt(
+      input.deep_idle_minutes, DREAMING_SETTINGS_DEFAULTS.deep_idle_minutes, 15, 1440,
+    ),
+    deep_budget_ms: clampInt(
+      input.deep_budget_ms, DREAMING_SETTINGS_DEFAULTS.deep_budget_ms, 10_000, 3_600_000,
+    ),
+    deep_document_budget_ms: clampInt(
+      input.deep_document_budget_ms, DREAMING_SETTINGS_DEFAULTS.deep_document_budget_ms, 10_000, 3_600_000,
+    ),
+    deep_reclaim_budget_ms: clampInt(
+      input.deep_reclaim_budget_ms, DREAMING_SETTINGS_DEFAULTS.deep_reclaim_budget_ms, 10_000, 3_600_000,
+    ),
+    deep_weekly_token_budget: clampInt(
+      input.deep_weekly_token_budget, DREAMING_SETTINGS_DEFAULTS.deep_weekly_token_budget, 0, 20_000_000,
+    ),
+    deep_model_config_name: model && model.length > 0 ? model : null,
+    deep_merge_enabled: boolSetting(input.deep_merge_enabled, DREAMING_SETTINGS_DEFAULTS.deep_merge_enabled),
+    deep_merge_max_groups: clampInt(
+      input.deep_merge_max_groups, DREAMING_SETTINGS_DEFAULTS.deep_merge_max_groups, 1, 20,
+    ),
+    deep_review_enabled: boolSetting(input.deep_review_enabled, DREAMING_SETTINGS_DEFAULTS.deep_review_enabled),
   };
 }
 

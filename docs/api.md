@@ -110,6 +110,8 @@ and activity, without querying or serializing messages or their usage snapshots.
 This response omits `messages` and `has_more`. The default `view=messages`
 preserves the full paged response. Unknown views return HTTP 400.
 Both views use `Cache-Control: no-store` so live state stays current.
+Metadata includes `dreaming_enabled`, which tells the chat whether server-side
+idle compaction owns the three-hour prompt for this agent (ADR-0135).
 
 ### `PATCH /api/v1/threads/[thread_id]/messages/[message_id]`
 

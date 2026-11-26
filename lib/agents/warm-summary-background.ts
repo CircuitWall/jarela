@@ -67,7 +67,9 @@ const queuedBoundaries = getOrCreateGlobal("__jarela_queued_compaction_boundarie
 }>());
 
 function backgroundCompactionRunning(threadId: string): boolean {
-  return isCompactionRunning(threadId, "auto") || isCompactionRunning(threadId, "refresh");
+  return isCompactionRunning(threadId, "auto")
+    || isCompactionRunning(threadId, "dream")
+    || isCompactionRunning(threadId, "refresh");
 }
 
 export function kickWarmSummaryRefresh(threadId: string): void {
@@ -91,10 +93,21 @@ export function pendingCompactionBoundary(threadId: string): string | null {
   return seq === null ? null : getThreadMessageBySeq(threadId, seq)?.created_at ?? null;
 }
 
+/**
+ * A dream compaction shares the background-compaction guard, so a boundary
+ * requested while it runs is queued. The dream path does not go through
+ * runBoundaryCompaction, whose `finally` normally drains that queue; call this
+ * once the dream attempt has settled so the request is not stranded.
+ */
+export function drainQueuedBoundaryAfterDream(threadId: string): void {
+  drainQueuedBoundary(threadId);
+}
+
 export function pendingCompactionBoundarySeq(threadId: string): number | null {
   return queuedBoundaries.get(threadId)?.boundarySeq
     ?? getCompactionAttempt(threadId, "auto")?.boundarySeq
     ?? getCompactionAttempt(threadId, "manual")?.boundarySeq
+    ?? getCompactionAttempt(threadId, "dream")?.boundarySeq
     ?? null;
 }
 

@@ -21,6 +21,7 @@
 
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { getConfig } from "@/lib/env/config";
+import { settleWithinBudget } from "@/lib/utils/promise";
 
 interface ShutdownState {
   registered: boolean;
@@ -71,6 +72,15 @@ export function registerShutdownHandlers(): void {
     // not SIGINT. Task Scheduler "End task" delivers SIGBREAK as well.
     process.removeAllListeners("SIGBREAK");
     process.on("SIGBREAK", handler);
+  }
+}
+
+async function drainDream(): Promise<void> {
+  try {
+    const { waitForDreaming } = await import("@/lib/agents/dreaming");
+    await settleWithinBudget(waitForDreaming(), 2_000, undefined);
+  } catch (err) {
+    console.error("[jarela] waiting for an active dream failed:", err);
   }
 }
 
@@ -174,6 +184,10 @@ async function runShutdown(): Promise<void> {
   } catch (err) {
     console.error("[jarela] stopping async-results sweeper failed:", err);
   }
+
+  // 4c. Give an in-flight dream a short window to settle before its stores are
+  //     closed. The absolute drain timeout still wins if it is stuck.
+  await drainDream();
 
   // 5. Close the DB. WAL is checkpointed so the next boot is fast and we
   //    leave no stale -shm/-wal sidecars on disk.

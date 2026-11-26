@@ -538,3 +538,34 @@ BEGIN
   INSERT INTO messages_fts(rowid, content)
     SELECT new.rowid, substr(new.content, 1, 2000) WHERE new.transcript_status = 'completed';
 END;
+CREATE TABLE agent_dream_state (
+  agent_id TEXT PRIMARY KEY NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  last_light_dream_at TEXT,
+  last_light_attempt_at TEXT,
+  last_light_boundary_seq INTEGER,
+  last_deep_dream_at TEXT,
+  last_deep_attempt_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE agent_dream_runs (
+  id TEXT PRIMARY KEY NOT NULL,
+  agent_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('light','deep')),
+  status TEXT NOT NULL CHECK (status IN ('running','completed','partial','failed','skipped')),
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  summary TEXT,
+  stats TEXT,
+  estimated_input_tokens INTEGER NOT NULL DEFAULT 0,
+  estimated_output_tokens INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
+
+CREATE INDEX idx_agent_dream_runs_agent_started ON agent_dream_runs(agent_id, started_at DESC);
+CREATE INDEX idx_agent_dream_runs_started ON agent_dream_runs(started_at);
+
+CREATE INDEX idx_messages_foreground_user_created_at ON messages(created_at DESC) WHERE role='user' AND category IS NULL;

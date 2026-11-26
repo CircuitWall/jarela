@@ -126,6 +126,7 @@ be listed here:
 | `threads.ts` | deletes matching `memory_store` archive rows | cascade thread → chat archive |
 | `system-signals.ts` | reads/updates `background_tool_results`, `pending_actions` | delivery leases and failure settlement |
 | `dashboard-metrics.ts` | joins `agent_configs`, `model_configs` | read-only dashboard aggregate |
+| `agent-dreams.ts` | reads/deletes rows keyed by `agent_configs.id` | prune dream state after agent deletion; `agent_configs` uses `INSERT OR REPLACE`, so a cascading FK would erase state on every agent edit |
 
 Anything else must go through the owning store's exported functions. Adding a
 new exception requires updating this table, a test that covers the cascade,
@@ -151,7 +152,7 @@ and review of the owning store's schema.
 
 | Concern | Stores |
 | --- | --- |
-| Agents/configs | `agent-configs.ts`, `model-config.ts`, `agent-advertisements.ts`, `builtin-tools.ts`, `task-assignments.ts`, `user-profile.ts`, `access.ts` |
+| Agents/configs | `agent-configs.ts`, `model-config.ts`, `agent-advertisements.ts`, `agent-dreams.ts`, `builtin-tools.ts`, `task-assignments.ts`, `user-profile.ts`, `access.ts` |
 | Credentials/secrets | `credentials.ts`, `integrations.ts`, `integration_meta.ts`, `tool-secrets.ts`, `tool-config.ts`, `mcp-servers.ts`, `proxy-config.ts`, `allowed-sites.ts` |
 | Settings | `app-settings.ts`, `app-settings-json.ts`, `harnesses.ts`, `model-metadata.ts`, `pricing.ts`, `change-tracker.ts` |
 | Documents/memory | `memory.ts`, `document-sources.ts`, `message-embedding-jobs.ts`, `langgraph-store.ts` |

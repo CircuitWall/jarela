@@ -14,6 +14,20 @@ export type {
   DocumentIndexMaintenanceAction,
   DocumentIndexMaintenanceStatus,
 } from "./document-lifecycle";
+export type {
+  DreamKind,
+  DreamReadiness,
+  DreamRun,
+  DreamRunStatus,
+  DreamSkipReason,
+  DreamTrigger,
+  DreamTriggerResponse,
+  DreamingAgentStatus,
+  DreamingOverview,
+  DreamingPatch,
+  DreamingSettings,
+  DreamingSettingsPatch,
+} from "./dreaming";
 
 export interface WorkflowRun {
   id: string;
@@ -446,6 +460,9 @@ export interface ThreadMetadata extends ThreadSummary {
   // agent + model config. Used by the chat UI to scale the per-turn
   // context-usage bar against the same cap the agent applies at run time.
   context_window_tokens?: number | null;
+  // ADR-0135 — when dreaming is enabled for this agent, the server owns idle
+  // compaction and the client must not show the old 3-hour question prompt.
+  dreaming_enabled?: boolean;
   // ADR-0042 — explicit context boundary + cached warm summary. NULL on
   // threads with no pin (the agent's history_window_hours default applies).
   // The summary is fresh iff `warm_summary_before_seq === hot_since_seq`; the

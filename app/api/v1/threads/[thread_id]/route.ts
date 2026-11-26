@@ -19,6 +19,8 @@ import {
 import { getMessageUsageByIds } from "@/lib/stores/message-usage";
 import { collectThreadFileRefNames, removeFilesNoLongerReferenced } from "@/lib/attachments/spill-gc";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
+import { getAgentDreamState } from "@/lib/stores/agent-dreams";
+import { getDreamingSettings } from "@/lib/stores/app-settings";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { messageToResponse, resolveContextWindowTokens } from "@/lib/api/serializers";
 import { currentChannelSummaries, isManualCompactionRunning, pendingCompactionBoundary, pendingCompactionBoundarySeq } from "@/lib/agents/warm-summary-background";
@@ -73,11 +75,14 @@ export async function GET(req: NextRequest, { params }: Params) {
     DEFAULT_CONTEXT_WINDOW_TOKENS,
   );
 
+  const dreamingSettings = getDreamingSettings();
+  const dreamState = getAgentDreamState(thread.agent_id);
   const metadata = {
     ...thread,
     warm_summary_topics: parseStoredTopics(thread.warm_summary_topics),
     warm_channel_summaries: currentChannelSummaries(thread_id, thread.hot_since_seq),
     context_window_tokens: contextWindowTokens,
+    dreaming_enabled: dreamingSettings.enabled && (dreamState?.enabled ?? 1) === 1,
     pending_hot_since: pendingCompactionBoundary(thread_id),
     pending_hot_since_seq: pendingCompactionBoundarySeq(thread_id),
     manual_compaction_pending: isManualCompactionRunning(thread_id),
