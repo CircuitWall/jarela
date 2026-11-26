@@ -149,7 +149,10 @@ describe("IntegrationCard", () => {
     });
 
     it("starts Atlassian OAuth with Connect Atlassian button and polls status", async () => {
-      render(<IntegrationCard definition={mailDefinition("atlassian")} onChanged={onChanged} />);
+      const status: IntegrationStatus = {
+        name: "Atlassian (Jira + Confluence)", configured: true, values: {}, updated_at: null,
+      };
+      render(<IntegrationCard definition={mailDefinition("atlassian")} status={status} onChanged={onChanged} />);
       await connect("atlassian");
       expect(api.integrations.atlassianOauthStart).toHaveBeenCalledWith({
         client_id: undefined, client_secret: undefined, credential_id: undefined,
