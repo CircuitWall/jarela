@@ -39,6 +39,19 @@ it.each(["facts", "tool-secrets"])("preserves bounded flat revision history in %
   }
 });
 
+it("bounds history by serialized bytes for large records", () => {
+  const initial = putMemory("facts", "synthetic-large-history", record("x".repeat(6_000)));
+  for (let index = 1; index <= 6; index++) {
+    putMemory("facts", initial.key, record(`${index}${"y".repeat(6_000)}`));
+  }
+  const stored = JSON.parse(getMemory("facts", initial.key)!.value);
+
+  expect(stored.history.length).toBeGreaterThan(0);
+  expect(stored.history.length).toBeLessThan(20);
+  expect(Buffer.byteLength(JSON.stringify(stored.history), "utf8")).toBeLessThan(17 * 1024);
+  expect(stored.history.at(-1).record.content[0]).toBe("5");
+});
+
 it("retains an encrypted legacy v1 record as the first snapshot on update", () => {
   const previous = { ...record("Synthetic legacy"), version: 1 };
   getDb().prepare(`INSERT INTO memory_store(namespace,key,value,created_at,updated_at)

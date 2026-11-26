@@ -1,23 +1,61 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { getMemory, putMemory, listMemory, deleteMemory, searchMemoryRows } from "@/lib/stores/memory";
+import {
+  getMemory, getStoredMemoryValue, putMemory, listMemory, deleteMemory, searchMemoryRows,
+} from "@/lib/stores/memory";
 import { getDefaultChatMinSimilarity, searchMemory } from "@/lib/embeddings";
 import { CURRENT_STRUCTURED_MEMORY_VERSION, StructuredMemoryInputSchema } from "@/lib/memory/record";
+import { memoryFingerprint } from "@/lib/memory/maintenance";
 import { truncateText } from "@/lib/utils/text";
 import { registerLangChainPackage } from "../packages/langchain-package";
 
+function parseStoredMemoryValue(value: string): unknown {
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+function withoutHistory(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const { history: _history, ...rest } = value as Record<string, unknown>;
+  return rest;
+}
+
 export const memoryReadTool = tool(
-  async ({ namespace, key }) => {
+  async ({ namespace, key, include_revision, include_history }) => {
     const row = getMemory(namespace, key);
     if (!row) return JSON.stringify(null);
-    return row.value; // already stored as a JSON string
+    const revision = include_revision === true;
+    const history = include_history === true;
+    // The default contract returns the stored value only. Structured records
+    // omit their maintenance-only revision history unless explicitly asked.
+    if (!revision && history) return row.value;
+    const parsed = parseStoredMemoryValue(row.value);
+    const value = history ? parsed : withoutHistory(parsed);
+    if (!revision) return typeof value === "string" ? row.value : JSON.stringify(value);
+
+    // Fingerprint the raw stored bytes (ciphertext for sensitive namespaces)
+    // before getMemory decrypted or lazily migrated them, or the marker will
+    // not match what memory_apply_maintenance compares against.
+    const stored = getStoredMemoryValue(namespace, key);
+    if (!stored) return JSON.stringify(null);
+    return JSON.stringify({
+      value,
+      updated_at: stored.updated_at,
+      fingerprint: memoryFingerprint(stored.updated_at, stored.value),
+    });
   },
   {
     name: "memory_read",
-    description: "Read a value from long-term memory by namespace and key. Returns null if not found.",
+    description:
+      "Read a value from long-term memory by namespace and key. Returns null if not found. " +
+      "Structured records omit their revision history by default. Set include_revision=true to also return " +
+      "updated_at and the fingerprint required by memory_apply_maintenance; set include_history=true to include history.",
     schema: z.object({
       namespace: z.string().describe("Memory namespace (e.g. 'user', 'facts', 'tasks')"),
       key: z.string().describe("Key within the namespace"),
+      include_revision: z.boolean().optional()
+        .describe("Return updated_at and the memory_apply_maintenance fingerprint. Default false."),
+      include_history: z.boolean().optional()
+        .describe("Include the stored revision history in the returned value. Default false."),
     }),
   },
 );
