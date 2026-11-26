@@ -35,6 +35,17 @@ schemas, or response envelopes from generic REST examples.
   integrations, `@public-internal` for the paired browser extension. Everything
   else is UI-internal and stays unmarked.
 
+## File map
+
+| Concern | Files |
+| --- | --- |
+| Route modules | `app/api/v1/<resource>/route.ts`, `app/api/v1/<resource>/[id]/route.ts` |
+| Response builders | [responses.ts](../../lib/api/responses.ts), [errors.ts](../../lib/api/errors.ts) |
+| Serializers | [serializers.ts](../../lib/api/serializers.ts) |
+| SSE | [sse.ts](../../lib/api/sse.ts) |
+| Client contract | [client.ts](../../api/client.ts), [types.ts](../../api/types.ts) |
+| Public docs | [docs/api.md](../../docs/api.md) |
+
 ## Status, headers, and transport contract
 
 - Use the shared builders: `createdResponse` for 201, an empty `Response` for
@@ -137,6 +148,19 @@ export async function PATCH(req: NextRequest) {
   and repository-standard logging; helpers are not a substitute for this review.
 - Return empty responses without JSON for 204. Do not convert existing DELETE
   responses to 204 during cleanup.
+
+## Anti-patterns
+
+- **Universal response envelope** — wrapping every success in `{ data }` breaks
+  the v1 contract. Return the resource, array, or named-field object.
+- **Inline error bodies** — hand-built error JSON loses the shared status,
+  headers, and structured fields that `errorJson` preserves.
+- **Routes that reach around stores** — SQL, `.prepare`, or direct table access
+  bypasses transactions, encryption, and row mapping.
+- **Unvalidated transport input** — trusting JSON, query, path, or multipart
+  values turns malformed input into a 500 instead of the documented 400.
+- **Success-shaped failures** — returning 200 for failed work, or converting
+  domain probe results into HTTP errors, breaks callers and observability.
 
 ## Review checks
 

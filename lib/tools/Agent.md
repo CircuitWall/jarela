@@ -41,9 +41,11 @@ treat them as product surface.
   [authoring-operations.ts](./general/authoring-operations.ts) for the
   "pending is not success" and "does not approve" style. Do not write a
   one-line description for a tool with side effects.
-- **Schema:** `z.strictObject` with bounded strings, arrays, and numbers; reject
-  unknown fields; never accept an untyped record or a parameter that grants
-  authority the tool does not own (publication, approval, installation).
+- **Schema:** a typed Zod object with bounded strings, arrays, and numbers;
+  prefer `z.strictObject` for new tools that must reject unknown fields, and
+  match the owning module's existing style. Never accept an untyped record or a
+  parameter that grants authority the tool does not own (publication, approval,
+  installation).
 - **Output:** return a JSON string (or `AsyncGenerator<string>` when streaming)
   with stable named fields. Refusals return the documented structured shape;
   they are not silent success. Never return `undefined`, bare prose, or a
@@ -172,7 +174,7 @@ Tests are co-located with each tool module (for example
 
 - [ ] Tool name is unique, snake_case, and unchanged unless a rename was
       coordinated.
-- [ ] `z.strictObject` schema with bounds and no authority parameters.
+- [ ] Typed Zod schema with bounds; strict where unknown keys must be rejected.
 - [ ] Description states when to use and when not to use the tool.
 - [ ] Output is a documented string/stream shape; refusals are explicit.
 - [ ] Capability and category are the narrowest true values.

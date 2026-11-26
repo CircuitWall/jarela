@@ -142,7 +142,7 @@ capabilities.
 
 Omitted capability keys remain unknown. Only explicit negative statements can
 produce `false`; absence never removes a capability or deletes a model.
-Observations retain per-field provenance in SQLite via `lib/stores/model-metadata`.
+Observations retain per-field provenance in SQLite via `lib/stores/model-metadata.ts`.
 Catalog and saved-model UI metadata may change, but runtime adapter behavior,
 model assignments, credentials, context budgets, and recorded costs do not.
 Verbatim evidence checks establish provenance, not semantic certainty: model

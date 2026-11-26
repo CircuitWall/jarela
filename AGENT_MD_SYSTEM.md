@@ -66,7 +66,8 @@ lib/db/
 
 ## Agent.md Structure
 
-Each Agent.md file contains these sections:
+Each module guide is opinionated about its own domain. The required sections
+are:
 
 ### Frontmatter
 ```yaml
@@ -82,21 +83,32 @@ The structural checker enforces this contract: `description` must start with
 `low`, `medium`, or `high`. Copy the shape from an existing guide rather than
 the prose above.
 
-### Patterns (5+ core implementations)
+### Scope and contracts
 
-Each pattern includes:
-- **What:** Problem being solved
-- **When:** Conditions and use cases
-- **Example:** Working code agents can reference
-- **Trade-offs:** Performance, complexity, maintenance
+State what the module owns, what it must not reach into, and its canonical
+files. Document the module's canonical patterns or contract sections — most
+guides have five or more substantive entries. Each entry states what it covers,
+when it applies, and where the canonical implementation or test lives; working
+code is optional.
 
-### Anti-Patterns (5+ common mistakes)
+### Anti-patterns (5+)
 
-For each anti-pattern:
-- ❌ **Wrong:** What NOT to do
-- **Why:** Consequences and failures
-- ✅ **Right:** Correct approach
-- **Reference:** Link to correct pattern
+At least five module-specific failure modes. Prefer concise Wrong/Why/Fix
+bullets; code examples are optional. Link to the correct pattern or canonical
+file.
+
+### File map
+
+A table of canonical files or file groups so agents can find the owning
+implementation and tests.
+
+### Testing Requirements
+
+Defines test structure:
+- Unit test patterns
+- Integration test scenarios
+- Edge cases to validate
+- Performance expectations
 
 ### Review checks (required)
 
@@ -108,29 +120,11 @@ line, a test, or a named command. Separate automated checks from judgment calls.
 `node scripts/check-module-review.mjs --staged` prints the section for every
 touched module while running the mechanical checks.
 
-### Testing Requirements
+### Optional sections
 
-Defines test structure:
-- Unit test patterns
-- Integration test scenarios
-- Edge cases to validate
-- Performance expectations
-
-### Pattern Notes
-
-Implementation details:
-- Subtle behaviors
-- Common pitfalls
-- Performance characteristics
-- Maintenance considerations
-
-### Frontier (Emerging patterns)
-
-Patterns not yet standardized:
-- **Pattern:** Description
-- **Status:** Stability assessment
-- **Examples:** Known implementations
-- **Next:** Conditions for standardization
+- **Frontier** — emerging patterns not yet standardized; use it only when the
+  module has candidates.
+- **Pattern Notes** — implementation details not already captured above.
 
 ---
 
@@ -452,6 +446,8 @@ frontmatter, links, referenced paths, and module coverage. See
 ---
 
 ## Accessing Pattern Information
+
+Short version: [QUICK_REFERENCE_AGENT_MD_SYSTEM.md](./QUICK_REFERENCE_AGENT_MD_SYSTEM.md).
 
 ### Direct Reference
 Agent auto-loads module's Agent.md based on file location:

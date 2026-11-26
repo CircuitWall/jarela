@@ -98,7 +98,7 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
      referenced source and test files exist.
    - Review the final diff for new copies of existing operations and confirm
      that the recorded reuse/extract/separate decision matches the code.
-   - For non-trivial changes, run `npm run check:impact -- --base origin/main --head HEAD` and address or document any ripple-impact follow-ups it reports.
+   - For non-trivial changes, run `npm run review:module -- --base origin/main --head HEAD` and `npm run check:impact -- --base origin/main --head HEAD`, then address or document the findings.
    - If that passes and risk remains, broaden validation in proportion to the blast radius.
    - Let pre-commit hooks run when committing; do not bypass with `--no-verify`.
    - Record commands and results for the PR body.
@@ -164,6 +164,7 @@ git grep -n <symbol> origin/main -- <paths>
 npm run lint
 npm run typecheck
 npm test --workspace <workspace> -- <focused-test>
+npm run review:module -- --base origin/main --head HEAD
 npm run check:impact -- --base origin/main --head HEAD
 git commit --amend --no-edit
 git commit --fixup <commit>

@@ -12,6 +12,7 @@ This guide focuses on developer experience for UI/state work.
 - Check ADR uniqueness, citations, and links: `npm run adr:check`
 - Check for new UI `fetch`/`localStorage` debt: `npm run ui-data:check`
 - Change-impact audit: `npm run check:impact -- --staged`
+- Module review for changed files: `npm run review:module -- --staged`
 - Function-body ratchet (unreleased): `npm run lint:complexity`
 - Test all: `npm test`
 - Test hooks only: `npm run test:hooks`
