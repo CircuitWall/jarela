@@ -25,8 +25,8 @@ function seed(sourceId: string, chunks: number, embedded: number): void {
   const db = getDb();
   db.prepare("INSERT INTO document_sources (id, path, label, enabled, created_at, updated_at) VALUES (?,?,?,1,?,?)")
     .run(sourceId, `/docs/${sourceId}`, sourceId, "2026-01-01", "2026-01-01");
-  db.prepare("INSERT INTO documents (id, source_id, rel_path, path, content_hash, mtime_ms, size_bytes, last_indexed_at) VALUES (?,?,?,?,?,?,?,?)")
-    .run(`doc-${sourceId}`, sourceId, "a.md", `/docs/${sourceId}/a.md`, "hash", 1, 1, "2026-01-01");
+  db.prepare("INSERT INTO documents (id, source_id, rel_path, path, content_hash, mtime_ms, size_bytes, last_indexed_at, chunk_count) VALUES (?,?,?,?,?,?,?,?,?)")
+    .run(`doc-${sourceId}`, sourceId, "a.md", `/docs/${sourceId}/a.md`, "hash", 1, 1, "2026-01-01", chunks);
   for (let index = 0; index < chunks; index += 1) {
     db.prepare("INSERT INTO document_chunks (id, document_id, chunk_index, text, start_offset, end_offset, embedding, embedding_model_signature) VALUES (?,?,?,?,?,?,?,?)")
       .run(`${sourceId}-${index}`, `doc-${sourceId}`, index, "text", 0, 4, index < embedded ? "[1,0]" : null, index < embedded ? "sig" : null);
@@ -46,10 +46,22 @@ describe("document source stats cache", () => {
     await cache.refreshDocumentSourceStats();
 
     expect(cache.cachedDocumentSourceStats("source-a")).toEqual({
-      source_id: "source-a", document_count: 1,
+      source_id: "source-a", document_count: 1, chunk_count: 3,
     });
-    expect(cache.cachedDocumentSourceStats("source-b")).toMatchObject({ document_count: 1 });
+    expect(cache.cachedDocumentSourceStats("source-b")).toMatchObject({ document_count: 1, chunk_count: 1 });
     expect(cache.documentSourceStatsAgeMs()).toBeGreaterThanOrEqual(0);
+  });
+
+  it("derives chunk counts from documents without scanning the chunk table", async () => {
+    seed("source-i", 2, 1);
+    const pool = await import("@/lib/db/read-pool");
+    const spy = vi.spyOn(pool, "readAppRows");
+    await cache.refreshDocumentSourceStats();
+    const sql = String(spy.mock.calls[0]?.[0] ?? "");
+    expect(sql).toContain("SUM(d.chunk_count)");
+    expect(sql).not.toContain("document_chunks");
+    expect(cache.cachedDocumentSourceStats("source-i")?.chunk_count).toBe(2);
+    spy.mockRestore();
   });
 
   it("shares one in-flight refresh between concurrent callers", async () => {
@@ -93,7 +105,7 @@ describe("document source stats cache", () => {
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const spy = vi.spyOn(pool, "readAppRows").mockImplementation(async () => {
       await gate;
-      return [{ source_id: "source-h", document_count: 1 }];
+      return [{ source_id: "source-h", document_count: 1, chunk_count: 1 }];
     });
 
     const started = Date.now();

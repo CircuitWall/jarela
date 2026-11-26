@@ -177,6 +177,17 @@ async function runShutdown(): Promise<void> {
 
   // 5. Close the DB. WAL is checkpointed so the next boot is fast and we
   //    leave no stale -shm/-wal sidecars on disk.
+  //
+  //    The document-index lifecycle uses its own writer worker for purges and
+  //    VACUUM (ADR-0133). Close it first: it waits for in-flight work, which
+  //    may still refresh source counters through the read pool.
+  try {
+    const { closeDocumentIndexMaintenancePool } = await import("@/lib/documents/lifecycle");
+    await closeDocumentIndexMaintenancePool();
+  } catch (err) {
+    console.error("[jarela] closing document index maintenance pool failed:", err);
+  }
+
   try {
     const { closeReadPool } = await import("@/lib/db/read-pool");
     await closeReadPool();

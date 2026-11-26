@@ -162,7 +162,7 @@ CREATE TABLE document_sources (
       last_scan_at    TEXT,
       last_error      TEXT,
       created_at      TEXT NOT NULL,
-      updated_at      TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'local_folder', config TEXT, last_cursor TEXT,
+      updated_at      TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'local_folder', config TEXT, last_cursor TEXT, disabled_at TEXT,
       UNIQUE(path)
     );
 

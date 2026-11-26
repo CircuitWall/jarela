@@ -30,6 +30,10 @@ export interface DocumentSourceRow {
   kind: DocumentSourceKind;
   config: string | null;       // JSON; null for local_folder
   last_cursor: string | null;  // incremental watermark; null for local_folder
+  // ADR-0133: when the source was disabled, for the opt-in index-retention
+  // sweep. Null while enabled (and for rows created before the migration
+  // until they are next disabled).
+  disabled_at: string | null;
 }
 
 const now = () => new Date().toISOString();
@@ -69,8 +73,8 @@ export function createDocumentSource(input: {
   getDb()
     .prepare(
       `INSERT INTO document_sources
-       (id, path, label, enabled, last_scan_at, last_error, created_at, updated_at, kind, config, last_cursor)
-       VALUES (?, ?, ?, 1, NULL, NULL, ?, ?, ?, ?, NULL)`,
+       (id, path, label, enabled, last_scan_at, last_error, created_at, updated_at, kind, config, last_cursor, disabled_at)
+       VALUES (?, ?, ?, 1, NULL, NULL, ?, ?, ?, ?, NULL, NULL)`,
     )
     .run(id, input.path, input.label ?? null, t, t, kind, config);
   return {
@@ -85,6 +89,7 @@ export function createDocumentSource(input: {
     kind,
     config,
     last_cursor: null,
+    disabled_at: null,
   };
 }
 
@@ -110,13 +115,20 @@ export function updateDocumentSource(
   const existing = getDocumentSource(id);
   if (!existing) return null;
   const t = now();
+  const enabled = patch.enabled === undefined ? existing.enabled : patch.enabled ? 1 : 0;
+  // ADR-0133: start the retention clock on the enabled→disabled transition,
+  // keep it across label edits, and clear it when the source is re-enabled.
+  const disabledAt = enabled === 1
+    ? null
+    : (existing.enabled === 1 || existing.disabled_at === null ? t : existing.disabled_at);
   getDb()
     .prepare(
-      `UPDATE document_sources SET label=?, enabled=?, updated_at=? WHERE id=?`,
+      `UPDATE document_sources SET label=?, enabled=?, disabled_at=?, updated_at=? WHERE id=?`,
     )
     .run(
       patch.label === undefined ? existing.label : patch.label,
-      patch.enabled === undefined ? existing.enabled : patch.enabled ? 1 : 0,
+      enabled,
+      disabledAt,
       t,
       id,
     );
@@ -149,7 +161,8 @@ interface SourceStatsRow extends DocumentSourceRow, DocumentSourceStats {
 
 const SOURCE_STATS_QUERY = `
   SELECT s.*, s.id AS source_id,
-         COUNT(d.id) AS document_count
+         COUNT(d.id) AS document_count,
+         COALESCE(SUM(d.chunk_count), 0) AS chunk_count
   FROM document_sources s
   LEFT JOIN documents d ON d.source_id = s.id`;
 
@@ -157,21 +170,22 @@ export function listDocumentSourcesWithStats(): Array<{ source: DocumentSourceRo
   const rows = getDb().prepare(`${SOURCE_STATS_QUERY} GROUP BY s.id ORDER BY s.created_at ASC`)
     .all();
   return rows.map((row) => {
-    const { source_id, document_count, ...source } = row as SourceStatsRow;
-    return { source, stats: { source_id, document_count } };
+    const { source_id, document_count, chunk_count, ...source } = row as SourceStatsRow;
+    return { source, stats: { source_id, document_count, chunk_count } };
   });
 }
 
 /**
- * Request-path read. Counters are index-only over `documents` (~35 ms for every
+ * Request-path read. The document count and the sum of the maintained
+ * `documents.chunk_count` are index-only over `documents` (~35 ms for every
  * source on a 51k-document corpus), so the cached snapshot is served directly
- * and refreshed behind the response.
+ * and refreshed behind the response. Neither counter scans `document_chunks`.
  */
 export async function listDocumentSourcesWithStatsAsync(): Promise<Array<{ source: DocumentSourceRow; stats: DocumentSourceStats }>> {
   await refreshForRequest();
   return listDocumentSources().map((source) => ({
     source,
-    stats: cachedDocumentSourceStats(source.id) ?? { source_id: source.id, document_count: 0 },
+    stats: cachedDocumentSourceStats(source.id) ?? { source_id: source.id, document_count: 0, chunk_count: 0 },
   }));
 }
 
@@ -182,5 +196,9 @@ export async function getDocumentSourceStatsAsync(sourceId: string): Promise<Doc
 export function getDocumentSourceStats(sourceId: string): DocumentSourceStats {
   const row = getDb().prepare(`${SOURCE_STATS_QUERY} WHERE s.id=? GROUP BY s.id`)
     .get(sourceId) as SourceStatsRow | undefined;
-  return { source_id: sourceId, document_count: row?.document_count ?? 0 };
+  return {
+    source_id: sourceId,
+    document_count: row?.document_count ?? 0,
+    chunk_count: row?.chunk_count ?? 0,
+  };
 }

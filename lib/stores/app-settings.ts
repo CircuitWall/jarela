@@ -10,6 +10,7 @@ import {
 import {
   defaultDocumentRecallPolicy, DocumentRecallPolicySchema, type DocumentRecallPolicy,
 } from "@/lib/documents/recall-policy";
+import type { DocumentIndexLifecycleSettings } from "@/api/document-lifecycle";
 
 const now = () => new Date().toISOString();
 
@@ -21,6 +22,7 @@ const IDLE_TIMEOUT_KEY = "screen_lock_idle_timeout_ms";
 const REDACTION_ENABLED_KEY = "redaction_enabled";
 const AMBIENT_CONTEXT_KEY = "ambient_context_enabled";
 const ARTIFACT_LIFECYCLE_KEY = "artifact_lifecycle";
+const DOCUMENT_INDEX_LIFECYCLE_KEY = "document_index_lifecycle";
 const MEMORY_POLICY_KEY = "memory_policy";
 const DOCUMENT_RECALL_POLICY_KEY = "document_recall_policy";
 
@@ -174,6 +176,28 @@ export function setAmbientContextEnabled(enabled: boolean): void {
   writeJsonSetting(AMBIENT_CONTEXT_KEY, Boolean(enabled));
 }
 
+// Document-index lifecycle (ADR-0133). Retention is opt-in: 0 keeps a
+// disabled source's chunks indefinitely, so re-enabling it stays instant.
+export const DEFAULT_DOCUMENT_INDEX_LIFECYCLE_SETTINGS: DocumentIndexLifecycleSettings = {
+  purge_disabled_after_days: 0,
+};
+
+export function getDocumentIndexLifecycleSettings(): DocumentIndexLifecycleSettings {
+  const raw = readJsonSetting<Partial<DocumentIndexLifecycleSettings>>(DOCUMENT_INDEX_LIFECYCLE_KEY);
+  return normalizeDocumentIndexLifecycleSettings(raw ?? {});
+}
+
+export function setDocumentIndexLifecycleSettings(
+  input: Partial<DocumentIndexLifecycleSettings>,
+): DocumentIndexLifecycleSettings {
+  const next = normalizeDocumentIndexLifecycleSettings({
+    ...getDocumentIndexLifecycleSettings(),
+    ...input,
+  });
+  writeJsonSetting(DOCUMENT_INDEX_LIFECYCLE_KEY, next);
+  return next;
+}
+
 export function getArtifactLifecycleSettings(): ArtifactLifecycleSettings {
   const raw = readJsonSetting<Partial<ArtifactLifecycleSettings>>(ARTIFACT_LIFECYCLE_KEY);
   return normalizeArtifactLifecycleSettings(raw ?? {});
@@ -198,6 +222,17 @@ export function getMemoryPolicy(): MemoryPolicy {
 export function setMemoryPolicy(value: MemoryPolicy): MemoryPolicy {
   writeJsonSetting(MEMORY_POLICY_KEY, value);
   return value;
+}
+
+function normalizeDocumentIndexLifecycleSettings(
+  input: Partial<DocumentIndexLifecycleSettings>,
+): DocumentIndexLifecycleSettings {
+  const days = Number(input.purge_disabled_after_days);
+  return {
+    purge_disabled_after_days: Number.isFinite(days)
+      ? Math.max(0, Math.min(3650, Math.floor(days)))
+      : DEFAULT_DOCUMENT_INDEX_LIFECYCLE_SETTINGS.purge_disabled_after_days,
+  };
 }
 
 function normalizeArtifactLifecycleSettings(input: Partial<ArtifactLifecycleSettings>): ArtifactLifecycleSettings {

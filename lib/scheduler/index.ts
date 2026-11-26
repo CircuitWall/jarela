@@ -4,6 +4,7 @@
 // scheduled-tasks HTTP route uses.
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { indexAllSources } from "@/lib/documents/indexer";
+import { runDocumentIndexLifecycleSweep } from "@/lib/documents/lifecycle";
 import { runTriggerTick, runScheduledTaskFiringNow } from "@/lib/triggers";
 import { runAllHealthProbes } from "@/lib/health/runner";
 import { maybeAutoFileToolTelemetryIssue } from "@/lib/tools/system/tool-telemetry-issue";
@@ -33,6 +34,9 @@ const DOC_SWEEP_EVERY_TICKS = 20;
 // repeated failures only re-fire on its own (longer) backoff.
 const HEALTH_SWEEP_EVERY_TICKS = 20;
 const FILE_GC_EVERY_TICKS = 120;
+// ADR-0133: purge disabled sources past their retention window and reclaim
+// freed pages incrementally. 40 ticks × 30s = 20 min; each pass is bounded.
+const DOCUMENT_LIFECYCLE_EVERY_TICKS = 40;
 
 interface SchedulerState {
   started: boolean;
@@ -41,6 +45,7 @@ interface SchedulerState {
   tickCount: number;
   healthTickCount: number;
   fileGcTickCount: number;
+  documentLifecycleTickCount: number;
   // Count of scheduled tasks deferred on the previous locked tick. Only
   // log the deferral when this transitions (0 → N, N → M) so a long
   // lock window doesn't spam the console every 30s.
@@ -53,6 +58,7 @@ const state = getOrCreateGlobal<SchedulerState>("__jarela_scheduler", () => ({
   tickCount: 0,
   healthTickCount: 0,
   fileGcTickCount: 0,
+  documentLifecycleTickCount: 0,
   lastDeferredCount: 0,
 }));
 
@@ -142,6 +148,23 @@ async function tick(): Promise<void> {
       } catch (err) {
         console.error(
           "[scheduler] document index sweep failed:",
+          errorMessage(err),
+        );
+      }
+    }
+
+    // Document-index lifecycle (ADR-0133): purge disabled sources past their
+    // retention window, then reclaim freed pages incrementally. The sweep
+    // starts background work and returns immediately.
+    state.documentLifecycleTickCount =
+      (state.documentLifecycleTickCount + 1) % DOCUMENT_LIFECYCLE_EVERY_TICKS;
+    if (state.documentLifecycleTickCount === 0) {
+      try {
+        const started = await runDocumentIndexLifecycleSweep();
+        if (started) console.log("[scheduler] document index lifecycle started");
+      } catch (err) {
+        console.error(
+          "[scheduler] document index lifecycle sweep failed:",
           errorMessage(err),
         );
       }

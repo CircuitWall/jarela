@@ -24,8 +24,9 @@ const row: DocumentSourceRow = {
   last_scan_at: null, last_error: null, created_at: "2026-10-30T00:00:00Z",
   updated_at: "2026-10-30T01:00:00Z", kind: "github_repo",
   config: '{"owner":"example","repo":"project"}', last_cursor: "indexer-only",
+  disabled_at: null,
 };
-const stats = { source_id: row.id, document_count: 2, chunk_count: 4, embedded_chunk_count: 3 };
+const stats = { source_id: row.id, document_count: 2, chunk_count: 4 };
 const expected = {
   id: row.id, path: row.path, label: row.label, enabled: true,
   last_scan_at: null, last_error: null, created_at: row.created_at, updated_at: row.updated_at,

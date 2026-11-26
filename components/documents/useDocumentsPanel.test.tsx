@@ -7,12 +7,14 @@ import type { DocumentSource } from "@/api/types";
 const mocks = vi.hoisted(() => ({
   recall: vi.fn(), sources: vi.fn(), integrations: vi.fn(),
   create: vi.fn(), update: vi.fn(), reindex: vi.fn(), confirm: vi.fn(),
+  lifecycle: vi.fn(), runMaintenance: vi.fn(),
 }));
 vi.mock("@/api/client", () => ({
   api: {
     documents: {
       getRecallPolicy: mocks.recall, listSources: mocks.sources,
       createSource: mocks.create, updateSource: mocks.update, reindex: mocks.reindex,
+      getIndexLifecycle: mocks.lifecycle, runIndexMaintenance: mocks.runMaintenance,
     },
     integrations: { list: mocks.integrations },
   },
@@ -30,7 +32,17 @@ beforeEach(() => {
   mocks.create.mockResolvedValue({});
   mocks.update.mockResolvedValue({});
   mocks.reindex.mockResolvedValue({ stats: { scanned: 0, added: 0, updated: 0 } });
+  mocks.lifecycle.mockResolvedValue(lifecycleState());
+  mocks.runMaintenance.mockResolvedValue({ accepted: true, status: lifecycleState().status });
 });
+
+function lifecycleState() {
+  return {
+    settings: { purge_disabled_after_days: 0 },
+    inventory: { document_count: 0, chunk_count: 0, size_bytes: 0, free_bytes: 0, auto_vacuum: "incremental" },
+    status: { running: false, action: null, started_at: null, finished_at: null, summary: null, error: null },
+  };
+}
 
 async function panel() {
   const hook = renderHook(() => useDocumentsPanel());
@@ -45,7 +57,7 @@ describe("nonlocal indexing disclosure", () => {
       id: "source-1", path: "gmail-mail://synthetic", label: "Mail", enabled: false,
       last_scan_at: null, last_error: null, created_at: "", updated_at: "",
       kind: "gmail_mail", config: { query: "newer_than:90d" },
-      stats: { source_id: "source-1", document_count: 0, chunk_count: 0, embedded_chunk_count: 0 },
+      stats: { source_id: "source-1", document_count: 0, chunk_count: 0 },
     };
     await act(async () => {
       expect(await result.current.addSource({ path: "C:\\synthetic-documents" })).toBe(false);
@@ -83,5 +95,22 @@ describe("nonlocal indexing disclosure", () => {
     });
     expect(mocks.create).not.toHaveBeenCalled();
     expect(result.current.error).toBe("Settings unavailable");
+  });
+});
+
+describe("index lifecycle controls", () => {
+  it("confirms before purging a source's index and waits for the background action", async () => {
+    mocks.confirm.mockResolvedValue(true);
+    const { result } = await panel();
+    await act(async () => { await result.current.purgeSourceIndex("source-1"); });
+    expect(mocks.confirm).toHaveBeenCalledOnce();
+    expect(mocks.runMaintenance).toHaveBeenCalledWith({ action: "purge_source", source_id: "source-1" });
+    expect(mocks.lifecycle.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not purge when the confirmation is cancelled", async () => {
+    const { result } = await panel();
+    await act(async () => { await result.current.purgeSourceIndex("source-1"); });
+    expect(mocks.runMaintenance).not.toHaveBeenCalled();
   });
 });

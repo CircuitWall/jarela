@@ -48,6 +48,15 @@ node:sqlite DatabaseSync         @appthreat/sqlite3 read workers
    - Never set connection pragmas ad hoc. SQLite's defaults (`synchronous =
      FULL`, `busy_timeout = 0`, 2 MiB cache) are what turned a one-row
      `UPDATE` into a 500 ms event-loop stall on a 3 GB database
+   - File-layout pragmas are different: `auto_vacuum` must be chosen before WAL
+     or the first table freezes the header (ADR-0133), and changing it on an
+     existing file requires a full `VACUUM`. `getDb()` sets incremental
+     auto-vacuum for new databases; existing databases switch only through the
+     explicit compaction action, never at boot.
+   - Worker-owned pools are the documented exception: `@appthreat/sqlite3`
+     exposes only readers, WAL, busy timeout and integer mode. The read pool
+     stays read-only; the document-index maintenance writer (ADR-0133) sets
+     `foreign_keys = ON` because its purges depend on it.
 
 2. **Migrations are Versioned and Bounded**
    - Record completion atomically in `jarela_migrations`.
@@ -107,6 +116,11 @@ The frozen 3.0 baseline initializes fresh databases and validates unmarked
 new migration: retain the supported upgrade path and test fresh installs,
 each supported source version, repeat opens, rollback, and unknown newer
 versions. Squash obsolete paths when the supported major-version window moves.
+
+File-layout pragmas such as `auto_vacuum` are not migrations. Set them before
+the first table is created on a new database, and treat changing an existing
+file as an explicit maintenance action with its own disk-space and locking
+costs (ADR-0133).
 
 **When to use:** New tables, new columns, adding indexes, altering schemas
 

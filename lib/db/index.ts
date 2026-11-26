@@ -31,6 +31,11 @@ export function getDb(): DatabaseSync {
     }
     const db = new DatabaseSync(DB_PATH);
     try {
+      // ADR-0133: choose incremental auto-vacuum before WAL or the first table
+      // freezes the database header at the default. Opening and reading
+      // sqlite_schema does not write; setting the pragma after WAL is ignored.
+      const existingSchema = db.prepare("SELECT 1 FROM sqlite_schema LIMIT 1").get();
+      if (!existingSchema) db.exec("PRAGMA auto_vacuum = INCREMENTAL");
       applyConnectionPragmas(db);
       runMigrations(db);
       if (isMasterKeyLocked()) {

@@ -14,15 +14,19 @@ import { readAppRows } from "@/lib/db/read-pool";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import type { DocumentSourceStats } from "@/api/document-sources";
 
+// Both counters stay on `documents`: its row count and the maintained
+// `chunk_count` column. Never join `document_chunks` here — counting that
+// table reads every embedding (~3.4 s on a 244k-chunk install).
 const SOURCE_STATS_QUERY = `
-  SELECT s.id AS source_id, COUNT(d.id) AS document_count
+  SELECT s.id AS source_id, COUNT(d.id) AS document_count,
+         COALESCE(SUM(d.chunk_count), 0) AS chunk_count
   FROM document_sources s
   LEFT JOIN documents d ON d.source_id = s.id
   GROUP BY s.id`;
 
-// Counting a real corpus reads every embedding column: ~3.4s on a 244k-chunk
-// install. That is fine once in a while on a worker thread, but never on a
-// page load, so request handlers serve the snapshot and refresh behind it.
+// Counting a 51k-document corpus takes ~35 ms on the read pool, but the
+// system prompt asks for it every turn; cache the snapshot and refresh it
+// behind request handlers.
 const DEFAULT_REFRESH_TTL_MS = 5 * 60_000;
 
 interface StatsSnapshot {
@@ -40,12 +44,13 @@ function snapshot(): StatsSnapshot {
 }
 
 function emptyStats(sourceId: string): DocumentSourceStats {
-  return { source_id: sourceId, document_count: 0 };
+  return { source_id: sourceId, document_count: 0, chunk_count: 0 };
 }
 
 interface StatsRow {
   source_id: string;
   document_count: number;
+  chunk_count: number;
 }
 
 /**
@@ -63,6 +68,7 @@ export function refreshDocumentSourceStats(): Promise<void> {
         next.set(row.source_id, {
           source_id: row.source_id,
           document_count: Number(row.document_count) || 0,
+          chunk_count: Number(row.chunk_count) || 0,
         });
       }
       state.by_source = next;

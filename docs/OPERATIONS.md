@@ -620,6 +620,28 @@ source was disabled. Disabling does not delete previously indexed contents.
 Re-enable the source to resume indexing; delete the source to remove its
 documents and chunks.
 
+**Index lifecycle (Unreleased).** The Documents panel shows files and chunks per
+source plus an **Index maintenance** section with the database's document and
+chunk totals, logical size, and reclaimable free pages. Because disabled
+sources keep their chunks so re-enabling is instant, the panel can also delete
+one disabled source's index (eraser button) or every disabled source's index
+without deleting the source configuration. Text files and upstream content are
+untouched; the next scan re-indexes the source.
+
+Set **Purge disabled sources after** to a number of days to purge a disabled
+source's index automatically once its grace period ends. The default is `0`,
+which keeps it until you purge it. The scheduler evaluates the window every
+20 minutes and runs any due purge in the background.
+
+**Reclaim space** returns freed pages to the filesystem in bounded batches on a
+worker connection. It requires incremental auto-vacuum. New databases enable it
+at creation; an existing database must be compacted once with **Compact
+database**, which rewrites the file (needing free disk space for a compacted
+copy) and can take several minutes on a multi-GB file. Reads continue during
+compaction, but other writes may wait or fail until it finishes. Before that
+one-time compaction, purging removes rows but does not shrink `jarela.db`.
+See [ADR-0133](adr/0133-document-index-lifecycle.md).
+
 ## Database performance
 
 SQLite uses WAL mode. On upgrade, Jarela automatically creates indexes matching

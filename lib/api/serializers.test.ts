@@ -26,10 +26,10 @@ describe("documentSourceToResponse", () => {
     enabled: 1, last_scan_at: null, last_error: "scan failed",
     created_at: "2026-10-30T00:00:00Z", updated_at: "2026-10-30T01:00:00Z",
     kind: "github_repo", config: '{"owner":"example","repo":"project"}',
-    last_cursor: "private-indexer-cursor",
+    last_cursor: "private-indexer-cursor", disabled_at: null,
   };
   const stats: DocumentSourceStats = {
-    source_id: row.id, document_count: 2, chunk_count: 4, embedded_chunk_count: 3,
+    source_id: row.id, document_count: 2, chunk_count: 4,
   };
 
   it("preserves the complete public shape without exposing the indexer cursor", () => {
