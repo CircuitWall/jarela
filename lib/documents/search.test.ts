@@ -47,6 +47,7 @@ function row(id: string, score: number | null, text: string) {
     source_label: "Docs",
     rel_path: `${id}.md`,
     abs_path: `/${id}.md`,
+    content_hash: `hash-${id}`,
   };
 }
 
@@ -56,10 +57,22 @@ describe("searchDocuments similarity threshold", () => {
     mocks.run.mockClear();
     mocks.prepare.mockReset().mockImplementation(() => ({ all: mocks.all, run: mocks.run }));
     mocks.readAppRows.mockReset().mockImplementation(async (sql: string, params: unknown[] = []) => {
-      if (sql.includes("SUM(d.chunk_count)")) return [{ total_chunks: mocks.rows.length }];
+      if (sql.includes("GROUP BY d.source_id")) {
+        const requested = sql.includes("d.source_id = ?") ? String(params[0]) : null;
+        const counts = new Map<string, number>();
+        for (const candidate of mocks.rows) {
+          const sourceId = String(candidate.source_id);
+          if (requested && sourceId !== requested) continue;
+          counts.set(sourceId, (counts.get(sourceId) ?? 0) + 1);
+        }
+        return [...counts.entries()].map(([source_id, chunks]) => ({ source_id, chunks }));
+      }
       if (sql.includes("> (?, ?)")) return [];
+      const sourceId = String(params[0]);
       const limit = Number(params[params.length - 1]) || mocks.rows.length;
-      return mocks.rows.slice(0, limit);
+      return mocks.rows
+        .filter((candidate) => candidate.source_id === sourceId)
+        .slice(0, limit);
     });
     mocks.localEmbeddingsEnabled.mockReturnValue(true);
     mocks.recallPolicy.mockReturnValue(defaultDocumentRecallPolicy());
@@ -161,28 +174,37 @@ describe("searchDocuments similarity threshold", () => {
     await expect(searchDocuments("needle")).rejects.toThrow("Document search blocked");
   });
 
-  it.each([undefined, "synthetic-source"])("binds the source filter and page size: %s", async (sourceId) => {
+  it.each([undefined, "source-1"])("binds the source filter and page size: %s", async (sourceId) => {
     await searchDocuments("needle", { sourceId });
+    const sourceQuery = mocks.readAppRows.mock.calls.find(
+      ([sql]) => String(sql).includes("GROUP BY d.source_id"),
+    );
+    expect(sourceQuery).toBeDefined();
+    const [sourceSql, sourceParams] = sourceQuery as [string, unknown[]];
+    if (sourceId) {
+      expect(sourceSql).toContain("d.source_id = ?");
+      expect(sourceParams).toEqual([sourceId]);
+    } else {
+      expect(sourceSql).not.toContain("d.source_id = ?");
+      expect(sourceParams).toEqual([]);
+    }
+
     const candidate = mocks.readAppRows.mock.calls.find(
       ([sql]) => String(sql).includes("ORDER BY dc.document_id, dc.chunk_index"),
     );
     expect(candidate).toBeDefined();
     const [sql, params] = candidate as [string, unknown[]];
     expect(sql).toContain("ds.enabled = 1");
+    expect(sql).toContain("d.source_id = ?");
     expect(sql).toContain("LIMIT ?");
-    if (sourceId) {
-      expect(sql).toContain("d.source_id = ?");
-      expect(params).toEqual([sourceId, 2_000]);
-      expect(sql).not.toContain(sourceId);
-    } else {
-      expect(params).toEqual([2_000]);
-    }
+    expect(params).toEqual(["source-1", 3]);
+    expect(sql).not.toContain("source-1");
   });
 
   it("scans past the first page so later chunks stay searchable", async () => {
     let cursorPages = 0;
     mocks.readAppRows.mockImplementation(async (sql: string) => {
-      if (sql.includes("SUM(d.chunk_count)")) return [{ total_chunks: 2 }];
+      if (sql.includes("GROUP BY d.source_id")) return [{ source_id: "source-1", chunks: 2 }];
       if (!sql.includes("> (?, ?)")) return [row("first-page", null, "nothing relevant")];
       cursorPages += 1;
       if (cursorPages === 1) return [row("second-page", null, "needle in a later chunk")];
@@ -191,7 +213,38 @@ describe("searchDocuments similarity threshold", () => {
     expect(await searchDocuments("needle")).toMatchObject([
       { document_id: "doc-second-page", match: "substring" },
     ]);
-    expect(cursorPages).toBe(2);
+    expect(cursorPages).toBe(1);
+  });
+
+  it("shares the scan budget across sources so a large source cannot starve a small one", async () => {
+    mocks.rows = [
+      { ...row("a-1", null, "needle a1"), source_id: "source-a" },
+      { ...row("a-2", null, "needle a2"), source_id: "source-a" },
+      { ...row("a-3", null, "needle a3"), source_id: "source-a" },
+      { ...row("b-1", null, "needle b1"), source_id: "source-b" },
+    ];
+    const result = await searchDocumentsWithMeta("needle", { maxScannedRows: 2 });
+    expect(result.hits.map((hit) => hit.source_id).sort()).toEqual(["source-a", "source-b"]);
+    expect(result.coverage).toMatchObject({
+      scanned_chunks: 2,
+      total_chunks: 4,
+      truncated: true,
+    });
+  });
+
+  it("deduplicates identical documents by content hash while preserving distinct chunks", async () => {
+    mocks.rows = [
+      { ...row("dup-a", null, "needle first"), document_id: "doc-dup-a", chunk_index: 0, content_hash: "shared" },
+      { ...row("dup-b", null, "needle first"), document_id: "doc-dup-b", chunk_index: 0, content_hash: "shared" },
+      { ...row("dup-c", null, "needle second"), document_id: "doc-dup-c", chunk_index: 1, content_hash: "shared" },
+      { ...row("unique", null, "needle unique"), content_hash: "unique" },
+    ];
+    const hits = await searchDocuments("needle");
+    expect(hits.map((hit) => hit.document_id).sort()).toEqual([
+      "doc-dup-a",
+      "doc-dup-c",
+      "doc-unique",
+    ]);
   });
 
   it("executes both query forms against SQLite without returning disabled or other sources", async () => {
@@ -199,7 +252,7 @@ describe("searchDocuments similarity threshold", () => {
     try {
       db.exec(`
         CREATE TABLE document_sources (id TEXT, label TEXT, enabled INTEGER);
-        CREATE TABLE documents (id TEXT, source_id TEXT, rel_path TEXT, path TEXT, chunk_count INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE documents (id TEXT, source_id TEXT, rel_path TEXT, path TEXT, chunk_count INTEGER NOT NULL DEFAULT 0, content_hash TEXT);
         CREATE TABLE document_chunks (
           id TEXT, document_id TEXT, chunk_index INTEGER, text TEXT,
           embedding TEXT, embedding_model_signature TEXT
@@ -207,9 +260,9 @@ describe("searchDocuments similarity threshold", () => {
         INSERT INTO document_sources VALUES
           ('source-a', 'A', 1), ('source-b', 'B', 1), ('source-off', 'Off', 0);
         INSERT INTO documents VALUES
-          ('doc-a', 'source-a', 'a.md', '/a.md', 1),
-          ('doc-b', 'source-b', 'b.md', '/b.md', 1),
-          ('doc-off', 'source-off', 'off.md', '/off.md', 1);
+          ('doc-a', 'source-a', 'a.md', '/a.md', 1, 'hash-a'),
+          ('doc-b', 'source-b', 'b.md', '/b.md', 1, 'hash-b'),
+          ('doc-off', 'source-off', 'off.md', '/off.md', 1, 'hash-off');
         INSERT INTO document_chunks VALUES
           ('a', 'doc-a', 0, 'needle', NULL, NULL),
           ('b', 'doc-b', 0, 'needle', NULL, NULL),
@@ -250,8 +303,8 @@ describe("searchDocuments similarity threshold", () => {
   it("falls back and queues one reindex per mismatched document", async () => {
     const document_id = "synthetic-mismatched-search-doc";
     mocks.rows = [
-      { ...row("mismatch-a", null, "needle first"), document_id, embedding: "[1,0,0]" },
-      { ...row("mismatch-b", null, "needle second"), document_id, embedding: "[1]" },
+      { ...row("mismatch-a", null, "needle first"), document_id, chunk_index: 0, embedding: "[1,0,0]" },
+      { ...row("mismatch-b", null, "needle second"), document_id, chunk_index: 1, embedding: "[1]" },
     ];
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
