@@ -161,7 +161,7 @@ export function detectMatches(text: string, config: RedactionConfig): Match[] {
     }
   }
 
-  return resolveOverlaps(dropAppFileRefs(text, raw));
+  return resolveOverlaps(tagUrlHeuristicMatches(text, dropAppFileRefs(text, raw)));
 }
 
 // Jarela mints these paths itself — `browser-<uuid>.png` screenshots,
@@ -183,10 +183,52 @@ function dropAppFileRefs(text: string, matches: Match[]): Match[] {
   return matches.filter((match) => !spans.some(([start, end]) => match.start >= start && match.end <= end));
 }
 
+// A URL whose content trips the generic heuristics must still be masked, but
+// the model needs one usable value, not several fragments. Tag every
+// heuristic match inside a URL as a single `url` match covering the whole
+// URL. The placeholder is inserted in place, and the model can pass it to a
+// URL-fetching tool; the runtime rehydrates it before the tool executes.
+// Explicit patterns still win inside URLs, so a known API key, JWT, or URL
+// userinfo password remains precisely masked.
+const URL_SPAN =
+  /(?:\b[a-z][a-z0-9+.-]*:\/\/|(?<![\w:])\/\/|(?<![\w.])www\.)[^\s<>"'`]+/gi;
+
+function tagUrlHeuristicMatches(text: string, matches: Match[]): Match[] {
+  if (matches.length === 0) return matches;
+  const spans: Array<[number, number]> = [];
+  for (const m of text.matchAll(URL_SPAN)) {
+    const start = m.index ?? 0;
+    // Drop trailing prose punctuation (Markdown `)`, sentence `.`, etc.) so
+    // the rehydrated URL is directly usable as a tool argument.
+    const value = m[0].replace(/[.,;:!?)\]]+$/, "");
+    spans.push([start, start + value.length]);
+  }
+  if (spans.length === 0) return matches;
+  return matches.map((match) => {
+    if (match.source !== "heuristic") return match;
+    const span = spans.find(([start, end]) => match.start >= start && match.end <= end);
+    if (!span) return match;
+    const [start, end] = span;
+    return {
+      ...match,
+      start,
+      end,
+      value: text.slice(start, end),
+      type_hint: "url",
+    };
+  });
+}
+
 // URLs, paths, file names, and slugs clear the entropy bar because they mix
 // many different letters, but every separator-delimited piece is an
 // ordinary word, number, or short fragment. Random secrets contain at least
 // one long piece mixing case and digits, so they never qualify.
+//
+// Model numbers (`TU55U7005HUXNA`) and tracking query values can still
+// defeat this guard; URL spans are tagged as one `url` match after detection
+// so the model receives a single usable opaque URL instead of several
+// unknown-string fragments. Explicit credential patterns still win inside
+// URLs.
 export function isWordShaped(value: string): boolean {
   const pieces = value.split(/[/._=+-]+/).filter((p) => p.length > 0);
   return pieces.length > 1 && pieces.every((p) => p.length <= 5 || WORD_PIECE.test(p));

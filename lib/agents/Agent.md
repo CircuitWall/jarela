@@ -28,6 +28,10 @@ do not infer APIs from generic LangGraph examples.
 - **Failures are typed.** Retryable provider errors are separated from aborts;
   a retry must not replay tool writes.
 - **Every model-facing prompt is registered.** The prompt inventory is testable.
+- **Masked values stay usable.** Outbound redaction replaces a value with an
+  in-place `«SECRET:…»` placeholder; the system prompt tells the model to pass
+  placeholders through to tools, where the runtime rehydrates them. Never
+  prompt the model to reconstruct or bypass the filter.
 
 ## Run configuration contract
 

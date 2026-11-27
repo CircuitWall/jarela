@@ -62,6 +62,27 @@ const budget: ContextBudget = {
   tierBudgets: { hot: 2400, warm: 1000, facts: 600 },
 };
 
+describe("buildSystemPrompt redaction placeholders", () => {
+  it("explains in-place placeholders and tool-argument rehydration", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(),
+      trimmedMessage: "test",
+      budget,
+      recallCtx: "",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+    });
+    expect(prompt).toContain(
+      "always replaces a masked value with an opaque placeholder in the same position",
+    );
+    expect(prompt).toContain("type=url");
+    expect(prompt).toContain("pass the placeholder through unchanged");
+    expect(prompt).toContain("Do not read local files");
+  });
+});
+
 describe("buildSystemPrompt delivery channel", () => {
   it.each(USAGE_PROFILE_VALUES.flatMap((usage_profile) =>
     (["essential", "full"] as const).flatMap((experienceMode) =>
