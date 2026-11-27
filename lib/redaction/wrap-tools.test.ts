@@ -57,6 +57,23 @@ describe("wrapToolForRehydrate", () => {
     expect(arg.body).not.toMatch(/«SECRET:/);
   });
 
+  it("rehydrates a url placeholder passed as a tool argument", async () => {
+    enabledRef.value = true;
+    const { tool, calls } = fakeTool();
+    const wrapped = wrapToolForRehydrate(tool as unknown as Parameters<typeof wrapToolForRehydrate>[0]);
+    const url =
+      "https://www.webhallen.com/se/product/396896-Samsung-55-TU55U7005HUXNA-4K-LED-TV-60Hz-HDR10-Tizen-OS";
+    await withMaskRun(async () => {
+      const ctx = getCurrentMaskContext()!;
+      const { text: masked } = ctx.maskText(url);
+      expect(masked).toMatch(/«SECRET:[^»]+ type=url /);
+      await (wrapped as unknown as { invoke: (i: unknown) => Promise<unknown> }).invoke({
+        url: masked,
+      });
+    });
+    expect((calls[0] as { url: string }).url).toBe(url);
+  });
+
   it("walks nested objects and arrays during rehydrate", async () => {
     enabledRef.value = true;
     const { tool, calls } = fakeTool();

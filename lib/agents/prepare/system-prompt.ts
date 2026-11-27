@@ -114,6 +114,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
       "3. A set_env_var result with requiresRestart=true indicates a pending change, not restart approval. Explain the interruption and request approval before restarting; otherwise report that a manual restart is needed.",
       "4. Do not restart the host to recover from provider rate limits, unavailable models, tool errors, or incomplete investigations. Report the actual blocker and use a non-disruptive recovery path.",
     ].join("\n"),
+    buildRedactionPlaceholderContext(),
     buildSharedToolCatalogContext(),
   ];
 
@@ -184,6 +185,23 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const agentStable = agentStableParts.filter(Boolean).join("\n\n");
   const dynamic = dynamicParts.filter(Boolean).join("\n\n");
   return `${sharedStable}\n\n${CACHE_SHARED_SPLIT_SENTINEL}\n\n${agentStable}\n\n${CACHE_SPLIT_SENTINEL}\n\n${dynamic}`;
+}
+
+/**
+ * Static guidance for the mask-and-rehydrate placeholders described in
+ * ADR-0064. Masking must stay lossy, but the model has to know that the
+ * placeholder is the value and that tool-argument rehydration will substitute
+ * the original before the tool runs.
+ */
+function buildRedactionPlaceholderContext(): string {
+  return [
+    "--- Redaction placeholders ---",
+    "Outbound redaction always replaces a masked value with an opaque placeholder in the same position: «SECRET:<id> type=<hint> len=... head=... tail=...». Treat the placeholder as the value it represents.",
+    "1. When a tool needs the real value, pass the placeholder through unchanged in the tool argument. The runtime rehydrates it before the tool executes; do not reconstruct, guess, validate, or partially quote the value from the fingerprint.",
+    "2. A `type=url` placeholder is one complete URL. Pass it to a URL-fetching tool as the URL argument; do not rebuild the scheme, path, or query from head/tail/len.",
+    "3. Do not read local files, databases, checkpoints, logs, or the raw message store to recover a masked value or to bypass the filter. If the placeholder is insufficient, explain the limitation and ask for a different form of input.",
+    "4. The UI rehydrates assistant text, so you may repeat a placeholder in your reply; the user sees the real value. Do not present the fingerprint as the value.",
+  ].join("\n");
 }
 
 /**

@@ -41,7 +41,9 @@ Chosen option: **mask-and-rehydrate with a configurable pattern file and high-en
 
 ### Type hints
 
-The placeholder includes a coarse `type=` hint (`anthropic_api_key`, `personnummer`, `iban`, `unknown_long_string`, …) so the model has enough context to decide what to do with the value without seeing it. Without the hint, `«SECRET:a1b2»` is opaque and unusable.
+The placeholder includes a coarse `type=` hint (`anthropic_api_key`, `personnummer`, `iban`, `unknown_long_string`, `url`, …) so the model has enough context to decide what to do with the value without seeing it. Without the hint, `«SECRET:a1b2»` is opaque and unusable.
+
+`type=url` marks a URL span whose content tripped a heuristic. The whole URL is replaced in place with one placeholder, and the model can pass it to a URL-fetching tool; the runtime rehydrates it before the tool executes.
 
 ### Pattern file
 
@@ -90,6 +92,8 @@ Detection works in three layers so that credentials in formats Jarela has never 
 3. **Unknown, unlabelled credentials.** The high-entropy heuristic below catches random tokens with no key name, including prefixed tokens with an unknown vendor prefix (`acme_` + 25 or more random characters).
 
 Usability guards, verified against a probe of 53 sensitive and 66 everyday strings (51 caught, 65 left readable): dates (`2026-10-24`, `24.10.2026`, `gpt-4o-2024-08-06`), IPv4 addresses, decimals and coordinates, Unix timestamps, URLs, file paths, slugs, numeric IDs in URL paths, semver, hashes, UUIDs, ULIDs, and short prefixed object IDs (`cus_…`, `msg_…`, `call_…`) stay visible. Known limits: email addresses and postal addresses are not masked (no reliable pattern, and masking emails would get in the way of mail workflows), and a bare 8+ digit number such as `12345678` is masked because it cannot be told apart from an account number.
+
+A URL whose separator-delimited pieces all look like ordinary words stays visible. If any part trips a heuristic — for example a product model number or a long tracking value — the whole URL is replaced in place with one `type=url` placeholder instead of several unusable fragments. The model uses it by passing the placeholder to a URL-fetching tool; the runtime rehydrates the original URL before execution. Sensitivity is preserved, and the agent does not need the raw bytes to act.
 
 When a pattern file contains an exact copy of a retired default entropy exclude, the loader upgrades it to the current version; excludes the user wrote are kept as they are.
 

@@ -256,6 +256,43 @@ describe("detection coverage and usability", () => {
     expect(masked(`use acme_${rnd(40)} for prod`)).toEqual([`acme_${rnd(40)}`]);
   });
 
+  it("masks a product URL as one usable url placeholder in place", () => {
+    const url =
+      "https://www.webhallen.com/se/product/396896-Samsung-55-TU55U7005HUXNA-4K-LED-TV-60Hz-HDR10-Tizen-OS";
+    const matches = detectMatches(`see ${url} now`, cfg);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({
+      type_hint: "url",
+      value: url,
+      source: "heuristic",
+    });
+  });
+
+  it("masks a tracking URL as one url placeholder while keeping known credentials precise", () => {
+    const trackingUrl =
+      "https://www.webhallen.com/se/product/396896-Samsung-55-TU55U7005HUXNA-4K-LED-TV-60Hz-HDR10-Tizen-OS" +
+      `?utm_source=google&utm_medium=cpc&gad_campaignid=1234567890&gclid=${rnd(32)}`;
+    const matches = detectMatches(trackingUrl, cfg);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ type_hint: "url", value: trackingUrl });
+    expect(masked(`https://example.com/path?api_key=${FAKE_ANT}`)).toEqual([FAKE_ANT]);
+  });
+
+  it("masks a protocol-relative URL as one url placeholder", () => {
+    const url =
+      "//www.webhallen.com/se/product/396896-Samsung-55-TU55U7005HUXNA-4K-LED-TV-60Hz-HDR10-Tizen-OS";
+    const matches = detectMatches(url, cfg);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ type_hint: "url", value: url });
+  });
+
+  it("keeps Markdown punctuation out of a url placeholder", () => {
+    const url = "https://example.com/product/TU55U7005HUXNA";
+    const matches = detectMatches(`[product](${url})`, cfg);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ type_hint: "url", value: url });
+  });
+
   it.each([
     "released on 2026-10-24, deadline 24.10.2026, model gpt-4o-2024-08-06",
     "createdAt 1729800000000 from 192.168.100.200 at 59.329323, 18.068581",
