@@ -21,6 +21,7 @@ import "../general/pricing-maintenance";
 import "../web/generate_image";
 import "../web/generate_voice";
 import "../general/schedule";
+import "../general/automation-activity";
 import "../general/watcher";
 import "../system/propose";
 import "../system/agent-instruction";
