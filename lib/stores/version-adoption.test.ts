@@ -340,3 +340,137 @@ describe("version adoption state", () => {
     expect(again.current_version).toBe("1.29.5");
   });
 });
+
+describe("version adoption behavior", () => {
+  function seedDefaultAgent() {
+    upsertAgentConfig({
+      id: "default-agent",
+      name: "Assistant",
+      identity: "helper",
+      instructions: "Be useful.",
+      tools: [],
+      is_default: true,
+    });
+  }
+
+  it("keeps a no-op upgrade explicit and skippable", () => {
+    seedDefaultAgent();
+    updateVersionAdoptionState("mark_done", "3.9.0");
+
+    const pending = getVersionAdoptionState("3.9.1");
+    expect(pending).toMatchObject({
+      current_version: "3.9.1",
+      previous_version: "3.9.0",
+      is_first_adoption: false,
+      status: "pending",
+    });
+    expect(pending.stale_prompt_risks).toEqual([]);
+    expect(pending.checklist.map((item) => item.id)).toEqual(["fetch-changes", "build-todo-list"]);
+
+    const running = updateVersionAdoptionState("start", "3.9.1");
+    expect(running.adoption_prompt).toContain("no prompt or tool surface changes");
+    expect(running.checklist[1]).toMatchObject({ id: "build-todo-list", status: "checking" });
+
+    const adoption = recordVersionAdoptionWorkflowProgress({
+      item_id: "build-todo-list",
+      status: "done",
+      validation_evidence: "The range contains one release with no prompt or tool surface changes.",
+    }, "3.9.1");
+    expect(adoption.state.phase).toBe("adoption");
+    expect(adoption.state.checklist).toHaveLength(1);
+    expect(adoption.state.checklist[0]).toMatchObject({
+      id: "version-diff",
+      status: "skipped",
+    });
+    expect(adoption.state.checklist[0].reason).toContain("no prompt or tool description/schema changes");
+  });
+
+  it("surfaces release adoption hints as their own checklist item", () => {
+    seedDefaultAgent();
+    updateVersionAdoptionState("mark_done", "2.5.1");
+
+    const running = updateVersionAdoptionState("start", "2.5.2");
+    expect(running.adoption_prompt).toContain("adoption hint: Outlook users must reconnect");
+    expect(running.adoption_prompt).toContain("release-hints");
+
+    const adoption = recordVersionAdoptionWorkflowProgress({
+      item_id: "build-todo-list",
+      status: "done",
+      validation_evidence: "Every changed surface is represented or covered by the hint item.",
+    }, "2.5.2");
+    const hintItem = adoption.state.checklist.find((item) => item.id === "release-hints");
+    expect(hintItem).toMatchObject({ status: "pending", action: "review_release" });
+    expect(hintItem?.input).toContain("Outlook users must reconnect");
+    expect(hintItem?.validation).toContain("re-read");
+  });
+
+  it("flags partial changeset coverage for old installs", () => {
+    seedDefaultAgent();
+    updateVersionAdoptionState("mark_done", "1.0.0");
+
+    const pending = getVersionAdoptionState("3.9.1");
+    expect(pending.checklist[0].validation_evidence).toContain("partial coverage");
+
+    const running = updateVersionAdoptionState("start", "3.9.1");
+    expect(running.adoption_prompt).toContain("(partial: older versions predate changesets)");
+    expect(running.adoption_prompt).toContain("Review changes not covered by changesets");
+
+    const adoption = recordVersionAdoptionWorkflowProgress({
+      item_id: "build-todo-list",
+      status: "done",
+      validation_evidence: "The available changesets and the uncovered versions are both represented.",
+    }, "3.9.1");
+    const diffItem = adoption.state.checklist.find((item) => item.id === "version-diff");
+    expect(diffItem).toMatchObject({ status: "pending" });
+    expect(diffItem?.reason).toContain("do not fully cover");
+  });
+
+  it("refuses to complete an adoption while checklist work is unresolved", () => {
+    seedDefaultAgent();
+    updateVersionAdoptionState("mark_done", "2.5.1");
+    updateVersionAdoptionState("start", "2.5.2");
+
+    expect(() => recordVersionAdoptionWorkflowProgress({
+      phase: "complete",
+      summary: "too early",
+    }, "2.5.2")).toThrow(/cannot be completed until every checklist item/);
+
+    const adoption = recordVersionAdoptionWorkflowProgress({
+      item_id: "build-todo-list",
+      status: "done",
+      validation_evidence: "Every changed surface is represented in the adoption checklist.",
+    }, "2.5.2");
+    expect(adoption.state.phase).toBe("adoption");
+    expect(adoption.state.checklist.some((item) => item.status === "pending")).toBe(true);
+
+    expect(() => recordVersionAdoptionWorkflowProgress({
+      phase: "complete",
+      summary: "still too early",
+    }, "2.5.2")).toThrow(/cannot be completed until every checklist item/);
+
+    for (const item of adoption.state.checklist) {
+      recordVersionAdoptionWorkflowProgress({
+        phase: "adoption",
+        item_id: item.id,
+        status: "skipped",
+      }, "2.5.2");
+    }
+    const done = recordVersionAdoptionWorkflowProgress({
+      phase: "complete",
+      summary: "No remaining adoption work.",
+    }, "2.5.2");
+    expect(done.state).toMatchObject({
+      status: "done",
+      phase: "complete",
+      adoption_prompt: null,
+    });
+    expect(done.state.completed_at).toBeTruthy();
+
+    const next = getVersionAdoptionState("2.5.3");
+    expect(next).toMatchObject({
+      previous_version: "2.5.2",
+      is_first_adoption: false,
+      status: "pending",
+    });
+  });
+});
