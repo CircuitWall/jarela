@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  briefSlug,
+  buildBrief,
+  describeRange,
   extractReviewChecks,
   moduleForPath,
   parseNameStatus,
   reviewChanges,
+  writeBriefs,
 } from "./check-module-review.mjs";
 
 const roots = [];
@@ -199,5 +203,65 @@ describe("module checks", () => {
     });
     expect(result.errors.some((finding) => finding.rule === "script-shell")).toBe(true);
     expect(result.warnings.some((finding) => finding.rule === "component-name")).toBe(true);
+  });
+});
+
+describe("review briefs", () => {
+  it("slugs guide paths into stable file names", () => {
+    expect(briefSlug("lib/agents/Agent.md")).toBe("lib-agents");
+    expect(briefSlug("app/api/Agent.md")).toBe("app-api");
+    expect(briefSlug("AGENTS.md")).toBe("agents-md");
+  });
+
+  it("describes a name-status input without reading git", () => {
+    expect(describeRange({ nameStatusFile: "changes.nul" })).toEqual({
+      range: "name-status file changes.nul",
+      diffCommand: "git diff --cached",
+    });
+  });
+
+  it("includes the guide, checks, findings, and evidence contract", () => {
+    const brief = buildBrief(
+      {
+        guide: "lib/tools/Agent.md",
+        changedFiles: ["lib/tools/general/new-tool.ts"],
+        checks: [{ indent: 0, text: "Tool is registered." }],
+        findings: [
+          {
+            severity: "error",
+            rule: "tool-unregistered",
+            message: "not imported",
+            fix: "Add it.",
+          },
+        ],
+      },
+      { range: "aaaa...bbbb", diffCommand: "git diff aaaa...bbbb" },
+    );
+    expect(brief).toContain("lib/tools/Agent.md");
+    expect(brief).toContain("Tool is registered.");
+    expect(brief).toContain("tool-unregistered");
+    expect(brief).toContain("Read-only: do not edit files.");
+    expect(brief).toContain("git diff aaaa...bbbb");
+    expect(brief).toContain('"verdict": "clean"');
+  });
+
+  it("writes one brief per module and is a no-op with no modules", () => {
+    const directory = join(fixture({}), "briefs");
+    const written = writeBriefs(
+      directory,
+      [
+        {
+          guide: "components/Agent.md",
+          changedFiles: ["components/A.tsx"],
+          checks: [{ indent: 0, text: "Panel header composed." }],
+          findings: [],
+        },
+      ],
+      { range: "working tree" },
+    );
+    expect(written).toHaveLength(1);
+    expect(written[0].endsWith("components.review.md")).toBe(true);
+    expect(readFileSync(written[0], "utf8")).toContain("Panel header composed.");
+    expect(writeBriefs(join(directory, "empty"), [])).toEqual([]);
   });
 });

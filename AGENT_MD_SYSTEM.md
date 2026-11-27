@@ -235,6 +235,12 @@ Input: one guide and its scope, for example `lib/tools/Agent.md` and `lib/tools/
 > ones labeled as such, using: severity, guide claim, evidence, authority
 > decision. If nothing drifted, list the claims checked and commands run.
 
+For change-scoped review, [docs/MODULE_REVIEW.md](./docs/MODULE_REVIEW.md)
+generates this procedure as a portable brief for each touched module. For
+features spanning three or more modules,
+[docs/FEATURE_CONTRACT.md](./docs/FEATURE_CONTRACT.md) freezes interfaces and
+emits per-module implementation packets for any coding agent.
+
 ### Limits
 
 - Semantic audit is model judgment, not proof. Every finding needs code or test

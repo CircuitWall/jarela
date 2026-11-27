@@ -37,7 +37,7 @@ Start with installation and the [first-run setup](FIRST_RUN.md), then learn the 
 
 Set up the repository, run the checks, and use the architecture docs before changing a shared boundary.
 
-[Set up development](DEVELOPMENT.md) · [Explore extension surfaces](EXTENDING.md)
+[Set up development](DEVELOPMENT.md) · [Explore extension surfaces](EXTENDING.md) · [Review a change](MODULE_REVIEW.md) · [Design a multi-module feature](FEATURE_CONTRACT.md)
 
 For planned future-work priorities and minor-upgrade tracking, read the
 [post-3.0 product direction](POST_3_DIRECTION.md) and
@@ -76,6 +76,8 @@ The built-in documentation skill makes local documentation the first source of t
 | [PRICING_EXTRACTION_POLICY.md](PRICING_EXTRACTION_POLICY.md) | model pricing extraction and provider policy |
 | [DEMO_GMAIL_CONNECT.md](DEMO_GMAIL_CONNECT.md) | example integration flow for Gmail |
 | [ui-hook-api.md](ui-hook-api.md) | UI hook contracts and browser UX patterns |
+| [MODULE_REVIEW.md](MODULE_REVIEW.md) | tiered module review, portable briefs, and evidence rules |
+| [FEATURE_CONTRACT.md](FEATURE_CONTRACT.md) | multi-module feature contracts, ownership, packets, and conformance |
 
 ## Documentation contract
 

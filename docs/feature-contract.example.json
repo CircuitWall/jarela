@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "feature": "module-review-orchestration",
+  "title": "Portable module review briefs and feature contracts",
+  "adrRequired": false,
+  "adr": null,
+  "shared": [
+    "AGENTS.md",
+    "AGENT_MD_SYSTEM.md",
+    "docs/index.md",
+    "docs/MODULE_REVIEW.md",
+    "docs/FEATURE_CONTRACT.md",
+    "docs/feature-contract.example.json",
+    "package.json",
+    ".github/skills/module-review/SKILL.md",
+    ".github/skills/feature-contract/SKILL.md"
+  ],
+  "modules": [
+    {
+      "id": "scripts",
+      "guide": "scripts/Agent.md",
+      "owns": [
+        "scripts/Agent.md",
+        "scripts/check-module-review.mjs",
+        "scripts/check-module-review.test.mjs",
+        "scripts/check-feature-contract.mjs",
+        "scripts/check-feature-contract.test.mjs"
+      ],
+      "provides": [
+        {
+          "name": "reviewBriefs",
+          "file": "scripts/check-module-review.mjs",
+          "symbol": "writeBriefs"
+        },
+        {
+          "name": "reviewRange",
+          "file": "scripts/check-module-review.mjs",
+          "symbol": "describeRange"
+        },
+        {
+          "name": "featureContract",
+          "file": "scripts/check-feature-contract.mjs",
+          "symbol": "validateContract"
+        },
+        {
+          "name": "featurePackets",
+          "file": "scripts/check-feature-contract.mjs",
+          "symbol": "writePackets"
+        }
+      ],
+      "consumes": [],
+      "validation": [
+        "npx vitest run scripts/check-module-review.test.mjs scripts/check-feature-contract.test.mjs",
+        "node scripts/check-feature-contract.mjs --contract docs/feature-contract.example.json",
+        "node scripts/check-module-review.mjs --help",
+        "node scripts/check-feature-contract.mjs --help"
+      ]
+    }
+  ]
+}
