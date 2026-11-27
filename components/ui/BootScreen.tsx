@@ -63,7 +63,7 @@ interface Props {
   agentsLoaded: boolean;
   activeAgentId: string | null;
   preferredThreadId?: string | null;
-  onPickAgent: (agentId: string) => void;
+  onPickAgent: (agentId: string, threadId?: string) => void;
   onCreateAgent: () => void;
   agentsError?: string | null;
   onRetryAgents?: () => void;
@@ -446,7 +446,7 @@ function BootAgentChoices({
   phase: "loading" | "pick" | "opening";
   recentAgents: AgentConfig[];
   showAdoption: boolean;
-  handlePick: (id: string) => void;
+  handlePick: (id: string, threadId?: string) => void;
   adoption: VersionAdoptionState | null;
   adoptionTitle: string;
   adoptionLiveLabel: string | null;
@@ -521,6 +521,10 @@ function BootAgentChoices({
         adoptionBusy={adoptionBusy}
         adoptionNeedsAttention={adoptionNeedsAttention}
         handleAdoptionAction={handleAdoptionAction}
+        onOpenAdoption={() => {
+          const agentId = adoption?.default_agent_id;
+          if (agentId) handlePick(agentId, adoption?.adoption_thread_id ?? undefined);
+        }}
       />
       {phase === "pick" &&
         !defaultAgent &&
@@ -563,6 +567,7 @@ function BootAgentChoices({
 function AdoptionChecklist({
   showAdoption, adoption, adoptionTitle, adoptionLiveLabel,
   handleAdoptionItemRetry, adoptionBusy, adoptionNeedsAttention, handleAdoptionAction,
+  onOpenAdoption,
 }: {
   showAdoption: boolean;
   adoption: VersionAdoptionState | null;
@@ -572,7 +577,14 @@ function AdoptionChecklist({
   adoptionBusy: VersionAdoptionAction | null;
   adoptionNeedsAttention: boolean;
   handleAdoptionAction: (action: VersionAdoptionAction) => Promise<void>;
+  onOpenAdoption: () => void;
 }) {
+  // When a step is waiting on the user, dismissing would close the workflow
+  // and mark the version adopted even though the item is unresolved. Send the
+  // user into the adoption conversation instead; Dismiss remains available
+  // only when nothing needs them.
+  const needsUserAction = adoptionNeedsAttention && Boolean(adoption?.default_agent_id);
+  const showOpenAdoption = needsUserAction && adoption?.status !== "pending";
   return (<>
     {showAdoption && adoption && (
       <WorkflowChecklist
@@ -588,8 +600,8 @@ function AdoptionChecklist({
       >
         {adoption.status === "done" && (
           <p className="mt-2 rounded-lg border border-border/50 bg-surface px-2 py-1 text-[10px] leading-snug text-fg-muted">
-            {adoptionNeedsAttention
-              ? "Summary ready. Open the agent from the main tile to review pending adoption actions."
+            {needsUserAction
+              ? "Summary ready. Open the adaptation to review the actions that still need you."
               : "Summary ready. No pending adoption actions were flagged."}
           </p>
         )}
@@ -608,14 +620,27 @@ function AdoptionChecklist({
               {adoptionBusy ? "Working" : adoption.status === "failed" ? "Retry" : "Adapt"}
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => void handleAdoptionAction("dismiss")}
-            disabled={adoptionBusy !== null}
-            className="rounded-lg border border-border/60 bg-surface px-2 py-1 text-[10px] text-fg-muted hover:bg-surface-3 disabled:opacity-60"
-          >
-            Dismiss
-          </button>
+          {showOpenAdoption && (
+            <button
+              type="button"
+              onClick={onOpenAdoption}
+              disabled={adoptionBusy !== null}
+              title="Open the adoption conversation to act on items that need you"
+              className="flex-1 rounded-lg border border-accent/40 bg-accent/15 px-2 py-1 text-[10px] font-medium text-fg hover:bg-accent/20 disabled:opacity-60"
+            >
+              Adapt
+            </button>
+          )}
+          {!needsUserAction && (
+            <button
+              type="button"
+              onClick={() => void handleAdoptionAction("dismiss")}
+              disabled={adoptionBusy !== null}
+              className="rounded-lg border border-border/60 bg-surface px-2 py-1 text-[10px] text-fg-muted hover:bg-surface-3 disabled:opacity-60"
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       </WorkflowChecklist>
     )}
@@ -759,10 +784,11 @@ function useBootSelection({ agentsLoaded, activeAgentId, preferredThreadId, onPi
     setSteps((prev) => prev.map((s) => (s.key === key ? { ...s, status } : s)));
   }, []);
 
-  const handlePick = useCallback((id: string) => {
+  const handlePick = useCallback((id: string, threadId?: string) => {
     if (pickedId) return;
     setPickedId(id);
-    onPickAgent(id);
+    if (threadId) onPickAgent(id, threadId);
+    else onPickAgent(id);
   }, [onPickAgent, pickedId]);
 
   useBootWarmup({ activeAgentId, pickedId, agentsLoaded, done, setDismissing, setSteps, markStep, preferredThreadId, dismissTimerRef, setDone });

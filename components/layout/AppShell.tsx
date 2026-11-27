@@ -510,8 +510,12 @@ function SessionGates({
       onRetryAgents={() => { void onRetryAgents(); }}
       activeAgentId={state.activeAgentId}
       preferredThreadId={state.activeThreadId}
-      onPickAgent={(id) => {
-        dispatch({ type: "SET_AGENT", agentId: id });
+      onPickAgent={(id, threadId) => {
+        if (threadId) {
+          dispatch({ type: "SELECT_THREAD", threadId, agentId: id });
+        } else {
+          dispatch({ type: "SET_AGENT", agentId: id });
+        }
         dispatch({ type: "SET_TAB", tab: "chat" });
       }}
       onCreateAgent={() => dispatch({ type: "SET_TAB", tab: "agents" })}

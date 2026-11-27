@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { AgentConfig, VersionAdoptionState } from "@/api/types";
 import { BootScreen } from "./BootScreen";
 
 const reads = vi.hoisted(() => ({
@@ -11,20 +13,74 @@ const reads = vi.hoisted(() => ({
   metadata: vi.fn(),
   recentReplies: vi.fn().mockResolvedValue([]),
 }));
+const adoption = vi.hoisted(() => ({
+  get: vi.fn(),
+  action: vi.fn(),
+  retryItem: vi.fn(),
+}));
 vi.mock("@/api/client", () => ({
   api: {
     profile: { get: reads.profile },
     agents: { get: reads.agent, getThread: reads.thread, recentReplies: reads.recentReplies },
     threads: { get: reads.messages, metadata: reads.metadata },
+    lifecycle: { adoption },
   },
 }));
 vi.mock("@/components/ui/Logo", () => ({ Logo: () => null }));
 vi.mock("@/components/ui/VersionTag", () => ({ VersionTag: () => null }));
 vi.mock("@/components/ui/PoweredBy", () => ({ PoweredBy: () => null }));
-vi.mock("@/components/ui/WorkflowChecklist", () => ({ WorkflowChecklist: () => null }));
+vi.mock("@/components/ui/WorkflowChecklist", () => ({
+  WorkflowChecklist: ({ children }: { children?: ReactNode }) => children ?? null,
+}));
+
+const defaultAgent = {
+  id: "agent-1",
+  name: "Assistant",
+  icon: null,
+  identity: "helper",
+  instructions: "Be useful.",
+  tools: [],
+  is_default: true,
+} as AgentConfig;
+
+function adoptionState(overrides: Partial<VersionAdoptionState> = {}): VersionAdoptionState {
+  return {
+    current_version: "2.0.0",
+    previous_version: "1.0.0",
+    is_first_adoption: false,
+    status: "done",
+    phase: "complete",
+    default_agent_id: defaultAgent.id,
+    default_agent_name: defaultAgent.name,
+    adoption_thread_id: "adoption-thread",
+    adoption_prompt: null,
+    started_at: "2026-01-01T00:00:00.000Z",
+    completed_at: "2026-01-01T00:00:01.000Z",
+    dismissed_at: null,
+    summary: "One adoption item remains.",
+    checklist: [{
+      id: "adapt-settings",
+      label: "Adapt agent settings",
+      input: "Release changes",
+      output: "Updated settings",
+      validation: "Re-read the agent",
+      status: "needs_attention",
+      reason: "Approval is pending.",
+      affected_files: [],
+    }],
+    stale_prompt_risks: [],
+    error: null,
+    ...overrides,
+  };
+}
 
 afterEach(() => { vi.useRealTimers(); });
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  adoption.get.mockReset().mockResolvedValue(null);
+  adoption.action.mockReset();
+  adoption.retryItem.mockReset();
+});
 
 it("offers a direct path to create an agent when none are configured", () => {
   const onCreateAgent = vi.fn();
@@ -135,4 +191,93 @@ it("does not restart boot prefetch after dismissal when the agent changes", asyn
   expect(reads.agent).toHaveBeenCalledTimes(1);
   expect(reads.agent).toHaveBeenCalledWith("first", { startup: true });
   expect(reads.thread).toHaveBeenCalledTimes(1);
+});
+
+it("opens the adoption conversation instead of dismissing when a step needs the user", async () => {
+  adoption.get.mockResolvedValue(adoptionState());
+  reads.profile.mockResolvedValue({});
+  reads.agent.mockResolvedValue({});
+  reads.thread.mockResolvedValue({ thread_id: "thread" });
+  reads.messages.mockResolvedValue({});
+  const onPickAgent = vi.fn();
+  render(
+    <BootScreen
+      agents={[defaultAgent]}
+      agentsLoaded
+      activeAgentId={null}
+      onPickAgent={onPickAgent}
+      onCreateAgent={vi.fn()}
+    />,
+  );
+
+  const adapt = await screen.findByRole("button", { name: "Adapt" });
+  expect(screen.getByText("Summary ready. Open the adaptation to review the actions that still need you.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+
+  fireEvent.click(adapt);
+  expect(onPickAgent).toHaveBeenCalledWith(defaultAgent.id, "adoption-thread");
+  expect(adoption.action).not.toHaveBeenCalled();
+});
+
+it("offers adapt while a running adoption is waiting for the user", async () => {
+  adoption.get.mockResolvedValue(adoptionState({
+    status: "running",
+    phase: "adoption",
+    completed_at: null,
+  }));
+  reads.profile.mockResolvedValue({});
+  reads.agent.mockResolvedValue({});
+  reads.thread.mockResolvedValue({ thread_id: "thread" });
+  reads.messages.mockResolvedValue({});
+  const onPickAgent = vi.fn();
+  render(
+    <BootScreen
+      agents={[defaultAgent]}
+      agentsLoaded
+      activeAgentId={null}
+      onPickAgent={onPickAgent}
+      onCreateAgent={vi.fn()}
+    />,
+  );
+
+  expect(await screen.findByText("Running")).toBeTruthy();
+  const adapt = await screen.findByRole("button", { name: "Adapt" });
+  expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+
+  fireEvent.click(adapt);
+  expect(onPickAgent).toHaveBeenCalledWith(defaultAgent.id, "adoption-thread");
+});
+
+it("keeps dismiss when the adoption verdict needs no user action", async () => {
+  const state = adoptionState({
+    checklist: [{
+      id: "adapt-settings",
+      label: "Adapt agent settings",
+      input: "Release changes",
+      output: "Updated settings",
+      validation: "Re-read the agent",
+      status: "done",
+      validation_evidence: "Agent settings were re-read.",
+      reason: "Settings were checked.",
+      affected_files: [],
+    }],
+  });
+  adoption.get.mockResolvedValue(state);
+  adoption.action.mockResolvedValue({ ...state, status: "dismissed" });
+  render(
+    <BootScreen
+      agents={[defaultAgent]}
+      agentsLoaded
+      activeAgentId={null}
+      onPickAgent={vi.fn()}
+      onCreateAgent={vi.fn()}
+    />,
+  );
+
+  const dismiss = await screen.findByRole("button", { name: "Dismiss" });
+  expect(screen.getByText("Summary ready. No pending adoption actions were flagged.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Adapt" })).toBeNull();
+
+  fireEvent.click(dismiss);
+  await waitFor(() => expect(adoption.action).toHaveBeenCalledWith("dismiss"));
 });
