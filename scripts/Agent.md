@@ -30,7 +30,7 @@ operator automation — not application runtime code.
 
 | Class | Examples | Extra rules |
 | --- | --- | --- |
-| Gates | `check-*.mjs` | Read-only, repo-root resolved, exit 0/1/2, wired to lint/CI, positive + negative fixtures |
+| Gates | `check-*.mjs` | Read-only by default, repo-root resolved, exit 0/1/2, wired to lint/CI where repository-wide, positive + negative fixtures. Explicit artifact export (`check-module-review --briefs`, `check-feature-contract --packets`) is opt-in. |
 | Release/package | [nightly-release.mjs](./nightly-release.mjs), [release-docker.mjs](./release-docker.mjs) | CI-owned; never publish from a developer machine; `package.json` is the version source |
 | Install/service | [jarela-bin.mjs](./jarela-bin.mjs), [service-install.mjs](./service-install.mjs), [update.mjs](./update.mjs) | Published/runtime entry points; no dev-only imports; guarded targets |
 | Build/docs | [postbuild.mjs](./postbuild.mjs), [sync-docs-assets.mjs](./sync-docs-assets.mjs), [generate-project-history.mjs](./generate-project-history.mjs) | Fixed outputs; reproducible from a clean checkout |
@@ -141,7 +141,7 @@ exit path directly with representative arguments.
 
 | Group | Scripts |
 | --- | --- |
-| Gates | [check-architecture-patterns.mjs](./check-architecture-patterns.mjs), [check-agent-docs.mjs](./check-agent-docs.mjs) (guides + architecture-document links), [check-api-docs.mjs](./check-api-docs.mjs) (public routes ↔ docs/api.md), [check-adr-registry.mjs](./check-adr-registry.mjs) (unique ADR ids, citations, links), [check-ui-data-access.mjs](./check-ui-data-access.mjs) (direct fetch/storage ratchet), [check-integration-manifests.mjs](./check-integration-manifests.mjs), [check-dockerfile-workspaces.mjs](./check-dockerfile-workspaces.mjs), [check-ci-workflows.mjs](./check-ci-workflows.mjs), [check-function-complexity.mjs](./check-function-complexity.mjs), [check-change-impact.mjs](./check-change-impact.mjs), [check-module-review.mjs](./check-module-review.mjs) (change-scoped module review), [check-git-conventions.mjs](./check-git-conventions.mjs) |
+| Gates | [check-architecture-patterns.mjs](./check-architecture-patterns.mjs), [check-agent-docs.mjs](./check-agent-docs.mjs) (guides + architecture-document links), [check-api-docs.mjs](./check-api-docs.mjs) (public routes ↔ docs/api.md), [check-adr-registry.mjs](./check-adr-registry.mjs) (unique ADR ids, citations, links), [check-ui-data-access.mjs](./check-ui-data-access.mjs) (direct fetch/storage ratchet), [check-integration-manifests.mjs](./check-integration-manifests.mjs), [check-dockerfile-workspaces.mjs](./check-dockerfile-workspaces.mjs), [check-ci-workflows.mjs](./check-ci-workflows.mjs), [check-function-complexity.mjs](./check-function-complexity.mjs), [check-change-impact.mjs](./check-change-impact.mjs), [check-module-review.mjs](./check-module-review.mjs) (change-scoped module review + optional `--briefs` export), [check-feature-contract.mjs](./check-feature-contract.mjs) (on-demand feature contract + packets), [check-git-conventions.mjs](./check-git-conventions.mjs) |
 | Security/package | [scan-secrets.mjs](./scan-secrets.mjs), [scan-sensitive-terms.mjs](./scan-sensitive-terms.mjs), [check-route-bundles.mjs](./check-route-bundles.mjs), [check-npm-package.mjs](./check-npm-package.mjs), [check-link-preview-version.mjs](./check-link-preview-version.mjs) |
 | Hooks/tests | [select-precommit-tests.mjs](./select-precommit-tests.mjs), [setup-git-hooks.mjs](./setup-git-hooks.mjs), [live-test.mjs](./live-test.mjs), [live-test-isolated.mjs](./live-test-isolated.mjs), [isolated-dev.mjs](./isolated-dev.mjs), [e2e-servers.mjs](./e2e-servers.mjs), [e2e-isolation.mjs](./e2e-isolation.mjs) |
 | Release/package | [nightly-release.mjs](./nightly-release.mjs), [approve-release-ci.mjs](./approve-release-ci.mjs), [ci-release-metadata.mjs](./ci-release-metadata.mjs), [release-changeset.mjs](./release-changeset.mjs), [release-docs.mjs](./release-docs.mjs), [release-docker.mjs](./release-docker.mjs), [rewrite-workspace-deps.mjs](./rewrite-workspace-deps.mjs), [prune-npm-source-maps.mjs](./prune-npm-source-maps.mjs), [standalone-footprint.mjs](./standalone-footprint.mjs) |
@@ -176,6 +176,9 @@ exit path directly with representative arguments.
 - PR CI runs `check-module-review.mjs` against the pull-request range, plus
   lint, unit/coverage, live tests, and e2e; release workflows call the release
   scripts. Update the workflow when a gate becomes required.
+- `check-feature-contract.mjs` is on-demand for Tier 2 feature work. It requires
+  a contract file, so it is not wired into lint, pre-commit, or CI; the final
+  tree still runs the repository-wide gates.
 
 ## Review checks
 
@@ -195,6 +198,8 @@ exit path directly with representative arguments.
 - **Consolidated repository-root helper** — the same ten-line resolver appears
   in many scripts with different names. A scripts-internal helper would remove
   duplication if the no-import rule is relaxed.
-- **Machine-readable output mode** — `--json` exists only in
-  [check-change-impact.mjs](./check-change-impact.mjs); consider standardizing
-  for new gates before CI consumes their output.
+- **Machine-readable output mode** — `--json` exists in
+  [check-change-impact.mjs](./check-change-impact.mjs),
+  [check-module-review.mjs](./check-module-review.mjs), and
+  [check-feature-contract.mjs](./check-feature-contract.mjs); consider
+  standardizing the envelope before CI consumes it.

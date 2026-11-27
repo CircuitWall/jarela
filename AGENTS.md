@@ -62,6 +62,13 @@ Applies to every workflow Jarela ships and every workflow its agents create, fol
 - Prefer executable, deterministic checks (tests, schemas, assertions, scripts), and record the observed evidence. Never mark a step complete without it.
 - Never present unchecked assumptions or inferred values as verified facts; preserve unknowns and report validation failures explicitly.
 
+### Module review and feature contracts
+
+- **Tier 0** (one module, no interface change): run `npm run review:module -- --staged` and resolve findings in the same session.
+- **Tier 1** (two modules or one internal interface): generate one portable brief per module with `--briefs <dir>` and add one integration check.
+- **Tier 2** (three or more modules, a public interface, persistence, a provider, or a new process): write and validate a feature contract, then implement from per-module packets. `npm run feature:contract` checks ownership, interfaces, and changed-file coverage.
+- Briefs, packets, and the protocol are agent-agnostic: [docs/MODULE_REVIEW.md](./docs/MODULE_REVIEW.md) and [docs/FEATURE_CONTRACT.md](./docs/FEATURE_CONTRACT.md). Reviewers are read-only; the deterministic gate remains the merge authority.
+
 ## Contribution And Releases
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full rules. Summary:
