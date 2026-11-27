@@ -11,6 +11,7 @@ const {
   createAutomationActivity,
   finalizeAutomationActivity,
   updateAutomationActivity,
+  listAutomationActivities,
 } = await import("./automation-activity");
 const { getDb } = await import("@/lib/db");
 
@@ -107,5 +108,76 @@ describe("automation activity store", () => {
     finalizeAutomationActivity(second.msg_id, { disposition: "no_action" });
 
     expect(getMessages(thread.thread_id)).toHaveLength(3);
+  });
+});
+
+describe("listAutomationActivities", () => {
+  beforeEach(() => {
+    const db = getDb();
+    db.prepare("DELETE FROM messages").run();
+    db.prepare("DELETE FROM threads").run();
+  });
+
+  it("filters by source, disposition, and limit and returns newest first", () => {
+    const thread = createThread("agent-a");
+    const failed = createAutomationActivity({
+      threadId: thread.thread_id,
+      sourceKind: "scheduled_task",
+      sourceId: "task-1",
+      label: "Task one",
+    });
+    finalizeAutomationActivity(failed.msg_id, {
+      disposition: "failed",
+      error: "stream stalled",
+    });
+
+    const action = createAutomationActivity({
+      threadId: thread.thread_id,
+      sourceKind: "watcher",
+      sourceId: "watcher-1",
+      label: "Watcher one",
+    });
+    finalizeAutomationActivity(action.msg_id, {
+      disposition: "action",
+      preview: "changed",
+    });
+
+    const bridge = createAutomationActivity({
+      threadId: thread.thread_id,
+      sourceKind: "bridge",
+      sourceId: "bridge-1",
+      label: "Bridge one",
+    });
+    finalizeAutomationActivity(bridge.msg_id, { disposition: "cancelled" });
+
+    expect(listAutomationActivities()).toHaveLength(3);
+
+    const failedOnly = listAutomationActivities({ disposition: "failed" });
+    expect(failedOnly).toHaveLength(1);
+    expect(failedOnly[0]?.activity).toMatchObject({
+      source_id: "task-1",
+      disposition: "failed",
+      error: "stream stalled",
+    });
+
+    const watcherOnly = listAutomationActivities({ sourceKind: "watcher" });
+    expect(watcherOnly).toHaveLength(1);
+    expect(watcherOnly[0]?.activity.source_id).toBe("watcher-1");
+
+    const bySource = listAutomationActivities({ sourceId: "bridge-1" });
+    expect(bySource).toHaveLength(1);
+    expect(bySource[0]?.activity.disposition).toBe("cancelled");
+
+    const newest = listAutomationActivities({ limit: 1 });
+    expect(newest).toHaveLength(1);
+    expect(newest[0]?.activity.source_id).toBe("bridge-1");
+  });
+
+  it("ignores malformed activity metadata", () => {
+    const thread = createThread("agent-a");
+    addMessage(thread.thread_id, "assistant", "malformed", undefined, "scheduled_task", {
+      automation_activity: { version: 1 },
+    });
+    expect(listAutomationActivities()).toEqual([]);
   });
 });

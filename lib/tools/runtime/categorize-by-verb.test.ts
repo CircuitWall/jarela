@@ -32,6 +32,7 @@ describe("categorizeByVerb", () => {
       "list_providers",
       "describe_provider",
       "list_scheduled_tasks",
+      "list_automation_activity",
       "list_reaction_scripts",
       "list_watchers",
       "workspace_status",

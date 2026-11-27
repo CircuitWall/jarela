@@ -148,6 +148,7 @@ or grant itself access.
 | Registry and catalog | [runtime/registry.ts](./runtime/registry.ts), [runtime/catalog.ts](./runtime/catalog.ts), [runtime/runtime.ts](./runtime/runtime.ts), [runtime/categories.ts](./runtime/categories.ts) |
 | Built-in barrel | [runtime/builtins.ts](./runtime/builtins.ts) |
 | Domain tools | [general/](./general/), [filesystem/](./filesystem/), [web/](./web/), [communications/](./communications/), [delegation/](./delegation/), [security/](./security/), [system/](./system/) |
+| Automation activity | [general/automation-activity.ts](./general/automation-activity.ts) (read-only ledger), [general/schedule.ts](./general/schedule.ts), [general/watcher.ts](./general/watcher.ts) |
 | Packages | [packages/langchain-package.ts](./packages/langchain-package.ts), [packages/langchain-packages.ts](./packages/langchain-packages.ts), [packages/default-packages.ts](./packages/default-packages.ts) |
 | Support | [support/wallclock.ts](./support/wallclock.ts) |
 

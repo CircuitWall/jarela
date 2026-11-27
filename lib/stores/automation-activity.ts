@@ -5,6 +5,7 @@ import type {
   AutomationActivityState,
 } from "@/api/types";
 import { getDb } from "@/lib/db";
+import { withDbTransaction } from "@/lib/db/transaction";
 import { addMessage, touchThread, updateMessageContent, type MessageRow } from "@/lib/stores/threads";
 
 export interface CreateAutomationActivityInput {
@@ -24,6 +25,20 @@ export interface UpdateAutomationActivityInput {
   detail?: string;
   cancel_actor?: "user" | "system";
   cancel_reason?: string;
+}
+
+export interface ListAutomationActivitiesOptions {
+  sourceKind?: AutomationActivitySource;
+  sourceId?: string;
+  disposition?: AutomationActivityDisposition;
+  limit?: number;
+}
+
+export interface AutomationActivityRecord {
+  messageId: string;
+  threadId: string;
+  createdAt: string;
+  activity: AutomationActivityMetadata;
 }
 
 export function listRecentMaterialAutomationActivities(
@@ -51,6 +66,83 @@ export function listRecentMaterialAutomationActivities(
       )
     ));
   return material.slice(0, limit);
+}
+
+const AUTOMATION_ACTIVITY_SOURCES: readonly AutomationActivitySource[] = [
+  "scheduled_task",
+  "watcher",
+  "bridge",
+];
+const DEFAULT_AUTOMATION_ACTIVITY_LIMIT = 20;
+const MAX_AUTOMATION_ACTIVITY_LIMIT = 100;
+
+/**
+ * Read completed automation ledger rows newest first. This is the
+ * cross-source, cross-thread reader behind `list_automation_activity`; the
+ * per-thread `listRecentMaterialAutomationActivities` above stays scoped to
+ * chat context. No schema or write path is involved.
+ */
+export function listAutomationActivities(
+  options: ListAutomationActivitiesOptions = {},
+): AutomationActivityRecord[] {
+  const requestedLimit = Number.isFinite(options.limit)
+    ? Number(options.limit)
+    : DEFAULT_AUTOMATION_ACTIVITY_LIMIT;
+  const limit = Math.min(
+    MAX_AUTOMATION_ACTIVITY_LIMIT,
+    Math.max(1, Math.trunc(requestedLimit)),
+  );
+  const sourceKinds = options.sourceKind
+    ? [options.sourceKind]
+    : [...AUTOMATION_ACTIVITY_SOURCES];
+  const conditions = [
+    `category IN (${sourceKinds.map(() => "?").join(",")})`,
+    "metadata IS NOT NULL",
+    `instr(metadata, '"automation_activity"') > 0`,
+    `CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.automation_activity.state') END = 'complete'`,
+  ];
+  const params: Array<string | number> = [...sourceKinds];
+  if (options.sourceId) {
+    conditions.push(
+      `CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.automation_activity.source_id') END = ?`,
+    );
+    params.push(options.sourceId);
+  }
+  if (options.disposition) {
+    conditions.push(
+      `CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.automation_activity.disposition') END = ?`,
+    );
+    params.push(options.disposition);
+  }
+  params.push(limit);
+
+  const rows = getDb()
+    .prepare(
+      `SELECT msg_id, thread_id, created_at, metadata
+       FROM messages
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY created_at DESC, rowid DESC
+       LIMIT ?`,
+    )
+    .all(...params) as Array<{
+      msg_id: string;
+      thread_id: string;
+      created_at: string;
+      metadata: string;
+    }>;
+
+  const records: AutomationActivityRecord[] = [];
+  for (const row of rows) {
+    const activity = parseActivity(row.metadata);
+    if (!activity) continue;
+    records.push({
+      messageId: row.msg_id,
+      threadId: row.thread_id,
+      createdAt: row.created_at,
+      activity,
+    });
+  }
+  return records;
 }
 
 function now(): string {
@@ -191,8 +283,7 @@ function collapseNoAction(messageId: string): MessageRow | null {
   };
 
   const db = getDb();
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  withDbTransaction(() => {
     updateMessageContent(priorRow!.msg_id, activityContent(merged), {
       created_at: currentRow.created_at,
       metadata: { automation_activity: merged },
@@ -201,11 +292,7 @@ function collapseNoAction(messageId: string): MessageRow | null {
     db.prepare(
       "UPDATE threads SET message_count=MAX(0, message_count-1), updated_at=? WHERE thread_id=?",
     ).run(merged.last_at, currentRow.thread_id);
-    db.exec("COMMIT");
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
-  }
+  });
   return getActivityMessage(priorRow.msg_id);
 }
 
