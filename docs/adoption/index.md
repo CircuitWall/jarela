@@ -17,6 +17,25 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.9.1
+
+From 3.9.0 · 2026-11-27
+
+### Tools
+
+No tool description or schema changes.
+
+### Prompts
+
+No prompt text changes.
+
+### Commits
+
+- docs(agents): remove stale guidance and align docs with code
+- feat(agent-docs): enforce module review checks and trim guidance
+- feat(dreaming): expose advanced settings in the panel
+- test(dreaming): add failure and edge-path coverage
+
 ## 3.9.0
 
 From 3.8.1 · 2026-11-26

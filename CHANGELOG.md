@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.1] - 2026-11-27
+
+### Added
+
+- dreaming: Expose advanced settings in the panel
+- agent-docs: Enforce module review checks and trim guidance
+
+### Changed
+
+- dreaming: Add failure and edge-path coverage
+- agents: Remove stale guidance and align docs with code
+
 ## [3.9.0] - 2026-11-26
 
 ### Added
