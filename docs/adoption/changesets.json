@@ -9927,6 +9927,20 @@
           "required_removed": []
         }
       ]
+    },
+    {
+      "version": "3.9.1",
+      "previous_version": "3.9.0",
+      "date": "2026-11-27",
+      "hints": [],
+      "commits": [
+        "docs(agents): remove stale guidance and align docs with code",
+        "feat(agent-docs): enforce module review checks and trim guidance",
+        "feat(dreaming): expose advanced settings in the panel",
+        "test(dreaming): add failure and edge-path coverage"
+      ],
+      "prompts": [],
+      "tools": []
     }
   ]
 }
