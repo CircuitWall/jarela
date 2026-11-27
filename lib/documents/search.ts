@@ -72,6 +72,7 @@ interface Row {
   source_label: string | null;
   rel_path: string;
   abs_path: string;
+  content_hash: string | null;
 }
 
 export async function searchDocuments(
@@ -117,11 +118,15 @@ export async function searchDocumentsWithMeta(
   const lowered = trimmed.toLowerCase();
   const minSimilarity = Math.max(0, Math.min(1, opts?.minSimilarity ?? getDefaultDocumentMinSimilarity()));
   const mismatched = new Set<string>();
-  const totalChunks = await countCandidateChunks(opts?.sourceId);
+  const contentHashes = new Map<string, string | null>();
+  const sources = await listCandidateSources(opts?.sourceId);
+  const totalChunks = sources.reduce((sum, source) => sum + source.chunks, 0);
+  const allocations = allocateScanBudget(sources, maxScannedRows);
   let scannedChunks = 0;
 
-  for await (const page of readCandidatePages(opts?.sourceId, maxScannedRows)) {
+  for await (const page of readCandidatePagesAcrossSources(sources, allocations)) {
     scannedChunks += page.length;
+    for (const row of page) contentHashes.set(row.document_id, row.content_hash);
     const candidates = page.map((row) => ({
       row,
       excluded: policy.excluded_documents.some(
@@ -188,8 +193,17 @@ export async function searchDocumentsWithMeta(
   }
 
   scored.sort((a, b) => b.score - a.score);
+  const seen = new Set<string>();
+  const hits: DocumentHit[] = [];
+  for (const hit of scored) {
+    const hash = contentHashes.get(hit.document_id);
+    const identity = `${hash && hash.length > 0 ? hash : hit.document_id}:${hit.chunk_index}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    hits.push(hit);
+  }
   return {
-    hits: scored.slice(0, limit),
+    hits: hits.slice(0, limit),
     coverage: {
       scanned_chunks: scannedChunks,
       total_chunks: totalChunks,
@@ -199,26 +213,73 @@ export async function searchDocumentsWithMeta(
   };
 }
 
+export interface CandidateSource {
+  source_id: string;
+  chunks: number;
+}
+
 /**
- * Candidate chunk total for the same source filter, from the maintained
- * `documents.chunk_count` column. This is an index-only aggregate over
- * `documents`; counting `document_chunks` rows reads the whole multi-GB table.
+ * Enabled sources and their maintained chunk counts. This is an index-only
+ * aggregate over `documents`; counting `document_chunks` rows reads the whole
+ * multi-GB table.
  */
-async function countCandidateChunks(sourceId: string | undefined): Promise<number> {
+async function listCandidateSources(sourceId: string | undefined): Promise<CandidateSource[]> {
   const params: unknown[] = [];
   let where = "WHERE ds.enabled = 1";
   if (sourceId) {
     where += " AND d.source_id = ?";
     params.push(sourceId);
   }
-  const rows = await readAppRows<{ total_chunks: number }>(
-    `SELECT COALESCE(SUM(d.chunk_count), 0) AS total_chunks
+  const rows = await readAppRows<{ source_id: string; chunks: number | string }>(
+    `SELECT d.source_id, COALESCE(SUM(d.chunk_count), 0) AS chunks
        FROM documents d
        JOIN document_sources ds ON ds.id = d.source_id
-       ${where}`,
+       ${where}
+       GROUP BY d.source_id
+       ORDER BY d.source_id`,
     params,
   );
-  return Number(rows[0]?.total_chunks) || 0;
+  return rows
+    .map((row) => ({ source_id: row.source_id, chunks: Number(row.chunks) || 0 }))
+    .filter((source) => source.chunks > 0);
+}
+
+/**
+ * Split a capped scan budget across enabled sources so one large source cannot
+ * starve the others. The split is proportional to each source's maintained
+ * chunk count and capped at that source's total; unused budget is redistributed
+ * until the budget or the sources are exhausted.
+ */
+export function allocateScanBudget(
+  sources: readonly CandidateSource[],
+  budget: number,
+): Map<string, number> {
+  const allocations = new Map<string, number>();
+  const pending = sources
+    .filter((source) => source.chunks > 0)
+    .map((source) => ({ id: source.source_id, remaining: source.chunks }));
+  let left = Math.max(0, Math.floor(budget));
+
+  while (left > 0 && pending.length > 0) {
+    const totalRemaining = pending.reduce((sum, source) => sum + source.remaining, 0);
+    if (totalRemaining === 0) break;
+    let used = 0;
+    for (const source of pending) {
+      if (left - used <= 0) break;
+      const share = Math.max(1, Math.floor((left * source.remaining) / totalRemaining));
+      const take = Math.min(source.remaining, share, left - used);
+      if (take <= 0) continue;
+      allocations.set(source.id, (allocations.get(source.id) ?? 0) + take);
+      source.remaining -= take;
+      used += take;
+    }
+    if (used === 0) break;
+    left -= used;
+    for (let index = pending.length - 1; index >= 0; index -= 1) {
+      if (pending[index].remaining === 0) pending.splice(index, 1);
+    }
+  }
+  return allocations;
 }
 
 function validVector(value: number[] | null): value is number[] {
@@ -231,39 +292,45 @@ function parseVector(value: StoredEmbedding): number[] | null {
 }
 
 const SEARCH_PAGE_ROWS = 2_000;
-// Scoring is a JS cosine over JSON-encoded vectors, so the scan stays capped.
-// The cap is ordered deterministically instead of taking whatever rows the
-// planner returns first: the old `LIMIT 20000` without `ORDER BY` silently
-// ignored every chunk past the first 20k by rowid.
+// Scoring is a JS cosine over stored vectors, so the scan stays capped. The
+// budget is shared across sources by allocateScanBudget; within a source the
+// order is deterministic and keyset-paged, so later chunks remain reachable.
 const SEARCH_MAX_SCANNED_ROWS = 20_000;
 
+async function* readCandidatePagesAcrossSources(
+  sources: readonly CandidateSource[],
+  allocations: ReadonlyMap<string, number>,
+): AsyncGenerator<Row[]> {
+  for (const source of sources) {
+    const allocation = allocations.get(source.source_id) ?? 0;
+    if (allocation <= 0) continue;
+    yield* readCandidatePages(source.source_id, allocation);
+  }
+}
+
 /**
- * Pages candidate chunks from the read-only worker pool, ordered by
- * (document_id, chunk_index) with keyset pagination. The write connection is
- * synchronous, so reading this corpus there froze the whole process; paging
- * also bounds peak memory to one page of embeddings at a time.
+ * Pages candidate chunks from one source through the read-only worker pool,
+ * ordered by (document_id, chunk_index) with keyset pagination. The write
+ * connection is synchronous, so reading this corpus there froze the whole
+ * process; paging also bounds peak memory to one page of embeddings at a time.
  */
 async function* readCandidatePages(
-  sourceId: string | undefined,
+  sourceId: string,
   maxScannedRows: number,
 ): AsyncGenerator<Row[]> {
   let scanned = 0;
   let cursor: { document_id: string; chunk_index: number } | null = null;
   while (scanned < maxScannedRows) {
     const pageSize = Math.min(SEARCH_PAGE_ROWS, maxScannedRows - scanned);
-    const params: unknown[] = [];
-    let where = "WHERE ds.enabled = 1";
-    if (sourceId) {
-      where += " AND d.source_id = ?";
-      params.push(sourceId);
-    }
+    const params: unknown[] = [sourceId];
+    let where = "WHERE ds.enabled = 1 AND d.source_id = ?";
     if (cursor) {
       where += " AND (dc.document_id, dc.chunk_index) > (?, ?)";
       params.push(cursor.document_id, cursor.chunk_index);
     }
     const page = await readAppRows<Row>(
       `SELECT dc.id AS chunk_id, dc.document_id, dc.chunk_index, dc.text, dc.embedding, dc.embedding_model_signature,
-              d.source_id, ds.label AS source_label, d.rel_path, d.path AS abs_path
+              d.source_id, ds.label AS source_label, d.rel_path, d.path AS abs_path, d.content_hash
        FROM document_chunks dc
        JOIN documents d ON dc.document_id = d.id
        JOIN document_sources ds ON d.source_id = ds.id
