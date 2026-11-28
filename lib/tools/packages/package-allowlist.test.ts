@@ -59,6 +59,16 @@ describe("isPackageAllowed", () => {
     expect(isPackageAllowed("@other/foo").allowed).toBe(false);
   });
 
+  it("allows the exact on-demand agent runtimes (ADR-0122)", () => {
+    for (const id of ["@microsoft/copilot-sdk", "@anthropic-ai/claude-agent-sdk", "@openai/codex-sdk"]) {
+      expect(isPackageAllowed(id)).toMatchObject({ allowed: true, matchedPrefix: id });
+    }
+    // Exact entries do not widen trust to the rest of the publisher scope.
+    expect(isPackageAllowed("@anthropic-ai/sdk").allowed).toBe(false);
+    expect(isPackageAllowed("@openai/agents").allowed).toBe(false);
+    expect(isPackageAllowed("@microsoft/other").allowed).toBe(false);
+  });
+
   it("honors JARELA_PACKAGE_ALLOWLIST env override", () => {
     process.env[ENV_KEY] = "@acme/, lodash";
     expect(isPackageAllowed("@acme/widget").allowed).toBe(true);

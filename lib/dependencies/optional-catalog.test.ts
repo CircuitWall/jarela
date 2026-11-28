@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isPackageAllowed } from "@/lib/tools/packages/package-allowlist";
 import {
   OPTIONAL_PACKAGES,
   OPTIONAL_PACKAGE_CATEGORIES,
@@ -35,6 +36,15 @@ describe("optional package catalogue", () => {
         "@openai/codex-sdk",
       ]),
     );
+  });
+
+  it("keeps every catalogue entry installable in one click", () => {
+    // The catalogue promises a one-click install from Settings → Tools →
+    // Packages. A managed entry that is missing from the publisher allowlist
+    // would silently queue an operator approval instead.
+    for (const entry of OPTIONAL_PACKAGES) {
+      expect(isPackageAllowed(entry.id).allowed, entry.id).toBe(true);
+    }
   });
 
   it("looks entries up by package id and builds the install target", () => {

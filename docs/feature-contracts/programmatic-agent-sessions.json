@@ -11,7 +11,9 @@
     "lib/dependencies/optional-catalog.ts",
     "lib/dependencies/optional-catalog.test.ts",
     "lib/dependencies/optional-status.test.ts",
-    "lib/lifecycle/shutdown.ts"
+    "lib/lifecycle/shutdown.ts",
+    "lib/tools/packages/package-allowlist.ts",
+    "lib/tools/packages/package-allowlist.test.ts"
   ],
   "modules": [
     {

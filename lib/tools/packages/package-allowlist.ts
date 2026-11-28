@@ -22,6 +22,8 @@ export const PACKAGE_PUBLISHER_ALLOWLIST: readonly string[] = [
   // Allowlisting the exact package keeps the install path one click without
   // widening trust to the whole publisher scope.
   "@microsoft/copilot-sdk",
+  "@anthropic-ai/claude-agent-sdk",
+  "@openai/codex-sdk",
   "@huggingface/transformers",
 ] as const;
 
