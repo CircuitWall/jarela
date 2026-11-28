@@ -167,6 +167,9 @@ function isSafeCitationUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
 
+const OPENAI_WEB_SEARCH_FALLBACK_NOTE =
+  "\n\n> Note: provider-hosted web search was unavailable for this request; the answer uses standard generation.\n\n";
+
 /**
  * Provider-native web search is an explicit per-model opt-in. The
  * source-backed capability map fills the catalog badge, but it is advisory:
@@ -372,11 +375,14 @@ export const openaiProvider: ModelProvider = {
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     };
     const requestBody = withOpenAIWebSearch(body, params);
-    const { response: resp } = await createOpenAICompletion(
+    const { response: resp, fallbackReason } = await createOpenAICompletion(
       (request) => client.chat.completions.create(request, { signal }),
       requestBody,
     );
-    return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
+    const result = parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
+    return fallbackReason
+      ? { ...result, text: `${result.text ?? ""}${OPENAI_WEB_SEARCH_FALLBACK_NOTE}` }
+      : result;
   },
 
   streamInvoke(model_id, messages, params, tools, signal): AsyncIterable<ProviderStreamEvent> {
@@ -443,10 +449,7 @@ async function* openaiStreamInvoke(
       name: "openai.web_search_fallback",
       payload: { reason: fallbackReason },
     };
-    yield {
-      type: "text",
-      delta: "\n\n> Note: provider-hosted web search was unavailable for this request; the answer uses standard generation.\n\n",
-    };
+    yield { type: "text", delta: OPENAI_WEB_SEARCH_FALLBACK_NOTE };
   }
   yield* streamOpenAIEvents(
     stream as AsyncIterable<{
