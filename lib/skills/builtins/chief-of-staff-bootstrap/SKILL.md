@@ -12,6 +12,30 @@ durable register, a loadable CoS skill, an autonomy matrix, and
 self-adaptation. Do not copy Jarela's files, names, tools, or policies; adapt
 the concepts.
 
+## Input
+
+The target repository and host agent system, the capabilities observed in
+Phase 0, and the user's answers to the fit question and the question map. A
+setup begun without a recorded fit decision is not ready to write files.
+
+## Output
+
+A recorded fit decision — including a documented "no fit" that stops the
+setup — and, when the user approves, the installed CoS components (doctrine,
+engine, optional clock and register, CoS skill, instruction, and bootstrap
+record) on the host's existing surfaces. No file is written before the Phase 1
+approval.
+
+## Validation
+
+Run the host's own checks rather than inventing a parallel suite: the engine
+fixtures in the host's test framework, the host's lint/typecheck/test commands,
+a clock dry run, and one smoke task that loads the CoS skill without this
+bootstrap skill and reaches the engine, verdict, and escalation rule. Record
+the exact command and observed result for each item. A denied capability, a
+cancellation, a missing fixture, or missing evidence is a blocker or an
+explicitly recorded non-result, never a pass.
+
 ## Host capability check (do this first)
 
 The host must provide, directly or through an equivalent:

@@ -173,6 +173,8 @@ function listLifecyclePrompts(): StaticPrompt[] {
     },
     ...[
       { name: "browser-navigation", purpose: "Guides checked browser actions and privacy-preserving navigation hints." },
+      { name: "chief-of-staff", purpose: "Guides delegation preflight, evidence-based review and bounded cadence for multi-loop or irreversible work." },
+      { name: "chief-of-staff-bootstrap", purpose: "Assesses host fit and boots a portable chief-of-staff engine, clock and skill for another agent system." },
       { name: "extension-development", purpose: "Guides inert extension scaffolding with separate code-execution, exact-artifact and installation gates." },
       { name: "contribution-review", purpose: "Guides local-only contribution bundles, privacy review and separate commit/push/draft-PR gates." },
       { name: "jarela-configuration", purpose: "Guides scoped configuration edits, approval waiting and verified read-back." },
