@@ -25,14 +25,16 @@ doc edit, an exploratory read, or a single-file test fix you can verify
 yourself. Execute those with the repository's normal tools and existing
 checks; loading the full loop for small work is overhead, not rigor.
 
-## Input and output
+## Input
 
-Input: the user's goal, the active workspace, the current delegated-work
-state, and the evidence the delegate actually returned.
+The user's goal, the active workspace, the current delegated-work state, and
+the evidence the delegate actually returned.
 
-Output: a dispatched brief with a recorded id, a deterministic verdict on
-the returned evidence, or a single decision the user must make. Never a
-prose summary accepted on faith.
+## Output
+
+A dispatched brief with a recorded id, a deterministic verdict on the returned
+evidence, or a single decision the user must make. Never a prose summary
+accepted on faith.
 
 ## Tools
 
@@ -95,7 +97,7 @@ model or network calls and never dispatch anything.
    - `escalate` or `stop`: mark the workflow item `needs_attention` with
      `needs_user: true`, state the decision, the evidence, and the
      smallest safe next step. Wait for the user. Never retry a denied
-     permission, an out-of-scope change, or a cancel.
+     permission, an out-of-scope change, or a cancellation.
    - `pending` (`review`): wait and re-check; record the id so the handoff
      is not lost.
    - **Doctrine:** apply `adaptation.doctrine.lesson` to the next brief
@@ -117,7 +119,7 @@ retry. The review returns the adaptation; you apply it.
 - **Allowed unattended:** revise the brief (context, evidence requirements,
   scope wording), retry a transient failure, stop a stalled job, re-review.
 - **Requires the user:** widening permissions or scope, changing the
-  target, restarting after a cancel, or any irreversible action.
+  target, restarting after a cancellation, or any irreversible action.
 - **Never auto-apply** a lesson that contradicts the escalation matrix,
   even when it would have made the last attempt pass.
 - **Persist recurring lessons** in a writable skill repo or instruction, not

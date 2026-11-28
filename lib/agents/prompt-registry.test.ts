@@ -263,6 +263,11 @@ describe("prompt registry coverage", () => {
         "browser_press", "browser_wait", "tool_result_get",
         "memory_list", "memory_read", "memory_write",
       ],
+      "chief-of-staff": [
+        "delegation_brief", "delegation_review", "delegation_cadence", "workflow_progress",
+        "claude_delegate", "codex_delegate", "copilot_delegate", "delegate_to_agent", "write_skill",
+      ],
+      "chief-of-staff-bootstrap": ["propose_config_change"],
       "extension-development": ["list_tools", "describe_extension_surfaces", "scaffold_extension", "start_extension_authoring", "request_extension_stage", "inspect_extension_authoring", "inspect_authoring_operation", "cancel_authoring_operation", "run_skill", "workflow_progress"],
       "contribution-review": ["list_tools", "prepare_contribution_bundle", "request_contribution_tests", "inspect_contribution_operation", "request_contribution_commit", "request_contribution_push", "request_contribution_draft_pr", "cancel_authoring_operation", "workflow_progress"],
       "jarela-configuration": [
