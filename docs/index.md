@@ -68,6 +68,7 @@ The built-in documentation skill makes local documentation the first source of t
 | [OPERATIONS.md](OPERATIONS.md) | agents, profile, settings, dashboard, tools, tasks, and chat workflows |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | local dev workflow, repo conventions, build/test commands |
 | [CADENCE.md](CADENCE.md) | clock-driven review of untouched code, scheduled-tick outcomes, and the unattended-safe matrix |
+| [CHIEF_OF_STAFF.md](CHIEF_OF_STAFF.md) | coordinator brief, delegate, verify, and escalate loop for delegated work |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | container, component, and runtime architecture |
 | [architecture-patterns.json](architecture-patterns.json) | machine-readable catalog of canonical operation patterns and their tests |
 | [EXTENDING.md](EXTENDING.md) | extension surfaces for providers, tools, MCP, harnesses, and branding |
