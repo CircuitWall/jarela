@@ -106,6 +106,21 @@ describe("agent_session lifecycle", () => {
     expect(refused.code).toBe("SAFETY_BLOCKED");
   });
 
+  it("records a failed turn and exposes it through status", async () => {
+    _setAgentSessionAdapterFactoryForTests(async (options) => {
+      const base = fakeAdapter(options.provider, options);
+      return {
+        ...base,
+        async send() { throw new Error("provider exploded"); },
+      };
+    });
+    const started = JSON.parse(await startAgentSession({ provider: "claude", task: "first", cwd: process.cwd() }, thread("t1")));
+    const failed = JSON.parse(await sendAgentSession({ sessionId: started.session_id as string, prompt: "second" }, thread("t1")));
+    expect(failed).toMatchObject({ ok: false, code: "SESSION_TURN_FAILED", error: "provider exploded" });
+    const status = JSON.parse(statusAgentSession(started.session_id as string, thread("t1")));
+    expect(status).toMatchObject({ state: "error", error: "provider exploded" });
+  });
+
   it("reports a missing optional runtime with the install target", async () => {
     _clearRuntimePackageTestOverrides();
     const missing = JSON.parse(await startAgentSession({ provider: "codex", task: "first", cwd: process.cwd() }));

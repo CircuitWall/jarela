@@ -106,6 +106,7 @@ function output(entry: SessionEntry): Record<string, unknown> {
     cwd: entry.cwd,
     model: entry.model ?? null,
     result: entry.result,
+    error: entry.error,
     steps: entry.steps.slice(-50),
     approvals: entry.approvals,
     created_at: new Date(entry.createdAt).toISOString(),
