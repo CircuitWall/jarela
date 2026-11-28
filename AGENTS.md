@@ -122,12 +122,13 @@ Guide structure, pattern lifecycle, drift audits, and the full update workflow a
 
 ## Documentation Validation
 
-`npm run lint` also enforces the documentation contract:
+`npm run lint` enforces the documentation contract; the full list of gates and
+what stays a reviewer judgement is in
+[AGENT_MD_SYSTEM.md](./AGENT_MD_SYSTEM.md#documentation-validation).
 
 - Every module guide has loader frontmatter (`description` starting with `Use when:`, `tools`, `reasoning-effort`), resolvable links and inline paths, a Testing or Validation section, and a `## Review checks` list.
 - Every `Agent.md` under a module root is declared in [scripts/check-agent-docs.mjs](./scripts/check-agent-docs.mjs) and linked from this file.
-- [docs/api.md](./docs/api.md) matches every `@public` and `@public-internal` route; ADR ids, citations, and links resolve; [docs/architecture-patterns.json](./docs/architecture-patterns.json) entries exist on disk.
-- Direct `fetch` / `localStorage` use in `components/`, `hooks/`, and `contexts/` is ratcheted against [scripts/ui-data-access-baseline.json](./scripts/ui-data-access-baseline.json). Move an endpoint into [api/client.ts](./api/client.ts) or browser state into [lib/ui/browser-store.ts](./lib/ui/browser-store.ts) instead of raising the count.
+- [docs/api.md](./docs/api.md), ADR citations, and [docs/architecture-patterns.json](./docs/architecture-patterns.json) entries must resolve; direct `fetch` / `localStorage` use in `components/`, `hooks/`, and `contexts/` stays at or below [scripts/ui-data-access-baseline.json](./scripts/ui-data-access-baseline.json).
 - `npm run check:impact -- --staged` maps changed module files to follow-up checks, including updating the owning guide.
 
 Passing checks are necessary but not sufficient: reviewers also verify that examples compile, patterns reflect real implementations, anti-patterns match observed failures, and named tests exist.

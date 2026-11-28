@@ -8,59 +8,27 @@
 
 ## Overview
 
-Each module has an `Agent.md` file that documents proven implementation patterns for that module. Agent.md files serve as the **canonical reference** for how to implement features in that module.
+Each guided module owns an `Agent.md` that documents how to implement
+features in that module — its patterns, anti-patterns, canonical files, and
+testing requirements. It is the canonical reference for that module. The
+module index lives in [AGENTS.md](./AGENTS.md#module-guidance).
 
-```
-lib/agents/
-├── Agent.md          ← Patterns for agent orchestration
-├── run-thread.ts
-├── base.ts
-└── ...
+The guide loads from the directory being edited:
 
-lib/providers/
-├── Agent.md          ← Patterns for LLM provider adapters
-├── anthropic.ts
-├── openai.ts
-└── ...
-
-lib/db/
-├── Agent.md          ← Patterns for database operations
-├── migrations.ts
-├── transaction.ts
-└── ...
-```
+- `lib/agents/file.ts` → `AGENTS.md` + [lib/agents/Agent.md](./lib/agents/Agent.md)
+- `lib/db/file.ts` → `AGENTS.md` + [lib/db/Agent.md](./lib/db/Agent.md)
 
 ---
 
-## How Agents Use Agent.md
+## How agents use the guide
 
-### When Implementing a Feature
-
-1. **Identify the module** where feature belongs (e.g., `lib/agents/`)
-2. **Load the Agent.md** file for that module
-3. **Review relevant patterns** (usually 1-3 patterns apply)
-4. **Copy pattern structure** and adapt to your implementation
-5. **Follow anti-patterns** to avoid common mistakes
-6. **Validate against testing requirements**
-7. **Result:** Implementation aligned with module best practices
-
-### When Reviewing Implementation
-
-1. **Load the Agent.md** file for modified module
-2. **Identify which pattern** was used
-3. **Verify implementation** matches pattern structure
-4. **Check anti-patterns** - ensure none are present
-5. **Validate test requirements** met
-6. **Result:** Systematic verification against standards
-
-### When Updating Patterns
-
-1. **Detect** pattern change (new approach emerging, drift observed, better way found)
-2. **Validate** pattern reflects reality in codebase
-3. **Update Agent.md** with new pattern information
-4. **Include evidence** - link to code examples
-5. **Document rationale** - why pattern is better
-6. **Result:** Agent.md stays synchronized with actual implementations
+- **Implementing:** identify the module, load its guide, apply the patterns
+  that fit (usually one to three), avoid the anti-patterns, and meet the
+  testing requirements.
+- **Reviewing:** load the guide for the touched module and verify the change
+  against its patterns, anti-patterns, and review checks.
+- **Changing the guidance:** follow
+  [Updating Agent.md Files](#updating-agentmd-files).
 
 ---
 
@@ -267,22 +235,10 @@ All affected Agent.md files updated together
 
 ---
 
-## Validation Requirements
-
-Agent.md files must maintain:
-
-- **Accuracy:** Code examples match actual implementations
-- **Completeness:** All patterns in module documented
-- **Relevance:** Patterns reflect current best practices
-- **Consistency:** No contradictions between patterns
-- **Practicality:** Test requirements are achievable
-- **Evidence:** Performance claims supported by code
-
----
-
 ## Documentation Validation
 
-`npm run lint` runs `node scripts/check-agent-docs.mjs`, which enforces the structural contract for module guidance:
+A guide must stay accurate, complete, current, consistent, and
+evidence-backed. `npm run lint` runs `node scripts/check-agent-docs.mjs`, which enforces the structural contract for module guidance:
 
 - Every declared guide exists; each module `Agent.md` has loader frontmatter (`description` starting with `Use when:`, `tools`, `reasoning-effort`).
 - Every markdown link and inline repository path resolves. Fenced code examples are exempt because they may be sketches.
@@ -360,172 +316,3 @@ Include in update:
 - Examples from codebase
 - Impact on existing code
 - Any backward compatibility notes
-
----
-
-## Success Indicators
-
-Healthy Agent.md files show:
-
-✅ **Patterns match code** - Implementations follow documented approaches  
-✅ **Anti-patterns prevent mistakes** - Agents avoid documented pitfalls  
-✅ **Examples are current** - Code samples work with latest implementations  
-✅ **Tests match requirements** - Testing strategies match patterns  
-✅ **Cross-references valid** - All links resolve correctly  
-✅ **Review checks current** - Each guide has evidence-based, module-specific checks
-✅ **Frontier patterns progress** - Emerging patterns move toward standardization
-✅ **No orphaned patterns** - All patterns actively used in codebase  
-
----
-
-## Tier 1 Modules (Complete)
-
-**[lib/agents/Agent.md](./lib/agents/Agent.md)**
-- LangGraph agent orchestration patterns
-- Pattern reference, anti-patterns, testing guide
-
-**[lib/providers/Agent.md](./lib/providers/Agent.md)**
-- LLM provider adapter patterns
-- Pattern reference, anti-patterns, testing guide
-
-**[lib/db/Agent.md](./lib/db/Agent.md)**
-- SQLite persistence patterns
-- Pattern reference, anti-patterns, testing guide
-
-**[app/api/Agent.md](./app/api/Agent.md)**
-- Next.js API route patterns
-- Pattern reference, testing guide
-
-**[lib/tools/Agent.md](./lib/tools/Agent.md)**
-- Agent tool implementation patterns
-- Pattern reference, testing guide
-
----
-
-## Tier 2 Modules (Complete)
-
-**[components/Agent.md](./components/Agent.md)**
-- Panel/controller/view ownership, shared primitives, dialog and state contracts
-- Pattern reference, testing guide, frontier
-
-**[hooks/Agent.md](./hooks/Agent.md)**
-- Async supersede, subscription cleanup, command identity, list-state primitive
-- Pattern reference, testing guide, frontier
-
-**[lib/stores/Agent.md](./lib/stores/Agent.md)**
-- Transactional writes, encryption, tolerant decoding, retention and invalidation
-- Pattern reference, testing guide, frontier
-
----
-
-## Tier 3 Modules (Complete)
-
-**[lib/mcp/Agent.md](./lib/mcp/Agent.md)**
-- Connection manager, transport selection, result normalization, registry bounds
-- Pattern reference, testing guide, frontier
-
-**[scripts/Agent.md](./scripts/Agent.md)**
-- Gate conventions, repo-root resolution, exit codes, stdout protocols
-- Pattern reference, testing guide, frontier
-
-**[tests/Agent.md](./tests/Agent.md)**
-- Unit/e2e/live layer ownership, isolation, selectors, validation gates
-- Pattern reference, testing guide, frontier
-
-`npm run lint` runs `node scripts/check-agent-docs.mjs`, which verifies guide
-frontmatter, links, referenced paths, and module coverage. See
-[Documentation Validation](#documentation-validation).
-
----
-
-## Root Agent Guidance
-
-**[AGENTS.md](./AGENTS.md)** - Project-level instructions
-- Project stack and layout, run/test commands
-- Verified workflows (code-first principle)
-- Contribution and release process
-- Repository conventions
-- Module guide index and auto-loading pointer
-- Documentation validation summary
-- Drift detection, evidence, and authority rules
-
----
-
-## Accessing Pattern Information
-
-Short version: [QUICK_REFERENCE_AGENT_MD_SYSTEM.md](./QUICK_REFERENCE_AGENT_MD_SYSTEM.md).
-
-### Direct Reference
-Agent auto-loads module's Agent.md based on file location:
-- Edit `lib/agents/file.ts` → loads `lib/agents/Agent.md`
-- Edit `lib/providers/file.ts` → loads `lib/providers/Agent.md`
-- etc.
-
-### Pattern Lookup
-When implementing feature:
-1. Identify module
-2. Load that module's Agent.md
-3. Find relevant pattern
-4. Reference while implementing
-
-### Cross-Module Patterns
-When patterns span modules:
-1. Identify primary module
-2. Load that module's Agent.md
-3. See Cross-Module coordination section
-4. Load related modules' Agent.md files
-
----
-
-## Maintenance Philosophy
-
-**Agent.md files evolve continuously:**
-
-- Patterns capture real implementations from codebase
-- New patterns emerge when better approaches proven
-- Anti-patterns prevent repeated mistakes
-- Agent monitoring keeps patterns current
-- Cross-module coordination prevents drift
-- Frontier section tracks emerging approaches
-
-**Result:** Agent.md files become increasingly valuable as codebase matures.
-
----
-
-## Using This System
-
-### For Feature Implementation
-1. Load module's Agent.md
-2. Review patterns (usually 1-3 apply)
-3. Copy pattern template
-4. Implement using pattern structure
-5. Validate against testing requirements
-
-### For Pattern Verification
-1. Load module's Agent.md
-2. Identify pattern used
-3. Verify implementation matches
-4. Check anti-patterns absent
-5. Validate tests match requirements
-
-### For Pattern Updates
-1. Detect change needed
-2. Validate against codebase
-3. Update Agent.md
-4. Include code examples
-5. Document rationale
-
----
-
-## Summary
-
-Agent.md files are the **canonical reference** for module implementation patterns:
-
-✅ **Auto-loaded** by directory (no manual setup)  
-✅ **Pattern-based** (reference while implementing)  
-✅ **Self-improving** (evolve with codebase)  
-✅ **Evidence-backed** (grounded in actual code)  
-✅ **Cross-module aware** (coordinate changes)  
-✅ **Continuously validated** (stay current)  
-
-Use these files as the foundation for all module implementations.
