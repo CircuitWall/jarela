@@ -77,6 +77,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full rules. Summary:
 - Rebase merge only. Every commit that lands on `main` needs a Conventional Commit subject; the PR title is used in release notes.
 - `package.json` is the semver source of truth. Nightly releases take a minor bump for 3+ `feat` commits since the previous tag, a patch bump otherwise; breaking changes are held for a human to prepare a major release. Workspace packages use standard semver.
 - `.github/workflows/nightly-release.yml` prepares the version/changelog/adoption PR, dispatches CI, auto-merges only after required checks pass, and tags the merged commit. `.github/workflows/release.yml` builds and publishes through GitHub Actions/OIDC; never publish from a developer machine.
+- Clock-driven checks cover code that no commit has touched: see [docs/CADENCE.md](./docs/CADENCE.md) for the weekly audit and the unattended-safe vs escalate matrix.
 
 ## Repository Conventions
 
