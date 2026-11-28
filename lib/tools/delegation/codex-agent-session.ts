@@ -128,23 +128,24 @@ class CodexAgentSession implements AgentSessionAdapter {
     const steps: string[] = [];
     let text = "";
     let usage: Record<string, number> | undefined;
+    const step = (value: string) => {
+      steps.push(value);
+      this.options.onStep(value);
+    };
     const stream = await this.thread.runStreamed(prompt);
     for await (const event of stream) {
       if (event.type === "thread.started" && typeof event.thread_id === "string") {
         // The SDK already knows the thread; keep the id for status consumers.
-        steps.push(`Codex thread ${event.thread_id.slice(0, 8)}`);
+        step(`Codex thread ${event.thread_id.slice(0, 8)}`);
       } else if (event.type === "turn.started") {
-        steps.push("Codex turn started");
+        step("Codex turn started");
       } else if (event.type === "item.completed" && event.item) {
-        const step = itemStep(event.item);
-        if (step) {
-          steps.push(step);
-          this.options.onStep(step);
-        }
+        const item = itemStep(event.item);
+        if (item) step(item);
         if (event.item.type === "agent_message" && event.item.text) text = event.item.text.trim();
       } else if (event.type === "turn.completed") {
         if (event.usage) usage = event.usage;
-        steps.push("Codex turn completed");
+        step("Codex turn completed");
       } else if (event.type === "turn.failed") {
         throw new Error(capped(event.error ?? "Codex turn failed"));
       }

@@ -84,15 +84,10 @@ function activeCount(): number {
   return count;
 }
 
-function appendSteps(entry: SessionEntry, steps: readonly string[]): void {
-  entry.steps.push(...steps);
-  if (entry.steps.length > AGENT_SESSION_MAX_STEPS) {
-    entry.steps.splice(0, entry.steps.length - AGENT_SESSION_MAX_STEPS);
-  }
-}
-
 function applyResult(entry: SessionEntry, result: AgentSessionTurnResult): void {
-  appendSteps(entry, result.steps);
+  // Steps are written live from the adapter's onStep callback; the turn
+  // result carries the same list for direct adapter consumers. Do not append
+  // it again here or every step is recorded twice.
   entry.result = result.text || entry.result;
   if (result.providerSessionId) entry.providerSessionId = result.providerSessionId;
   entry.approvals = result.approvals;
@@ -319,7 +314,7 @@ export const agentSessionTool = tool(
     description:
       "Talk to a local coding agent programmatically, without a terminal or TUI. Start a provider session (claude, codex, or copilot), send follow-up turns, inspect progress, close it, or list active sessions. " +
       "Requires the provider's optional agent runtime from Settings → Tools → Packages; a missing runtime returns DEPENDENCY_MISSING and leaves the existing *_delegate tools available. " +
-      "Each session is scoped to the current thread and held in memory; close it when done. Under JARELA_TOOL_SAFETY=safe the tool refuses; under mostly_safe (default) and bypass, provider permission requests are approved once and recorded, matching the delegate tools. " +
+      "Each session is scoped to the current thread and held in memory; close it when done. Under JARELA_TOOL_SAFETY=safe the tool refuses; under mostly_safe (default) and bypass, Claude and Copilot permission requests are approved once and recorded, matching the delegate tools, while Codex runs under its workspace-write sandbox and reports that mode. " +
       "Use this for multi-turn steering and review; use claude_delegate, codex_delegate, or copilot_delegate for one-shot or background jobs.",
     schema: sessionSchema,
   },
