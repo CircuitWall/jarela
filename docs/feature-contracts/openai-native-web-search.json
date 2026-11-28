@@ -7,6 +7,7 @@
   "shared": [
     "api/types.ts",
     "docs/EXTENDING.md",
+    "docs/OPERATIONS.md",
     "docs/adr/0136-openai-provider-native-web-search.md",
     "docs/feature-contracts/openai-native-web-search.json"
   ],
