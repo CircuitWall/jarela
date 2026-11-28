@@ -26,14 +26,21 @@ describe("optional package catalogue", () => {
     }
   });
 
-  it("keeps the two heavy runtimes on demand", () => {
+  it("keeps the heavy agent and embedding runtimes on demand", () => {
     expect(OPTIONAL_PACKAGES.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining(["@huggingface/transformers", "@microsoft/copilot-sdk"]),
+      expect.arrayContaining([
+        "@huggingface/transformers",
+        "@microsoft/copilot-sdk",
+        "@anthropic-ai/claude-agent-sdk",
+        "@openai/codex-sdk",
+      ]),
     );
   });
 
   it("looks entries up by package id and builds the install target", () => {
     expect(findOptionalPackage("@microsoft/copilot-sdk")?.category).toBe("agent-runtimes");
+    expect(findOptionalPackage("@anthropic-ai/claude-agent-sdk")?.category).toBe("agent-runtimes");
+    expect(findOptionalPackage("@openai/codex-sdk")?.category).toBe("agent-runtimes");
     expect(findOptionalPackage("not-a-package")).toBeNull();
     expect(optionalPackageTarget("@microsoft/copilot-sdk")).toBe("runtime:@microsoft/copilot-sdk");
   });

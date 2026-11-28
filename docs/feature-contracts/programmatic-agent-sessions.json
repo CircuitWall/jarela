@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "feature": "programmatic-agent-sessions",
+  "title": "Programmatic agent sessions with on-demand SDK runtimes",
+  "adrRequired": true,
+  "adr": "docs/adr/0137-programmatic-agent-sessions.md",
+  "shared": [
+    "docs/INSTALL.md",
+    "docs/adr/0137-programmatic-agent-sessions.md",
+    "docs/feature-contracts/programmatic-agent-sessions.json",
+    "lib/dependencies/optional-catalog.ts",
+    "lib/dependencies/optional-catalog.test.ts",
+    "lib/lifecycle/shutdown.ts"
+  ],
+  "modules": [
+    {
+      "id": "agent-sessions",
+      "guide": "lib/tools/Agent.md",
+      "owns": [
+        "lib/tools/Agent.md",
+        "lib/tools/delegation/agent-session.ts",
+        "lib/tools/delegation/agent-session.test.ts",
+        "lib/tools/delegation/agent-session-types.ts",
+        "lib/tools/delegation/claude-agent-session.ts",
+        "lib/tools/delegation/claude-agent-session.test.ts",
+        "lib/tools/delegation/codex-agent-session.ts",
+        "lib/tools/delegation/codex-agent-session.test.ts",
+        "lib/tools/delegation/copilot-agent-session.ts",
+        "lib/tools/delegation/copilot-agent-session.test.ts",
+        "lib/tools/runtime/builtins.ts"
+      ],
+      "provides": [
+        {
+          "name": "agentSessionTool",
+          "file": "lib/tools/delegation/agent-session.ts",
+          "symbol": "agentSessionTool"
+        },
+        {
+          "name": "startAgentSession",
+          "file": "lib/tools/delegation/agent-session.ts",
+          "symbol": "startAgentSession"
+        },
+        {
+          "name": "sendAgentSession",
+          "file": "lib/tools/delegation/agent-session.ts",
+          "symbol": "sendAgentSession"
+        },
+        {
+          "name": "createClaudeAgentSession",
+          "file": "lib/tools/delegation/claude-agent-session.ts",
+          "symbol": "createClaudeAgentSession"
+        },
+        {
+          "name": "createCodexAgentSession",
+          "file": "lib/tools/delegation/codex-agent-session.ts",
+          "symbol": "createCodexAgentSession"
+        },
+        {
+          "name": "createCopilotAgentSession",
+          "file": "lib/tools/delegation/copilot-agent-session.ts",
+          "symbol": "createCopilotAgentSession"
+        }
+      ],
+      "consumes": [],
+      "validation": [
+        "npx vitest run lib/tools/delegation/agent-session.test.ts lib/tools/delegation/claude-agent-session.test.ts lib/tools/delegation/codex-agent-session.test.ts lib/tools/delegation/copilot-agent-session.test.ts lib/dependencies/optional-catalog.test.ts"
+      ]
+    }
+  ]
+}

@@ -119,14 +119,16 @@ jarela
 The published npm package ships a **prebuilt standalone bundle**, so `jarela`
 starts immediately after install — no in-place webpack/build step.
 
-Two large capabilities are **not** installed by default and are fetched only
+Large capabilities are **not** installed by default and are fetched only
 when you enable them (ADR-0122). They are grouped by category in
 **Settings → Tools → Packages → Optional packages**:
 
 | Category | Capability | Installed on demand | Size | Without it |
 | --- | --- | --- | --- | --- |
 | Embeddings and recall | Local embeddings | `@huggingface/transformers` + ONNX runtime | ≈426 MB | Recall/search use lexical matching; indexing and chat unaffected |
-| Agent runtimes | GitHub Copilot runtime | `@microsoft/copilot-sdk` + platform runtime | ≈206 MB | `copilot_delegate` unavailable; Claude/Codex delegates unaffected |
+| Agent runtimes | GitHub Copilot runtime | `@microsoft/copilot-sdk` + platform runtime | ≈206 MB | `copilot_delegate` and Copilot `agent_session` unavailable; other providers unaffected |
+| Agent runtimes | Claude agent runtime | `@anthropic-ai/claude-agent-sdk` + platform runtime | ≈384 MB | Claude `agent_session` unavailable; `claude_delegate` unaffected |
+| Agent runtimes | Codex agent runtime | `@openai/codex-sdk` + `@openai/codex` platform runtime | ≈548 MB | Codex `agent_session` unavailable; `codex_delegate` unaffected |
 
 Install one explicitly from that panel, or with the dependency API:
 
@@ -150,8 +152,10 @@ minutes before retrying.
 
 They install into the Jarela packages directory, not into the global npm
 prefix, and can be removed again with `DELETE /api/v1/packages/install`.
-Until then, recall falls back to lexical search and `copilot_delegate`
-reports the missing runtime instead of failing mid-task.
+Until then, recall falls back to lexical search and the affected delegate or
+`agent_session` provider reports the missing runtime instead of failing
+mid-task. `claude_delegate` and `codex_delegate` keep using the locally
+installed CLI even when their SDK runtime is absent.
 
 On the very first interactive `jarela` run, you'll be offered to register
 autostart for the current user:

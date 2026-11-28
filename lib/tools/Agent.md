@@ -150,6 +150,7 @@ or grant itself access.
 | Domain tools | [general/](./general/), [filesystem/](./filesystem/), [web/](./web/), [communications/](./communications/), [delegation/](./delegation/), [security/](./security/), [system/](./system/) |
 | Automation activity | [general/automation-activity.ts](./general/automation-activity.ts) (read-only ledger), [general/schedule.ts](./general/schedule.ts), [general/watcher.ts](./general/watcher.ts) |
 | Delegation supervision | [delegation/delegation-contract.ts](./delegation/delegation-contract.ts) (preflight, evidence review, cadence), [delegation/chief-of-staff.ts](./delegation/chief-of-staff.ts) (read-only tools) |
+| Programmatic agent sessions | [delegation/agent-session.ts](./delegation/agent-session.ts) (`agent_session` tool and in-memory registry), [delegation/claude-agent-session.ts](./delegation/claude-agent-session.ts), [delegation/codex-agent-session.ts](./delegation/codex-agent-session.ts), [delegation/copilot-agent-session.ts](./delegation/copilot-agent-session.ts) |
 | Packages | [packages/langchain-package.ts](./packages/langchain-package.ts), [packages/langchain-packages.ts](./packages/langchain-packages.ts), [packages/default-packages.ts](./packages/default-packages.ts) |
 | Support | [support/wallclock.ts](./support/wallclock.ts) |
 
@@ -168,6 +169,9 @@ Tests are co-located with each tool module (for example
 - Behavior: cover the happy path, the documented refusal shape, error handling,
   and read-back for writes.
 - Streaming: assert multiple ordered chunks and cleanup on early consumer exit.
+- Optional runtimes: load SDKs through `requireRuntimePackage`; tests inject a
+  fake module with `_setRuntimePackageForTests` and never install or spawn the
+  real agent runtime.
 - Isolation: use temporary directories and mocked network/MCP boundaries; never
   spawn a real MCP server in a unit test.
 - Run the focused Vitest files, `npx tsc --noEmit`, and `npm run lint`.
