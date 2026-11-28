@@ -56,6 +56,7 @@ export function useParamsState(model: ModelConfig | undefined) {
   const [temperature, setTemperature] = useState(String(model?.params.temperature ?? ""));
   const [maxTokens, setMaxTokens] = useState(String(model?.params.max_tokens ?? ""));
   const [contextWindowTokens, setContextWindowTokens] = useState(String(model?.params.context_window_tokens ?? ""));
+  const [openaiWebSearch, setOpenaiWebSearch] = useState(model?.params.openai_web_search === true);
   const [autoMaxTokens, setAutoMaxTokens] = useState<string | null>(null);
   const [autoContextWindowTokens, setAutoContextWindowTokens] = useState<string | null>(null);
   const [isDefault, setIsDefault] = useState(model?.is_default ?? false);
@@ -63,6 +64,7 @@ export function useParamsState(model: ModelConfig | undefined) {
     apiKey, setApiKey, baseUrl, setBaseUrl, extraHeaders, setExtraHeaders,
     temperature, setTemperature, maxTokens, setMaxTokens,
     contextWindowTokens, setContextWindowTokens,
+    openaiWebSearch, setOpenaiWebSearch,
     autoMaxTokens, setAutoMaxTokens, autoContextWindowTokens, setAutoContextWindowTokens,
     isDefault, setIsDefault,
   };

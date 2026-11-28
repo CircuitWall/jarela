@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "feature": "openai-provider-native-web-search",
+  "title": "Opt-in OpenAI provider-native web search",
+  "adrRequired": true,
+  "adr": "docs/adr/0136-openai-provider-native-web-search.md",
+  "shared": [
+    "api/types.ts",
+    "docs/EXTENDING.md",
+    "docs/adr/0136-openai-provider-native-web-search.md",
+    "docs/feature-contracts/openai-native-web-search.json"
+  ],
+  "modules": [
+    {
+      "id": "providers",
+      "guide": "lib/providers/Agent.md",
+      "owns": [
+        "lib/providers/Agent.md",
+        "lib/providers/capabilities.ts",
+        "lib/providers/capabilities.test.ts",
+        "lib/providers/jarela-chat-model.ts",
+        "lib/providers/jarela-chat-model.test.ts",
+        "lib/providers/openai.ts",
+        "lib/providers/openai.test.ts"
+      ],
+      "provides": [
+        {
+          "name": "openaiProvider",
+          "file": "lib/providers/openai.ts",
+          "symbol": "openaiProvider"
+        },
+        {
+          "name": "openAIWebSearchEnabled",
+          "file": "lib/providers/openai.ts",
+          "symbol": "openAIWebSearchEnabled"
+        },
+        {
+          "name": "createOpenAICompletion",
+          "file": "lib/providers/openai.ts",
+          "symbol": "createOpenAICompletion"
+        },
+        {
+          "name": "modelCapabilities",
+          "file": "lib/providers/capabilities.ts",
+          "symbol": "modelCapabilities"
+        }
+      ],
+      "consumes": [],
+      "validation": [
+        "npx vitest run lib/providers/openai.test.ts lib/providers/jarela-chat-model.test.ts lib/providers/capabilities.test.ts"
+      ]
+    },
+    {
+      "id": "model-editor",
+      "guide": "components/Agent.md",
+      "owns": [
+        "components/models/model-editor/form-state.ts",
+        "components/models/model-editor/ModelEditorBody.tsx",
+        "components/models/model-editor/save-helpers.ts",
+        "components/models/model-editor/TuningFields.tsx",
+        "lib/models/editor-payload.ts",
+        "lib/models/editor-payload.test.ts"
+      ],
+      "provides": [
+        {
+          "name": "buildModelEditorPayload",
+          "file": "lib/models/editor-payload.ts",
+          "symbol": "buildModelEditorPayload"
+        },
+        {
+          "name": "HostedWebSearchField",
+          "file": "components/models/model-editor/TuningFields.tsx",
+          "symbol": "HostedWebSearchField"
+        }
+      ],
+      "consumes": [],
+      "validation": [
+        "npx vitest run lib/models/editor-payload.test.ts components/models/ModelEditor.test.tsx"
+      ]
+    },
+    {
+      "id": "stores",
+      "guide": "lib/stores/Agent.md",
+      "owns": [
+        "lib/stores/model-metadata.ts",
+        "lib/stores/model-metadata.test.ts"
+      ],
+      "provides": [
+        {
+          "name": "clearModelMetadata",
+          "file": "lib/stores/model-metadata.ts",
+          "symbol": "clearModelMetadata"
+        }
+      ],
+      "consumes": [],
+      "validation": [
+        "npx vitest run lib/stores/model-metadata.test.ts"
+      ]
+    },
+    {
+      "id": "catalog-api",
+      "guide": "app/api/Agent.md",
+      "owns": [
+        "app/api/v1/providers/[provider]/models/route.ts",
+        "app/api/v1/providers/[provider]/models/route.test.ts"
+      ],
+      "provides": [
+        {
+          "name": "catalogRoute",
+          "file": "app/api/v1/providers/[provider]/models/route.ts",
+          "symbol": "GET"
+        }
+      ],
+      "consumes": [
+        {
+          "module": "providers",
+          "name": "modelCapabilities"
+        },
+        {
+          "module": "stores",
+          "name": "clearModelMetadata"
+        }
+      ],
+      "validation": [
+        "npx vitest run app/api/v1/providers"
+      ]
+    }
+  ]
+}

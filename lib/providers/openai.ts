@@ -13,6 +13,7 @@ import type {
   OpenAITool,
 } from "./types";
 import { errorMessage } from "@/lib/utils/error";
+import { modelCapabilities } from "./capabilities";
 import { parseToolArguments, TRUNCATED_TOOL_CALL_MESSAGE } from "./tool-arguments";
 
 // Re-export so callers can pass zodResponseFormat(schema, name) as params.response_format
@@ -131,10 +132,16 @@ function toOpenAIMessages(
 // raw InvokeMessage shapes that the OpenAI SDK then rejects for images/files.
 export { toOpenAIContent, toOpenAIMessages };
 
+type OpenAIUrlCitation = {
+  type?: string;
+  url_citation?: { url?: string; title?: string };
+};
+
 type OpenAIStreamDelta = {
   content?: string | null;
   reasoning_content?: string | null;
   tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+  annotations?: OpenAIUrlCitation[];
 };
 
 type OpenAIStreamChoice = {
@@ -146,6 +153,7 @@ type OpenAIInvokeChoice = {
   message?: {
     content?: string | null;
     tool_calls?: Array<{ type?: string; id?: string; function?: { name?: string; arguments?: string } }>;
+    annotations?: OpenAIUrlCitation[];
   };
   finish_reason?: string | null;
 };
@@ -154,6 +162,60 @@ function parseStopReason(reason: string | null | undefined): InvokeResult["stop_
   if (reason === "tool_calls") return "tool_use";
   if (reason === "length") return "length";
   return "stop";
+}
+
+function isSafeCitationUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
+/**
+ * Provider-native web search is opt-in per model config and only for models
+ * whose source-backed capability map advertises it. The flag alone is never
+ * enough: a saved config copied from another model must not enable search on
+ * a model that does not support it.
+ */
+export function openAIWebSearchEnabled(modelId: string, params: ProviderParams): boolean {
+  return params.openai_web_search === true && modelCapabilities("openai", modelId).web_search;
+}
+
+export function withOpenAIWebSearch<T extends object>(
+  body: T,
+  modelId: string,
+  params: ProviderParams,
+): T & { web_search_options?: Record<string, never> } {
+  if (!openAIWebSearchEnabled(modelId, params)) return body;
+  return { ...body, web_search_options: {} };
+}
+
+/**
+ * Only a clear "this model/parameter does not support hosted search" error
+ * triggers the fallback. Auth, rate-limit, transient, and unrelated validation
+ * failures must surface unchanged instead of silently disabling the feature.
+ */
+export function isOpenAIWebSearchUnsupportedError(err: unknown): boolean {
+  const status = (err as { status?: unknown } | null)?.status;
+  if (status !== 400 && status !== 404 && status !== 422) return false;
+  return /web[\s_-]*search/i.test(errorMessage(err));
+}
+
+/**
+ * Run one Chat Completions request, retrying once without the hosted-search
+ * option when the provider rejects it. The retry happens before any stream
+ * event is consumed, so no partial answer is replayed.
+ */
+export async function createOpenAICompletion<T, B extends object>(
+  create: (body: B) => Promise<T>,
+  body: B & { web_search_options?: Record<string, never> },
+): Promise<{ response: T; fallbackReason: string | null }> {
+  try {
+    return { response: await create(body), fallbackReason: null };
+  } catch (err) {
+    if (!body.web_search_options || !isOpenAIWebSearchUnsupportedError(err)) throw err;
+    const reason = errorMessage(err);
+    console.warn(`[openai] provider-hosted web search unavailable; retrying without it: ${reason}`);
+    const { web_search_options: _ignored, ...withoutSearch } = body;
+    return { response: await create(withoutSearch as B), fallbackReason: reason };
+  }
 }
 
 export function parseOpenAIInvokeChoice(choice: OpenAIInvokeChoice): InvokeResult {
@@ -203,6 +265,13 @@ export async function* streamOpenAIEvents(
     if (!choice) continue;
     const delta = choice.delta;
     if (delta?.content) yield { type: "text", delta: delta.content };
+    if (delta?.annotations) {
+      for (const annotation of delta.annotations) {
+        const url = annotation?.url_citation?.url;
+        if (!url || !isSafeCitationUrl(url)) continue;
+        yield { type: "citation", url, source: annotation.url_citation?.title };
+      }
+    }
     if (typeof delta?.reasoning_content === "string" && delta.reasoning_content) {
       yield { type: "thinking", delta: delta.reasoning_content };
     }
@@ -292,7 +361,7 @@ export const openaiProvider: ModelProvider = {
 
   async invoke(model_id, messages, params, tools, signal): Promise<InvokeResult> {
     const client = makeClient(params);
-    const resp = await client.chat.completions.create({
+    const body: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
       model: model_id,
       messages: toOpenAIMessages(messages),
       tools: tools as OpenAI.Chat.ChatCompletionTool[],
@@ -301,7 +370,12 @@ export const openaiProvider: ModelProvider = {
       temperature: params.temperature,
       ...openaiTokenLimitParams(model_id, params),
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
-    }, { signal });
+    };
+    const requestBody = withOpenAIWebSearch(body, model_id, params);
+    const { response: resp } = await createOpenAICompletion(
+      (request) => client.chat.completions.create(request, { signal }),
+      requestBody,
+    );
     return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
   },
 
@@ -342,6 +416,7 @@ async function* openaiStreamInvoke(
   params: ProviderParams,
   tools: OpenAITool[],
   signal?: AbortSignal,
+  allowWebSearch = true,
 ): AsyncIterable<ProviderStreamEvent> {
   const compatOptions = pickOpenAICompatOptions(params) as Record<string, unknown>;
   const body: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
@@ -357,7 +432,22 @@ async function* openaiStreamInvoke(
     body.tools = tools as OpenAI.Chat.ChatCompletionTool[];
     body.tool_choice = "auto";
   }
-  const stream = await client.chat.completions.create(body, { signal });
+  const requestBody = withOpenAIWebSearch(body, model_id, allowWebSearch ? params : { ...params, openai_web_search: false });
+  const { response: stream, fallbackReason } = await createOpenAICompletion(
+    (request) => client.chat.completions.create(request, { signal }),
+    requestBody,
+  );
+  if (fallbackReason) {
+    yield {
+      type: "provider_event",
+      name: "openai.web_search_fallback",
+      payload: { reason: fallbackReason },
+    };
+    yield {
+      type: "text",
+      delta: "\n\n> Note: provider-hosted web search was unavailable for this request; the answer uses standard generation.\n\n",
+    };
+  }
   yield* streamOpenAIEvents(
     stream as AsyncIterable<{
       choices?: OpenAIStreamChoice[];
@@ -407,7 +497,10 @@ export function makeOpenAICompatProvider(
     },
 
     streamInvoke(model_id, messages, params, tools, signal): AsyncIterable<ProviderStreamEvent> {
-      return openaiStreamInvoke(makeClient(params, defaultBaseURL, fixedHeaders, providerName), model_id, messages, params, tools, signal);
+      // Provider-hosted web search is an OpenAI API option, not a shared
+      // OpenAI-compatible feature. Compat proxies must not receive it even
+      // when a saved config carries the OpenAI-only opt-in.
+      return openaiStreamInvoke(makeClient(params, defaultBaseURL, fixedHeaders, providerName), model_id, messages, params, tools, signal, false);
     },
 
     async embed(model_id, inputs, params): Promise<number[][]> {

@@ -78,6 +78,27 @@ export function ContextWindowField({ form }: { form: ModelEditorForm }) {
   );
 }
 
+export function HostedWebSearchField({ form }: { form: ModelEditorForm }) {
+  if (form.provider !== "openai") return null;
+  return (
+    <label className="flex items-start gap-2 cursor-pointer">
+      <input
+        type="checkbox"
+        className="mt-0.5 rounded border-border"
+        checked={form.openaiWebSearch}
+        onChange={(e) => form.setOpenaiWebSearch(e.target.checked)}
+      />
+      <span className="min-w-0">
+        <span className="text-xs text-fg-subtle block">Provider-hosted web search</span>
+        <span className="text-[10px] text-fg-faint block">
+          Sends search through OpenAI for models that advertise it. The provider bills search
+          separately; Jarela&apos;s per-turn estimate excludes it. Applies to agent turns only.
+        </span>
+      </span>
+    </label>
+  );
+}
+
 export function ExtraHeadersField({ form }: { form: ModelEditorForm }) {
   return (
     <label className="block">

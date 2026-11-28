@@ -237,7 +237,9 @@ async function fetchOpenAICatalog(overrides?: ProviderParams): Promise<CatalogMo
           tools: true,
           streaming: true,
           json_mode: true,
-          web_search: false,
+          // Source-backed static heuristic; the weekly metadata overlay can
+          // replace this value with an observed provider claim.
+          web_search: modelCapabilities("openai", m.id).web_search,
           audio: m.id.includes("audio") || m.id.startsWith("gpt-4o") || m.id.startsWith("gpt-5"),
           files: m.id.startsWith("gpt-4") || m.id.startsWith("gpt-5") || m.id.startsWith("o"),
         },

@@ -584,6 +584,9 @@ export interface ModelConfig {
     temperature?: number;
     max_tokens?: number;
     context_window_tokens?: number;
+    // Opt-in provider-hosted web search for models that advertise it. Only
+    // the openai adapter reads this; it never changes other providers.
+    openai_web_search?: boolean;
     context_tier_proportions?: {
       hot?: number;
       warm?: number;

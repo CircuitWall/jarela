@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { parseOpenAIInvokeChoice, streamOpenAIEvents } from "./openai";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createOpenAICompletion,
+  isOpenAIWebSearchUnsupportedError,
+  openAIWebSearchEnabled,
+  parseOpenAIInvokeChoice,
+  streamOpenAIEvents,
+  withOpenAIWebSearch,
+} from "./openai";
 
 describe("OpenAI tool argument delivery", () => {
   it.each(['{"path":"notes.md","content"', "null", "[]", '"text"'])(
@@ -48,5 +55,87 @@ describe("OpenAI tool argument delivery", () => {
       yield { choices: [{ finish_reason: "length" }] };
     })())) events.push(event);
     expect(events).toEqual([{ type: "stop", reason: "length" }]);
+  });
+});
+
+describe("OpenAI provider-hosted web search", () => {
+  it("requires both the opt-in and a model that advertises search", () => {
+    expect(openAIWebSearchEnabled("gpt-6.2-astra", { openai_web_search: true })).toBe(true);
+    expect(openAIWebSearchEnabled("gpt-6.2-astra", {})).toBe(false);
+    expect(openAIWebSearchEnabled("gpt-6.2-astra", { openai_web_search: false })).toBe(false);
+    expect(openAIWebSearchEnabled("gpt-5", { openai_web_search: true })).toBe(false);
+  });
+
+  it("adds web_search_options only when enabled", () => {
+    const base = { model: "gpt-6.2-astra", messages: [] };
+    expect(withOpenAIWebSearch(base, "gpt-6.2-astra", { openai_web_search: true }))
+      .toHaveProperty("web_search_options");
+    expect(withOpenAIWebSearch(base, "gpt-6.2-astra", {}))
+      .not.toHaveProperty("web_search_options");
+    expect(withOpenAIWebSearch(base, "gpt-5", { openai_web_search: true }))
+      .not.toHaveProperty("web_search_options");
+  });
+
+  it("classifies only clear unsupported-search errors", () => {
+    expect(isOpenAIWebSearchUnsupportedError(
+      Object.assign(new Error("web_search_options is not supported for this model"), { status: 400 }),
+    )).toBe(true);
+    expect(isOpenAIWebSearchUnsupportedError(
+      Object.assign(new Error("web_search_options is not supported for this model"), { status: 401 }),
+    )).toBe(false);
+    expect(isOpenAIWebSearchUnsupportedError(
+      Object.assign(new Error("Bad request"), { status: 400 }),
+    )).toBe(false);
+    expect(isOpenAIWebSearchUnsupportedError(new Error("network failure"))).toBe(false);
+  });
+
+  it("retries once without hosted search on a clear rejection", async () => {
+    const create = vi.fn()
+      .mockRejectedValueOnce(Object.assign(
+        new Error("web_search_options is not supported for this model"),
+        { status: 400 },
+      ))
+      .mockResolvedValueOnce("ok");
+
+    const result = await createOpenAICompletion(create, {
+      model: "gpt-6.2-astra",
+      web_search_options: {},
+    });
+
+    expect(result.response).toBe("ok");
+    expect(result.fallbackReason).toMatch(/not supported/);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][0]).not.toHaveProperty("web_search_options");
+  });
+
+  it("does not retry auth, rate-limit, or unrelated failures", async () => {
+    const create = vi.fn().mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    await expect(createOpenAICompletion(create, { web_search_options: {} }))
+      .rejects.toThrow("Unauthorized");
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps URL citation annotations to citation events and drops unsafe URLs", async () => {
+    const events = [];
+    for await (const event of streamOpenAIEvents((async function* () {
+      yield {
+        choices: [{
+          delta: {
+            content: "answer",
+            annotations: [
+              { type: "url_citation", url_citation: { url: "https://example.test/a", title: "Example A" } },
+              { type: "url_citation", url_citation: { url: "javascript:alert(1)", title: "Unsafe" } },
+            ],
+          },
+        }],
+      };
+      yield { choices: [{ finish_reason: "stop" }] };
+    })())) events.push(event);
+
+    expect(events).toEqual([
+      { type: "text", delta: "answer" },
+      { type: "citation", url: "https://example.test/a", source: "Example A" },
+      { type: "stop", reason: "stop" },
+    ]);
   });
 });
