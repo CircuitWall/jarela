@@ -68,3 +68,4 @@ import "../general/terminal";
 import "../delegation/claude-delegate";
 import "../delegation/codex-delegate";
 import "../delegation/copilot-delegate";
+import "../delegation/chief-of-staff";

@@ -31,10 +31,14 @@ describe("built-in skills", () => {
       "jarela-operations",
       "memory-organization",
       "personal-briefing",
+      "chief-of-staff",
+      "chief-of-staff-bootstrap",
     ]));
     expect(skills.find((s) => s.id === "jarela-integrations")?.source).toBe("builtin");
     expect(getSkill("jarela-documentation")?.content).toContain("describe_extension_surfaces");
     expect(getSkill("memory-organization")?.content).toContain("memory_upsert");
+    expect(getSkill("chief-of-staff")?.content).toContain("delegation_review");
+    expect(getSkill("chief-of-staff-bootstrap")?.content).toContain("delegation_cadence");
   });
 
   it("reads packaged skill content", () => {
@@ -46,7 +50,7 @@ describe("built-in skills", () => {
 
   it("discovers every built-in through matching frontmatter and task-specific descriptions", () => {
     const builtins = listSkills().filter((skill) => skill.source === "builtin");
-    expect(builtins).toHaveLength(9);
+    expect(builtins).toHaveLength(11);
     for (const skill of builtins) {
       expect(skill.name).toBe(skill.id);
       expect(skill.description).toMatch(/^Use when: .+\.$/);
