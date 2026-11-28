@@ -14,6 +14,7 @@ This guide focuses on developer experience for UI/state work.
 - Change-impact audit: `npm run check:impact -- --staged`
 - Module review for changed files: `npm run review:module -- --staged`
 - Function-body ratchet (unreleased): `npm run lint:complexity`
+- Clock-driven audit of untouched code: `node scripts/cadence-audit.mjs` (see [Cadence review](CADENCE.md))
 - Test all: `npm test`
 - Test hooks only: `npm run test:hooks`
 - Watch hook tests: `npm run test:hooks:watch`

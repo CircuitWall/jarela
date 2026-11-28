@@ -1,0 +1,142 @@
+name: Cadence review
+
+# The clock-driven complement to CI. Lint, CI, and the pre-commit hook all run
+# because something changed; a module nobody has committed to in months has had
+# zero verification. This workflow audits doctrine drift, ADR rot, dependency
+# staleness, and milestone slippage on a clock instead.
+#
+# Every tick terminates in one of three outcomes (docs/CADENCE.md):
+#   1. a decision for a human (the opened or updated PR),
+#   2. a doctrine change (recorded in the report), or
+#   3. a recorded "no change" (the step summary and the unchanged report).
+#
+#   - schedule: weekly on Monday morning.
+#   - workflow_dispatch: run on demand; dry_run skips the PR step.
+#
+# This workflow never merges, never pushes to main, never approves a review,
+# and makes no paid model calls. Opening a PR with GITHUB_TOKEN requires the
+# repository setting "Allow GitHub Actions to create and approve pull requests"
+# (CONTRIBUTING.md). The token is used to open/update the report PR only.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Generate and upload the report without opening or updating a PR
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: cadence-review
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # CPU binaries ship in npm; hosted runners do not need the optional CUDA download.
+  ONNXRUNTIME_NODE_INSTALL: skip
+
+jobs:
+  audit:
+    name: Cadence audit
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Module idle time comes from real history, not just the last commit.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24.15.0"
+          check-latest: true
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
+
+      # The JSON form is the run artifact; the Markdown form is the durable
+      # repository artifact. --check is intentionally not used here yet: this
+      # run records decisions and must not fail on advisory noise.
+      - name: Run cadence audit
+        run: >-
+          node scripts/cadence-audit.mjs
+          --audit
+          --format json
+          --report docs/CADENCE_REPORT.md
+          > "$RUNNER_TEMP/cadence-report.json"
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cadence-report
+          path: ${{ runner.temp }}/cadence-report.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Record dry run
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          {
+            echo "### Dry run"
+            echo "The report was generated and uploaded; the PR step was skipped."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the cadence report PR
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run == false }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Byte-identical content is a recorded no-change outcome, not a
+          # silent green tick. The script preserves the file (including its
+          # Generated line) when only the timestamp would change.
+          if [ -z "$(git status --porcelain -- docs/CADENCE_REPORT.md)" ]; then
+            {
+              echo "### No change recorded"
+              echo "The cadence report is byte-identical to the checked-out revision; no PR was opened or updated."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c cadence/report
+          git add docs/CADENCE_REPORT.md
+          git commit -m "chore(cadence): update weekly cadence report"
+
+          # The report branch is bot-owned and single-writer. Fetch it first so
+          # --force-with-lease has a current lease; a missing branch is fine.
+          git fetch origin "cadence/report:refs/remotes/origin/cadence/report" || true
+          git push --force-with-lease origin "cadence/report"
+
+          pr_number="$(gh pr list --head cadence/report --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$pr_number" ]; then
+            gh pr create \
+              --base main \
+              --head cadence/report \
+              --title "chore(cadence): update weekly cadence report" \
+              --body "$(printf '%s\n' \
+                'Weekly deterministic cadence audit.' \
+                '' \
+                'This PR only regenerates `docs/CADENCE_REPORT.md` from `scripts/cadence-audit.mjs`.' \
+                'It never merges, never pushes to main, and never approves a review.' \
+                'CI may not start automatically for a GITHUB_TOKEN-created PR; dispatch or rerun it before merge.' \
+                'Review the ranked decisions, then merge or close it as the doctrine in `docs/CADENCE.md` requires.')"
+          fi
+
+          {
+            echo "### Cadence report updated"
+            echo "The audit changed docs/CADENCE_REPORT.md; the cadence/report PR was opened or updated."
+            echo ""
+            gh pr view cadence/report --json url --jq '.url' || true
+          } >> "$GITHUB_STEP_SUMMARY"
