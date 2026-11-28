@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { modelSupportsImages, isProviderClassified, modelThinksByDefault, thinkingReductionParams } from "./capabilities";
+import { modelCapabilities, modelSupportsImages, isProviderClassified, modelThinksByDefault, thinkingReductionParams } from "./capabilities";
 
 describe("thinking controls", () => {
   it("flags default-thinking models per provider", () => {
@@ -102,6 +102,29 @@ describe("modelSupportsImages", () => {
     // match 'claude-3'. We anchor with ^ on every pattern.
     expect(modelSupportsImages("openai", "my-gpt-4o-clone")).toBe(false);
     expect(modelSupportsImages("anthropic", "their-claude-3-clone")).toBe(false);
+  });
+});
+
+describe("modelCapabilities web search", () => {
+  it("advertises provider-native web search for the GPT-6.x family only", () => {
+    for (const id of [
+      "gpt-6.2-astra",
+      "gpt-6.2-sol",
+      "gpt-6.1-terra",
+      "gpt-6-luna",
+      "gpt-6-astra",
+      "gpt-6.1-sol",
+    ]) {
+      expect(modelCapabilities("openai", id).web_search, id).toBe(true);
+    }
+    expect(modelCapabilities("openai", "gpt-5").web_search).toBe(false);
+    expect(modelCapabilities("openai", "gpt-4o").web_search).toBe(false);
+    expect(modelCapabilities("openai", "gpt-6-clone").web_search).toBe(false);
+  });
+
+  it("keeps Anthropic's existing provider-hosted search classification", () => {
+    expect(modelCapabilities("anthropic", "claude-sonnet-4-6").web_search).toBe(true);
+    expect(modelCapabilities("anthropic", "claude-2.1").web_search).toBe(false);
   });
 });
 

@@ -122,7 +122,10 @@ const FILES_PATTERNS: Record<string, RegExp[]> = {
 const WEB_SEARCH_PATTERNS: Record<string, RegExp[]> = {
   // Built-in provider-side web tool.
   anthropic: [/^claude-3\.5/i, /^claude-3\.7/i, /^claude-sonnet/i, /^claude-opus/i, /^claude-haiku-4/i, /^claude-[45](?:-|$)/i],
-  openai: [],
+  // GPT-6.x is the first OpenAI family documented as advertising
+  // provider-native web search. Older families stay false until the
+  // provider documents the capability for their exact model IDs.
+  openai: [/^gpt-6(?:\.\d+)?-(?:astra|sol|terra|luna)(?:-|$)/i],
   gemini: [],
   "github-copilot": [],
   deepseek: [],

@@ -32,6 +32,14 @@ export function canonicalMetadataProvider(provider: string): string {
   return canonical === "google-gemini" || canonical === "google" ? "gemini" : canonical;
 }
 
+/**
+ * Remove persisted model-metadata observations. Used by tests and explicit
+ * metadata resets; writes still go through `saveModelMetadata`.
+ */
+export function clearModelMetadata(): void {
+  getDb().prepare("DELETE FROM memory_store WHERE namespace=?").run(NAMESPACE);
+}
+
 export function listModelMetadata(provider?: string): ModelMetadata[] {
   const rows = getDb().prepare("SELECT value FROM memory_store WHERE namespace=?").all(NAMESPACE) as Array<{ value: string }>;
   return rows.map((row) => modelMetadataSchema.parse(JSON.parse(row.value)))

@@ -13,7 +13,7 @@ import type { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { Runnable } from "@langchain/core/runnables";
-import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
+import type { ModelProvider, ProviderParams, ProviderStreamEvent } from "@/lib/providers/types";
 import type { ContentPart, InvokeMessage, OpenAITool, ToolParamSchema } from "@/lib/tools/runtime/types";
 import { maskInvokeMessages } from "@/lib/redaction/mask-messages";
 import { getEffectiveProviderToolLimit } from "./tool-limit";
@@ -180,6 +180,7 @@ export class JarelaChatModel extends BaseChatModel {
     let sawToolCallChunk = false;
     let pendingToolCalls: AIMessageChunk | null = null;
     let stopReason: "stop" | "tool_use" | "length" | undefined;
+    const citations = new Map<string, { label: string; href: string }>();
     for await (const event of this._provider.streamInvoke(this._modelId, invokeMessages, this._params, openaiTools, signal)) {
       if (event.type === "text") {
         emittedAny = true;
@@ -197,6 +198,9 @@ export class JarelaChatModel extends BaseChatModel {
           }),
           text: "",
         });
+      } else if (event.type === "citation") {
+        // Feed provider citations through the existing references side channel.
+        if (this._collectCitation(event, citations)) emittedAny = true;
       } else if (event.type === "tool_call_chunk") {
         emittedAny = true;
         sawToolCallChunk = true;
@@ -232,34 +236,8 @@ export class JarelaChatModel extends BaseChatModel {
       } else if (event.type === "stop") {
         stopReason = event.reason;
       } else if (event.type === "usage") {
-        // ADR-0041: surface real provider token counts on the final
-        // AIMessageChunk via LangChain's standard `usage_metadata` field so
-        // the agent loop can snapshot them into message_usage. PR #181 added
-        // Anthropic prompt caching; carry the cache breakdown through
-        // `input_token_details` (LangChain's standard channel) so cost
-        // attribution downstream can apply the 1.25× / 0.1× rates.
         emittedAny = true;
-        const cacheCreation = event.cache_creation_input_tokens ?? 0;
-        const cacheRead = event.cache_read_input_tokens ?? 0;
-        const thinkingTokens = event.thinking_tokens ?? 0;
-        yield new ChatGenerationChunk({
-          message: new AIMessageChunk({
-            content: "",
-            usage_metadata: {
-              input_tokens: event.input_tokens ?? 0,
-              output_tokens: event.output_tokens ?? 0,
-              total_tokens: event.total_tokens
-                ?? (event.input_tokens ?? 0) + (event.output_tokens ?? 0),
-              ...(cacheCreation > 0 || cacheRead > 0
-                ? { input_token_details: { cache_creation: cacheCreation, cache_read: cacheRead } }
-                : {}),
-              ...(thinkingTokens > 0
-                ? { output_token_details: { reasoning: thinkingTokens } }
-                : {}),
-            },
-          }),
-          text: "",
-        });
+        yield this._usageChunk(event);
       }
     }
     // Provider ended the stream without emitting any text, thinking, or tool
@@ -298,6 +276,12 @@ export class JarelaChatModel extends BaseChatModel {
     if (stopReason === "length" && sawToolCallChunk) {
       throw new Error(TRUNCATED_TOOL_CALL_MESSAGE);
     }
+    // Tool-call turns have no single answer yet; their next call can surface
+    // its own citations.
+    if (!pendingToolCalls) {
+      const citationChunk = this._citationChunk(citations);
+      if (citationChunk) yield citationChunk;
+    }
     if (pendingToolCalls) {
       for (const call of pendingToolCalls.tool_call_chunks ?? []) {
         parseToolArguments(call.args || "{}");
@@ -318,6 +302,64 @@ export class JarelaChatModel extends BaseChatModel {
         text: "",
       });
     }
+  }
+
+  private _usageChunk(
+    event: Extract<ProviderStreamEvent, { type: "usage" }>,
+  ): ChatGenerationChunk {
+    // ADR-0041: surface real provider token counts on the final AIMessageChunk
+    // via LangChain's standard `usage_metadata` field so the agent loop can
+    // snapshot them into message_usage. Carry the prompt-cache breakdown
+    // through `input_token_details` so cost attribution applies the
+    // 1.25× / 0.1× rates.
+    const cacheCreation = event.cache_creation_input_tokens ?? 0;
+    const cacheRead = event.cache_read_input_tokens ?? 0;
+    const thinkingTokens = event.thinking_tokens ?? 0;
+    return new ChatGenerationChunk({
+      message: new AIMessageChunk({
+        content: "",
+        usage_metadata: {
+          input_tokens: event.input_tokens ?? 0,
+          output_tokens: event.output_tokens ?? 0,
+          total_tokens: event.total_tokens
+            ?? (event.input_tokens ?? 0) + (event.output_tokens ?? 0),
+          ...(cacheCreation > 0 || cacheRead > 0
+            ? { input_token_details: { cache_creation: cacheCreation, cache_read: cacheRead } }
+            : {}),
+          ...(thinkingTokens > 0
+            ? { output_token_details: { reasoning: thinkingTokens } }
+            : {}),
+        },
+      }),
+      text: "",
+    });
+  }
+
+  private _collectCitation(
+    event: Extract<ProviderStreamEvent, { type: "citation" }>,
+    citations: Map<string, { label: string; href: string }>,
+  ): boolean {
+    if (!event.url || !/^https?:\/\//i.test(event.url)) return false;
+    // Provider titles are untrusted text. Keep them from closing the fence
+    // early or injecting markdown; the URL remains the stable identity.
+    const label = (event.source ?? "")
+      .replace(/[`\r\n]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    citations.set(event.url, { label: label || event.url, href: event.url });
+    return true;
+  }
+
+  private _citationChunk(
+    citations: Map<string, { label: string; href: string }>,
+  ): ChatGenerationChunk | null {
+    if (citations.size === 0) return null;
+    const fence = `\n\n\`\`\`jarela-references\n${JSON.stringify([...citations.values()])}\n\`\`\``;
+    return new ChatGenerationChunk({
+      message: new AIMessageChunk({ content: fence }),
+      text: fence,
+    });
   }
 }
 

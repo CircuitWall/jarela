@@ -26,6 +26,7 @@ export function buildPayload(form: ModelEditorForm) {
     temperature: form.temperature,
     max_tokens: form.maxTokens,
     context_window_tokens: form.contextWindowTokens,
+    openai_web_search: form.openaiWebSearch,
     is_default: form.isDefault,
     credential_id: form.credentialId,
   });

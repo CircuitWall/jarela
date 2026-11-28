@@ -91,6 +91,22 @@ describe("buildModelEditorPayload — params shaping", () => {
     if (zero.ok) expect(zero.payload.params.context_window_tokens).toBeUndefined();
   });
 
+  it("round-trips the OpenAI hosted-search opt-in only for OpenAI", () => {
+    const off = buildModelEditorPayload(baseInput({ provider: "openai", model_id: "gpt-6.2-astra", api_key: "" }));
+    expect(off.ok).toBe(true);
+    if (off.ok) expect(off.payload.params.openai_web_search).toBe(false);
+
+    const on = buildModelEditorPayload(baseInput({
+      provider: "openai", model_id: "gpt-6.2-astra", openai_web_search: true,
+    }));
+    expect(on.ok).toBe(true);
+    if (on.ok) expect(on.payload.params.openai_web_search).toBe(true);
+
+    const other = buildModelEditorPayload(baseInput({ openai_web_search: true }));
+    expect(other.ok).toBe(true);
+    if (other.ok) expect(other.payload.params).not.toHaveProperty("openai_web_search");
+  });
+
   it("does NOT emit context_tier_proportions or context_tier_priority", () => {
     // Regression guard: the editor's per-model tier UI was removed; the
     // helper must not accidentally re-introduce those keys with defaults.

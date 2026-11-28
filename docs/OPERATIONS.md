@@ -394,6 +394,13 @@ limit. Incompatible settings fail preparation with `invalid_thinking_budget`
 before the provider request, rather than silently reducing the thinking budget.
 This cap describes the maximum response length, not a spending guarantee.
 
+For OpenAI models, **Provider-hosted web search** in the same Advanced settings
+section is an explicit opt-in. It requests the provider's hosted search option
+for agent turns only; the provider bills search separately and the per-turn
+estimate excludes it. The catalog's web-search badge describes what the
+provider advertises, not whether this config has opted in. Accounts or models
+that reject the option fall back to standard generation with a visible note.
+
 The fallback context estimate subtracts the current user text and fixed
 overhead; earlier conversation is already bounded by the context planner, and
 later tool results do not trigger a per-step cap recalculation. The cap is

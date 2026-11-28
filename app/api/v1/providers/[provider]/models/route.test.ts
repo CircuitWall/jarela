@@ -9,15 +9,14 @@ process.env.JARELA_DB_DIR = tmpRoot;
 
 const { upsertModelConfig, deleteModelConfig } = await import("@/lib/stores/model-config");
 const { GET, POST } = await import("./route");
-const { saveModelMetadata } = await import("@/lib/stores/model-metadata");
-const { getDb } = await import("@/lib/db");
+const { clearModelMetadata, saveModelMetadata } = await import("@/lib/stores/model-metadata");
 
 const routeParams = (provider: string) => ({ params: Promise.resolve({ provider }) });
 const request = (provider: string, fresh = true) =>
   new NextRequest(`http://localhost/api/v1/providers/${provider}/models${fresh ? "?fresh=1" : ""}`);
 
 afterEach(() => {
-  getDb().prepare("DELETE FROM memory_store WHERE namespace='model-metadata'").run();
+  clearModelMetadata();
   for (const name of ["copilot-config", "anthropic-config", "gemini-config", "deepseek-config"]) {
     deleteModelConfig(name);
   }
@@ -239,6 +238,26 @@ describe("provider model catalogs", () => {
     expect(fetch.mock.calls[0][1]?.headers).toMatchObject({
       Authorization: "Bearer synthetic-openai-key",
     });
+  });
+
+  it("reports provider-advertised web search in the OpenAI catalog", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [{ id: "gpt-6.2-astra" }, { id: "gpt-5" }, { id: "gpt-6-clone" }],
+    })));
+    vi.stubGlobal("fetch", fetch);
+    const req = new NextRequest("http://localhost/api/v1/providers/openai/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ params: { api_key: "synthetic-openai-key" } }),
+    });
+
+    const response = await POST(req, routeParams("openai"));
+
+    expect(response.status).toBe(200);
+    const models = await response.json() as Array<{ id: string; capabilities: { web_search: boolean } }>;
+    expect(models.find((model) => model.id === "gpt-6.2-astra")?.capabilities.web_search).toBe(true);
+    expect(models.find((model) => model.id === "gpt-5")?.capabilities.web_search).toBe(false);
+    expect(models.find((model) => model.id === "gpt-6-clone")?.capabilities.web_search).toBe(false);
   });
 
   it("rejects malformed catalog request bodies", async () => {

@@ -800,6 +800,15 @@ Capability flags (`vision`, `tools`, `streaming`, `json_mode`,
 `web_search`, `audio`, `files`) come from `listModels()` if you implement
 it; otherwise the runtime infers from which methods are present.
 
+A `web_search: true` capability flag describes what the provider advertises; it
+does not execute search. Provider-hosted tools stay opt-in. The built-in OpenAI
+adapter sends Chat Completions `web_search_options` when a saved model config
+sets `params.openai_web_search: true`. The source-backed capability map fills
+the catalog badge but is advisory, not execution authority. Citation annotations
+return through the existing source-reference pipeline. Accounts or models that
+reject the option fall back to standard generation with a visible note. See
+[ADR-0136](adr/0136-openai-provider-native-web-search.md).
+
 To make a declared credential testable from Credentials, add an optional
 `credentialProbe` descriptor. It supports HTTPS GET probes with bearer,
 custom-header, or query-parameter auth; common 401/403 and 429 classification

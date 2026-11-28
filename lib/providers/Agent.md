@@ -35,6 +35,13 @@ External LLM API
   metadata; transient stream failures are retryable.
 - **Capabilities are explicit.** Adapters and the catalog declare vision, tools,
   JSON mode, search, audio, and files rather than guessing per call.
+- **Hosted tools are opt-in.** A capability flag describes what the provider
+  advertises; it never sends a provider-hosted request by itself. The OpenAI
+  adapter requires `params.openai_web_search: true` and falls back to standard
+  generation with a visible note when the provider rejects the option. The
+  source-backed capability map fills the catalog badge but does not widen
+  execution authority. Hosted-search citations use the existing `citation`
+  event and declared-references side channel.
 - **Formats convert once.** Each adapter maps Jarela messages to its provider
   and maps provider output back to the typed event union.
 - **The outer boundary is mandatory.** Callers use `getProvider()`, which applies
@@ -176,6 +183,10 @@ Cohere has no dedicated adapter: it runs through [langchain.ts](./langchain.ts)
 - Mock the SDK or `fetch`; never call a live provider in unit tests. Cover
   message conversion, event order, tool fragments, usage, `stop`, mid-stream
   failure, and abort.
+- Provider-hosted search: request shape with and without the option, fallback
+  classification/retry, and citation mapping in
+  [openai.test.ts](./openai.test.ts); citation side-channel behavior in
+  [jarela-chat-model.test.ts](./jarela-chat-model.test.ts).
 - Run the focused Vitest files, `npx tsc --noEmit`, and `npm run lint`.
 
 ## Review checks

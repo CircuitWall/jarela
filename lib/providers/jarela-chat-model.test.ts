@@ -372,3 +372,48 @@ describe("JarelaChatModel — empty stream handling", () => {
     expect(meta?.fc_1).toEqual({ gemini_thought_signature: "sig-abc" });
   });
 });
+
+describe("JarelaChatModel — provider citations", () => {
+  it("appends one declared-references fence, deduplicated by URL", async () => {
+    const provider = makeProvider([
+      { type: "text", delta: "Answer" },
+      { type: "citation", url: "https://a.test", source: "A" },
+      { type: "citation", url: "https://a.test", source: "A again" },
+      { type: "citation", url: "https://b.test", source: "" },
+      { type: "citation", url: "https://c.test", source: "C `title`\nline" },
+      { type: "stop", reason: "stop" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {} });
+    const chunks = await collectChunks(model);
+    const text = chunks.map((chunk) => chunk.text).join("");
+
+    expect(text).toContain("```jarela-references");
+    expect(text.match(/https:\/\/a\.test/g)).toHaveLength(1);
+    expect(text).toContain('"label":"A again"');
+    expect(text).toContain('"href":"https://b.test"');
+    expect(text).toContain('"label":"C title line"');
+    expect(text.match(/```/g)).toHaveLength(2);
+  });
+
+  it("does not attach sources to an intermediate tool-call turn", async () => {
+    const provider = makeProvider([
+      { type: "citation", url: "https://a.test", source: "A" },
+      { type: "tool_call_chunk", index: 0, id: "t1", name: "tool_1" },
+      { type: "stop", reason: "tool_use" },
+    ]);
+    const model = new JarelaChatModel({
+      provider,
+      modelId: "m",
+      params: {},
+      boundTools: [makeTool(1)],
+    });
+    const chunks = await collectChunks(model);
+    const text = chunks.map((chunk) => chunk.text).join("");
+    const toolChunks = chunks.flatMap(
+      (chunk) => (chunk.message as AIMessageChunk).tool_call_chunks ?? [],
+    );
+
+    expect(toolChunks).toHaveLength(1);
+    expect(text).not.toContain("jarela-references");
+  });
+});

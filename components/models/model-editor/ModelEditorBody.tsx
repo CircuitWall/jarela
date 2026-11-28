@@ -9,7 +9,7 @@ import { ConfigNameField, ProviderField } from "./IdentitySection";
 import { ModelIdSection } from "./ModelIdSection";
 import { CredentialSection, rebindCredentialAfterCreate } from "./CredentialSection";
 import { ConnectionFields } from "./ConnectionFields";
-import { ContextWindowField, ExtraHeadersField, TemperatureMaxTokensRow } from "./TuningFields";
+import { ContextWindowField, ExtraHeadersField, HostedWebSearchField, TemperatureMaxTokensRow } from "./TuningFields";
 import { GitHubCopilotAuth } from "./GitHubCopilotAuth";
 import { ProbeBanner } from "./ProbeAndFooter";
 import { ShrinkConfirmDialog } from "./ShrinkConfirmDialog";
@@ -32,6 +32,7 @@ function AdvancedFieldsSection({ form }: { form: ModelEditorForm }) {
           <ConnectionFields form={form} />
           <TemperatureMaxTokensRow form={form} />
           <ContextWindowField form={form} />
+          <HostedWebSearchField form={form} />
           <ExtraHeadersField form={form} />
         </div>
       )}

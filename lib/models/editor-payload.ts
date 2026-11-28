@@ -16,6 +16,8 @@ export interface ModelEditorFormInput {
   temperature: string;          // numeric text or empty
   max_tokens: string;           // numeric text or empty
   context_window_tokens: string; // numeric text or empty
+  // OpenAI-only provider-hosted web-search opt-in.
+  openai_web_search?: boolean;
   is_default: boolean;
   // Reference to a row in the typed credentials store. The credential
   // carries api_key / base_url / extra_headers; inline values on the
@@ -68,6 +70,12 @@ export function buildModelEditorPayload(input: ModelEditorFormInput): BuildResul
 
   const win = toNumberOrUndefined(input.context_window_tokens);
   if (win !== undefined && win > 0) params.context_window_tokens = Math.floor(win);
+
+  // Persist both states so unchecking the box disables a previously enabled
+  // config; other providers never receive the OpenAI-only key.
+  if (input.provider === "openai") {
+    params.openai_web_search = input.openai_web_search === true;
+  }
 
   return {
     ok: true,
