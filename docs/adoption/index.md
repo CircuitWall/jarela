@@ -17,6 +17,52 @@ instructions, skills, and scheduled task or watcher prompts. Code changes are co
 Release authors can add adoption hints as bullets under a `### Adoption` heading in the version's
 CHANGELOG section.
 
+## 3.10.0
+
+From 3.9.1 · 2026-11-28
+
+### Tools
+
+- `list_automation_activity` — added; params added: `async_run`, `deadline_ms`, `disposition`, `limit`, `source_id`, `source_kind`, `stream`
+
+### Prompts
+
+- `static.harness.builtin:default.plan_first` — changed (`lib/agents/harness/presets.ts`)
+
+    ```diff
+    + - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…
+    - - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…
+    ```
+
+- `system.Acknowledge before acting` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…
+    - - If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…
+    ```
+
+- `system.Enabled tools` — changed (`lib/agents/prepare/system-prompt.ts`)
+
+    ```diff
+    + You can execute the 115 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    + - Basic > Schedule > list_automation_activity: read/builtin/enabled reason=basic_default
+    - You can execute the 114 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.
+    ```
+
+- `system.Redaction placeholders` — added (`lib/agents/prepare/system-prompt.ts`)
+
+### Commits
+
+- chore(cadence): add clock-driven audit for untouched code
+- feat(version-adoption): route attention verdicts into adaptation
+- test(version-adoption): add upgrade behavior coverage
+- fix(documents): split search scan budget across sources
+- fix(redaction): keep masked urls usable in tool calls
+- build(deps): bump the npm group with 13 updates
+- build(deps): bump the docs group with 3 updates
+- feat(review): add portable module review and feature contracts
+- feat(automation): expose automation activity history to tools
+
 ## 3.9.1
 
 From 3.9.0 · 2026-11-27

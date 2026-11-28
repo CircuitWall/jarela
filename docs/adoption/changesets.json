@@ -9941,6 +9941,91 @@
       ],
       "prompts": [],
       "tools": []
+    },
+    {
+      "version": "3.10.0",
+      "previous_version": "3.9.1",
+      "date": "2026-11-28",
+      "hints": [],
+      "commits": [
+        "chore(cadence): add clock-driven audit for untouched code",
+        "feat(version-adoption): route attention verdicts into adaptation",
+        "test(version-adoption): add upgrade behavior coverage",
+        "fix(documents): split search scan budget across sources",
+        "fix(redaction): keep masked urls usable in tool calls",
+        "build(deps): bump the npm group with 13 updates",
+        "build(deps): bump the docs group with 3 updates",
+        "feat(review): add portable module review and feature contracts",
+        "feat(automation): expose automation activity history to tools"
+      ],
+      "prompts": [
+        {
+          "id": "static.harness.builtin:default.plan_first",
+          "source": "lib/agents/harness/presets.ts",
+          "change": "changed",
+          "added_lines": [
+            "- If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…"
+          ],
+          "removed_lines": [
+            "- If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…"
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Acknowledge before acting",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "- If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…"
+          ],
+          "removed_lines": [
+            "- If the UI/tool is unavailable or no proposal kind supports the action, explain the limitation and ask in chat; never invent a control or use ask_choice to bypass approval. Collect secrets only through credential UI, never chat or choice text, and never repeat a pasted secret value back to the use…"
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Enabled tools",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "changed",
+          "added_lines": [
+            "You can execute the 115 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable.",
+            "- Basic > Schedule > list_automation_activity: read/builtin/enabled reason=basic_default"
+          ],
+          "removed_lines": [
+            "You can execute the 114 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 169 known tool(s) are not enabled for this agent; 0 known tool(s) are globally unavailable."
+          ],
+          "omitted_lines": 0
+        },
+        {
+          "id": "system.Redaction placeholders",
+          "source": "lib/agents/prepare/system-prompt.ts",
+          "change": "added",
+          "added_lines": [],
+          "removed_lines": [],
+          "omitted_lines": 0
+        }
+      ],
+      "tools": [
+        {
+          "name": "list_automation_activity",
+          "change": "added",
+          "description_changed": false,
+          "description": "List recent persisted automation activity for scheduled tasks, watchers, and bridges across all agents. Use this to check whether a task or watcher has been failing; list_scheduled_tasks returns only the latest error, and a successful run clears it. Newest first, bounded by limit (default 20, max 100). Read-only: does not run, cancel, or modify automation. Returns failure text but not the task prompt or the agent's output; open thread_id for full context.",
+          "params_added": [
+            "async_run",
+            "deadline_ms",
+            "disposition",
+            "limit",
+            "source_id",
+            "source_kind",
+            "stream"
+          ],
+          "params_removed": [],
+          "params_changed": [],
+          "required_added": [],
+          "required_removed": []
+        }
+      ]
     }
   ]
 }

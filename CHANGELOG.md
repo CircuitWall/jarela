@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-11-28
+
+### Added
+
+- automation: Expose automation activity history to tools
+- review: Add portable module review and feature contracts
+- version-adoption: Route attention verdicts into adaptation
+
+### Fixed
+
+- redaction: Keep masked urls usable in tool calls
+- documents: Split search scan budget across sources
+
+### Changed
+
+- deps: Bump the docs group with 3 updates
+- deps: Bump the npm group with 13 updates
+- version-adoption: Add upgrade behavior coverage
+- cadence: Add clock-driven audit for untouched code
+
 ## [3.9.1] - 2026-11-27
 
 ### Added
