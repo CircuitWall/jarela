@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isPackageAllowed } from "@/lib/tools/packages/package-allowlist";
 import {
   OPTIONAL_PACKAGES,
   OPTIONAL_PACKAGE_CATEGORIES,
@@ -26,14 +27,30 @@ describe("optional package catalogue", () => {
     }
   });
 
-  it("keeps the two heavy runtimes on demand", () => {
+  it("keeps the heavy agent and embedding runtimes on demand", () => {
     expect(OPTIONAL_PACKAGES.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining(["@huggingface/transformers", "@microsoft/copilot-sdk"]),
+      expect.arrayContaining([
+        "@huggingface/transformers",
+        "@microsoft/copilot-sdk",
+        "@anthropic-ai/claude-agent-sdk",
+        "@openai/codex-sdk",
+      ]),
     );
+  });
+
+  it("keeps every catalogue entry installable in one click", () => {
+    // The catalogue promises a one-click install from Settings → Tools →
+    // Packages. A managed entry that is missing from the publisher allowlist
+    // would silently queue an operator approval instead.
+    for (const entry of OPTIONAL_PACKAGES) {
+      expect(isPackageAllowed(entry.id).allowed, entry.id).toBe(true);
+    }
   });
 
   it("looks entries up by package id and builds the install target", () => {
     expect(findOptionalPackage("@microsoft/copilot-sdk")?.category).toBe("agent-runtimes");
+    expect(findOptionalPackage("@anthropic-ai/claude-agent-sdk")?.category).toBe("agent-runtimes");
+    expect(findOptionalPackage("@openai/codex-sdk")?.category).toBe("agent-runtimes");
     expect(findOptionalPackage("not-a-package")).toBeNull();
     expect(optionalPackageTarget("@microsoft/copilot-sdk")).toBe("runtime:@microsoft/copilot-sdk");
   });

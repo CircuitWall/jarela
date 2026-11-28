@@ -7,11 +7,14 @@ const root = mkdtempSync(join(tmpdir(), "jarela-optional-status-"));
 process.env.JARELA_PACKAGES_DIR = join(root, "packages");
 mkdirSync(process.env.JARELA_PACKAGES_DIR, { recursive: true });
 
-// One catalogue entry installed, the other missing: the ordinary user state.
-const installed = join(process.env.JARELA_PACKAGES_DIR, "node_modules", "@microsoft", "copilot-sdk");
-mkdirSync(installed, { recursive: true });
-writeFileSync(join(installed, "package.json"), JSON.stringify({ name: "@microsoft/copilot-sdk", version: "1.0.0", main: "index.js" }));
-writeFileSync(join(installed, "index.js"), "module.exports = {};\n");
+// The agent runtimes are installed; the embedding runtime is missing: the
+// ordinary user state this test distinguishes.
+for (const id of ["@microsoft/copilot-sdk", "@anthropic-ai/claude-agent-sdk", "@openai/codex-sdk"]) {
+  const installed = join(process.env.JARELA_PACKAGES_DIR, "node_modules", ...id.split("/"));
+  mkdirSync(installed, { recursive: true });
+  writeFileSync(join(installed, "package.json"), JSON.stringify({ name: id, version: "1.0.0", main: "index.js" }));
+  writeFileSync(join(installed, "index.js"), "module.exports = {};\n");
+}
 
 const { groupOptionalPackages, listOptionalPackageStatuses } = await import("./optional-status");
 const { invalidateDependencyStatuses } = await import("./probe");

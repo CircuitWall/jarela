@@ -84,6 +84,21 @@ async function drainDream(): Promise<void> {
   }
 }
 
+async function stopAgentRuntimes(): Promise<void> {
+  try {
+    const { closeAllAgentSessions } = await import("@/lib/tools/delegation/agent-session");
+    await closeAllAgentSessions();
+  } catch {
+    console.error("[jarela] closing agent sessions failed");
+  }
+  try {
+    const { stopCopilotRuntime } = await import("@/lib/tools/delegation/copilot-sdk-adapter");
+    await stopCopilotRuntime();
+  } catch {
+    console.error("[jarela] stopping the Copilot runtime failed");
+  }
+}
+
 async function runShutdown(): Promise<void> {
   // Safety net: if any drain step deadlocks (e.g. a bridge adapter's
   // socket.close() never resolves), force-exit so the supervisor can
@@ -111,12 +126,7 @@ async function runShutdown(): Promise<void> {
   } catch {
     console.error("[jarela] draining advertisement generation failed");
   }
-  try {
-    const { stopCopilotRuntime } = await import("@/lib/tools/delegation/copilot-sdk-adapter");
-    await stopCopilotRuntime();
-  } catch {
-    console.error("[jarela] stopping the Copilot runtime failed");
-  }
+  await stopAgentRuntimes();
   try {
     const { stopScheduler } = await import("@/lib/scheduler");
     stopScheduler();
