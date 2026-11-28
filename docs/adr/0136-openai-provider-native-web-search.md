@@ -35,9 +35,10 @@ path and records the Responses transport as a separate future decision.
 
 1. **Explicit per-model opt-in.** A model config may set
    `params.openai_web_search: true`. The Models editor exposes the toggle only
-   for the `openai` provider. The adapter sends the hosted-search option only
-   when the flag is true **and** `modelCapabilities("openai", modelId)` reports
-   source-backed support. Existing threads do not change behaviour.
+   for the `openai` provider. The adapter sends the hosted-search option when
+   the flag is true; the source-backed capability map fills the catalog badge
+   but is advisory, so a refresh-discovered model does not silently ignore the
+   user's opt-in. Existing threads do not change behaviour.
 2. **Chat Completions, not a second transport.** When enabled,
    `invoke`/`streamInvoke` add `web_search_options: {}` to the Chat Completions
    request. `chat()` (summary/compaction paths) never enables hosted search, so

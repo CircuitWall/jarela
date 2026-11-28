@@ -59,20 +59,17 @@ describe("OpenAI tool argument delivery", () => {
 });
 
 describe("OpenAI provider-hosted web search", () => {
-  it("requires both the opt-in and a model that advertises search", () => {
-    expect(openAIWebSearchEnabled("gpt-6.2-astra", { openai_web_search: true })).toBe(true);
-    expect(openAIWebSearchEnabled("gpt-6.2-astra", {})).toBe(false);
-    expect(openAIWebSearchEnabled("gpt-6.2-astra", { openai_web_search: false })).toBe(false);
-    expect(openAIWebSearchEnabled("gpt-5", { openai_web_search: true })).toBe(false);
+  it("requires the explicit opt-in", () => {
+    expect(openAIWebSearchEnabled({ openai_web_search: true })).toBe(true);
+    expect(openAIWebSearchEnabled({})).toBe(false);
+    expect(openAIWebSearchEnabled({ openai_web_search: false })).toBe(false);
   });
 
   it("adds web_search_options only when enabled", () => {
     const base = { model: "gpt-6.2-astra", messages: [] };
-    expect(withOpenAIWebSearch(base, "gpt-6.2-astra", { openai_web_search: true }))
+    expect(withOpenAIWebSearch(base, { openai_web_search: true }))
       .toHaveProperty("web_search_options");
-    expect(withOpenAIWebSearch(base, "gpt-6.2-astra", {}))
-      .not.toHaveProperty("web_search_options");
-    expect(withOpenAIWebSearch(base, "gpt-5", { openai_web_search: true }))
+    expect(withOpenAIWebSearch(base, {}))
       .not.toHaveProperty("web_search_options");
   });
 

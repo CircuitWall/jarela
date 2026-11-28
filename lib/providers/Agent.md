@@ -37,10 +37,11 @@ External LLM API
   JSON mode, search, audio, and files rather than guessing per call.
 - **Hosted tools are opt-in.** A capability flag describes what the provider
   advertises; it never sends a provider-hosted request by itself. The OpenAI
-  adapter requires `params.openai_web_search: true` on a source-backed model
-  and falls back to standard generation with a visible note when the provider
-  rejects the option. Hosted-search citations use the existing
-  `citation` event and declared-references side channel.
+  adapter requires `params.openai_web_search: true` and falls back to standard
+  generation with a visible note when the provider rejects the option. The
+  source-backed capability map fills the catalog badge but does not widen
+  execution authority. Hosted-search citations use the existing `citation`
+  event and declared-references side channel.
 - **Formats convert once.** Each adapter maps Jarela messages to its provider
   and maps provider output back to the typed event union.
 - **The outer boundary is mandatory.** Callers use `getProvider()`, which applies

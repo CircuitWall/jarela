@@ -802,11 +802,11 @@ it; otherwise the runtime infers from which methods are present.
 
 A `web_search: true` capability flag describes what the provider advertises; it
 does not execute search. Provider-hosted tools stay opt-in. The built-in OpenAI
-adapter sends Chat Completions `web_search_options` only when a saved model
-config sets `params.openai_web_search: true` **and** the model is in the
-source-backed capability map. Citation annotations return through the existing
-source-reference pipeline. Accounts or models that reject the option fall back
-to standard generation with a visible note. See
+adapter sends Chat Completions `web_search_options` when a saved model config
+sets `params.openai_web_search: true`. The source-backed capability map fills
+the catalog badge but is advisory, not execution authority. Citation annotations
+return through the existing source-reference pipeline. Accounts or models that
+reject the option fall back to standard generation with a visible note. See
 [ADR-0136](adr/0136-openai-provider-native-web-search.md).
 
 To make a declared credential testable from Credentials, add an optional

@@ -13,7 +13,6 @@ import type {
   OpenAITool,
 } from "./types";
 import { errorMessage } from "@/lib/utils/error";
-import { modelCapabilities } from "./capabilities";
 import { parseToolArguments, TRUNCATED_TOOL_CALL_MESSAGE } from "./tool-arguments";
 
 // Re-export so callers can pass zodResponseFormat(schema, name) as params.response_format
@@ -169,21 +168,22 @@ function isSafeCitationUrl(url: string): boolean {
 }
 
 /**
- * Provider-native web search is opt-in per model config and only for models
- * whose source-backed capability map advertises it. The flag alone is never
- * enough: a saved config copied from another model must not enable search on
- * a model that does not support it.
+ * Provider-native web search is an explicit per-model opt-in. The
+ * source-backed capability map fills the catalog badge, but it is advisory:
+ * the adapter attempts the opted-in request and the fallback below reports a
+ * provider rejection. That keeps a refresh-discovered model from silently
+ * ignoring the user's opt-in while still avoiding an automatic behaviour
+ * change for every saved OpenAI config.
  */
-export function openAIWebSearchEnabled(modelId: string, params: ProviderParams): boolean {
-  return params.openai_web_search === true && modelCapabilities("openai", modelId).web_search;
+export function openAIWebSearchEnabled(params: ProviderParams): boolean {
+  return params.openai_web_search === true;
 }
 
 export function withOpenAIWebSearch<T extends object>(
   body: T,
-  modelId: string,
   params: ProviderParams,
 ): T & { web_search_options?: Record<string, never> } {
-  if (!openAIWebSearchEnabled(modelId, params)) return body;
+  if (!openAIWebSearchEnabled(params)) return body;
   return { ...body, web_search_options: {} };
 }
 
@@ -371,7 +371,7 @@ export const openaiProvider: ModelProvider = {
       ...openaiTokenLimitParams(model_id, params),
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     };
-    const requestBody = withOpenAIWebSearch(body, model_id, params);
+    const requestBody = withOpenAIWebSearch(body, params);
     const { response: resp } = await createOpenAICompletion(
       (request) => client.chat.completions.create(request, { signal }),
       requestBody,
@@ -432,7 +432,7 @@ async function* openaiStreamInvoke(
     body.tools = tools as OpenAI.Chat.ChatCompletionTool[];
     body.tool_choice = "auto";
   }
-  const requestBody = withOpenAIWebSearch(body, model_id, allowWebSearch ? params : { ...params, openai_web_search: false });
+  const requestBody = withOpenAIWebSearch(body, allowWebSearch ? params : { ...params, openai_web_search: false });
   const { response: stream, fallbackReason } = await createOpenAICompletion(
     (request) => client.chat.completions.create(request, { signal }),
     requestBody,
