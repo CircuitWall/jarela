@@ -340,7 +340,14 @@ export class JarelaChatModel extends BaseChatModel {
     citations: Map<string, { label: string; href: string }>,
   ): boolean {
     if (!event.url || !/^https?:\/\//i.test(event.url)) return false;
-    citations.set(event.url, { label: event.source?.trim() || event.url, href: event.url });
+    // Provider titles are untrusted text. Keep them from closing the fence
+    // early or injecting markdown; the URL remains the stable identity.
+    const label = (event.source ?? "")
+      .replace(/[`\r\n]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    citations.set(event.url, { label: label || event.url, href: event.url });
     return true;
   }
 

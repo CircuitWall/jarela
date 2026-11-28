@@ -380,6 +380,7 @@ describe("JarelaChatModel — provider citations", () => {
       { type: "citation", url: "https://a.test", source: "A" },
       { type: "citation", url: "https://a.test", source: "A again" },
       { type: "citation", url: "https://b.test", source: "" },
+      { type: "citation", url: "https://c.test", source: "C `title`\nline" },
       { type: "stop", reason: "stop" },
     ]);
     const model = new JarelaChatModel({ provider, modelId: "m", params: {} });
@@ -390,6 +391,8 @@ describe("JarelaChatModel — provider citations", () => {
     expect(text.match(/https:\/\/a\.test/g)).toHaveLength(1);
     expect(text).toContain('"label":"A again"');
     expect(text).toContain('"href":"https://b.test"');
+    expect(text).toContain('"label":"C title line"');
+    expect(text.match(/```/g)).toHaveLength(2);
   });
 
   it("does not attach sources to an intermediate tool-call turn", async () => {
